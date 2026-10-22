@@ -937,7 +937,7 @@ export async function enforceAllowedPackageForObjectUrl(
   label: string,
   accept?: string,
 ): Promise<string | undefined> {
-  if (client.safety.allowedPackages.length === 0) return undefined;
+  if (client.safety.allowedPackages.length === 0 && !client.safety.multiTargetWrite) return undefined;
   const pkg = await client.resolveObjectPackage(objectUrl, accept);
   if (!pkg) {
     throw new AdtSafetyError(

@@ -1199,6 +1199,7 @@ export async function getTransportInfo(
   objectUrl: string,
   devclass: string,
   operation: 'I' | '' = 'I',
+  options?: AdtRequestOptions,
 ): Promise<TransportInfo> {
   // Transport info is a read operation — doesn't require allowTransportWrites.
   checkOperation(safety, OperationType.Read, 'TransportInfo');
@@ -1219,6 +1220,7 @@ export async function getTransportInfo(
     body,
     'application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.transport.service.checkData',
     { Accept: 'application/vnd.sap.as+xml' },
+    options,
   );
 
   const info = parseTransportInfo(resp.body);
@@ -1435,7 +1437,7 @@ function findDeepValue(obj: unknown, key: string): unknown {
 
 // ─── Parsers ────────────────────────────────────────────────────────
 
-function parseTransportList(xml: string, path: string): TransportRequest[] {
+export function parseTransportList(xml: string, path: string): TransportRequest[] {
   const parsed = parseXml(xml);
   if (!Object.hasOwn(parsed, 'root')) {
     const explanation =

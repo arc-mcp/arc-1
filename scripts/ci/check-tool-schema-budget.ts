@@ -174,8 +174,18 @@ const MULTI_TARGET_BUDGET: ToolSchemaBudget = {
   maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
 };
 
+const PINNED_WRITE_CONFIG: ServerConfig = {
+  ...DEFAULT_CONFIG, allowWrites: true, ppEnabled: true, ppStrict: true, multiTargetEndpoints: true,
+  multiTargetWrite: { target: 'A4H/001', enabled: true, allowedPackages: ['$TMP'], allowedTransports: [] },
+};
+
 // Dump filtering adds one described property; concise diagnostic wording retains all wire/token ceilings.
 export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
+  {
+    name: 'multi-target-pinned-write', config: PINNED_WRITE_CONFIG, textSearchAvailable: true,
+    definitions: multiTargetToolDefinitions(getToolDefinitions(PINNED_WRITE_CONFIG), PINNED_WRITE_CONFIG),
+    budget: { ...MULTI_TARGET_BUDGET, schemaTokenEstimate: 12_800, descriptionCount: 195, maxTotalWireBytes: READ_WIRE_WALL },
+  },
   {
     name: 'standard-default',
     config: DEFAULT_CONFIG,

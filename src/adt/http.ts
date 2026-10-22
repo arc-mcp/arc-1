@@ -106,6 +106,8 @@ export type SessionType = 'stateful' | 'stateless' | undefined;
 
 /** Configuration for the ADT HTTP client */
 export interface AdtHttpConfig {
+  /** Internal pinned-write session: no replay, negotiation retry, or auth reset. */
+  strictMultiTargetWrites?: boolean;
   baseUrl: string;
   username?: string;
   password?: string;
@@ -322,7 +324,7 @@ export class AdtHttpClient {
         await this.get(
           '/sap/bc/adt/core/http/sessions',
           { Accept: '*/*', 'sap-adt-purpose': 'close-session', 'sap-contextid': contextId },
-          { probe: true },
+          { probe: true, deadline: Date.now() + 5000, retryTransientErrors: false },
         );
         return;
       } catch (error) {
@@ -330,7 +332,11 @@ export class AdtHttpClient {
       }
 
       // NW 7.50 lacks the close resource; its stateful-header backport closes on discovery instead.
-      await this.head('/sap/bc/adt/core/discovery', { Accept: '*/*' }, { probe: true });
+      await this.head(
+        '/sap/bc/adt/core/discovery',
+        { Accept: '*/*' },
+        { probe: true, deadline: Date.now() + 5000, retryTransientErrors: false },
+      );
     } catch (error) {
       // NW 7.50 can return 400 after closing. The reset cookie confirms that cleanup succeeded.
       if (this.cookieJar.get('sap-contextid') === '0') return;
@@ -379,7 +385,7 @@ export class AdtHttpClient {
     // feature probes and compound handlers can otherwise start several requests with the same
     // expired password before the first 401 is observed. Once rejected, later requests on this
     // per-call client fail locally and never contact SAP.
-    if (this.config.retryUnauthorized === false) {
+    if (this.config.retryUnauthorized === false && !this.config.strictMultiTargetWrites) {
       return this.runSerializedAuthenticationAttempt(path, execute, options);
     }
     return execute();
@@ -521,7 +527,7 @@ export class AdtHttpClient {
     const httpStart = Date.now();
 
     // Per-request guards to prevent infinite retry loops
-    const retryTransientErrors = options?.retryTransientErrors !== false;
+    const retryTransientErrors = !this.config.strictMultiTargetWrites && options?.retryTransientErrors !== false;
     let negotiationRetried = false;
     let authRetried = false;
     let retried429 = false;
@@ -753,7 +759,7 @@ export class AdtHttpClient {
       }
 
       // Handle CSRF token refresh on 403 (modifying requests only)
-      if (response.status === 403 && isModifyingMethod(method)) {
+      if (!this.config.strictMultiTargetWrites && response.status === 403 && isModifyingMethod(method)) {
         await this.fetchCsrfToken(withoutResponseBudget(options));
         headers['X-CSRF-Token'] = this.csrfToken;
         // Update cookie header after CSRF fetch may have set new cookies. Use the
@@ -776,7 +782,11 @@ export class AdtHttpClient {
         negotiationKey,
         headers,
       );
-      if ((response.status === 406 || response.status === 415 || legacyFallback) && !negotiationRetried) {
+      if (
+        !this.config.strictMultiTargetWrites &&
+        (response.status === 406 || response.status === 415 || legacyFallback) &&
+        !negotiationRetried
+      ) {
         negotiationRetried = true;
         const fallbackHeaders = { ...headers };
 
@@ -939,7 +949,7 @@ export class AdtHttpClient {
   }
 
   private notifyUnauthorized(path: string): void {
-    if (this.config.retryUnauthorized === false) {
+    if (this.config.retryUnauthorized === false && !this.config.strictMultiTargetWrites) {
       this.authenticationAttemptState.rejected = true;
     }
     try {

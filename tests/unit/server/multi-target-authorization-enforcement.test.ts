@@ -80,6 +80,7 @@ function makeRegistry(
           'arc1.enabled': quarantine.includes(index) ? 'invalid' : 'true',
           'arc1.allow_data_preview': String(sqlClients.includes(index)),
           'arc1.allow_free_sql': String(sqlClients.includes(index)),
+          ...(config.allowWrites ? { 'arc1.allow_writes': 'true', 'arc1.allowed_packages': '$TMP' } : {}),
         },
       })),
       instanceNames: [],
@@ -130,6 +131,24 @@ function payload(value: Result): any {
 }
 
 describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
+  it('keeps read B, aggregate and Copilot catalogs mutation-free while allowing pinned write A', async () => {
+    const config = { ...CONFIG, allowWrites: true };
+    await start(makeRegistry(3, [], config), config);
+    const token = addUser(['A4H/000', 'A4H/001'], ['read', 'write']);
+    const identity = verifiedTokens.get(token) as AuthInfo;
+    Object.assign(identity.extra!, {
+      xsuaaUserAttributes: { arc1_targets: ['A4H/000', 'A4H/001'], arc1_write_targets: ['A4H/000'] },
+      xsuaaUserAttributeStatus: { arc1_targets: 'valid', arc1_write_targets: 'valid' },
+    });
+    expect((await list(token, '/A4H/000/mcp')).some((t) => t.name === 'SAPWrite')).toBe(true);
+    for (const path of ['/A4H/001/mcp', '/multi/mcp', '/authorize'])
+      expect((await list(token, path)).some((t) => t.name === 'SAPWrite')).toBe(false);
+    identity.scopes = ['admin'];
+    expect((await list(token, '/A4H/000/mcp')).some((t) => t.name === 'SAPWrite')).toBe(false);
+    identity.scopes = ['read'];
+    expect((await list(token, '/A4H/000/mcp')).some((t) => t.name === 'SAPWrite')).toBe(false);
+  });
+
   let app: express.Express;
   let httpServer: HttpServer;
   let sequence = 0;
@@ -185,9 +204,15 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
         return server;
       },
       createPinnedServer: (target, authorization) => {
-        const server = createServer(buildMultiTargetConfig(config, target), {
-          multiTarget: { mode: 'pinned', registry, instanceConfig: config, target, authorization },
-        });
+        const server = createServer(
+          buildMultiTargetConfig(config, target, {
+            mode: 'pinned',
+            authorization: omitProjection ? undefined : authorization,
+          }),
+          {
+            multiTarget: { mode: 'pinned', registry, instanceConfig: config, target, authorization },
+          },
+        );
         servers.push(server);
         return server;
       },
@@ -239,7 +264,10 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
       expect(calls[0][1]).not.toHaveProperty('userAttributeNames');
       if (mode === 'xsuaa-attribute') {
         expect(calls[1][0]).toEqual(XSUAA);
-        expect(calls[1][1]).toMatchObject({ requireUserToken: true, userAttributeNames: ['arc1_targets'] });
+        expect(calls[1][1]).toMatchObject({
+          requireUserToken: true,
+          userAttributeNames: ['arc1_targets', 'arc1_write_targets'],
+        });
       }
     },
   );

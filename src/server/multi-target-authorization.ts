@@ -34,10 +34,10 @@ function ownValue(value: unknown, key: string): unknown {
  * This function neither verifies JWTs nor authorizes standard mode. The HTTP boundary must
  * supply AuthInfo from its configured XSUAA verifier; callers cannot supply their own extra.
  */
-export function parseTargetGrant(authInfo?: Pick<AuthInfo, 'extra'>): TargetGrant {
+export function parseTargetGrant(authInfo?: Pick<AuthInfo, 'extra'>, attribute = ATTRIBUTE): TargetGrant {
   const extra = ownValue(authInfo, 'extra');
-  const values = ownValue(ownValue(extra, 'xsuaaUserAttributes'), ATTRIBUTE);
-  const status = ownValue(ownValue(extra, 'xsuaaUserAttributeStatus'), ATTRIBUTE);
+  const values = ownValue(ownValue(extra, 'xsuaaUserAttributes'), attribute);
+  const status = ownValue(ownValue(extra, 'xsuaaUserAttributeStatus'), attribute);
   if (status === 'missing') return none('TARGET_GRANT_MISSING');
   if (status === 'invalid') return none('TARGET_GRANT_MALFORMED');
   if (status === 'limit_exceeded') return none('TARGET_GRANT_LIMIT_EXCEEDED');
@@ -71,6 +71,7 @@ export function parseTargetGrant(authInfo?: Pick<AuthInfo, 'extra'>): TargetGran
     // the system segment; never split CSV, Unicode-fold an ID, or expand globs.
     const normalized = slash >= 0 ? `${trimmed.slice(0, slash).toUpperCase()}${trimmed.slice(slash)}` : trimmed;
     if (normalized !== '*' && !TARGET_ID_PATTERN.test(normalized)) return none('TARGET_GRANT_MALFORMED');
+    if (attribute === 'arc1_write_targets' && normalized === '*') return none('TARGET_GRANT_MALFORMED');
     canonical.add(normalized);
     if (canonical.size > MAX_UNIQUE_VALUES) return none('TARGET_GRANT_LIMIT_EXCEEDED');
   }

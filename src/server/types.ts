@@ -8,6 +8,7 @@
  * 4. Defaults (all `allow*` flags false — restrictive by default)
  */
 
+import type { MultiTargetWritePolicy } from '../adt/safety.js';
 import { DEFAULT_USER_AGENT } from '../adt/user-agent.js';
 import type { MultiTargetAuthorizationMode } from './multi-target-authorization.js';
 
@@ -61,6 +62,7 @@ export interface ServerConfig {
   uiOpen: boolean;
 
   // --- Safety (positive opt-ins; defaults restrictive) ---
+  multiTargetWrite?: MultiTargetWritePolicy;
   allowWrites: boolean;
   allowDataPreview: boolean;
   allowFreeSQL: boolean;

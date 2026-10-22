@@ -50,6 +50,7 @@ export function projectEnforcedDiagnostic(entry: TargetDiagnostic): TargetDiagno
     ...(SAP_SYSID_PATTERN.test(entry.sid ?? '') ? { sid: entry.sid } : {}),
     ...(/^\d{3}$/.test(entry.client ?? '') ? { client: entry.client } : {}),
     ...(/^[A-Z]{2}$/.test(entry.language ?? '') ? { language: entry.language } : {}),
+    ...(entry.write ? { write: entry.write } : {}),
     hasCloudConnectorLocationId: entry.hasCloudConnectorLocationId === true,
     ...(entry.requestedPolicy ? { requestedPolicy: entry.requestedPolicy } : {}),
     ...(entry.effectivePolicy ? { effectivePolicy: entry.effectivePolicy } : {}),

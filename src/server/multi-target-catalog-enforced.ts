@@ -18,6 +18,7 @@ export interface TargetCatalogEnforcement {
 
 export interface EnforcedCatalogOptions {
   admin: boolean;
+  pinnedWrite?: (target: TargetDescriptor) => { enabled: boolean; reason: string };
   query?: string;
   enforcement: TargetCatalogEnforcement;
   runtimeAuth?: (target: string) => { status: string; checkedAt?: string };
@@ -83,6 +84,7 @@ export function buildEnforcedTargetCatalog(registry: DestinationRegistry, option
       target: target.target,
       description: target.description,
       identity: target.identity,
+      ...(target.writePolicy && options.pinnedWrite ? { pinnedWrite: options.pinnedWrite(target) } : {}),
       ...(options.admin ? { granted: options.enforcement.allowsTarget(target.target) } : {}),
     }));
   if (!options.admin) return publicTargets;
@@ -171,6 +173,7 @@ export function buildEnforcedTargetCatalogResult(
 export function enforcedCatalogFitsSnapshot(registry: DestinationRegistry): boolean {
   const payload = buildEnforcedTargetCatalog(registry, {
     admin: true,
+    pinnedWrite: () => ({ enabled: false, reason: 'TARGET_WRITE_GRANT_LIMIT_EXCEEDED' }),
     enforcement: {
       allowsTarget: () => false,
       authorization: {

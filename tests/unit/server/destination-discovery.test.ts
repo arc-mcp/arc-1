@@ -60,7 +60,7 @@ describe('discoverDestinations', () => {
         ? [
             {
               Name: 'DEST_A',
-              originalProperties: { 'ARC1.SECRET_KEY': 'SECRET_VALUE', 'arc1.allow_writes': 'false' },
+              originalProperties: { 'ARC1.SECRET_KEY': 'SECRET_VALUE', 'arc1.allow_git_writes': 'false' },
             },
           ]
         : [],

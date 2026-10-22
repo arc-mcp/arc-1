@@ -49,6 +49,7 @@ function safeDiagnostic(entry: TargetDiagnostic): Record<string, unknown> {
     language: entry.language,
     hasCloudConnectorLocationId: entry.hasCloudConnectorLocationId,
     arcConfig: entry.arcConfig,
+    ...(entry.write ? { write: entry.write } : {}),
     requestedPolicy: entry.requestedPolicy,
     effectivePolicy: entry.effectivePolicy,
     limitedByInstance: entry.limitedByInstance,

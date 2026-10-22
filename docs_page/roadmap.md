@@ -191,8 +191,8 @@ also distinguishes route/client identity from the cross-client SAP repository af
 **Resume with.** Follow the [implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-22-multi-target-pinned-writes.md)
 and [proposed ADR-0010](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0010-pinned-pp-multi-target-writes.md):
 live XSUAA/client and local-package/activation spikes, exact capability-bound grants, strict policy
-diagnostics, then a small object-write beta on one non-production PP target. Transportable saves
-follow their own qualification stage. Reuse current source-hash and uncertain-outcome controls. Keep aggregate and Basic
+diagnostics and complete local/transportable object-write qualification in PR #1080. There is no
+separate beta release; internal local-only stages are not the shipped end goal. Reuse current source-hash and uncertain-outcome controls. Keep aggregate and Basic
 mutation-free. Reuse `SAP_ALLOW_WRITES` without a duplicate multi-target switch, combine instance
 and destination restrictions, and retain existing pinned URLs. Make precedence, supported gates,
 minimal setup and effective-policy diagnostics explicit in the operator guides. Validate complete

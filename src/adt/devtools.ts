@@ -175,6 +175,14 @@ function activationRequestOptions(): AdtRequestOptions {
   };
 }
 
+export interface ActivationOptions {
+  preaudit?: boolean;
+  name?: string;
+  /** Required on the multi-target boundary; validates initial and SAP-expanded references. */
+  validateReferences?: (refs: readonly { uri: string; name?: string }[]) => Promise<void>;
+  beforeSubmit?: () => void;
+}
+
 /** Activate (publish) ABAP objects.
  *
  *  Implements the ADT preaudit handshake: the first POST with preauditRequested=true
@@ -185,7 +193,7 @@ export async function activate(
   http: AdtHttpClient,
   safety: SafetyConfig,
   objectUrl: string,
-  options?: { preaudit?: boolean; name?: string },
+  options?: ActivationOptions,
 ): Promise<ActivationResult> {
   return activateWithinBudget(http, safety, objectUrl, activationRequestOptions(), options);
 }
@@ -195,9 +203,15 @@ async function activateWithinBudget(
   safety: SafetyConfig,
   objectUrl: string,
   requestOptions: AdtRequestOptions,
-  options?: { preaudit?: boolean; name?: string },
+  options?: ActivationOptions,
 ): Promise<ActivationResult> {
   checkOperation(safety, OperationType.Activate, 'Activate');
+  if (
+    safety.multiTargetWrite &&
+    (!safety.multiTargetWrite.enabled || !options?.validateReferences || options.preaudit === false)
+  )
+    throw new AdtSafetyError('Missing pinned activation validation context.');
+  await options?.validateReferences?.([{ uri: objectUrl, name: options.name }]);
 
   try {
     const preaudit = options?.preaudit !== false;
@@ -208,6 +222,7 @@ async function activateWithinBudget(
 </adtcore:objectReferences>`;
 
     const phase1Start = Date.now();
+    options?.beforeSubmit?.();
     const resp = await http.post(
       `/sap/bc/adt/activation?method=activate&preauditRequested=${preaudit}`,
       body,
@@ -222,6 +237,8 @@ async function activateWithinBudget(
       return outcomeToResult(outcome);
     }
 
+    await options?.validateReferences?.(outcome.refs);
+    options?.beforeSubmit?.();
     return await confirmPreaudit(http, outcome.refs, options?.name ?? objectUrl, phase1DurationMs, requestOptions);
   } catch (err) {
     return rethrowOrLockHint(err, options?.name ?? objectUrl);
@@ -242,6 +259,7 @@ export async function activateBatch(
   options?: { preaudit?: boolean },
 ): Promise<ActivationResult> {
   checkOperation(safety, OperationType.Activate, 'ActivateBatch');
+  if (safety.multiTargetWrite) throw new AdtSafetyError('Multi-target batch activation is forbidden.');
   const requestOptions = activationRequestOptions();
 
   const preaudit = options?.preaudit !== false;

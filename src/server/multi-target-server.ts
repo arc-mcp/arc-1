@@ -21,6 +21,7 @@ import type { MultiTargetRequestProjection } from './multi-target-request-projec
 import { buildMultiTargetConfig } from './multi-target-runtime.js';
 import type { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js';
 import { multiTargetInvocationDecision, normalizeTarget } from './multi-target-tools.js';
+import { pinnedWriteEnabled } from './multi-target-write-surface.js';
 import type { ServerConfig } from './types.js';
 
 export const MULTI_TARGET_SERVER_INSTRUCTIONS = [
@@ -69,12 +70,22 @@ export function buildMultiTargetServerInstructions(options: MultiTargetServerOpt
       'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable.',
     ].join('\n');
   }
+  const writable =
+    options.target &&
+    pinnedWriteEnabled(
+      buildMultiTargetConfig(options.instanceConfig, options.target, {
+        mode: options.mode,
+        authorization: options.authorization,
+      }),
+    );
   return [
-    `ARC-1 provides a read-only interface to SAP target ${options.target?.target ?? 'the configured target'}.`,
+    `ARC-1 provides a ${writable ? 'scoped read/write' : 'read-only'} interface to SAP target ${options.target?.target ?? 'the configured target'}.`,
     'Principal Propagation sends each authenticated caller to SAP as their mapped SAP user.',
     'Data preview and SQL require instance, destination, XSUAA scope, and SAP authorization consent.',
     'Offline SAPLint, read-only transport inspection, ATC, and ABAP Unit are available; ATC and Unit execute SAP workloads.',
-    'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable.',
+    writable
+      ? 'CLAS/INTF main-source writes require both package policies; updates require an editable source hash. Activation affects the whole owner and its existing inactive drafts. Transport/Git management and all other mutations remain unavailable.'
+      : 'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable.',
   ].join('\n');
 }
 
@@ -243,6 +254,24 @@ async function handleSapTargets(
     const result = buildEnforcedTargetCatalogResult(options.registry, {
       admin: adminView,
       query: parsed.value.query,
+      pinnedWrite: (target) => {
+        const projection = options.authorization!;
+        const reason =
+          target.identity !== 'per-user'
+            ? 'PP_REQUIRED'
+            : !options.instanceConfig.allowWrites
+              ? 'GLOBAL_WRITES_DISABLED'
+              : !target.writePolicy?.allowWrites
+                ? 'DESTINATION_WRITES_DISABLED'
+                : !isTargetGranted(projection.grant, target.target)
+                  ? 'TARGET_ACCESS_REQUIRED'
+                  : !projection.write
+                    ? 'RAW_WRITE_SCOPE_REQUIRED'
+                    : !isTargetGranted(projection.writeGrant, target.target)
+                      ? 'EXACT_WRITE_GRANT_REQUIRED'
+                      : 'ENABLED_ON_PINNED_URL';
+        return { enabled: reason === 'ENABLED_ON_PINNED_URL', reason };
+      },
       runtimeAuth: adminView && sharedAuthState ? (target) => sharedAuthState.getHealth(target) : undefined,
       enforcement: {
         allowsTarget: (target) => isTargetGranted(grant, target),
@@ -572,7 +601,11 @@ export async function prepareMultiTargetCall(args: {
   // Use the same canonical arguments as the shared dispatch pipeline. This keeps
   // the early policy/PP gate and the eventual handler decision identical.
   callArgs = normalizeTypeArgsForValidation(toolName, callArgs);
-  const activeConfig = buildMultiTargetConfig(options.instanceConfig, selectedTarget);
+  if (toolName === 'SAPActivate' && callArgs.action === undefined) callArgs = { ...callArgs, action: 'activate' };
+  const activeConfig = buildMultiTargetConfig(options.instanceConfig, selectedTarget, {
+    mode: options.mode,
+    authorization: projection,
+  });
   const action = invocationPolicyKey(toolName, callArgs);
   const invocationDecision = multiTargetInvocationDecision(toolName, callArgs, activeConfig);
   if (invocationDecision === 'forbidden') {
@@ -586,13 +619,13 @@ export async function prepareMultiTargetCall(args: {
       target: selectedTarget.target,
       identity: selectedTarget.identity,
       operation: action ? `${toolName}.${action}` : toolName,
-      reason: 'Operation unavailable in read-only multi-target v1',
+      reason: 'Operation unavailable for this multi-target route and caller policy',
     });
     return {
       handled: true,
       result: error(
         'MULTI_TARGET_OPERATION_FORBIDDEN',
-        'This tool or operation is not available in read-only multi-target v1.',
+        'This tool, input, or operation is not enabled for this multi-target connection.',
       ),
     };
   }

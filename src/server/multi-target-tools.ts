@@ -7,6 +7,13 @@ import type { ToolDefinition } from '../handlers/tools.js';
 import type { TargetDescriptor } from './destination-registry.js';
 import { TARGET_CATALOG_MAX_OFFSET, TARGET_CATALOG_MAX_QUERY_LENGTH } from './multi-target-catalog.js';
 import { TARGET_ID_PATTERN } from './multi-target-identity.js';
+import {
+  PINNED_ACTIVATE_FIELDS,
+  PINNED_WRITE_ACTIONS,
+  PINNED_WRITE_FIELDS,
+  pinnedMutationAllowed,
+  pinnedWriteEnabled,
+} from './multi-target-write-surface.js';
 import type { ServerConfig } from './types.js';
 
 export const MULTI_TARGET_TOOLS = new Set([
@@ -102,6 +109,8 @@ export function multiTargetInvocationDecision(
   args: Record<string, unknown>,
   config: ServerConfig,
 ): 'allowed' | 'target-policy-denied' | 'forbidden' {
+  if (toolName === 'SAPWrite' || toolName === 'SAPActivate')
+    return pinnedMutationAllowed(toolName, args, config) ? 'allowed' : 'forbidden';
   if (!MULTI_TARGET_TOOLS.has(toolName)) return 'forbidden';
   const action = invocationPolicyKey(toolName, args);
   if (toolName === 'SAPQuery' && action === 'long_text' && config.systemType === 'btp') return 'forbidden';
@@ -117,6 +126,31 @@ export function multiTargetInvocationDecision(
 }
 
 function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefinition | undefined {
+  if (tool.name === 'SAPWrite' || tool.name === 'SAPActivate') {
+    if (!pinnedWriteEnabled(config)) return undefined;
+    const write = tool.name === 'SAPWrite';
+    const fields = write ? PINNED_WRITE_FIELDS : PINNED_ACTIVATE_FIELDS;
+    const properties = Object.fromEntries(
+      Object.entries(tool.inputSchema.properties as Record<string, unknown>).filter(([key]) => fields.has(key)),
+    );
+    return {
+      ...tool,
+      description: write
+        ? 'Create CLAS/INTF or update their main source on this pinned PP target. edit_method supports existing CLAS main methods. Updates require expectedSourceHash from SAPRead(format="editable"). Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate activates the complete owner, including existing inactive includes.'
+        : 'Activate one CLAS/INTF owner on this pinned PP target, including ALL its existing inactive drafts and includes. Additional owners are refused. This is not method-only activation.',
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...properties,
+          type: { type: 'string', enum: ['CLAS', 'INTF'] },
+          action: { type: 'string', enum: write ? [...PINNED_WRITE_ACTIONS] : ['activate'] },
+        },
+        required: write ? ['action', 'type', 'name', 'source'] : ['type', 'name'],
+        additionalProperties: false,
+      },
+    };
+  }
   if (!MULTI_TARGET_TOOLS.has(tool.name)) return undefined;
   const schema = tool.inputSchema;
   const properties = (schema.properties as Record<string, unknown> | undefined) ?? {};

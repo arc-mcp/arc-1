@@ -83,7 +83,10 @@ describe('multi-target runtime isolation', () => {
     (multiTargetAuthorization) => {
       const base = { ...DEFAULT_CONFIG, multiTargetAuthorization };
       const target = registryTarget();
-      for (const config of [buildMultiTargetConfig(base, target), buildAggregateToolSurfaceConfig(base, [target])]) {
+      for (const config of [
+        buildMultiTargetConfig(base, target, { mode: 'pinned' }),
+        buildAggregateToolSurfaceConfig(base, [target]),
+      ]) {
         expect(config.multiTargetAuthorization).toBe(multiTargetAuthorization);
         expect(config.multiTargetEndpoints).toBe(true);
         expect(config.allowWrites).toBe(false);
@@ -112,6 +115,7 @@ describe('multi-target runtime isolation', () => {
         cacheMode: 'none',
       },
       registryTarget(),
+      { mode: 'pinned' },
     );
 
     expect(config).toMatchObject({
@@ -162,7 +166,10 @@ describe('multi-target runtime isolation', () => {
       maxConcurrentDataResults: 4,
     };
 
-    for (const config of [buildMultiTargetConfig(base, registryTarget()), buildAggregateToolSurfaceConfig(base, [])]) {
+    for (const config of [
+      buildMultiTargetConfig(base, registryTarget(), { mode: 'pinned' }),
+      buildAggregateToolSurfaceConfig(base, []),
+    ]) {
       expect(config).toMatchObject({
         maxDataPreviewResponseBytes: 1024 * 1024,
         maxConcurrentDataResults: 4,
@@ -178,7 +185,7 @@ describe('multi-target runtime isolation', () => {
       identity: 'shared' as const,
     };
 
-    const config = buildMultiTargetConfig(DEFAULT_CONFIG, basicTarget);
+    const config = buildMultiTargetConfig(DEFAULT_CONFIG, basicTarget, { mode: 'pinned' });
 
     expect(config).toMatchObject({
       ppEnabled: false,

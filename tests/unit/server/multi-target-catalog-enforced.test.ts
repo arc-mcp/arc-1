@@ -40,7 +40,7 @@ function registry(entries: readonly DiscoveredDestination[], strict = true): Des
       unrelatedCount: 0,
       arcAdjacentWithoutMarkerCount: 0,
     },
-    config,
+    { ...config, multiTargetAuthorization: strict ? 'xsuaa-attribute' : 'standard' },
     strict ? enforced : {},
   );
 }
@@ -139,6 +139,31 @@ describe('opted-in complete target catalog', () => {
     expect(payload(reversed).view.admin.destinations).toEqual(view.admin.destinations);
   });
 
+  it('reserves and returns all 256 write-policy rows without copying allowlists', () => {
+    const entries = Array.from({ length: 256 }, (_, i) =>
+      destination(i, {
+        arcProperties: {
+          'arc1.enabled': 'true',
+          'arc1.allow_writes': 'true',
+          'arc1.allowed_packages': Array.from({ length: 128 }, (_, n) => `ZPACKAGE${n}`).join(','),
+          'arc1.allowed_transports': Array.from({ length: 128 }, (_, n) => `A4HK9${String(n).padStart(5, '0')}`).join(
+            ',',
+          ),
+        },
+      }),
+    );
+    const snapshot = registry(entries);
+    expect(snapshot.available).toBe(true);
+    const { result, view } = payload(snapshot, {
+      pinnedWrite: () => ({ enabled: false, reason: 'TARGET_WRITE_GRANT_LIMIT_EXCEEDED' }),
+    });
+    expect(result.isError).toBeUndefined();
+    expect(view.targets).toHaveLength(256);
+    expect(view.admin.destinations).toHaveLength(256);
+    expect(JSON.stringify(result)).not.toContain('ZPACKAGE127');
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(TARGET_CATALOG_MAX_RESULT_BYTES);
+  });
+
   it('includes every passive Basic exception and filters exceptions without changing global counts', () => {
     const snapshot = registry(
       Array.from({ length: 30 }, (_, i) => destination(i, { authentication: 'BasicAuthentication' })),
@@ -217,7 +242,7 @@ describe('opted-in complete target catalog', () => {
         originalProperties: {
           'arc1.enabled': 'true',
           'arc1.SECRET_KEY': 'SECRET_VALUE',
-          'arc1.allow_writes': 'false',
+          'arc1.allow_git_writes': 'false',
           'sap-sysid': 'A4H',
           'sap-client': '001',
         },

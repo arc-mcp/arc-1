@@ -37,13 +37,21 @@
       "description": "Exact ARC-1 public target IDs, or explicit * for all targets",
       "valueType": "string",
       "valueRequired": true
+    },
+    {
+      "name": "arc1_write_targets",
+      "description": "Exact ARC-1 public target IDs permitted for pinned PP writes; no wildcard",
+      "valueType": "string",
+      "valueRequired": true
     }
   ],
   "role-templates": [
     {
       "name": "MCPViewer",
       "description": "Read-only access to SAP via ARC-1 MCP",
-      "scope-references": ["$XSAPPNAME.read"]
+      "scope-references": [
+        "$XSAPPNAME.read"
+      ]
     },
     {
       "name": "MCPDeveloper",
@@ -58,16 +66,21 @@
     {
       "name": "MCPDataViewer",
       "description": "Preview named table contents via ARC-1 MCP",
-      "scope-references": ["$XSAPPNAME.data"]
+      "scope-references": [
+        "$XSAPPNAME.data"
+      ]
     },
     {
       "name": "MCPSqlUser",
       "description": "Execute freestyle SQL queries via ARC-1 MCP",
-      "scope-references": ["$XSAPPNAME.data", "$XSAPPNAME.sql"]
+      "scope-references": [
+        "$XSAPPNAME.data",
+        "$XSAPPNAME.sql"
+      ]
     },
     {
       "name": "MCPAdmin",
-      "description": "Full administrative access to ARC-1 — admin scope implies all other scopes at runtime",
+      "description": "Full administrative access to ARC-1 \u2014 admin scope implies all other scopes at runtime",
       "scope-references": [
         "$XSAPPNAME.read",
         "$XSAPPNAME.write",
@@ -81,24 +94,51 @@
     {
       "name": "MCPTargetReadAccess",
       "description": "Read-only ARC-1 access to selected SAP targets",
-      "scope-references": ["$XSAPPNAME.read"],
-      "attribute-references": ["arc1_targets"]
+      "scope-references": [
+        "$XSAPPNAME.read"
+      ],
+      "attribute-references": [
+        "arc1_targets"
+      ]
     },
     {
       "name": "MCPAllTargetReadAccess",
       "description": "Read-only ARC-1 access to all current and future SAP targets",
-      "scope-references": ["$XSAPPNAME.read"],
+      "scope-references": [
+        "$XSAPPNAME.read"
+      ],
       "attribute-references": [
         {
           "name": "arc1_targets",
-          "default-values": ["*"]
+          "default-values": [
+            "*"
+          ]
         }
+      ]
+    },
+    {
+      "name": "MCPTargetDeveloper",
+      "description": "Read selected targets and write explicitly selected PP targets",
+      "scope-references": [
+        "$XSAPPNAME.read",
+        "$XSAPPNAME.write"
+      ],
+      "attribute-references": [
+        "arc1_targets",
+        "arc1_write_targets"
       ]
     }
   ],
   "oauth2-configuration": {
-    "redirect-uris": ["http://localhost:*/oauth/callback", "http://localhost:*/oauth/logged-out"],
-    "grant-types": ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"],
+    "redirect-uris": [
+      "http://localhost:*/oauth/callback",
+      "http://localhost:*/oauth/logged-out"
+    ],
+    "grant-types": [
+      "authorization_code",
+      "refresh_token",
+      "urn:ietf:params:oauth:grant-type:jwt-bearer"
+    ],
     "token-validity": 3600,
     "refresh-token-validity": 2592000
   }

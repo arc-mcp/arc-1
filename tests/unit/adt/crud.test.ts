@@ -166,6 +166,7 @@ describe('CRUD Operations', () => {
         undefined,
         undefined,
         expect.objectContaining({ Accept: expect.stringContaining('com.sap.adt.lock.result') }),
+        undefined,
       );
     });
 
@@ -194,6 +195,7 @@ describe('CRUD Operations', () => {
         undefined,
         undefined,
         expect.any(Object),
+        undefined,
       );
     });
 

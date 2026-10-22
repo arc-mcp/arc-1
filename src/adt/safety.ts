@@ -60,7 +60,16 @@ function displayAllowList(list: string[]): string {
   return listDeniesAll(list) ? '[]' : `[${list.join(',')}]`;
 }
 
+export interface MultiTargetWritePolicy {
+  readonly target: string;
+  readonly enabled: boolean;
+  readonly allowedPackages: readonly string[];
+  readonly allowedTransports: readonly string[];
+}
+
 export interface SafetyConfig {
+  /** Present on every multi-target runtime, including read-only routes. */
+  multiTargetWrite?: MultiTargetWritePolicy;
   allowWrites: boolean;
   allowDataPreview: boolean;
   allowFreeSQL: boolean;
@@ -111,7 +120,7 @@ export function unrestrictedSafetyConfig(): SafetyConfig {
 /** Check if an operation type is allowed by the safety config. */
 export function isOperationAllowed(config: SafetyConfig, op: OperationTypeCode): boolean {
   // Mutating ops (Create/Update/Delete/Activate/Workflow/Transport) require allowWrites
-  if (MUTATING_OPS.includes(op) && !config.allowWrites) return false;
+  if (MUTATING_OPS.includes(op) && (!config.allowWrites || config.multiTargetWrite?.enabled === false)) return false;
 
   // Transport mutation has an additional gate
   if (op === OperationType.Transport && !config.allowTransportWrites) return false;
@@ -165,6 +174,16 @@ export type PackageAllowDecision = 'allowed' | 'denied' | 'needs-hierarchy';
  * is reported as 'needs-hierarchy'.
  */
 export function decidePackageAllowed(config: SafetyConfig, pkg: string): PackageAllowDecision {
+  if (config.multiTargetWrite) {
+    const global = decidePackageAllowed({ ...config, multiTargetWrite: undefined }, pkg);
+    const destination = decidePackageAllowed(
+      { ...config, multiTargetWrite: undefined, allowedPackages: [...config.multiTargetWrite.allowedPackages] },
+      pkg,
+    );
+    if (!config.multiTargetWrite.allowedPackages.length || global === 'denied' || destination === 'denied')
+      return 'denied';
+    return global === 'needs-hierarchy' || destination === 'needs-hierarchy' ? 'needs-hierarchy' : 'allowed';
+  }
   if (listDeniesAll(config.allowedPackages)) return 'denied';
   if (config.allowedPackages.length === 0) return 'allowed';
 
@@ -234,6 +253,17 @@ export async function checkPackage(
   pkg: string,
   resolver?: PackageHierarchyResolver | null,
 ): Promise<void> {
+  if (config.multiTargetWrite) {
+    if (!config.multiTargetWrite.allowedPackages.length)
+      throw new AdtSafetyError('Destination package restriction is missing.');
+    await checkPackage({ ...config, multiTargetWrite: undefined }, pkg, resolver);
+    await checkPackage(
+      { ...config, multiTargetWrite: undefined, allowedPackages: [...config.multiTargetWrite.allowedPackages] },
+      pkg,
+      resolver,
+    );
+    return;
+  }
   const decision = decidePackageAllowed(config, pkg);
   if (decision === 'allowed') return;
   if (decision === 'denied') {

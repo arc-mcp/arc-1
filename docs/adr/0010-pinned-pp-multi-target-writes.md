@@ -1,6 +1,6 @@
 # ADR 0010 — Pinned Principal Propagation writes in multi-target mode
 
-**Status:** Proposed; not accepted and not implemented.
+**Status:** Proposed; implementation and qualification in progress in PR #1080.
 **Date:** 22 October 2026.
 **Implementation contract:** [Pinned PP writes plan](../plans/2026-10-22-multi-target-pinned-writes.md).
 **Evidence:** [Current-main research](../research/2026-10-22-multi-target-write-strategy.md).
@@ -23,9 +23,11 @@ package. Require the existing source precondition for supported updates; bound l
 and validate all activation references. Preserve honest partial/unknown outcomes and current audit
 delivery semantics.
 
-The first beta covers `$TMP` CLAS/INTF creation/main updates, existing CLAS main method
-edits, and separately qualified whole-owner activation. Transportable saves and broader mutations
-follow the plan's later gates. Transport recording is distinct from transport management.
+The complete scope covers local and transportable CLAS/INTF creation/main updates, existing CLAS
+main method edits, and whole-owner activation. PR #1080 must qualify all of it before readiness;
+there is no separate beta release. Transport policy authorizes canonical modifiable Workbench
+requests and their SAP-managed tasks. Broader mutations remain separate work. Transport recording
+is distinct from transport management. See the [live evidence](../research/2026-10-22-multi-target-write-qualification.md).
 
 Aggregate `/multi/mcp`, its compatibility alias and multi-target Basic targets remain mutation-free.
 No new write URL or global multi-target write switch. Existing single-target authentication and
