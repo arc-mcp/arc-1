@@ -65,6 +65,22 @@ assertions name the exact rejection, method-source schema text includes METHOD�
 and OAuth metadata/README wording matches the implementation. These final message/schema-text
 and test/documentation changes do not alter the live-qualified policy or mutation sequence.
 
+## Final wording/governance review
+
+A further 45-turn Opus 5.5 max read-only review found the code/test changes correct and no new
+correctness or security issue. Its sole documentation condition was the missing final 0632606a
+live-run section in its frozen snapshot. That section, all observations/limitations and completed
+restoration verification are now in the qualification record (added at `51a3e062`, after the review
+snapshot was frozen). It also explicitly states that later wording/test/doc polish was not redeployed.
+
+The nonblocking suggestions were addressed: the unchanged-state message now also names activation,
+ADR-0005 consistently qualifies both exceptions, ADR-0010 links current evidence, the plan says
+“implemented” rather than “shipped,” and the released-task CORRNR fixture now exercises the 758
+sibling-task fallback and asserts that the save records into the canonical parent. These are message,
+test and documentation changes; the accepted live-qualified policy and mutation sequence remain
+unchanged. Full required checks were rerun after the refinements. The reviewer did not independently
+run the tests or live probes, and no report is represented as merge/release approval.
+
 ## Original reviewer reports
 
 ### Broad review
@@ -452,3 +468,61 @@ The changed instruction text is used only on the aggregate route; writable pinne
 **Before governance**
 - The qualification record has no released-task entry yet. Either run that probe in the 0632606a live run, or record "released-task lock evidence: unit tests only" as a residual limit in ADR-0010, as the N1 disposition.
 - Confirm the XSUAA service update accepts the new role description.
+
+
+### Final wording/governance review
+
+**Verdict:** The code and test changes are correct, and I found no new correctness or security issue. Governance is ready once one documentation gap is closed: the live qualification record has no `0632606a` run. That fix is documentation only and needs no retest. I didn't run tests or make live calls; all test, live and cleanup results are as you reported them.
+
+## Blocker (documentation only)
+
+**1. The live record stops at `293cbaf2`.** `docs/research/2026-10-22-multi-target-write-qualification.md` ends with "Post-review qualification of 293cbaf2" (`:151-189`). Nothing in the repository records the `0632606a` run, specifically:
+- the six lifecycles and their 44 calls;
+- the server-only CTS ceiling result (save refused, hash unchanged, reads still allowed);
+- the write-off restart;
+- deletion of those six fixtures and the request/task, verified by 404s, plus environment restoration;
+- the XSUAA role description check;
+- the five-request search;
+- the final 10,056-test run and other checks.
+
+Yet several governance texts point at this record:
+- **ADR-0010** (`:58-67`) cites it as "the live record" for acceptance and cleanup. It also states "the bounded live search found no released-task case" (`:64-65`). That claim appears only in the short summary in `claude-implementation-review.md:56-60`.
+- **The review doc** says "details below" (`:48`) and links to the record.
+- **Plan §9** (`:206`) says limitations are "recorded in the linked qualification evidence".
+- **The record itself** still says "environment cleanup are recorded below when complete" (`:124`).
+
+**Fix:** add a "Final qualification of 0632606a" section to the record containing what you reported to me. It should also state:
+- the deviations from plan §8 step 5 (`:181-183`): Basic denials are unit-only, refresh revocation wasn't repeated, and no released task was found live;
+- that the later polish (message text, schema text, tests, docs) was not redeployed.
+
+## Non-blocking
+
+2. **The new message also reaches SAPActivate.** `pinned-activation.ts:77` uses `pinnedFailure` with state `unchanged` for every failure before submit. `beforeSubmit` runs before the first POST (`devtools.ts:244`), so that state is accurate. But other pre-submit errors now return "No create or source save was sent" on an activation call. Examples are a 404/403 package lookup, a CTS fatal message, or a network error. The message is true but doesn't say what the caller needs to know. My earlier suggested wording missed this second caller. Suggested text: "No create, source save or activation request was sent." Update the assertion at `pinned-writes.test.ts:235` to match.
+3. **ADR-0005 body still names only ADR-0006.** The agent-facing instruction "For a future agent… beyond ADR-0006's exception" (`:76-78`) and point #4 (`:62-63`) should also name ADR-0010. Lines `:57-58` and `:85` are still accurate, because writes add no target parameter.
+4. **ADR-0010's Evidence field** (`:6`) still points to the strategy doc, which this diff now labels historical. Point it at the record and the review, or relabel it "Design research".
+5. **Plan §9 wording** (`:204-205`): "shipped together in this PR" conflicts with "No merge/release is implied". "Implemented together" avoids that.
+6. **Optional test improvements:**
+   - The `released-task-lock` case (`:340-376`) doesn't check that the save records into the parent (`corrNr=A4HK900001`, as `:251-252` does). That is the property that matters when the lock reports a task.
+   - Its mock returns the parent tree for the task URL. So the fallback for 758's separate task document with a released task (`pinned-write-policy.ts:63-73`) is never exercised.
+
+## Verified
+
+- **`pinned.ts:35-45`:** error codes are unchanged.
+  - `unchanged` only ever precedes the create POST (state changes at `:135`, before the guard and the POST) and the PUT (`:196`).
+  - An `AdtSafetyError` message still takes precedence.
+  - The unlock-failure-only path (`:245`) can't carry `unchanged`.
+  - "No policy or mutation-sequence change" holds.
+- **The new test assertions match the code:**
+  - Every status below 429 in the list at `:263` is in the definitive-rejection list at `:261`.
+  - `created-source-rejected` maps to `PINNED_WRITE_INCOMPLETE`.
+  - In the preflight test, the plain `Error` passes through `write-helpers.ts:942` unchanged.
+  - `released-task-lock` passes the membership-only check (`:161`).
+  - The selected-task assertion string matches `pinned-write-policy.ts:95`.
+- **Schema text** matches `spliceMethod` (`method-surgery.ts:651-652`, `:678`).
+- **`xsuaa-setup.md:182-185`, `:273`, `:278`** match `http.ts:786-789`. Writes are advertised when `allowWrites` is on and authorization is `xsuaa-attribute`, with identical metadata for unknown targets (`:771`). `README.md:230` is fixed.
+- **ADR qualifications and governance text:**
+  - The new qualification paragraphs in ADR-0006/0007/0008, ADR-0007's Basic wording and the v1 plan paragraph are consistent.
+  - In AGENTS, the boundary and routing text is consistent and every path it names exists.
+  - R23 (`security-model.md:285-307`) and FEAT-93 (`roadmap.md:179`) exist.
+  - All of these describe the same scope: pinned strict-PP CLAS/INTF create and main update, CLAS method edit, whole-owner activation. Aggregate, Copilot and Basic stay mutation-free.
+- **ADR-0010's residual limits** match the record wherever the record has evidence: one writer on 758 SP02, a second identity used only for negatives (`:101-105`, `:181`), refresh revocation not repeated (`:71-73`), and expanded prompts and faults covered only by controlled wire tests (`:179-181`).

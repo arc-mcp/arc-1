@@ -122,7 +122,7 @@ both local and transportable packages; new local CLAS/INTF creation with termina
 whole-owner activation for all six fixtures; independent active-source comparison against the
 complete editable source in every case. The earlier CTS creation paths also succeeded, including
 INTF task input mapped to the allowed parent. No retry was used to cover an uncertain mutation.
-Final reviewer dispositions and environment cleanup are recorded below when complete.
+Final reviewer dispositions and completed environment cleanup are recorded below.
 
 ## Cleanup and policy change verification
 
@@ -227,7 +227,8 @@ templates/collections and OAuth configuration match the original snapshot. The l
 harnesses were closed to discard their in-memory tokens.
 
 After the accepted 0632606a review, only failure-message/schema wording, stronger assertions and
-operator/governance documentation changed. No authorization or mutation sequencing changed.
+operator/governance documentation changed. These later changes were not redeployed; no authorization
+or mutation sequencing changed.
 The final full suite passes **10,056 tests**; typecheck, build, lint, policy validation, file/schema
 budgets, focused descriptor/example tests and strict documentation build pass. The earlier standard
 MTA and chained write-overlay builds remain valid; their descriptors did not change subsequently.

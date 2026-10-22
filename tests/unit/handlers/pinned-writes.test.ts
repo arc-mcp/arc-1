@@ -232,7 +232,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect(payload(result)).toMatchObject({
       error: 'PINNED_WRITE_REFUSED',
       state: 'unchanged',
-      message: 'No create or source save was sent. Review the reported phase before continuing.',
+      message: 'No create, source save or activation request was sent. Review the reported phase before continuing.',
       retryable: false,
     });
     expect(saves()).toHaveLength(0);
@@ -356,6 +356,11 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
             `<DATA><DEVCLASS>ZTEAM</DEVCLASS><DLVUNIT>HOME</DLVUNIT><OPERATION/><RESULT>S</RESULT><LOCKS><CTS_OBJECT_LOCK><LOCK_HOLDER>${headers}<TASK_HEADERS><CTS_TASK_HEADER><TRKORR>${task}</TRKORR></CTS_TASK_HEADER></TASK_HEADERS></LOCK_HOLDER>${extra}</CTS_OBJECT_LOCK></LOCKS></DATA>`,
           );
         }
+        if (mode === 'released-task-lock' && String(url).includes('transportrequests/A4HK900002'))
+          return mockResponse(
+            200,
+            '<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900001" tm:type="K" tm:status="D"/><tm:task tm:number="A4HK900002" tm:parent="A4HK900001" tm:status="R"/></tm:root>',
+          );
         if (mode.startsWith('released-task') && String(url).includes('transportrequests'))
           return mockResponse(
             200,
@@ -373,6 +378,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
         ['valid', 'released-task', 'released-task-lock'].includes(mode) ? undefined : true,
       );
       expect(saves()).toHaveLength(['valid', 'released-task', 'released-task-lock'].includes(mode) ? 1 : 0);
+      if (saves().length) expect(saves()[0].path).toContain('corrNr=A4HK900001');
     },
   );
   it('rejects a caller-selected released task even though lock evidence may contain it', async () => {

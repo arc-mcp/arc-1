@@ -3,7 +3,9 @@
 **Status:** Accepted — scoped, default-off; implemented and qualified in PR #1080.
 **Date:** 22 October 2026.
 **Implementation contract:** [Pinned PP writes plan](../plans/2026-10-22-multi-target-pinned-writes.md).
-**Evidence:** [Current-main research](../research/2026-10-22-multi-target-write-strategy.md).
+**Design research:** [Current-main assessment](../research/2026-10-22-multi-target-write-strategy.md).
+**Evidence:** [Qualification record](../research/2026-10-22-multi-target-write-qualification.md) and
+[independent review](../research/multi-target-pinned-writes/claude-implementation-review.md).
 
 ## Context
 

@@ -201,7 +201,7 @@ build is not an operator usability test; walk the public recipe and record unres
 ## 9. Review status
 
 The [implementation review and dispositions](../research/multi-target-pinned-writes/claude-implementation-review.md)
-record the broad review, live-driven follow-up and final review. All scoped features shipped together
+record the broad review, live-driven follow-up and final review. All scoped features are implemented together
 in this PR; broader mutations remain FEAT-93, not an unfinished beta stage. Live and automated checks
 and their precise limitations are recorded in the linked qualification evidence. No merge/release
 is implied by completion of implementation and review.

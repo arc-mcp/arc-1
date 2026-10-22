@@ -59,8 +59,8 @@ mutation-free safety contract; the single-system default keeps this selector out
 
 ### 4. Separation of concerns
 ARC-1's default runtime is an ADT client for one system. General cross-system routing and tool
-aggregation add responsibilities to that runtime. ADR-0006's separate, mutation-free mode defines
-the permitted exception.
+aggregation add responsibilities to that runtime. ADR-0006's read mode and ADR-0010's scoped
+pinned strict-PP writes define the permitted exceptions.
 
 ### 5. Independent blast radius, config, and lifecycle
 Separate instances fail, deploy, scale, and restart independently, and carry different ceilings (DEV
@@ -74,7 +74,7 @@ process forces uniform config and lets one bug/misconfig reach every system.
 - **Cost:** N systems = N instances (more processes/deployments). **Accepted** — the isolation is worth
   it. Each instance needs its own MCP connection and authentication configuration.
 - **For a future agent:** treat "add multi-system / a `system` param / multiple destinations to ARC-1"
-  beyond ADR-0006's exception as **out of scope by this decision**. Cite this ADR and use separate
+  beyond ADR-0006 and ADR-0010's exceptions as **out of scope by this decision**. Cite this ADR and use separate
   instances; changing the boundary requires a new ADR/security review.
 
 ## Alternatives considered (all rejected)
