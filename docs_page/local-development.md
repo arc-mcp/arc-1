@@ -71,7 +71,7 @@ The npm package installs several thousand files that antivirus scanners inspect 
 
 - **SQLite cache** — the native `better-sqlite3` addon cannot be embedded, so `ARC1_CACHE=sqlite` uses Node's built-in `node:sqlite` (prints an `ExperimentalWarning` on stderr; stdout is unaffected). Cache files use the same schema.
 - **Not available** — the read-only local UI (`public/ui`) is not embedded, and `ARC1_PLUGINS` extensions are untested in the executable. Use npm or Docker for those.
-- **First start can still be slow** — Windows Defender and similar tools can scan each new executable (~100 MB); startup time depends on your machine and security policy. Windows binaries are not code-signed yet and may be blocked by corporate policy. macOS executables are ad-hoc signed; if Gatekeeper blocks a download, run `xattr -d com.apple.quarantine <file>`.
+- **First start can still be slow** — Windows Defender and similar tools can scan each new executable (~100 MB); startup time depends on your machine and security policy. The binaries are not publisher-signed; verify downloads with `SHA256SUMS.txt`. Corporate policy may block the Windows executable. macOS executables are ad-hoc signed; if Gatekeeper blocks a download, run `xattr -d com.apple.quarantine <file>`.
 - **Updating** — download and verify the new file; there is no built-in auto-update. See the [Windows steps](#windows-setup-and-updates) below.
 
 Build one yourself with `npm run build && npm run build:sea` (current platform only; output in `dist-sea/`), then check it with `npm run test:sea-smoke -- dist-sea/<file>`.
@@ -97,7 +97,7 @@ Build one yourself with `npm run build && npm run build:sea` (current platform o
     }
     ```
 
-    This fragment assumes SAP settings are in `env`: keep that existing block. If you use ARC-1 flags such as `--url`, keep them in `args` instead. Restart the client. For a first setup, use the [MCP client configuration](#mcp-client-configuration) below with this command.
+    This fragment assumes SAP settings are in `env`: keep that existing block. If you use ARC-1 flags such as `--url`, keep them in `args`. Restart the client. For a first setup, use the [MCP client configuration](#mcp-client-configuration) below with this command.
 
 4. **Update** by downloading and verifying the next version first. Stop **all clients and ARC-1 processes using this file**, keep the old executable as a backup, replace it at the same path, then restart. If replacement fails, keep using the old file and retry once it is no longer running.
 
