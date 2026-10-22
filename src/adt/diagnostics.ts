@@ -1787,10 +1787,7 @@ function extractHtmlSection(html: string, anchorId: string): string {
 function extractHtmlHeaderValue(html: string, label: string): string {
   if (!html || !label) return '';
   const labelPattern = escapeRegex(label).replace(/_/g, '[_\\s]?');
-  const re = new RegExp(
-    `<b[^>]*>\\s*(?:&nbsp;|\\s)*${labelPattern}\\s*</b>\\s*</td>\\s*<td[^>]*>([\\s\\S]*?)</td>`,
-    'i',
-  );
+  const re = new RegExp(`<b[^>]*>(?:&nbsp;|\\s)*${labelPattern}\\s*</b>\\s*</td>\\s*<td[^>]*>([\\s\\S]*?)</td>`, 'i');
   const match = html.match(re);
   if (!match?.[1]) return '';
   return sanitizeHtmlCellValue(match[1]);
