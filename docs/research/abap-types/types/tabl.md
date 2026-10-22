@@ -51,7 +51,7 @@ Live evidence: search with `objectType=TABL/DT` returns tables only; `objectType
 | `src/handlers/intent.ts` `objectBasePath` | default `/ddic/tables/` (with comment about /structures/ fallback) | ✅ |
 | `src/adt/client.ts` `getTabl` / `resolveTablObjectUrl` | **read path**: tries `/tables/` then falls back to `/structures/` on 404 | ✅ |
 | `src/adt/client.ts` `resolveTablObjectUrlForWrite` (issue #285) | **write/activate/delete path**: search-first, refuses TABL/DT writes when discovery lacks `/ddic/tables`; there (and without discovery) a failed or empty search is refused too unless a fresh `/tables/` probe hits, since `/structures/` also serves tables on 7.50 | ✅ |
-| `src/handlers/intent.ts` SAPWrite create/batch_create | refuses bare `TABL` + `TABL/DT` upfront when discovery lacks `/ddic/tables` (issue #285); allows `TABL/DS` because `/ddic/structures` exists on every release (follow-up to #285) | ✅ |
+| `src/handlers/intent.ts` SAPWrite create/batch_create | refuses bare `TABL` + `TABL/DT` upfront when discovery lacks `/ddic/tables` (issue #285); routes `TABL/DS` separately to `/ddic/structures` (verified on 750/758; no universal release guarantee) | ✅ |
 | `src/handlers/intent.ts` `normalizeWriteObjectType` | SAPWrite-aware normalizer that preserves `TABL/DT` and `TABL/DS` end-to-end so the create path can route on subtype (follow-up to #285) | ✅ |
 | `src/handlers/intent.ts` `objectBasePath` | `TABL` and `TABL/DT` → `/ddic/tables/`; `TABL/DS` → `/ddic/structures/` (follow-up to #285) | ✅ |
 | `src/handlers/intent.ts` `buildCreateXml` | `TABL` and `TABL/DT` emit `adtcore:type="TABL/DT"`; `TABL/DS` emits `adtcore:type="TABL/DS"`; same `<blue:blueSource>` envelope for both (follow-up to #285) | ✅ |
@@ -74,7 +74,7 @@ Live evidence: search with `objectType=TABL/DT` returns tables only; `objectType
 | POST `/ddic/structures` with `adtcore:type="TABL/DS"` (27-char Z-name) | **201 Created** (cleanup OK) |
 | POST `/ddic/tables` with `/LEOWM/SD_MON_S_WHO` + `adtcore:type="TABL/DT"` | **422** T100 AD102 "Select a shorter name" — Michael's exact reproduction |
 
-**Fix shape**: preserve `TABL/DT` and `TABL/DS` end-to-end on SAPWrite (`normalizeWriteObjectType`); branch `objectBasePath` and `buildCreateXml` on subtype; scope PR #286's discovery-gated refusal to bare `TABL` + explicit `TABL/DT` (TABL/DS skips the gate because `/ddic/structures` exists on every release, including NW 7.50). The fix unlocks structure creation on NW 7.50 as a bonus.
+**Fix shape**: preserve `TABL/DT` and `TABL/DS` end-to-end on SAPWrite (`normalizeWriteObjectType`); branch `objectBasePath` and `buildCreateXml` on subtype; scope PR #286's discovery-gated refusal to bare `TABL` + explicit `TABL/DT` (TABL/DS skips this table-specific gate; `/ddic/structures` was verified on 750/758, not every release). The fix unlocks structure creation on NW 7.50 as a bonus.
 
 ## Cross-repo pattern reference (researched 2026-05-15)
 | Source | Pattern | Notes |

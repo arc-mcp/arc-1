@@ -27,7 +27,7 @@ field/type inspection, but its source is **not equivalent** to a complete table 
 It must never be replayed as a transparent-table write. This corrects the older
 [TABL research](abap-types/types/tabl.md) assertion that both routes return identical source.
 
-[SAP's feature matrix](https://community.sap.com/t5/technology-blog-posts-by-sap/adt-feature-availability-matrix-for-as-abap-releases/ba-p/13027468/page/2)
+[SAP's feature matrix](https://community.sap.com/t5/technology-blog-posts-by-sap/adt-feature-availability-matrix-for-as-abap-releases/ba-p/13027468)
 places the native data-element editor at 7.50.
 [SAP's table-creation documentation](https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/creating-database-tables)
 requires 7.52 SP00 for that editor. These are editor prerequisites, not proof that
