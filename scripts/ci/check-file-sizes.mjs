@@ -90,7 +90,8 @@ const BUDGETS = {
   'src/adt/transport.ts': 1477, // Exhaustive lock-holder parsing extracted to transport-locks.ts (#1080).
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed
   // XSUAA startup from main, with 3 lines of headroom.
-  'src/server/server.ts': 1487,
+  // +3: wire the per-user PP transport pool; its logic lives in per-user-transport.ts (#1085).
+  'src/server/server.ts': 1490,
 };
 
 const DEFAULT_SRC = 1500;

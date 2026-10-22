@@ -118,7 +118,7 @@ sequence.
 | [FEAT-42](#feat-42) | Additional CI output formats | P3 | XS | Revisit on trigger | CI |
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
-| [OPS-06](#ops-06) | Per-user SAP session reuse over HTTP | P2 | M | Needs research | Operations |
+| [OPS-06](#ops-06) | Per-user SAP session reuse beyond single-target Cloud Connector PP | P2 | M | Needs research | Operations |
 | [OPS-07](#ops-07) | Signed single-file executables | P3 | M | Revisit on trigger | Operations |
 | [OPS-08](#ops-08) | SAP outage isolation and queue deadlines | P2 | M | Needs research | Operations |
 | [FEAT-07](#feat-07) | Native TLS listener | P3 | M | Revisit on trigger | Operations |
@@ -1075,25 +1075,30 @@ Application Logging deployment. Define the required signals, retention, service 
 exporter support before implementation.
 
 <a id="ops-06"></a>
-### OPS-06 — Per-user SAP session reuse over HTTP
+### OPS-06 — Per-user SAP session reuse beyond single-target Cloud Connector PP
 
 - **Priority / effort / status:** P2 / M / Needs research
 - **Category:** Operations
 
-**Idea.** Reuse a principal-propagation user's SAP session across MCP HTTP requests instead of
-logging on again for every tool call.
+**Idea.** Reuse a per-user SAP session across MCP HTTP requests for the routes that still log on
+again for every tool call: multi-target PP clients and single-target PP destinations that return a
+Bearer token (OAuth2UserTokenExchange) or a SAMLAssertion.
 
-**Why it remains.** HTTP mode builds an MCP Server per request. The shared single-target SAP
-transport is reused with ten-minute replacement for new requests, but per-user PP clients and
-multi-target clients are still built per request, so each tool call logs on again and refetches a
-CSRF token. On SAP_BASIS 816 such bursts coincided with fresh stateful contexts failing (`400 Session not found`); see the
+**Why it remains.** HTTP mode builds an MCP Server per request. The shared single-target transport
+and, since [#1085](https://github.com/arc-mcp/arc-1/issues/1085), single-target Cloud Connector PP
+transports (keyed by the exact per-user credential) are reused with ten-minute replacement for new
+requests. Multi-target clients and the Bearer/SAMLAssertion PP routes are still built per request,
+so each tool call logs on again and refetches a CSRF token. On SAP_BASIS 816 such bursts coincided
+with fresh stateful contexts failing (`400 Session not found`); see the
 [investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-27-sap-816-session-failures.md).
+SAMLAssertion requests also send `x-sap-security-session: create`, so reuse there needs its own
+evidence.
 
-**Resume when.** A PP or multi-target deployment reports `400 Session not found` or failed stateful
-closes under load, or SAP logon volume becomes an operator concern. Key any cache by SAP identity and
-token lifetime, keep users isolated, and keep ADR-0007's request-local Basic credentials.
-Specify credential revocation and an absolute reuse lifetime before extending the sharing model;
-the single-target transport's bounded reuse and remaining revocation limitations are documented in
+**Resume when.** A multi-target or Bearer/SAMLAssertion PP deployment reports `400 Session not found`
+or failed stateful closes under load, or SAP logon volume becomes an operator concern. Key any cache
+by SAP identity and token lifetime, keep users isolated, keep ADR-0007's request-local Basic
+credentials, and keep ADR-0010's per-call drift checks. Reuse the single-target bound and revocation
+notes in
 [security-model R21](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r21-shared-login-credential-freshness).
 
 <a id="ops-07"></a>

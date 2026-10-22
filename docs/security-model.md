@@ -266,15 +266,23 @@ Added by the 2026-06-09 deep review (Track A/B). All verified in code; R8 verifi
 and already-created requests.** Single-target HTTP requests share a SAP transport, which is
 replaced for new requests once it is ten minutes old (monotonic elapsed time). Older requests
 keep their transport, including lock/save/unlock and late responses. Stdio's lifetime is unchanged.
-Per-user PP and multi-target transports remain request-local; both credential sanitizers discard
-injected transports. Factory tests cover these identity boundaries and rollover isolation.
+Per-user PP and multi-target transports never receive the shared transport; both credential
+sanitizers discard injected transports. Single-target PP through the Cloud Connector keeps a
+separate transport per user (OPS-06), keyed by a digest of the exact credential sent to SAP
+(`SAP-Connectivity-Authentication` or the exchanged proxy token) plus destination, URL, client and
+proxy route, with the same ten-minute replacement and a bounded entry count. Its key is the
+identity SAP authenticated, so another user or a refreshed token gets a new login (I2).
+OAuth2UserTokenExchange, SAMLAssertion and multi-target PP transports remain request-local.
+Factory tests cover these identity boundaries and rollover isolation.
 
 A replacement drops runtime cookies but reloads configured cookie credentials and retains the
 configured bearer provider. An unchanged SSO ticket or configured session cookie can authenticate
 without a new Basic password check. Existing requests may also outlive the transport-age limit.
 This is a reuse boundary, **not a ten-minute revocation guarantee**. SAP's idle timeout does not
 bound continuous use. Repeated fresh logons with stale configured credentials can also lock the
-technical account under SAP's policy; the concurrency limit is not a logon-rate limit.
+technical account under SAP's policy; the concurrency limit is not a logon-rate limit. For PP, a
+user locked or unmapped in SAP can keep an existing session for the rest of its transport age
+while presenting the same still-valid token; before this reuse, every call re-authenticated.
 
 **Status: partial mitigation; operator revocation procedure still required.** Follow the
 [rotation/revocation procedure](../docs_page/security-guide.md#shared-sap-login-lifetime-and-credential-rotation).

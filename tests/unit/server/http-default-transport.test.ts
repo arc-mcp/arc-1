@@ -29,10 +29,15 @@ vi.mock('../../../src/server/shutdown.js', () => ({ registerShutdownHandlers: vi
 vi.mock('@arc-mcp/xsuaa-auth/btp', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@arc-mcp/xsuaa-auth/btp')>()),
   lookupDestinationWithUserToken: vi.fn(),
+  resolveBTPDestination: vi.fn(),
+  parseVCAPServices: vi.fn(),
 }));
 
-const { lookupDestinationWithUserToken } = await import('@arc-mcp/xsuaa-auth/btp');
+const { lookupDestinationWithUserToken, parseVCAPServices, resolveBTPDestination } = await import(
+  '@arc-mcp/xsuaa-auth/btp'
+);
 const { AdtHttpClient } = await import('../../../src/adt/http.js');
+const { PerUserTransportPool } = await import('../../../src/server/per-user-transport.js');
 const { createAndStartServer, createServer, SHARED_TRANSPORT_MAX_AGE_MS } = await import(
   '../../../src/server/server.js'
 );
@@ -173,6 +178,8 @@ it('keeps the shared SAP login out of PP requests and never falls back after an 
     cacheMode: 'none' as const,
   };
   const defaultHttp = new AdtHttpClient({ baseUrl: config.url, username: 'TECH', password: 'secret' });
+  // Only Cloud Connector credentials are pooled; this OAuth2UserTokenExchange route stays request-local.
+  const perUserTransports = new PerUserTransportPool(SHARED_TRANSPORT_MAX_AGE_MS);
   mockFetch.mockResolvedValue(
     mockResponse(200, 'REPORT ztest.', {}, [
       'SAP_SESSIONID_A4H_001=shared-session; path=/',
@@ -182,7 +189,7 @@ it('keeps the shared SAP login out of PP requests and never falls back after an 
   await defaultHttp.get('/sap/bc/adt/programs/programs/ZTEST/source/main');
   const callAs = (user: string) =>
     callTool(
-      createServer(config, { defaultHttp, btpConfig: {} as BTPConfig }),
+      createServer(config, { defaultHttp, perUserTransports, btpConfig: {} as BTPConfig }),
       'SAPRead',
       { type: 'PROG', name: 'ZTEST' },
       {
@@ -218,6 +225,7 @@ it('keeps the shared SAP login out of PP requests and never falls back after an 
       expect(options.headers.Cookie ?? '').not.toContain(user === 'ALICE' ? 'BOB' : 'ALICE');
     }
   }
+  expect(perUserTransports.size).toBe(0);
   vi.mocked(lookupDestinationWithUserToken).mockRejectedValue(new Error('exchange unavailable'));
   mockFetch.mockClear();
   const failed = await callAs('CAROL');
@@ -264,6 +272,76 @@ it('replaces an aged shared transport for new requests while previously created 
   f.advance(1);
   expect(await firstCookie()).toBe('');
   expect(await firstCookie(running)).toBe(reused);
+});
+
+it('reuses a PP user login per Cloud Connector credential across HTTP requests and ages it out', async () => {
+  vi.stubEnv('SAP_BTP_DESTINATION', 'SHARED');
+  vi.stubEnv('SAP_BTP_PP_DESTINATION', 'PER_USER');
+  vi.mocked(resolveBTPDestination).mockResolvedValue({
+    url: 'http://sap:8000',
+    username: 'TECH',
+    password: 'secret',
+    client: '001',
+    proxy: null,
+  } as Awaited<ReturnType<typeof resolveBTPDestination>>);
+  vi.mocked(parseVCAPServices).mockReturnValue({} as BTPConfig);
+  vi.mocked(lookupDestinationWithUserToken).mockImplementation(async (_btp, _name, userJwt) => ({
+    destination: {
+      Name: 'PER_USER',
+      URL: 'http://sap:8000',
+      Type: 'HTTP',
+      Authentication: 'PrincipalPropagation',
+      ProxyType: 'Internet',
+      User: '',
+      Password: '',
+    },
+    authTokens: { sapConnectivityAuth: `Bearer ${userJwt}` },
+  }));
+  let logins = 0;
+  mockFetch.mockImplementation(async (_url: string, options: { headers?: Record<string, string> }) =>
+    mockResponse(
+      200,
+      'REPORT ztest.',
+      {},
+      options.headers?.Cookie?.includes('SAP_SESSIONID') ? [] : [`SAP_SESSIONID_A4H_001=S${++logins}; path=/`],
+    ),
+  );
+  const f = await startRotationFactory({ ppEnabled: true, ppStrict: false, ppStrictExplicit: true });
+  const jwt = (user: string, issued: number) =>
+    `header.${Buffer.from(JSON.stringify({ user_name: user, iat: issued })).toString('base64url')}.signature`;
+  /** Cookie on this user's source request; the startup probe and other identities are excluded. */
+  const cookieAs = async (token: string) => {
+    mockFetch.mockClear();
+    const user = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString()).user_name as string;
+    const result = await callTool(
+      runtime.factory!(),
+      'SAPRead',
+      { type: 'PROG', name: 'ZTEST' },
+      { token, clientId: user, scopes: ['read'], extra: { userName: user } },
+    );
+    expect(result.isError, result.content[0]?.text).not.toBe(true);
+    const sourceCalls = mockFetch.mock.calls.filter(
+      ([url, options]) =>
+        new URL(String(url)).pathname === '/sap/bc/adt/programs/programs/ZTEST/source/main' &&
+        options.headers['SAP-Connectivity-Authentication'] === `Bearer ${token}`,
+    );
+    expect(sourceCalls).toHaveLength(1);
+    expect(sourceCalls[0]?.[1].headers.Authorization).toBeUndefined();
+    return String(sourceCalls[0]?.[1].headers.Cookie ?? '');
+  };
+  const alice = jwt('ALICE', 1);
+
+  expect(await cookieAs(alice)).toBe('');
+  const aliceLogin = await cookieAs(alice);
+  expect(aliceLogin).toMatch(/SAP_SESSIONID_A4H_001=S\d/);
+  // Another user, and the same user with a refreshed token, never receive this login.
+  expect(await cookieAs(jwt('BOB', 1))).toBe('');
+  expect(await cookieAs(jwt('ALICE', 2))).toBe('');
+  expect(await cookieAs(alice)).toBe(aliceLogin);
+
+  f.advance(SHARED_TRANSPORT_MAX_AGE_MS);
+  expect(await cookieAs(alice)).toBe('');
+  expect(await cookieAs(alice)).not.toBe(aliceLogin);
 });
 
 /** Factory with production dispatch; SAP responses are supplied by each regression below. */

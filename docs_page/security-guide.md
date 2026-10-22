@@ -246,6 +246,15 @@ across tool calls (#871). Each call still gets fresh object/package caches and i
 restrictions. JWT principal-propagation clients and multi-target clients do not receive this
 shared transport.
 
+Single-target principal propagation through the Cloud Connector reuses each user's **own** SAP
+login the same way. ARC-1 keeps one transport per exact per-user credential (the
+`SAP-Connectivity-Authentication` value or the exchanged proxy token) and route, so a user's tool
+calls share one SAP security session instead of opening a new one per call. SAP limits unused
+security sessions per user; when that limit is reached, stateful lock/write requests fail with
+`400 Session not found` while reads keep working. Another user, a refreshed token, or another
+destination never receives the transport. OAuth2UserTokenExchange, SAMLAssertion and multi-target
+clients remain request-local.
+
 **Transport renewal:** once a transport is ten minutes old, a new HTTP request gets a replacement.
 Requests already created retain the old one, so lock/save/unlock and late responses stay together.
 The age is measured with a monotonic clock. Renewal can add authentication/CSRF requests and latency;
@@ -270,7 +279,9 @@ the affected HTTP security sessions (SM05) and address outstanding SSO tickets u
 incident procedure. Restarting ARC-1 discards its in-memory cookies; it does not revoke tickets
 copied elsewhere. Replace configured cookie files/strings too if using the development SSO bridge.
 ARC-1's existing 401 recovery is not a revocation mechanism and does not guarantee automatic
-recovery of a write.
+recovery of a write. For a principal-propagation user, revoking BTP access stops new tokens, but a
+still-valid token can keep using that user's existing SAP session until renewal; terminate the
+user's sessions in SM05 as well when access must end immediately.
 
 SAP recommends `login/create_sso2_ticket=3` to issue assertion tickets without logon tickets, but
 legacy SSO consumers may require `2`. Have the SAP owner assess that landscape-wide setting

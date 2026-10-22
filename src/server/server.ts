@@ -73,6 +73,7 @@ import {
 } from './multi-target-server.js';
 import { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js';
 import { injectTargetSchema, multiTargetToolDefinitions, sapTargetsDefinition } from './multi-target-tools.js';
+import { PerUserTransportPool } from './per-user-transport.js';
 import { loadPlugins } from './plugin-loader.js';
 import { createDataResultSemaphore, runtimeMemoryEnvelope } from './runtime-memory.js';
 import { createCachingLayer } from './server-cache.js';
@@ -323,6 +324,7 @@ async function createPerUserClient(
   adtSemaphore?: Semaphore,
   dataResultSemaphore?: Semaphore,
   multiTarget?: { target: TargetDescriptor; instanceConfig: ServerConfig },
+  transports?: PerUserTransportPool,
 ): Promise<AdtClient> {
   const { createConnectivityProxy, lookupDestinationWithUserToken } = await import('@arc-mcp/xsuaa-auth/btp');
   const destName = resolvePpDestinationName(config);
@@ -381,7 +383,8 @@ async function createPerUserClient(
 
   applyPerUserAuthTokens(adtConfig, authTokens, displayUsername, destName);
 
-  return new AdtClient(adtConfig);
+  // Single-target PP reuses the user's own SAP login; multi-target clients stay request-local (OPS-06).
+  return transports && !multiTarget ? transports.client(adtConfig, destName) : new AdtClient(adtConfig);
 }
 
 /**
@@ -665,6 +668,8 @@ export interface CreateServerOptions {
   multiTarget?: MultiTargetServerOptions;
   /** Shared SAP transport (cookies, CSRF token); each request still gets its own AdtClient and caches. */
   defaultHttp?: AdtClient['http'];
+  /** Single-target PP transports keyed by per-user credential; never consulted for multi-target clients. */
+  perUserTransports?: PerUserTransportPool;
 }
 
 // Mark startup-401 cookies stale once per transport, preserving cookies refreshed by earlier HTTP calls.
@@ -966,6 +971,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
           selectedTarget
             ? { target: selectedTarget, instanceConfig: multiTarget?.instanceConfig ?? config }
             : undefined,
+          multiTarget ? undefined : options.perUserTransports,
         );
         isPerUserClient = true;
         logger.emitAudit({
@@ -1373,6 +1379,7 @@ export async function createAndStartServer(
     }
     return shared.http;
   };
+  const perUserTransports = new PerUserTransportPool(SHARED_TRANSPORT_MAX_AGE_MS); // same bound per PP user
   const buildDefaultServer = () =>
     createServer(config, {
       btpProxy,
@@ -1385,6 +1392,7 @@ export async function createAndStartServer(
       dataResultSemaphore,
       mcpRateLimiter,
       defaultHttp: defaultHttp(),
+      perUserTransports,
     });
   const aggregateConfig = registry
     ? buildAggregateToolSurfaceConfig(
