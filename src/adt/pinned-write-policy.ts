@@ -5,6 +5,7 @@ import { AdtSafetyError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import { isTransportInWhitelist, type SafetyConfig } from './safety.js';
 import { CTS_CONTENT_TYPE_ORGANIZER, getTransportInfo, parseTransportList } from './transport.js';
+import type { TransportRequest } from './types.js';
 import { parseXml } from './xml-parser.js';
 
 export function assertPinnedOwner(type: unknown, name: unknown): asserts type is 'CLAS' | 'INTF' {
@@ -29,13 +30,23 @@ export function checkPinnedRequest(safety: SafetyConfig, request: string): void 
   }
 }
 
-/** A request allowance explicitly includes SAP-managed tasks within that request. */
+/** Caller-selected tasks must be modifiable; lock evidence only proves parent membership. */
 export async function resolvePinnedRequest(
   http: AdtHttpClient,
   safety: SafetyConfig,
   id: string,
   options?: AdtRequestOptions,
 ): Promise<string> {
+  return (await inspectPinnedRequest(http, safety, id, options, true)).id;
+}
+
+async function inspectPinnedRequest(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  id: string,
+  options: AdtRequestOptions | undefined,
+  requireModifiableTask: boolean,
+): Promise<TransportRequest> {
   if (!/^[A-Z0-9]{1,20}$/.test(id)) throw new AdtSafetyError('Invalid CTS request/task ID.');
   const path = `/sap/bc/adt/cts/transportrequests/${id}`;
   const response = await http.get(path, { Accept: CTS_CONTENT_TYPE_ORGANIZER }, options);
@@ -57,7 +68,7 @@ export async function resolvePinnedRequest(
       typeof parent !== 'string' ||
       !/^[A-Z0-9]{1,20}$/.test(parent) ||
       parent === id ||
-      selected[0]['@_status'] !== 'D'
+      (requireModifiableTask && selected[0]['@_status'] !== 'D')
     )
       throw new AdtSafetyError('CTS task parent could not be established.');
     const parentPath = `/sap/bc/adt/cts/transportrequests/${parent}`;
@@ -77,10 +88,13 @@ export async function resolvePinnedRequest(
     request.tasks.length > 256
   )
     throw new AdtSafetyError('A modifiable Workbench request is required.');
-  if (request.id !== id && request.tasks.filter((task) => task.id === id && task.status === 'D').length !== 1)
+  if (
+    request.id !== id &&
+    request.tasks.filter((task) => task.id === id && (!requireModifiableTask || task.status === 'D')).length !== 1
+  )
     throw new AdtSafetyError('The selected task must be modifiable.');
   checkPinnedRequest(safety, request.id);
-  return request.id;
+  return request;
 }
 
 export interface PinnedRecording {
@@ -119,13 +133,15 @@ export async function pinnedRecording(
     throw new AdtSafetyError(
       'This package requires an explicit allowed CTS request. Create/manage requests outside this multi-target write connection.',
     );
-  const request = await resolvePinnedRequest(http, safety, selected, options);
-  if (info.lockedTransport && (await resolvePinnedRequest(http, safety, info.lockedTransport, options)) !== request)
+  const request = await inspectPinnedRequest(http, safety, selected, options, true);
+  if (info.lockedTransport && info.lockedTransport !== request.id)
     throw new AdtSafetyError('The object is recorded in a different CTS request.');
+  // Reuse the authoritative parent tree. A released task is valid historical lock evidence,
+  // but it is never accepted as the caller-selected task for a new save.
   for (const task of info.lockedTasks)
-    if ((await resolvePinnedRequest(http, safety, task, options)) !== request)
-      throw new AdtSafetyError('A locked task belongs to a different CTS request.');
-  return { local: false, request };
+    if (request.tasks.filter((entry) => entry.id === task).length !== 1)
+      throw new AdtSafetyError('A locked task does not belong unambiguously to the selected CTS request.');
+  return { local: false, request: request.id };
 }
 
 export async function validatePinnedLock(
@@ -142,7 +158,7 @@ export async function validatePinnedLock(
   } else {
     if (!recording.request) throw new AdtSafetyError('Missing CTS request.');
     checkPinnedRequest(safety, recording.request);
-    if (lock.corrNr && (await resolvePinnedRequest(http, safety, lock.corrNr, options)) !== recording.request)
+    if (lock.corrNr && (await inspectPinnedRequest(http, safety, lock.corrNr, options, false)).id !== recording.request)
       throw new AdtSafetyError('Lock and requested CTS recording disagree.');
   }
 }

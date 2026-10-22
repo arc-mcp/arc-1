@@ -49,8 +49,8 @@ multi-target v1 ceiling
 ∩ selected SAP identity authorization
 ```
 
-No layer can widen an earlier one. `MCPAdmin` cannot bypass SAP authorization or unlock mutations on
-multi-target routes. PrincipalPropagation targets are `per-user`; explicitly enabled
+No layer can widen an earlier one. `MCPAdmin` cannot bypass SAP authorization or grant pinned writes without the exact write grant
+and every configured write gate. Aggregate and Basic routes always refuse mutations. PrincipalPropagation targets are `per-user`; explicitly enabled
 BasicAuthentication targets are `shared` and use the same SAP technical user for every scoped
 XSUAA caller.
 

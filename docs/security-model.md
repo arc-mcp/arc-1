@@ -260,27 +260,6 @@ Added by the 2026-06-09 deep review (Track A/B). All verified in code; R8 verifi
 
 ---
 
-### R23 — Scoped pinned multi-target mutation risks
-
-ADR-0010 introduces an explicit PP-only mutation surface under `SAP_ALLOW_WRITES`, destination
-opt-in, target-filtered XSUAA access and exact verified write grants. It supports CLAS/INTF main
-source writes and whole-owner activation, with independent package and canonical-request policy.
-Read-only defaults, aggregate/Copilot isolation, no shared-Basic writes and per-call drift checks
-remain structural. Source hashes, owning stateful locks, positive local/CTS evidence, bounded
-cleanup, no automatic mutation replay and positive activation-execution evidence protect the
-scoped lifecycle. [Qualification evidence](research/2026-10-22-multi-target-write-qualification.md)
-distinguishes live SAP checks from fault-injection tests and untested release shapes.
-
-Residual limits: one process shares availability; route/client identity does not isolate the
-cross-client ABAP repository; package rules do not sandbox the eventual behavior of authored ABAP;
-activation includes preexisting drafts for the complete owner; an interrupted create/save may leave
-partial state. CTS allowance is deliberately parent-request-level, including its SAP-managed tasks.
-Audit delivery remains asynchronous. Removed IAM assignments may survive in old tokens/refresh
-sessions, so immediate disable uses server/destination policy and restart, and admitted calls may
-still complete. New backends require new public IDs and grants. Operators must assess these limits
-before enabling the feature; separate single-target applications remain the stronger availability
-and deployment-isolation option.
-
 ### R21 — Shared-login credential freshness
 
 **Medium, mitigated for runtime-cookie-only Basic authentication; residual for configured tickets
@@ -302,6 +281,31 @@ technical account under SAP's policy; the concurrency limit is not a logon-rate 
 The live cookie-precedence evidence on 758/816 does not establish the outcome of a real password
 change or user lock. Retiring transport objects prevents late responses from refilling the new
 jar; clearing an existing jar in place would not provide that isolation.
+
+### R23 — Scoped pinned multi-target mutation risks
+
+**High, mitigated by explicit gates; residual operational and authored-code risks accepted for this scope.**
+
+ADR-0010 introduces an explicit PP-only mutation surface under `SAP_ALLOW_WRITES`, destination
+opt-in, target-filtered XSUAA access and exact verified write grants. It supports CLAS/INTF main
+source writes and whole-owner activation, with independent package and canonical-request policy.
+Read-only defaults, aggregate/Copilot isolation, no shared-Basic writes and per-call drift checks
+remain structural. Source hashes, owning stateful locks, positive local/CTS evidence, bounded
+cleanup, no automatic mutation replay and positive activation-execution evidence protect the
+scoped lifecycle. [Qualification evidence](research/2026-10-22-multi-target-write-qualification.md)
+distinguishes live SAP checks from fault-injection tests and untested release shapes.
+
+Residual limits: one process shares availability; route/client identity does not isolate the
+cross-client ABAP repository; package rules do not sandbox the eventual behavior of authored ABAP;
+ABAP Unit can execute authored code under the SAP user (deny `SAPDiagnose.unittest` when unintended);
+activation includes preexisting drafts for the complete owner; an interrupted create/save may leave
+partial state. CTS allowance is deliberately parent-request-level, including its SAP-managed tasks.
+Audit delivery remains asynchronous. Removed IAM assignments may survive in old tokens/refresh
+sessions, so immediate disable uses server/destination policy and restart, and admitted calls may
+still complete. New backends require new public IDs and grants. Operators must assess these limits
+before enabling the feature; separate single-target applications remain the stronger availability
+and deployment-isolation option.
+
 
 ## 6. Per-PR security review checklist
 

@@ -138,7 +138,9 @@ that execution is intended. Global lint configuration applies; `SAP_CHECK_BEFORE
 always required in addition to ARC-1 policy. Live qualification used SAP_BASIS 758 SP02 with
 Cloud Connector PP. Other releases must affirm the same lock, recording and activation evidence;
 unrecognized responses fail closed. An activation response without positive execution evidence
-is reported as unconfirmed, even when the HTTP request succeeded.
+is reported as unconfirmed, even when the HTTP request succeeded. On the qualified 758 system,
+activating an already-active owner returned no positive execution evidence and therefore this
+unconfirmed result. Read the active/inactive state before deciding whether any action is needed.
 
 A hash establishes source freshness, not target identity. Verify the pinned connection before
 editing. SAP repository objects are generally cross-client: two clients of one physical system are

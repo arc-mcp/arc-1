@@ -145,6 +145,15 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
           ...properties,
           ...(write
             ? {
+                name: {
+                  type: 'string',
+                  description: 'Uppercase CLAS/INTF owner name, at most 30 characters; optional registered namespace.',
+                },
+                source: {
+                  type: 'string',
+                  description:
+                    'Complete CLAS/INTF main source for create/update; only the existing main method body for edit_method.',
+                },
                 package: {
                   type: 'string',
                   description:

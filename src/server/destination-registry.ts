@@ -290,7 +290,7 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
       'quarantined',
       source.arcValidation.hasWriteProperty ? 'UNSUPPORTED_V1_WRITE_CONFIG' : 'UNKNOWN_ARC1_PROPERTY',
       source.arcValidation.hasWriteProperty
-        ? 'Write-related destination configuration is not supported in multi-target v1.'
+        ? 'This write-related destination property is unsupported; use only the documented pinned PP write properties.'
         : 'Unsupported ARC-1 destination properties; inspect the configuration in BTP Cockpit.',
     );
   }

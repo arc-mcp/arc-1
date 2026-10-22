@@ -197,6 +197,48 @@ describe('multi-target HTTP route authentication', () => {
     expect(challenge.headers['www-authenticate']).not.toContain('scope=');
   });
 
+  it.each([
+    [false, 'standard'],
+    [true, 'standard'],
+    [false, 'xsuaa-attribute'],
+    [true, 'xsuaa-attribute'],
+  ] as const)(
+    'advertises pinned write only for global opt-in and enforced mode: %s/%s',
+    async (allowWrites, authorizationMode) => {
+      await startHttpServer(
+        undefined,
+        {
+          ...DEFAULT_CONFIG,
+          transport: 'http-streamable',
+          httpAddr: '127.0.0.1:0',
+          xsuaaAuth: true,
+          multiTargetEndpoints: true,
+          multiTargetAuthorization: authorizationMode,
+          allowWrites,
+          authRateLimit: 0,
+          mcpHttpRateLimit: 0,
+        },
+        XSUAA,
+        undefined,
+        {
+          registry: registry(),
+          authorizationMode,
+          aggregateFactory: aggregateFactory as never,
+          createPinnedServer: vi.fn() as never,
+        },
+      );
+      for (const route of ['A4H/100', 'ZZZ/999']) {
+        const result = await request(app).get(`/.well-known/oauth-protected-resource/${route}/mcp`);
+        expect(result.status).toBe(200);
+        expect(result.body.scopes_supported.includes('write')).toBe(
+          allowWrites && authorizationMode === 'xsuaa-attribute',
+        );
+      }
+      const aggregate = await request(app).get('/.well-known/oauth-protected-resource/multi/mcp');
+      expect(aggregate.body.scopes_supported).not.toContain('write');
+    },
+  );
+
   it('does not expose a separate HTTP target catalog', async () => {
     expect((await request(app).get('/targets')).status).toBe(404);
     expect((await request(app).get('/targets').set('Authorization', 'Bearer read-token')).status).toBe(404);

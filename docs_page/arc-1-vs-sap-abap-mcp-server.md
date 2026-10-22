@@ -101,7 +101,7 @@ flowchart LR
 | Process lifetime | Managed service or client-launched local process | Tied to the local ADT runtime |
 | Many users | Central authentication, policy and audit | Developer-local session; no comparable shared-service model established here |
 | Multiple systems | Single target by default; BTP CF multi-target reads plus opt-in scoped pinned PP writes | Destination-aware tools work with the allowed configured ADT connections |
-| Writable multi-system access | Separate ARC-1 instances; open proposals do not change this boundary | Depends on allowed destinations, packages, tools and SAP authorization |
+| Writable multi-system access | Scoped pinned PP CLAS/INTF writes with exact grants, or separate instances for broader writes/isolation | Depends on allowed destinations, packages, tools and SAP authorization |
 | Network to SAP | HTTP ADT; BTP destinations/Cloud Connector where configured | RFC destinations for on-premise/private cloud; HTTP destinations for ABAP environment/public cloud |
 | Operations | You own deployment, TLS termination, updates and capacity | You maintain IDE/client version, destinations, local credentials and SAP prerequisites |
 

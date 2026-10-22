@@ -415,7 +415,7 @@ Record evidence rather than only checking configuration screens.
 - [ ] Multi-target Admin `SAPTargets` shows no unexpected quarantine, duplicate, shadow, or policy narrowing.
 - [ ] Pinned, aggregate, unknown-target, lowercase-route, bare `/mcp`, and absent `/targets` behavior match the selected topology.
 - [ ] Named data preview and SQL work only where both instance and destination allow them.
-- [ ] Multi-target routes expose no writes, activation, transport/Git mutations, SAP-backed formatter/settings actions, plugins, UI, or hyperfocused mode. Permitted lint/transport reads match the [reviewed action surface](multi-target-setup.md#allowed-tools).
+- [ ] Aggregate/Basic routes expose no writes; pinned PP writes satisfy the [write guide](multi-target-writes.md). Transport/Git management, SAP-backed formatter/settings actions, plugins, UI and hyperfocused mode remain unavailable. Permitted lint/transport reads match the [reviewed action surface](multi-target-setup.md#allowed-tools).
 - [ ] ATC and ABAP Unit workload access is deliberately retained or denied; neither is run as a routine deployment smoke test.
 - [ ] Shared Basic, if enabled, uses a least-privilege non-`SAP_ALL` user, monitored lockout/expiry, one CF process, and a rehearsed non-rolling update.
 - [ ] PP-only scale testing includes total process concurrency and consistent registry revisions.

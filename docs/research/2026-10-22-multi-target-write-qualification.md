@@ -146,3 +146,44 @@ reassignment was refused because it was no longer staged. The reused, obsolete t
 runs `028f0ab6` (current-main `815e3ddb` plus the isolated #1082 packaging correction), with the
 original read-only environment. That exact standalone build started and passed MCP initialization
 and a PP `SAPRead` of `CL_ABAP_CHAR_UTILITIES`. The packaging fix is excluded from #1080's final diff.
+
+
+## Post-review qualification of 293cbaf2
+
+The full unit suite passed 10,045 tests; typecheck, build, lint (three informational suggestions),
+policy validation, file/schema budgets, strict docs build, standard MTA validation and the chained
+pinned-write overlay validation passed. Latest main `06517021` (#1083, Windows documentation only)
+was merged at `da44218c`; the deployed runtime remains the exact `293cbaf2` source.
+
+Deployed at 16:11 UTC to the same isolated app using a private staging directory with #1082's
+packaging exclusion correction. Fresh primary-user XSUAA login supplied raw read/write, read access
+to PR1080/001 and A4H/100, and exact PR1080/001 write access. Six new fixtures (G/H/I suffixes)
+covered local and transportable CLAS/INTF create, main update, CLAS method edit, whole-owner
+activation and independent active-source equality. Parent request A4HK906588 was used for CTS
+saves; the INTF create/update also exercised verified task A4HK906589. All passed.
+
+The qualification journal contains 45 calls: 43 successful operations, one intentional repeat
+activation of an already-active owner returning activation-not-confirmed, and one test-harness
+SAPTransport call rejected for the wrong parameter `request`. The harness was corrected to `id`
+and resumed from the known created fixture without replaying creation. The rejected call never
+reached SAP. It was not an application defect.
+
+New negative checks passed: existing request A4HK906522 could be read despite lying outside the
+write allowlists, but using it for a source save was refused. Disallowed package and stale hash
+were refused and the source hash stayed unchanged. Same-token aggregate, Copilot and read-only
+pinned-target activations were refused. A fresh read-only token retained the exact write attribute
+but exposed no mutation tools and refused activation while its PP source read succeeded.
+
+Already-active owner activation on SAP_BASIS 758 did not affirm execution; the API conservatively
+returned activation-not-confirmed rather than success. This is now explained in the operator guide.
+Expanded preaudit confirmation, ambiguous CTS evidence, failed cleanup and network uncertainty
+remain controlled-wire coverage, not claimed live fault injection. Only one positive SAP writer
+was qualified; the earlier second identity supplied negative grant/PP-isolation evidence.
+
+Post-review cleanup confirmed createdBy/changedBy/responsible=MARIAN on all six fixtures and
+verified each object absent after deletion. Request A4HK906588 and task A4HK906589 were removed
+and verified absent. Global write-off plus restart hid mutation tools and refused a direct call.
+The disposable destination, role and collection were removed; original application environment
+was restored exactly, original XSUAA descriptor restored, and SSH disabled. The app was returned
+to the independently qualified #1082 droplet `028f0ab6` and is healthy. A private droplet backup was
+made before this round so CF retention cannot prevent restoring that tested read-only baseline.

@@ -195,6 +195,9 @@ describe('pinned write policy composition', () => {
       authInfo: identity,
     });
     expect(result.handled).toBe(true);
+    if (!result.handled) throw new Error('Hidden input reached preparation');
+    expect(result.result.isError).toBe(true);
+    expect(JSON.stringify(result.result)).toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
   });
   it.each([
     [undefined, 'WRITE_TARGET_GRANT_MISSING'],

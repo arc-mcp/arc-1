@@ -32,11 +32,13 @@ export function pinnedFailure(
   const context = getCurrentContext();
   return errorResult(
     toolJson({
-      error: state === 'unchanged' ? 'PINNED_WRITE_REFUSED' : 'PINNED_WRITE_INCOMPLETE',
+      error: ['unchanged', 'creation-rejected', 'source-save-rejected'].includes(state)
+        ? 'PINNED_WRITE_REFUSED'
+        : 'PINNED_WRITE_INCOMPLETE',
       message:
         error instanceof AdtSafetyError
           ? error.message
-          : state.endsWith('-rejected')
+          : state.endsWith('-rejected') || (state === 'unchanged' && error instanceof AdtApiError)
             ? 'SAP rejected this operation phase. Review the status and current object before continuing.'
             : 'SAP did not confirm the complete operation. Inspect the object and its inactive source before deciding the next action.',
       target: context?.target,

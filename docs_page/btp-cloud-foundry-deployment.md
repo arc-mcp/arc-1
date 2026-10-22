@@ -5,8 +5,8 @@ the repository's SAP Multi-Target Application (MTA) descriptor so XSUAA, Destina
 bindings, role collections, health checks, and safe defaults are deployed together.
 
 The first acceptance target is deliberately read-only. Widen a single-target instance only after
-identity, authorization, audit, and rollback have been proven. ARC-1 multi-target routes remain
-mutation-free in v1 regardless of the single-target ceiling.
+identity, authorization, audit, and rollback have been proven. Multi-target aggregate and Basic routes
+remain mutation-free; [scoped pinned PP writes](multi-target-writes.md) require their own complete setup.
 
 !!! note "Two meanings of multi-target"
 

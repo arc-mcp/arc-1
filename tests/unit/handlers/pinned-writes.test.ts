@@ -239,7 +239,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect(saves()[0].path).toContain('corrNr=A4HK900001');
     expect(saves()[0].path).not.toContain('A4HK900002');
   });
-  it('refuses a destination-denied recording request even when the global list is empty', async () => {
+  it('refuses a destination-denied recording request', async () => {
     pkg = 'ZTEAM';
     local = '';
     const c = client();
@@ -319,27 +319,62 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     const result = payload(await handlePinnedWrite(client(), { ...update(), source: large }, config));
     expect(result).toMatchObject({ state: 'saved-inactive', sourceHash: sourceHash(large) });
   });
-  it.each(['orphan', 'multiple', 'wrong-task', 'valid'])('validates every CTS lock holder: %s', async (mode) => {
-    pkg = 'ZTEAM';
-    local = '';
+  it.each(['orphan', 'multiple', 'wrong-task', 'valid', 'released-task'])(
+    'validates every CTS lock holder: %s',
+    async (mode) => {
+      pkg = 'ZTEAM';
+      local = '';
+      const fallback = mockFetch.getMockImplementation()!;
+      mockFetch.mockImplementation(async (url: unknown, options: any) => {
+        if (String(url).includes('transportchecks')) {
+          const headers = mode === 'orphan' ? '' : '<REQ_HEADER><TRKORR>A4HK900001</TRKORR></REQ_HEADER>';
+          const extra =
+            mode === 'multiple'
+              ? '<LOCK_HOLDER><REQ_HEADER><TRKORR>A4HK900099</TRKORR></REQ_HEADER></LOCK_HOLDER>'
+              : '';
+          const task = mode === 'wrong-task' ? 'A4HK900099' : 'A4HK900002';
+          return mockResponse(
+            200,
+            `<DATA><DEVCLASS>ZTEAM</DEVCLASS><DLVUNIT>HOME</DLVUNIT><OPERATION/><RESULT>S</RESULT><LOCKS><CTS_OBJECT_LOCK><LOCK_HOLDER>${headers}<TASK_HEADERS><CTS_TASK_HEADER><TRKORR>${task}</TRKORR></CTS_TASK_HEADER></TASK_HEADERS></LOCK_HOLDER>${extra}</CTS_OBJECT_LOCK></LOCKS></DATA>`,
+          );
+        }
+        if (mode === 'released-task' && String(url).includes('transportrequests'))
+          return mockResponse(
+            200,
+            '<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900001" tm:type="K" tm:status="D"><tm:task tm:number="A4HK900002" tm:status="R"/></tm:request></tm:root>',
+          );
+        return fallback(url, options);
+      });
+      const result = await handlePinnedWrite(client(), { ...update(), transport: 'A4HK900001' }, config);
+      expect(result.isError, result.content[0].text).toBe(['valid', 'released-task'].includes(mode) ? undefined : true);
+      expect(saves()).toHaveLength(['valid', 'released-task'].includes(mode) ? 1 : 0);
+    },
+  );
+  it('rejects a caller-selected released task even though lock evidence may contain it', async () => {
     const fallback = mockFetch.getMockImplementation()!;
     mockFetch.mockImplementation(async (url: unknown, options: any) => {
-      if (String(url).includes('transportchecks')) {
-        const headers = mode === 'orphan' ? '' : '<REQ_HEADER><TRKORR>A4HK900001</TRKORR></REQ_HEADER>';
-        const extra =
-          mode === 'multiple' ? '<LOCK_HOLDER><REQ_HEADER><TRKORR>A4HK900099</TRKORR></REQ_HEADER></LOCK_HOLDER>' : '';
-        const task = mode === 'wrong-task' ? 'A4HK900099' : 'A4HK900002';
+      if (String(url).includes('transportrequests'))
         return mockResponse(
           200,
-          `<DATA><DEVCLASS>ZTEAM</DEVCLASS><DLVUNIT>HOME</DLVUNIT><OPERATION/><RESULT>S</RESULT><LOCKS><CTS_OBJECT_LOCK><LOCK_HOLDER>${headers}<TASK_HEADERS><CTS_TASK_HEADER><TRKORR>${task}</TRKORR></CTS_TASK_HEADER></TASK_HEADERS></LOCK_HOLDER>${extra}</CTS_OBJECT_LOCK></LOCKS></DATA>`,
+          '<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900001" tm:type="K" tm:status="D"><tm:task tm:number="A4HK900002" tm:status="R"/></tm:request></tm:root>',
         );
-      }
       return fallback(url, options);
     });
-    const result = await handlePinnedWrite(client(), { ...update(), transport: 'A4HK900001' }, config);
-    expect(result.isError, result.content[0].text).toBe(mode === 'valid' ? undefined : true);
-    expect(saves()).toHaveLength(mode === 'valid' ? 1 : 0);
+    const c = client();
+    await expect(resolvePinnedRequest(c.http, c.safety, 'A4HK900002')).rejects.toThrow('modifiable');
   });
+  it.each([{ serverAllowedTransports: [] }, { serverAllowedTransports: ['A4HK999999'] }])(
+    'independently enforces the server CTS write ceiling: %j',
+    async ({ serverAllowedTransports }) => {
+      pkg = 'ZTEAM';
+      local = '';
+      const c = client();
+      c.safety.multiTargetWrite = { ...policy, serverAllowedTransports };
+      const result = await handlePinnedWrite(c, { ...update(), transport: 'A4HK900001' }, config);
+      expect(result.isError).toBe(serverAllowedTransports.length ? true : undefined);
+      expect(saves()).toHaveLength(serverAllowedTransports.length ? 0 : 1);
+    },
+  );
   it('reports partial create state on source failure', async () => {
     failSave = 500;
     const result = await handlePinnedWrite(

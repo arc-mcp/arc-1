@@ -118,7 +118,7 @@
     },
     {
       "name": "MCPTargetDeveloper",
-      "description": "Read selected targets and write explicitly selected PP targets",
+      "description": "Application-wide read/write scopes. Target restrictions require ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute; assign only after verifying enforced mode.",
       "scope-references": [
         "$XSAPPNAME.read",
         "$XSAPPNAME.write"

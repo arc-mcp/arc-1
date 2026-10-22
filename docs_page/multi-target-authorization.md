@@ -1,7 +1,8 @@
 # Restrict access to systems and clients
 
 **Optional: show each user only their assigned systems and clients, and reject calls to the others.**
-This adds per-user target filtering to ARC-1's read-only multi-system mode. For example, a shared
+This adds per-user target filtering to ARC-1's multi-system mode.
+[Scoped pinned PP writes](multi-target-writes.md) additionally require exact write grants. For example, a shared
 gateway can contain many systems while a project team sees only its two assigned targets in
 `SAPTargets` and the tool selectors. The same restriction applies if someone supplies another
 target manually or uses its pinned URL.

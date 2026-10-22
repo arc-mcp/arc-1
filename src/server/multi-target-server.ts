@@ -34,7 +34,7 @@ export const MULTI_TARGET_SERVER_INSTRUCTIONS = [
   'the same destination technical user. Never infer per-user SAP access for a shared target.',
   'Data preview and SQL are available only where the instance, destination, user scope, and SAP all allow them.',
   'Offline SAPLint, read-only transport inspection, ATC, and ABAP Unit are available; ATC and Unit execute SAP workloads.',
-  'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable in multi-target v1.',
+  'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable on this aggregate connection.',
 ].join('\n');
 
 export function buildMultiTargetServerInstructions(options: MultiTargetServerOptions): string {

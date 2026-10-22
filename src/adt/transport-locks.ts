@@ -5,7 +5,7 @@ function records(root: unknown, key: string): Record<string, unknown>[] {
   while (pending.length) {
     const value = pending.pop();
     if (!value || typeof value !== 'object') continue;
-    for (const [name, child] of Object.entries(value)) {
+    for (const [name, child] of Object.entries(value).reverse()) {
       if (name === key) {
         for (const entry of Array.isArray(child) ? child : [child])
           if (entry && typeof entry === 'object') found.push(entry);
@@ -33,7 +33,7 @@ export function parseTransportLocks(parsed: unknown): {
       if (holderTasks.length && !headers.some((header) => String(header.TRKORR ?? '').trim())) orphan = true;
       for (const header of headers) {
         const id = String(header.TRKORR ?? '').trim();
-        if (id) parents.set(id, String(header.AS4USER ?? '').trim());
+        if (id && !parents.has(id)) parents.set(id, String(header.AS4USER ?? '').trim());
       }
       for (const task of holderTasks) {
         const id = String(task.TRKORR ?? '').trim();
@@ -43,7 +43,7 @@ export function parseTransportLocks(parsed: unknown): {
     // Also inspect legacy headers: a conflicting legacy claim must not be hidden.
     for (const header of records(container, 'HEADER')) {
       const id = String(header.TRKORR ?? '').trim();
-      if (id) parents.set(id, String(header.AS4USER ?? '').trim());
+      if (id && !parents.has(id)) parents.set(id, String(header.AS4USER ?? '').trim());
     }
   }
   const first = parents.entries().next().value;
