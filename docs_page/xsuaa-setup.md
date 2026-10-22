@@ -379,7 +379,9 @@ SSO session can skip the login prompt, but it cannot skip client approval.
 1. Start the connection from the MCP application you intend to use, such as VS Code.
    Check that the browser is on your organization's expected ARC-1 address.
 2. Review the application name, requested permissions and complete return address.
-   The application supplies its name; a familiar name is not proof of identity.
+   ARC-1 does not verify the name. DCR clients supply their own; manual-mode clients
+   such as Copilot Studio can show a generic name (currently `MCP XSUAA Default Client`).
+   Check the client's configured return address; a familiar name is not proof of identity.
 3. Choose **Approve and continue** only for a connection you started and trust.
    Complete any identity-provider sign-in in the same browser, then return to the client.
    Choose **Deny** to cancel an unexpected request.
@@ -387,8 +389,8 @@ SSO session can skip the login prompt, but it cannot skip client approval.
 The return address belongs to the MCP client. Desktop clients may use `localhost`,
 `127.0.0.1`, `[::1]` or an application scheme such as `vscode://`; hosted clients use
 an HTTPS callback. A local address explains where the browser returns, but does not
-prove which application receives it. Keep the complete address visible when checking
-it; do not rely on the application name alone.
+prove which application receives it. Check the complete address, not only the
+highlighted host; do not rely on the application name alone.
 
 Requested scope names describe the client's request, not a new BTP role assignment.
 See [ARC-1 scopes and role templates](authorization.md#btp-xsuaa-role-templates).

@@ -125,7 +125,7 @@ SAP's own OAuth service for BTP applications. Similar to OIDC but uses SAP's [Au
 **Prerequisites:** BTP subaccount with XSUAA service instance.
 
 Each new browser authorization flow includes an ARC-1 [client approval page](xsuaa-setup.md#client-approval)
-before XSUAA sign-in, even with an existing SSO session. Check the self-declared client
+before XSUAA sign-in, even with an existing SSO session. Check the unverified client
 name, return address and requested permissions. Normal token refreshes and MCP calls
 do not repeat approval; the linked guide explains reconnects, multi-target deployments
 and expired requests.
