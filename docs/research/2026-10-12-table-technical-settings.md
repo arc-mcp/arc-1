@@ -54,9 +54,23 @@ Native domain `BUFALLOW`: `N` forbidden, `A` allowed but disabled, `X` enabled.
 `PUFFERUNG`: empty none, `P` single-record, `G` generic, `X` full. `L` is not a valid
 full-buffering code. SAP validates combinations and the number of generic key fields.
 
+## Change-logging flag (#1062)
+
+Verified through public dispatch on 758 SP02 using a disposable `$TMP` table:
+`false → true → false`, with separate settings activation. Independent DD09L reads
+confirmed `PROTOKOLL`: enabling changed only the inactive row to `X`; activation
+made it active; disabling cleared it. A pending size-category edit preserved the flag.
+The table was deleted and its absence verified. Transport forwarding uses the existing
+qualified `LIMU TABT` path; this logging test did not repeat the recording-package test.
+
+This verifies the table flag, not runtime change recording, which also depends on
+`rec/client`. No profile setting or business data was changed. Logging updates on
+other SAP releases remain unqualified.
+
 ## Scope and remaining qualifications
 
-Storage type and load unit are returned as native values but remain read-only. No table conversion, SQL fallback, 7.50 compatibility layer, independent
+Storage type and load unit are returned as native values but remain read-only.
+No table conversion, SQL fallback, 7.50 compatibility layer, independent
 settings create/delete, or CTS cleanup feature is included. Secondary indexes use a
 separate resource and belong in their own change.
 
