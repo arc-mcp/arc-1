@@ -1371,7 +1371,7 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
     // so the name the policy authorized is byte-for-byte the name SAP receives.
     return this.withDataResultScope(async (budget, signal) => {
       await this.dataSourceBlocklistGuard(budget, signal).enforceTableContents(source, sqlFilter);
-      return parseTableContents(
+      const result = parseTableContents(
         await this.postDataPreview(
           `/sap/bc/adt/datapreview/ddic?rowNumber=${rowLimit}&ddicEntityName=${encodeURIComponent(source)}`,
           sqlFilter,
@@ -1379,6 +1379,8 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
           signal,
         ),
       );
+      // DDIC preview may include a lookahead row beyond rowNumber (#1068).
+      return { ...result, rows: result.rows.slice(0, rowLimit) };
     });
   }
 
