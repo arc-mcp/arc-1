@@ -268,12 +268,12 @@ replaced for new requests once it is ten minutes old (monotonic elapsed time). O
 keep their transport, including lock/save/unlock and late responses. Stdio's lifetime is unchanged.
 Per-user PP and multi-target transports never receive the shared transport; both credential
 sanitizers discard injected transports. Single-target PP through the Cloud Connector keeps a
-separate transport per user (OPS-06), keyed by a digest of the exact credential sent to SAP
-(`SAP-Connectivity-Authentication` or the exchanged proxy token) plus destination, URL, client and
-proxy route, with the same ten-minute replacement and a bounded entry count. Its key is the
-identity SAP authenticated, so another user or a refreshed token gets a new login (I2).
-OAuth2UserTokenExchange, SAMLAssertion and multi-target PP transports remain request-local.
-Factory tests cover these identity boundaries and rollover isolation.
+separate transport per exact `SAP-Connectivity-Authentication` JWT and route (OPS-06), capped at
+500 entries. New calls replace it at ten minutes or credential expiry, whichever comes first;
+reuse never extends that deadline. Destination resolution still runs on every call. A changed
+credential or route gets a separate login (I2). Missing/opaque/expired credentials, the reserved
+proxy-token flow, OAuth2UserTokenExchange, SAMLAssertion and multi-target remain request-local.
+Factory and loopback-proxy tests cover isolation, expiry, failure and in-flight rollover.
 
 A replacement drops runtime cookies but reloads configured cookie credentials and retains the
 configured bearer provider. An unchanged SSO ticket or configured session cookie can authenticate
@@ -373,7 +373,7 @@ if the change is *in* one of them.
   safety; shared holders carry no per-user data. [`src/adt/client.ts`](../src/adt/client.ts).
 - **CORS** — off by default; exact `Set.has` origin match with `credentials:true`; no wildcard.
 - **Per-user credential stripping** — `buildAdtConfig(...,{perUser:true})` strips
-  username/password/cookies; per-user cookie/CSRF jars are per-instance.
+  username/password/cookies; PP cookie/CSRF jars are isolated by the exact credential and route (R21).
 - **stdout discipline** — no `console.log` on the MCP path; all logging to stderr.
 
 ---

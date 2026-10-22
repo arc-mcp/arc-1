@@ -296,6 +296,7 @@ export class AdtHttpClient {
     // Share CSRF token and cookies so we don't need to re-fetch
     sessionClient.csrfToken = this.csrfToken;
     sessionClient.cookieJar = new Map(this.cookieJar);
+    sessionClient.cookieJar.delete('sap-contextid'); // A new write must open its own application context.
     sessionClient.discoveryMap = this.discoveryMap;
     sessionClient.negotiatedHeaders = new Map(this.negotiatedHeaders);
     sessionClient.reuseStatefulProxyClient = true;

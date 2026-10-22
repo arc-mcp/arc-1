@@ -109,6 +109,7 @@ export interface AuthScopeDeniedEvent extends AuditEventBase {
 /** Per-user ADT client created via principal propagation */
 export interface AuthPPCreatedEvent extends AuditEventBase {
   event: 'auth_pp_created';
+  transportReuse?: 'pooled-new' | 'pooled-reused' | 'request-local';
   success: boolean;
   errorMessage?: string;
 }

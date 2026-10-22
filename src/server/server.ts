@@ -73,7 +73,7 @@ import {
 } from './multi-target-server.js';
 import { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js';
 import { injectTargetSchema, multiTargetToolDefinitions, sapTargetsDefinition } from './multi-target-tools.js';
-import { PerUserTransportPool } from './per-user-transport.js';
+import { type PerUserClient, PerUserTransportPool } from './per-user-transport.js';
 import { loadPlugins } from './plugin-loader.js';
 import { createDataResultSemaphore, runtimeMemoryEnvelope } from './runtime-memory.js';
 import { createCachingLayer } from './server-cache.js';
@@ -325,7 +325,7 @@ async function createPerUserClient(
   dataResultSemaphore?: Semaphore,
   multiTarget?: { target: TargetDescriptor; instanceConfig: ServerConfig },
   transports?: PerUserTransportPool,
-): Promise<AdtClient> {
+): Promise<PerUserClient> {
   const { createConnectivityProxy, lookupDestinationWithUserToken } = await import('@arc-mcp/xsuaa-auth/btp');
   const destName = resolvePpDestinationName(config);
   if (!destName) {
@@ -384,7 +384,9 @@ async function createPerUserClient(
   applyPerUserAuthTokens(adtConfig, authTokens, displayUsername, destName);
 
   // Single-target PP reuses the user's own SAP login; multi-target clients stay request-local (OPS-06).
-  return transports && !multiTarget ? transports.client(adtConfig, destName) : new AdtClient(adtConfig);
+  return transports && !multiTarget
+    ? transports.client(adtConfig, destName)
+    : { client: new AdtClient(adtConfig), transportReuse: 'request-local' };
 }
 
 /**
@@ -961,7 +963,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
         } as Record<string, unknown>;
       }
       try {
-        client = await createPerUserClient(
+        const perUser = await createPerUserClient(
           activeConfig,
           btpConfig,
           btpProxy,
@@ -973,6 +975,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
             : undefined,
           multiTarget ? undefined : options.perUserTransports,
         );
+        client = perUser.client;
         isPerUserClient = true;
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -984,6 +987,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
           target: activeConfig.targetId,
           identity: activeConfig.targetId ? 'per-user' : undefined,
           success: true,
+          transportReuse: perUser.transportReuse,
         });
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);

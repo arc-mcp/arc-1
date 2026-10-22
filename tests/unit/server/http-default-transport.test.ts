@@ -274,7 +274,7 @@ it('replaces an aged shared transport for new requests while previously created 
   expect(await firstCookie(running)).toBe(reused);
 });
 
-it('reuses a PP user login per Cloud Connector credential across HTTP requests and ages it out', async () => {
+it('keeps a PP credential without a Cloud Connector route request-local', async () => {
   vi.stubEnv('SAP_BTP_DESTINATION', 'SHARED');
   vi.stubEnv('SAP_BTP_PP_DESTINATION', 'PER_USER');
   vi.mocked(resolveBTPDestination).mockResolvedValue({
@@ -308,7 +308,7 @@ it('reuses a PP user login per Cloud Connector credential across HTTP requests a
   );
   const f = await startRotationFactory({ ppEnabled: true, ppStrict: false, ppStrictExplicit: true });
   const jwt = (user: string, issued: number) =>
-    `header.${Buffer.from(JSON.stringify({ user_name: user, iat: issued })).toString('base64url')}.signature`;
+    `header.${Buffer.from(JSON.stringify({ user_name: user, iat: issued, exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url')}.signature`;
   /** Cookie on this user's source request; the startup probe and other identities are excluded. */
   const cookieAs = async (token: string) => {
     mockFetch.mockClear();
@@ -333,7 +333,7 @@ it('reuses a PP user login per Cloud Connector credential across HTTP requests a
 
   expect(await cookieAs(alice)).toBe('');
   const aliceLogin = await cookieAs(alice);
-  expect(aliceLogin).toMatch(/SAP_SESSIONID_A4H_001=S\d/);
+  expect(aliceLogin).toBe('');
   // Another user, and the same user with a refreshed token, never receive this login.
   expect(await cookieAs(jwt('BOB', 1))).toBe('');
   expect(await cookieAs(jwt('ALICE', 2))).toBe('');
@@ -341,7 +341,7 @@ it('reuses a PP user login per Cloud Connector credential across HTTP requests a
 
   f.advance(SHARED_TRANSPORT_MAX_AGE_MS);
   expect(await cookieAs(alice)).toBe('');
-  expect(await cookieAs(alice)).not.toBe(aliceLogin);
+  expect(await cookieAs(alice)).toBe('');
 });
 
 /** Factory with production dispatch; SAP responses are supplied by each regression below. */

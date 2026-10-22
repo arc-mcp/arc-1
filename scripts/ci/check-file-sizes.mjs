@@ -85,13 +85,13 @@ const BUDGETS = {
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
   // +3: classify caller cancellation before generic network wrapping (#1045).
-  'src/adt/http.ts': 1562, // Scoped no-replay options and bounded, observable owning-session cleanup (#1080).
+  'src/adt/http.ts': 1563, // Scoped no-replay options and bounded, observable owning-session cleanup (#1080).
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1477, // Exhaustive lock-holder parsing extracted to transport-locks.ts (#1080).
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed
   // XSUAA startup from main, with 3 lines of headroom.
-  // +3: wire the per-user PP transport pool; its logic lives in per-user-transport.ts (#1085).
-  'src/server/server.ts': 1490,
+  // PP pool wiring and secret-free reuse audit status; logic lives in per-user-transport.ts (#1085).
+  'src/server/server.ts': 1494,
 };
 
 const DEFAULT_SRC = 1500;
