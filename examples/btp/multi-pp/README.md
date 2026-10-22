@@ -1,7 +1,6 @@
 # Example: multiple SAP systems/clients with Principal Propagation
 
-Two fictional targets, `QAS/001` and `QAS/100`, each using per-user PP. This mode remains
-experimental and mutation-free. Use these files at
+Two fictional targets, `QAS/001` and `QAS/100`, each using per-user PP. This base profile is read-only. An optional write overlay adds scoped pinned PP writes. Use these files at
 [step 4 of the deployment runbook](../../../docs_page/btp-cloud-foundry-deployment.md#4-create-the-landscape-extension);
 the runbook contains the copy command, deployment order and acceptance checks.
 
@@ -49,3 +48,13 @@ After destination changes, restart every ARC-1 process. `SAPTargets` still lists
 not proven SAP access, even when its reader view is restricted by target grants. Verify safe reads and
 [backend identity](../../../docs_page/principal-propagation-setup.md#verify-the-backend-identity)
 separately for each client; repository metadata alone cannot prove client isolation.
+
+## Optional pinned writes
+
+After read-only acceptance, follow [the write guide](../../../docs_page/multi-target-writes.md).
+Apply `pinned-writes.mtaext` after `target-authorization.mtaext`; its `extends` names that overlay.
+Use `dev-001-write.destination.json` with your virtual URL, real SID/client and allowed package/request.
+Keep QAS destinations unchanged. Verify enforced mode before assigning `MCPTargetDeveloper` with
+read grants DEV/001 and QAS/001 and exact write grant DEV/001. Register DEV/001/mcp separately.
+The examples are parser-tested; destination URLs, packages and request IDs are fictional and must
+be replaced. They do not create IAM roles, users, SAP objects or transport requests.

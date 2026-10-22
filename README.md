@@ -47,8 +47,9 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 Deploy ARC-1 as a Cloud Foundry app on SAP BTP with full platform integration:
 
 - **Destination Service** — connect to SAP systems via managed destinations
-- **Experimental multi-target mode** — the default-off, mutation-free BTP mode discovers
-  destinations marked `arc1.enabled=true` and exposes pinned SID/client plus aggregate endpoints
+- **Experimental multi-target mode** — the default-off BTP mode discovers
+  destinations marked `arc1.enabled=true` and exposes pinned SID/client plus read-only aggregate endpoints;
+  [scoped pinned PP writes](docs_page/multi-target-writes.md) require separate destination/IAM opt-ins
   ([setup](docs_page/multi-target-setup.md),
   [administration](docs_page/multi-target-administration.md))
 - **Optional target filtering** — for shared multi-system gateways where teams need different target
@@ -226,7 +227,7 @@ Full documentation is available at **[docs.arc-1-mcp.com](https://docs.arc-1-mcp
 | [SAP BTP: Start Here](https://docs.arc-1-mcp.com/btp-overview/) | Choose the BTP topology and follow the correct deployment, auth, destination, and operations guides |
 | [BTP Cloud Foundry](https://docs.arc-1-mcp.com/btp-cloud-foundry-deployment/) | MTA deployment, topology decision, role handoffs, and safe acceptance |
 | [BTP Administration](https://docs.arc-1-mcp.com/btp-administration/) | Changes, roles, secrets, scaling, upgrades, rollback, and customer handover |
-| [Multi-System Setup](https://docs.arc-1-mcp.com/multi-target-setup/) | Experimental read-only BTP multi-target deployment, destinations, roles, and client configuration |
+| [Multi-System Setup](https://docs.arc-1-mcp.com/multi-target-setup/) | BTP multi-target deployment, destinations, roles, and scoped pinned PP writes |
 | [Configuration](https://docs.arc-1-mcp.com/configuration-reference/) | Every flag and env var, one table |
 | [Updating](https://docs.arc-1-mcp.com/updating/) | Update procedures per install method |
 | [Enterprise Auth](https://docs.arc-1-mcp.com/enterprise-auth/) | Layer A / Layer B auth internals, coexistence matrix |

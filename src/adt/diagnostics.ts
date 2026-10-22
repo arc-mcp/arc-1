@@ -1787,10 +1787,7 @@ function extractHtmlSection(html: string, anchorId: string): string {
 function extractHtmlHeaderValue(html: string, label: string): string {
   if (!html || !label) return '';
   const labelPattern = escapeRegex(label).replace(/_/g, '[_\\s]?');
-  const re = new RegExp(
-    `<b[^>]*>\\s*(?:&nbsp;|\\s)*${labelPattern}\\s*</b>\\s*</td>\\s*<td[^>]*>([\\s\\S]*?)</td>`,
-    'i',
-  );
+  const re = new RegExp(`<b[^>]*>(?:&nbsp;|\\s)*${labelPattern}\\s*</b>\\s*</td>\\s*<td[^>]*>([\\s\\S]*?)</td>`, 'i');
   const match = html.match(re);
   if (!match?.[1]) return '';
   return sanitizeHtmlCellValue(match[1]);
@@ -1852,7 +1849,7 @@ function extractGatewaySourceFromHtml(sourceHtml: string): { lines: GatewaySourc
     const classes = (match[1] ?? '').trim();
     const isError = /\bhighlight\b/i.test(classes);
     const raw = stripHtmlTags(match[2] ?? '');
-    const content = decodeHtmlEntities(raw).replace(/\s+$/, '');
+    const content = decodeHtmlEntities(raw).trimEnd();
     const assignedNumber = numbers[i];
     const resolvedNumber = typeof assignedNumber === 'number' && assignedNumber > 0 ? assignedNumber : fallback;
     fallback = resolvedNumber + 1;

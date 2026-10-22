@@ -8,6 +8,7 @@
  * 4. Defaults (all `allow*` flags false — restrictive by default)
  */
 
+import type { MultiTargetWritePolicy } from '../adt/safety.js';
 import { DEFAULT_USER_AGENT } from '../adt/user-agent.js';
 import type { MultiTargetAuthorizationMode } from './multi-target-authorization.js';
 
@@ -61,6 +62,7 @@ export interface ServerConfig {
   uiOpen: boolean;
 
   // --- Safety (positive opt-ins; defaults restrictive) ---
+  multiTargetWrite?: MultiTargetWritePolicy;
   allowWrites: boolean;
   allowDataPreview: boolean;
   allowFreeSQL: boolean;
@@ -167,6 +169,11 @@ export interface ServerConfig {
   logFormat: 'text' | 'json';
   /** Hide SAP response details from client-facing tool errors while retaining server-side correlation data. */
   minimalErrors: boolean;
+
+  // --- IDE navigation (HTTP requires explicit per-request editor preferences) ---
+  ideLinks: 'off' | 'eclipse';
+  /** Configured real SAP SID for Eclipse navigation; multi-target runtimes use the selected target's SID. */
+  ideSystemId: string;
 
   // --- Tool Mode ---
   /** Tool mode: 'standard' (12 intent tools, SAPGit feature-gated) or 'hyperfocused' (1 universal SAP tool, ~200 tokens) */
@@ -313,6 +320,8 @@ export const DEFAULT_CONFIG: ServerConfig = {
   ppStrictExplicit: false,
   ppAllowSharedCookies: false,
   disableSaml2: false,
+  ideLinks: 'off',
+  ideSystemId: '',
   toolMode: 'standard',
   schemaNullableOptionals: 'auto',
   plugins: [],

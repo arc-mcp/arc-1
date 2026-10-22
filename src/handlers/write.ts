@@ -40,6 +40,7 @@ import {
 } from './write/class-surgery.js';
 import type { SapWriteContext } from './write/context.js';
 import { writeActionBatchCreate, writeActionCreate } from './write/create.js';
+import { handlePinnedWrite } from './write/pinned.js';
 import { writeActionGenerateBehaviorImplementation, writeActionScaffoldRapHandlers } from './write/rap.js';
 import { writeTableSettings } from './write/table-settings.js';
 import { writeUiad } from './write/uiad.js';
@@ -61,6 +62,7 @@ export async function handleSAPWrite(
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
 ): Promise<ToolResult> {
+  if (config.multiTargetEndpoints && config.targetId) return handlePinnedWrite(client, args, config);
   const action = String(args.action ?? '');
   const type = normalizeWriteObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');

@@ -58,6 +58,7 @@ nav:
       - BTP Cloud Foundry: btp-cloud-foundry-deployment.md
       - Docker: docker.md
       - Multi-System Setup (Multi-Target): multi-target-setup.md
+      - Pinned PP Writes: multi-target-writes.md
       - Other SAP Environments:
           - BTP ABAP Environment: btp-abap-environment.md
           - BTP ABAP Prerequisites (SAP side): btp-abap-prerequisites.md
@@ -81,6 +82,7 @@ nav:
       - Tools Reference: tools.md
       - Extensions (Custom Tools): extensions.md
       - MCP Usage Guide: mcp-usage.md
+      - Open Objects in Your Editor: ide-integration.md
       - SQL Notebook Authoring: sql-notebook-authoring.md
       - Skills: skills.md
       - More:

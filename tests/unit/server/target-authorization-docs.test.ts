@@ -23,7 +23,8 @@ describe('target authorization operator documentation', () => {
     expect(targetAccess).toContain('!!! info "Version availability"');
     expect(targetAccess).toContain('Target authorization is available from ARC-1 **1.6.0**.');
     expect(targetAccess).toContain('Confirm that your selected release includes this feature');
-    expect(targetAccess).toContain('provided by `@arc-mcp/xsuaa-auth` 1.1.0');
+    expect(targetAccess).toContain('Use the library version resolved by the');
+    expect(targetAccess).not.toContain('provided by `@arc-mcp/xsuaa-auth` 1.1.0');
     expect(targetAccess).toContain('Complete the acceptance checks below in your own landscape');
     for (const page of [
       setup,

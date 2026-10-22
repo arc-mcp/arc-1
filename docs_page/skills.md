@@ -372,6 +372,7 @@ This is intentionally short. Put Clean ABAP, RAP, CDS, migration, and company-sp
 - If the workspace has only ABAP package/destination folders, add a normal local folder for Copilot customizations and generated local files.
 - If Copilot ignores a new skill, start a new Agent Mode chat or reload the window.
 - If ARC-1 tools are missing, run **MCP: List Servers**, start the server, and use **MCP: Reset Cached Tools** after changing server versions or tool modes.
+- If tools appear but Copilot rejects valid arguments after a schema change, use **Developer: Reload Window**; resetting MCP tools alone may leave its input validator cached. See [multi-target troubleshooting](multi-target-setup.md#quick-troubleshooting).
 - If SAP ADT MCP tools are missing, check the SAP ADT extension settings, then enable the ADT MCP tools in Copilot's tool picker.
 - Avoid enabling every write-capable tool by default. Keep ARC-1 server safety flags, package allowlists, and Copilot tool approvals aligned with the system you are working in.
 

@@ -1,4 +1,4 @@
-# Multi-System Setup (Multi-Target v1)
+# Multi-System Setup (Multi-Target)
 
 Use [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) for the ordered deployment;
 this page is its multi-target reference for settings, destinations, endpoints, and safe reads,
@@ -6,12 +6,13 @@ not a second deployment to perform afterward. Common role, secret,
 restart, upgrade, scaling, and handover procedures live in
 [BTP Administration](btp-administration.md).
 
-!!! warning "Experimental, default-off, and mutation-free"
+!!! note "Default-off; read-only unless separately enabled"
 
     Multi-target v1 is available only for SAP BTP Cloud Foundry deployments built from source. It
     serves on-premise SAP systems through XSUAA. Principal Propagation is recommended. A
     default-off BasicAuthentication option exists for read-only systems that must use a shared
-    technical identity. Writes, activation, and transport/Git mutations are unavailable. Offline
+    technical identity. [Scoped pinned PP writes](multi-target-writes.md) are a separate opt-in; aggregate
+    and Basic routes remain mutation-free. Transport/Git management is unavailable. Offline
     SAPLint, read-only transport inspection, ATC, and ABAP Unit are available; ATC and Unit execute
     SAP workloads and are not passive metadata reads.
 
@@ -56,7 +57,7 @@ landscape; it uses administrator-assigned grants, not automatic SAP-account disc
 | CF scaling/deployment | Normal stateless scaling is possible | Exactly one process; use non-rolling stop/start deployment in v1 |
 | Destination secrets | No reusable SAP password | Reusable `User`/`Password`; destination administrators are credential administrators |
 | SAP audit attribution | Human SAP user | Technical user; correlate the ARC-1 request/audit record to the XSUAA caller |
-| Multi-target writes | Not available in v1 | Not available in v1 and not planned without a new security design |
+| Multi-target writes | [Scoped pinned writes](multi-target-writes.md) with target-filtered authorization and exact write grants | Never |
 
 Choose PP unless the shared-identity trade-off is explicitly acceptable. Do not use Basic when
 per-user SAP authorization, human attribution inside SAP, or horizontal CF scaling is required.
@@ -145,7 +146,7 @@ Configure them only for the deliberate side-by-side single-target route describe
 [Optional single-target `/mcp`](multi-target-administration.md#optional-single-target-mcp).
 Opt-in target authorization rejects that mixed topology; keep it multi-only.
 
-Before opening a shared beta to multiple users, choose a positive per-user limit using
+Before opening a shared deployment to multiple users, choose a positive per-user limit using
 [Shared capacity and rate limits](multi-target-administration.md#shared-capacity-and-rate-limits).
 
 <a id="2-build-and-deploy-once"></a>
@@ -523,16 +524,17 @@ arc1.allow_data_preview=true
 arc1.allow_free_sql=true
 ```
 
-The two target switches are independent. Missing properties mean false. Only these four `arc1.*`
-keys are supported in v1:
+The data/SQL switches are independent. Missing properties mean false. The base `arc1.*` keys are:
 
 - `arc1.enabled`
 - `arc1.allow_data_preview`
 - `arc1.allow_free_sql`
 - `arc1.target_alias` (optional public routing identity; not a capability switch)
 
-Unknown `arc1.*` properties fail closed. Write/package/transport/Git properties quarantine the
-destination because writes are not supported. There is no `arc1.config_version` property in v1.
+Target-filtered deployments additionally support `arc1.allow_writes`, `arc1.allowed_packages` and
+`arc1.allowed_transports` under the [pinned PP write contract](multi-target-writes.md). In standard
+mode these properties quarantine the destination. Transport/Git enabling properties and unknown
+`arc1.*` properties fail closed. There is no `arc1.config_version` property.
 
 Every sensitive call must pass all layers:
 
@@ -587,8 +589,8 @@ users while a reachable app still uses standard access.
 
 ### OAuth scopes on first sign-in
 
-Pinned and aggregate routes advertise only the mutation-free `read`, `data`, `sql`, and `admin`
-scopes. They do not force a read-only initial grant. General MCP clients such as VS Code and Cursor
+Aggregate routes advertise only the mutation-free `read`, `data`, `sql`, and `admin` scopes.
+Pinned routes add `write` only when the global write switch and target-filtered mode are enabled. They do not force a read-only initial grant. General MCP clients such as VS Code and Cursor
 therefore request the advertised set, and XSUAA issues only the subset permitted by the signing
 user's role collections. ARC-1 then prunes tools and actions from that token:
 
@@ -603,17 +605,16 @@ A valid token must still contain `read` before ARC-1 resolves a pinned route or 
 aggregate transport. Role changes require logout/reconnect because an existing refresh grant cannot
 add scopes that were not granted originally.
 
-!!! warning "Do not extend this flow to writes"
+!!! note "Writing requires a pinned connection"
 
-    Initial scope negotiation is acceptable here only because the multi-target surface is
-    structurally mutation-free. Do not add `write`, `transports`, or `git` to its advertised scopes.
-    A future write-capable multi-target version requires a new security review covering explicit
-    consent, step-up support, token privilege, wrong-target mutations, and client compatibility.
+    Follow [Write to a pinned SAP target](multi-target-writes.md) for destination restrictions, exact
+    write grants and a fresh read/write login. Aggregate connections never advertise or execute writes.
+    Transport/Git management scopes are not advertised on multi-target routes.
 
 !!! danger "Side-by-side single-target `/mcp`"
 
     This topology is supported only with standard access (`standard`); enforced mode rejects it at startup.
-    `MCPAdmin` implies every ARC-1 scope. Multi-target routes remain mutation-free, but the same
+    `MCPAdmin` implies every ARC-1 scope. Standard-mode multi-target routes remain mutation-free, but the same
     token may allow write, transport, or Git operations on a write-enabled single-target `/mcp`.
     Grant Admin only to trusted operators and prefer a separate ARC-1 application when a writable
     single-target endpoint must coexist.
@@ -748,6 +749,7 @@ unacceptable.
 | `SAP_TARGET_BUSY` | The Basic target's bounded request gate is busy; retry after the active call completes. Persistent occurrences indicate that a shared Basic target is unsuitable for this load. |
 | `SAP_TARGET_TEMPORARILY_UNAVAILABLE` | The Basic canary reached a transient network, timeout, rate, SAP 5xx, or unrecognized non-login 2xx response. Check SAP/intermediary health and retry; the credential generation was not blocked. |
 | `TARGET_CONFIG_CHANGED` | Review the destination change and restart ARC-1. |
+| Copilot rejects valid aggregate input with `must NOT have additional properties` | After changing a connection or tool surface, run **Developer: Reload Window** and start a fresh chat. Copilot 0.70.0 cached validators by tool name; resetting MCP tools or restarting the server did not clear that cache. Keep pinned/aggregate entries separate and retain the required `target`. See [client recovery](ide-integration.md#if-a-link-does-not-open) and [VS Code #321662](https://github.com/microsoft/vscode/issues/321662). |
 | Data/SQL action is absent or denied | Check the instance ceiling, target property, XSUAA role, and SAP authorization. |
 
 <a id="not-in-v1"></a>

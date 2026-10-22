@@ -1,6 +1,7 @@
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it, vi } from 'vitest';
 import { canonicalDestinationUrl, opaqueDestinationValue } from '../../../src/server/destination-discovery.js';
 import {
@@ -11,8 +12,12 @@ import {
 import { logger } from '../../../src/server/logger.js';
 import { buildTargetCatalog, TARGET_CATALOG_DIAGNOSTIC_LIMIT } from '../../../src/server/multi-target-catalog.js';
 import { buildAggregateToolSurfaceConfig, buildMultiTargetConfig } from '../../../src/server/multi-target-runtime.js';
-import { parseSapTargetsArguments } from '../../../src/server/multi-target-server.js';
+import {
+  buildMultiTargetServerInstructions,
+  parseSapTargetsArguments,
+} from '../../../src/server/multi-target-server.js';
 import { createServer, resolveSingleTargetOverlapState } from '../../../src/server/server.js';
+import { NATIVE_NAVIGATION_INSTRUCTIONS } from '../../../src/server/server-instructions.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 type RequestHandler = (
@@ -30,7 +35,12 @@ function requestHandler(server: Server, method: string): RequestHandler {
 function registry(
   count: number,
   policy = { data: false, sql: false },
-  options: { includeInvalid?: boolean; authentication?: 'PrincipalPropagation' | 'BasicAuthentication' } = {},
+  options: {
+    includeInvalid?: boolean;
+    authentication?: 'PrincipalPropagation' | 'BasicAuthentication';
+    description?: string;
+    targetAlias?: string;
+  } = {},
 ) {
   const canonicalUrl = canonicalDestinationUrl('http://sap.internal:50000') as string;
   const subaccount = Array.from({ length: count }, (_, index) => {
@@ -45,12 +55,13 @@ function registry(
       proxyType: 'OnPremise',
       sapSysId: sid,
       sapClient: client,
-      description: `SAP target ${index}`,
+      description: options.description ?? `SAP target ${index}`,
       hasCloudConnectorLocationId: false,
       arcProperties: {
         'arc1.enabled': 'true',
         'arc1.allow_data_preview': String(policy.data),
         'arc1.allow_free_sql': String(policy.sql),
+        ...(options.targetAlias ? { 'arc1.target_alias': options.targetAlias } : {}),
       },
     };
   });
@@ -104,6 +115,51 @@ function parseError(result: Record<string, any>) {
 }
 
 describe('multi-target MCP servers', () => {
+  it.each([
+    ['quotes', '"'.repeat(160)],
+    ['backslashes', '\\'.repeat(160)],
+    ['unpaired high surrogates', '\uD800'.repeat(160)],
+    ['unpaired low surrogates', '\uDC00'.repeat(160)],
+    ['valid surrogate pairs', '🚀'.repeat(80)],
+  ])('keeps a sole granted target within the instruction budget with %s', (_name, description) => {
+    const targets = registry(1, undefined, { description, targetAlias: 'A'.repeat(32) });
+    const target = targets.targets[0];
+    const instructions = buildMultiTargetServerInstructions({
+      mode: 'aggregate',
+      registry: targets,
+      instanceConfig: { ...DEFAULT_CONFIG, multiTargetAuthorization: 'xsuaa-attribute' },
+      authorization: {
+        grant: { mode: 'all', status: 'valid' },
+        writeGrant: { mode: 'none', status: 'TARGET_GRANT_MISSING' },
+        write: false,
+        targets: [target],
+        scopes: ['read'],
+        read: true,
+        admin: false,
+      },
+    });
+    expect(instructions).toContain(JSON.stringify(target.description));
+    expect(instructions).toContain(NATIVE_NAVIGATION_INSTRUCTIONS);
+    expect(instructions.length).toBeLessThan(2048);
+  });
+
+  it.each(['PrincipalPropagation', 'BasicAuthentication'] as const)(
+    'keeps native navigation conditional for aggregate and pinned %s connections',
+    (authentication) => {
+      const targets = registry(2, undefined, { authentication });
+      for (const mode of ['aggregate', 'pinned'] as const) {
+        const instructions = buildMultiTargetServerInstructions({
+          mode,
+          registry: targets,
+          instanceConfig: { ...DEFAULT_CONFIG },
+          target: mode === 'pinned' ? targets.targets[0] : undefined,
+        });
+        expect(instructions).toContain(NATIVE_NAVIGATION_INSTRUCTIONS);
+        expect(instructions.length).toBeLessThan(2048);
+      }
+    },
+  );
+
   it('parses the catalog arguments through one strict runtime contract', () => {
     expect(parseSapTargetsArguments({ query: 'A4H', offset: 50 }, true)).toEqual({
       ok: true,
@@ -337,7 +393,7 @@ describe('multi-target MCP servers', () => {
   it('keeps pinned schemas target-free', async () => {
     const current = registry(1);
     const target = current.targets[0];
-    const server = createServer(buildMultiTargetConfig(DEFAULT_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(DEFAULT_CONFIG, target, { mode: 'pinned' }), {
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: DEFAULT_CONFIG, target },
     });
     const result = await requestHandler(server, ListToolsRequestSchema.shape.method.value)(
@@ -350,6 +406,42 @@ describe('multi-target MCP servers', () => {
       { authInfo: adminAuth },
     );
     expect(adminResult.tools.map((tool: { name: string }) => tool.name)).not.toContain('SAPTargets');
+  });
+
+  it('validates pinned and aggregate inputs independently with Ajv', async () => {
+    const current = registry(1);
+    const target = current.targets[0];
+    const aggregateServer = createServer(buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, current.targets), {
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
+    });
+    const pinnedServer = createServer(buildMultiTargetConfig(DEFAULT_CONFIG, target, { mode: 'pinned' }), {
+      multiTarget: { mode: 'pinned', registry: current, instanceConfig: DEFAULT_CONFIG, target },
+    });
+    const ajv = new Ajv2020({ coerceTypes: true, strictTypes: false, allowUnionTypes: true });
+    const validator = async (server: Server) => {
+      const result = await requestHandler(server, ListToolsRequestSchema.shape.method.value)(
+        { method: 'tools/list', params: {} },
+        { authInfo: readAuth },
+      );
+      return ajv.compile(result.tools.find((tool: { name: string }) => tool.name === 'SAPRead').inputSchema);
+    };
+    const aggregate = await validator(aggregateServer);
+    const pinned = await validator(pinnedServer);
+    const args = { type: 'CLAS', name: 'CL_ABAP_TYPEDESCR' };
+    expect(aggregate({ ...args, target: target.target })).toBe(true);
+    expect(aggregate({ ...args })).toBe(false);
+    expect(aggregate.errors).toContainEqual(
+      expect.objectContaining({ keyword: 'required', params: { missingProperty: 'target' } }),
+    );
+    expect(aggregate({ ...args, target: 'UNKNOWN/001' })).toBe(false);
+    expect(aggregate.errors).toContainEqual(expect.objectContaining({ keyword: 'enum' }));
+    expect(pinned({ ...args })).toBe(true);
+    // A stale pinned validator reproduces Copilot's rejection of valid aggregate input.
+    expect(pinned({ ...args, target: target.target })).toBe(false);
+    expect(pinned.errors).toContainEqual(
+      expect.objectContaining({ keyword: 'additionalProperties', params: { additionalProperty: 'target' } }),
+    );
+    expect(aggregate({ ...args, target: target.target })).toBe(true);
   });
 
   it('lists multiple targets compactly for readers and expands diagnostics for admins', async () => {
@@ -578,7 +670,7 @@ describe('multi-target MCP servers', () => {
         event: 'safety_blocked',
         target: 'A00/000',
         operation: 'SAPWrite.update',
-        reason: 'Operation unavailable in read-only multi-target v1',
+        reason: 'Operation unavailable for this multi-target route and caller policy',
       }),
     );
 

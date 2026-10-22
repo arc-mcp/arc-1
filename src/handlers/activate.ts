@@ -29,6 +29,7 @@ import { isTablesEndpointAvailable } from './feature-cache.js';
 import { functionGroupIncludeObjectUrl, normalizeObjectType, objectUrlForType } from './object-types.js';
 import { inspectServiceBindingPublishFailure } from './publish-failure.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
+import { handlePinnedActivation } from './write/pinned-activation.js';
 import {
   enforceAllowedPackageForObjectUrl,
   inactiveSyntaxDiagnostic,
@@ -111,6 +112,7 @@ export async function handleSAPActivate(
   cacheSecurity: CacheSecurityContext,
   ppEnabled: boolean,
 ): Promise<ToolResult> {
+  if (client.safety.multiTargetWrite) return handlePinnedActivation(client, args);
   const action = String(args.action ?? 'activate');
   const name = String(args.name ?? '');
   const version = String(args.version ?? '0001');

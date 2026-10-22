@@ -461,6 +461,12 @@ export async function startHttpServer(
     // /arc1), endpoints must be advertised at that prefix even though the
     // Express routes live at the root (the proxy strips the prefix).
     const oauthParsedAppUrl = new URL(appUrl);
+    const oauthLoopback = ['localhost', '127.0.0.1', '[::1]'].includes(oauthParsedAppUrl.hostname);
+    if (oauthParsedAppUrl.protocol !== 'https:' && !(oauthParsedAppUrl.protocol === 'http:' && oauthLoopback)) {
+      throw new Error(
+        'XSUAA OAuth requires a public HTTPS URL. Set ARC1_PUBLIC_URL to the canonical HTTPS URL including any proxy path prefix; HTTP is supported only for loopback development.',
+      );
+    }
     const oauthBasePath = oauthParsedAppUrl.pathname.replace(/\/$/, ''); // '' for root, '/arc1' otherwise
     const oauthFullBase = `${oauthParsedAppUrl.origin}${oauthBasePath}`;
     // ARC-1's own OAuth callback (issue #214 callback proxy). Public, prefix-aware
@@ -493,14 +499,26 @@ export async function startHttpServer(
     // same expanded AuthInfo.scopes ARC-1 produced before the extraction.
     const xsuaaVerifier = createXsuaaTokenVerifier(xsuaaCredentials, { expandScopes, logger: authLibLogger });
     const enforcedTargets = config.multiTargetAuthorization === 'xsuaa-attribute';
-    const multiXsuaaVerifier = enforcedTargets
+    const rawMultiXsuaaVerifier = enforcedTargets
       ? createXsuaaTokenVerifier(xsuaaCredentials, {
-          expandScopes,
+          expandScopes: (scopes) => scopes,
           logger: authLibLogger,
-          userAttributeNames: ['arc1_targets'],
+          userAttributeNames: ['arc1_targets', 'arc1_write_targets'],
           requireUserToken: true,
         })
       : xsuaaVerifier;
+    const multiXsuaaVerifier: typeof rawMultiXsuaaVerifier = async (token) => {
+      const verified = await rawMultiXsuaaVerifier(token);
+      if (!enforcedTargets) return verified;
+      return {
+        ...verified,
+        scopes: expandScopes(verified.scopes),
+        extra: {
+          ...verified.extra,
+          arc1VerifiedRawScopes: Object.freeze([...verified.scopes]),
+        },
+      };
+    };
     // OIDC verifier comes from the package (hardened: pinned `algorithms`
     // allowlist, no `sub` in debug logs). `buildPackageOidcVerifier` threads
     // ARC-1's historical contract (accepted scopes, `expandScopes`, the
@@ -772,7 +790,10 @@ export async function startHttpServer(
         res.json({
           resource: `${oauthFullBase}/${match?.[1]}/${match?.[2]}/mcp`,
           authorization_servers: [`${oauthFullBase}/`],
-          scopes_supported: MULTI_TARGET_SCOPES_SUPPORTED,
+          scopes_supported:
+            config.allowWrites && enforcedTargets
+              ? [...MULTI_TARGET_SCOPES_SUPPORTED, 'write']
+              : MULTI_TARGET_SCOPES_SUPPORTED,
           resource_name: 'ARC-1 SAP MCP Server (pinned target)',
         });
       });

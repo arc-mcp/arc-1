@@ -5,7 +5,7 @@ import request from 'supertest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startHttpServer } from '../../../src/server/http.js';
 import { ARC1_MANUAL_CLIENT_REDIRECT_URI_PATTERNS } from '../../../src/server/oauth-redirect-policy.js';
-import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 
 const CREDENTIALS: XsuaaCredentials = {
   url: 'https://tenant.authentication.example',
@@ -25,7 +25,7 @@ function buildProvider() {
   });
 }
 
-async function boot(publicUrl = 'https://arc1.example', oauthDcrEnabled = true) {
+async function boot(publicUrl = 'https://arc1.example', oauthDcrEnabled = true, overrides: Partial<ServerConfig> = {}) {
   vi.stubEnv('ARC1_PUBLIC_URL', publicUrl);
   let app!: express.Express;
   const listen = vi.spyOn(express.application, 'listen').mockImplementation(function (this: express.Express) {
@@ -44,6 +44,7 @@ async function boot(publicUrl = 'https://arc1.example', oauthDcrEnabled = true) 
         authRateLimit: 0,
         mcpHttpRateLimit: 0,
         dcrSigningSecret: 'test-dcr-signing-secret-with-enough-entropy',
+        ...overrides,
       },
       CREDENTIALS,
     );
@@ -98,6 +99,36 @@ async function approve(app: express.Express, page: request.Response) {
 
 describe('production OAuth redirect flow', () => {
   afterEach(() => vi.unstubAllEnvs());
+
+  it.each(['', 'http://arc1.example'])(
+    'explains the required public URL for a non-loopback HTTP deployment: %s',
+    async (publicUrl) => {
+      vi.stubEnv('VCAP_APPLICATION', '');
+      await expect(boot(publicUrl, true, { httpAddr: '0.0.0.0:8080' })).rejects.toThrow(
+        /Set ARC1_PUBLIC_URL to the canonical HTTPS URL/,
+      );
+    },
+  );
+
+  it.each(['http://localhost:8080', 'http://127.0.0.1:8080'])(
+    'preserves ordinary loopback development sign-in at %s',
+    async (publicUrl) => {
+      const app = await boot(publicUrl);
+      await approve(
+        app,
+        await request(app).get('/authorize').query(authorization('https://claude.ai/api/mcp/auth_callback')),
+      );
+    },
+  );
+
+  it('counts both ordinary consent requests against the existing authorization limit', async () => {
+    const app = await boot('https://arc1.example', true, { authRateLimit: 2 });
+    const params = authorization('https://claude.ai/api/mcp/auth_callback');
+    await approve(app, await request(app).get('/authorize').query(params));
+    const limited = await request(app).get('/authorize').query(params);
+    expect(limited.status).toBe(429);
+    expect(limited.headers['retry-after']).toBeDefined();
+  });
 
   it.each(['https://arc1.example', 'https://gateway.example/arc1'])(
     'disables DCR at %s without removing manual-client sign-in',

@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-10-21
+**Last reviewed:** 2026-10-22
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -68,6 +68,7 @@ sequence.
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing | P1 | M | Ready | Architecture |
 | [ARCH-02](#arch-02) | Server-driven source-state version verification | P3 | S | Needs research | Architecture |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server API | P3 | L | Revisit on trigger | Architecture |
+| [FEAT-93](#feat-93) | Broader pinned PP mutation capabilities | P2 | XL | Needs research | Architecture |
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
@@ -75,6 +76,9 @@ sequence.
 | [COMPAT-16](#compat-16) | API-release directory cleanup | P2 | S | Needs research | Compatibility |
 | [COMPAT-17](#compat-17) | Direct package browser release coverage | P2 | S | Needs research | Compatibility |
 | [COMPAT-18](#compat-18) | Newly created program metadata on 7.50 | P2 | S | Needs research | Compatibility |
+| [COMPAT-19](#compat-19) | Remaining BTP IDE navigation qualification | P1 | S | Needs environment | Compatibility |
+| [COMPAT-20](#compat-20) | Canonical ADT editor identity for AI edits | P2 | M | Needs research | Compatibility |
+| [COMPAT-21](#compat-21) | Eclipse Copilot links and exact project selection | P2 | M | Needs research | Compatibility |
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
 | [COMPAT-12](#compat-12) | Deletion with another user's text draft | P3 | S | Needs research | Compatibility |
 | [COMPAT-15](#compat-15) | Empty inactive text-pool recovery | P2 | M | Needs research | Compatibility |
@@ -173,6 +177,30 @@ would create a public compatibility surface without a known consumer.
 
 **Resume when.** A concrete embedding customer can define lifecycle, isolation, writable-safety,
 and upgrade requirements. Do not widen the mutation-free multi-target contract as a shortcut.
+
+<a id="feat-93"></a>
+### FEAT-93 — Broader pinned PP mutation capabilities
+
+- **Priority / effort / status:** P2 / XL / Needs research
+- **Category:** Architecture
+
+**Remaining gap.** PR [#1080](https://github.com/arc-mcp/arc-1/pull/1080) implements the scoped
+CLAS/INTF create/main-update, CLAS method-edit and whole-owner activation contract for local and
+transportable packages, with exact target write grants and independent server/destination policy.
+Additional types, include editing, deletes, batches, package changes, RAP/DDIC and publication still
+need their own reviewed package, ownership, recording and activation contracts. General single-target
+parity is not implied. Aggregate and Basic writes remain rejected architectural alternatives.
+
+**Resume when.** A concrete development workflow needs one of those additional capabilities and
+its complete effect on SAP can be bounded and qualified. Extend the [ADR-0010 contract](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0010-pinned-pp-multi-target-writes.md)
+for that capability, including negative tests and live PP evidence; do not remove the explicit
+allowlist or add a second global write switch. Transport/Git management, caching, SaaS and embedding
+remain separate work. Keep operator configuration and effective-denial explanations explicit.
+
+**Prior work.** [#906](https://github.com/arc-mcp/arc-1/pull/906), the
+[alternatives assessment](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-22-multi-target-write-strategy.md)
+and [V2 roadmap](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/multi-target-v2-roadmap.md)
+remain design history; revalidate older gap statements against the current scoped implementation.
 
 ## Authentication, compatibility, and security
 
@@ -375,6 +403,66 @@ source update and activation, so only its activation succeeded without recovery.
 **Resume with.** Verify source persistence and default/active/inactive metadata across releases;
 trace the SAP response before changing package resolution. Preserve fail-closed package checks. Unique E2E
 fixtures avoid the pre-delete, but do not fix this runtime gap; do not add a skip for it.
+
+<a id="compat-19"></a>
+### COMPAT-19 — Remaining BTP IDE navigation qualification
+
+- **Priority / effort / status:** P1 / S / Needs environment
+- **Category:** Compatibility
+
+**Remaining gap.** A4H/100 has successful discovery/source samples but recurring 120-second source
+read timeouts, reproduced on original 0.9.27 too. Second-user SAP identity, a known-but-ungranted
+live `xsuaa-attribute` target and PP-only multi-instance routing remain unqualified.
+
+**Already verified.** Public-router OAuth, pinned/aggregate PP and shared-Basic reads, request-local
+Eclipse preferences, restart/token refresh, and actual Copilot → SAP ADT MCP → VS Code opening.
+[Evidence and timeout trace anchors](https://github.com/arc-mcp/arc-1/blob/main/docs/research/ide-navigation-verification.md#historical-btp-matrix).
+
+**Resume with.** Trace the client-100 SAP/Connectivity source path, obtain a second authorized identity
+and denied-target account, then test an isolated PP-only multi-instance deployment. Keep the existing
+shared-Basic test app at one instance. Retain required aggregate `target`; stale Copilot validator
+recovery uses window reload and stable separate entries.
+
+<a id="compat-20"></a>
+### COMPAT-20 — Canonical ADT editor identity for AI edits
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** Canonical opening does not establish dirty-buffer reuse, Keep/Undo, save,
+validation, transport or activation parity with the [ABAP Bridge](https://github.com/arc-mcp/arc1-abap-bridge).
+Local ADT session recovery, same-name/type collisions, includes and other clients also need qualification.
+
+**Already verified.** The simplified runtime `7b00407a` passed pinned/aggregate BTP reads, SAP name/type
+resolution, exact URI encoding, clicked interface/CDS opening and an explicit missing-object stop case.
+Earlier native-error retries failed; instructions cannot enforce cross-server behavior.
+[Current acceptance](https://github.com/arc-mcp/arc-1/blob/main/docs/research/ide-navigation-verification.md#final-simplified-runtime-acceptance).
+
+**Resume with.** Diagnose local session logoff; test dirty buffers and each edit/save operation on
+disposable objects. A local picker could save each developer's confirmed connection/target mapping;
+SAP's first-match SID fallback cannot verify backend/client. No ARC-1 VS Code mapping settings remain.
+[Decisions and original requirements](https://github.com/arc-mcp/arc-1/blob/main/docs/research/ide-navigation-decisions.md).
+
+<a id="compat-21"></a>
+### COMPAT-21 — Eclipse Copilot links and exact project selection
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** Direct Eclipse Copilot clicking and exact project/backend matching. User screenshots
+show chooser and source but do not identify whether the direct or adjacent HTTP handoff link initiated it.
+Same SID/client can describe different backends; ARC-1 cannot force a chooser.
+
+**Already verified.** Local `npx`, HTTP/BTP pinned/aggregate reads, preference forwarding, rendering,
+restart recovery and native-dialog opening for CLAS/INTF/PROG/DDLS. Isolated Claude plugin preference
+substitution passed; installed ARC-1 UI and Desktop opening remain unqualified.
+Namespaced Eclipse opening is unverified. Live HTTP evidence used the retired combined `on` mode;
+the current `eclipse`-only mode has automated coverage, pending a fresh live Eclipse run.
+
+**Resume with.** Enable the `adt` handler and manually click a fresh answer containing only the direct
+link. Qualify project-name authorities, collisions, missing/cloud projects and other OSes before richer
+links or a companion. Keep per-client opt-in; defer the plugin dropdown pending a minimum-client policy.
+[Options and evidence limits](https://github.com/arc-mcp/arc-1/blob/main/docs/research/ide-navigation-decisions.md#eclipse-contract-and-unresolved-selection).
 
 <a id="sec-14"></a>
 ### SEC-14 — DNS rebinding and Host-header hardening

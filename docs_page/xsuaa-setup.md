@@ -155,7 +155,11 @@ service-creation sequence. That guide covers version availability, setup checks 
 `MCPAllTargetReadAccess` (explicit `*` default). A manually managed service still needs an owner to
 create the corresponding collection; MTA owns its additional `ARC-1 All Targets (<space>)` collection.
 Do not put the all-target role into an already assigned functional collection during an update.
-For target attributes, keep the existing OAuth scope request set; see the distinction below.
+For scoped pinned writes, `MCPTargetDeveloper` adds `read`/`write` and requires both `arc1_targets`
+and exact `arc1_write_targets`; follow [the write guide](multi-target-writes.md). Deploy and verify
+`xsuaa-attribute` enforcement before assigning this role. Its functional scopes are application-wide:
+in standard/single-target mode the attributes do not restrict those scopes. Do not reuse its role
+collection across apps expecting target isolation. No default developer role or assignment is created.
 IAS-fed target values remain optional and require their own live token/union/refresh validation.
 Static target roles need no IAS change. Keeping standard access (`standard`) is supported when all
 readers may see/try every target; neither mode automatically discovers the user's SAP accounts.
@@ -171,11 +175,14 @@ See [authorization.md](authorization.md) for the full three-layer authorization 
 
 ### Target attributes and OAuth scopes
 
-`arc1_targets` is an XSUAA role attribute, not an OAuth scope. The unqualified `user_attributes`
+`arc1_targets` and `arc1_write_targets` are XSUAA role attributes, not OAuth scopes. The unqualified `user_attributes`
 does exist as a separate [Cloud Foundry UAA scope](https://docs.cloudfoundry.org/api/uaa/version/78.11.0/),
 but ARC-1 does not require it to obtain these XSUAA role attributes. Do not add either name to
 ARC-1's requested scopes or invent `$XSAPPNAME.user_attributes`; that application-qualified scope
-is not declared by ARC-1. Keep the multi-target endpoints' advertised mutation-free scope set unchanged.
+is not declared by ARC-1. Request the scopes advertised by the chosen route. When global writes
+and target-filtered authorization are enabled, all syntactically pinned routes advertise `write`,
+including unknown targets, so public metadata does not reveal target existence. Actual writes still
+require every PP/destination/user gate. Aggregate metadata stays mutation-free.
 
 <a id="step-2-bind-service-and-configure"></a>
 
@@ -263,13 +270,13 @@ configuring a client:
 | Endpoint | Protected-resource scopes ARC-1 advertises | Notes |
 |---|---|---|
 | `/mcp` | `read`, `write`, `data`, `sql`, `transports`, `git`, `admin` | Actual grants and application ceilings still prune tools/actions |
-| `/<SYSTEM>/<CLIENT>/mcp` | `read`, `data`, `sql`, `admin` | Mutation-free pinned multi-target route |
+| `/<SYSTEM>/<CLIENT>/mcp` | `read`, `data`, `sql`, `admin`; also `write` when global writes and target-filtered authorization are enabled | Same metadata for unknown targets; PP, destination policy and exact user write grants still required |
 | `/multi/mcp` | `read`, `data`, `sql`, `admin` | Mutation-free aggregate route; SAP calls require `target` |
 
 XSUAA returns only scopes assigned to the user. Advertising the full mutation-free set does not
 grant Admin, data, or SQL. It lets OAuth clients request a usable token while role collections remain
-the authorization source. Multi-target routes never advertise mutation scopes and still require
-`read` before revealing whether a pinned target exists.
+the authorization source. Pinned routes may advertise `write` under the configuration above; aggregate routes never do. All multi-target routes
+still require `read` before revealing whether a pinned target exists.
 
 ## Step 5: Configure MCP Clients
 
@@ -335,7 +342,7 @@ extra dynamic-registration round trip that some Copilot Studio configurations do
    - **Token URL template:** `https://<app-route>/token`
    - **Refresh URL:** `https://<app-route>/token`
    - **Scopes:** for single-target development, request the approved scopes (for example
-     `read write`); for multi-target, request `read data sql admin` and let XSUAA return only the
+     `read write`); for aggregate multi-target, request `read data sql admin`; eligible pinned PP connections also request `write`. Let XSUAA return only the
      scopes assigned to the signed-in user. ARC-1 auto-qualifies names with the XSUAA xsappname.
 4. Save — Copilot Studio generates a redirect URL
 5. ARC-1 automatically accepts the redirect URL (dynamic redirect URI registration for the XSUAA client)
@@ -369,8 +376,11 @@ This means:
 - DCR registrations survive `cf restart`, `cf push`, `cf restage`, cell evacuations, OOM auto-recovery, and multi-instance scale-out — none of these invalidate cached `client_id`s.
 - Every sign-in now requires an ARC-1 approval page showing the client name, return address and requested permissions before XSUAA sign-in. Existing IdP SSO sessions do not skip it. Only approve a connection you started in a trusted MCP client; names are self-declared.
 - Approval and callback use separate host-only, HttpOnly cookies with a ten-minute lifetime. Reverse proxies must preserve `Origin` and `Cookie` headers and set `ARC1_PUBLIC_URL` to the correct public HTTPS origin and path prefix. HTTP is supported only for loopback development.
+- Outside Cloud Foundry, a non-loopback HTTP bind address is insufficient: set `ARC1_PUBLIC_URL` to the canonical HTTPS URL. All clients must use that same origin; alternate routes can lose the approval cookie. Proxies must preserve `Set-Cookie` and must not replace the approval page's `Referrer-Policy: origin`.
+- For HTTP development, use `localhost` or `127.0.0.1` as the public issuer host. The currently tested MCP SDK rejects an IPv6 HTTP issuer; IPv6 client callback URLs remain supported.
 - Set `ARC1_OAUTH_DCR_ENABLED=false` to stop new registrations and omit the registration discovery endpoint. Existing registered IDs and the manual XSUAA client remain usable with approval.
-- During this upgrade, in-flight sign-ins must restart; old unbound state and raw upstream codes are rejected. Existing client IDs and refresh tokens remain valid. If a token may have been stolen, revoke the affected XSUAA grant/session: rotating the DCR signing key alone does not revoke upstream tokens.
+- Upgrade every instance before resuming sign-ins. In-flight sign-ins must restart; old unbound state and raw upstream codes are rejected. Existing client IDs and tokens are not invalidated by the upgrade. If exposure is suspected, use documented XSUAA incident controls and verify invalidation independently; rotating the DCR signing key alone does not revoke upstream tokens.
+- A completed approval uses two `/authorize` requests (page and form submission), both counted by the existing per-IP limits. Account for shared-IP traffic when sizing the limit.
 - The default lifetime is **`0` — never expire**. There is no per-client revocation at any TTL (a `client_id` is a stateless HMAC token, not a store row), so a finite TTL only produces periodic `invalid_client` re-auth outages — and some MCP clients (Eclipse Copilot, Copilot CLI) don't self-heal from it. Configurable via `--oauth-dcr-ttl-seconds` / `ARC1_OAUTH_DCR_TTL_SECONDS`; set a positive value to opt into expiry (clamped to `[60s, 90d]`). Revocation is global, via signing-key rotation (below).
 - Per-client revocation is intentionally not supported. Forced revocation goes through full key rotation (see below) — rotate the DCR signing key (`ARC1_DCR_SIGNING_SECRET`) or rebind the XSUAA service. (A deeper `KDF_LABEL` bump, `arc1-dcr/v1` → `v2`, also revokes everything, but it lives in the `@arc-mcp/xsuaa-auth` package now, not this repo.)
 - `/register`, `/authorize`, `/token`, `/revoke` are per-IP rate-limited by default (`ARC1_AUTH_RATE_LIMIT=20`/min/IP). Closes CodeQL alert `js/missing-rate-limiting`. Tune via the env var or disable with `=0` if an upstream proxy already provides this. See the [Rate Limiting Guide](rate-limiting.md).

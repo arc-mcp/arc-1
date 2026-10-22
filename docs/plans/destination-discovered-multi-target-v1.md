@@ -20,6 +20,12 @@ For the optional `xsuaa-attribute` mode only, [ADR-0008](../adr/0008-opt-in-xsua
 and the [target authorization contract](xsuaa-target-authorization.md) supersede this v1 document's
 no-target-role and paged-catalog rules. They do not change the standard default or mutation boundary.
 
+[ADR-0010](../adr/0010-pinned-pp-multi-target-writes.md) and the
+[pinned write contract](2026-10-22-multi-target-pinned-writes.md) additionally qualify this document's
+mutation-free rules only for scoped pinned strict-PP CLAS/INTF writes and whole-owner activation.
+The global switch, destination opt-in/restrictions, raw write scope, read access and exact write grant
+must all agree. Aggregate/Copilot and Basic remain mutation-free; broader write parity is not included.
+
 ## Outcome
 
 One ARC-1 CF application can discover explicitly marked BTP subaccount destinations at startup and

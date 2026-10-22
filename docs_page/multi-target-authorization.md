@@ -1,7 +1,8 @@
 # Restrict access to systems and clients
 
 **Optional: show each user only their assigned systems and clients, and reject calls to the others.**
-This adds per-user target filtering to ARC-1's read-only multi-system mode. For example, a shared
+This adds per-user target filtering to ARC-1's multi-system mode.
+[Scoped pinned PP writes](multi-target-writes.md) additionally require exact write grants. For example, a shared
 gateway can contain many systems while a project team sees only its two assigned targets in
 `SAPTargets` and the tool selectors. The same restriction applies if someone supplies another
 target manually or uses its pinned URL.
@@ -22,7 +23,7 @@ No new IAS configuration is required. This guide owns that access setup; the
 | Many systems, with different teams allowed to see/use different subsets | Enable target filtering. This is where it usually brings the most benefit: less irrelevant inventory for people and agents, plus an ARC-1 access check before SAP. |
 | Only a few targets, but their existence must be hidden from other readers | Enable it too; confidentiality, not a minimum system count, is the deciding factor. Trusted Admins still see diagnostic inventory. |
 | A small/shared landscape where every ARC-1 reader may see and attempt all targets | Keep **standard access**. SAP still checks each propagated user's access; target filtering would add IAM maintenance without the same benefit. |
-| One SAP target, or several targets requiring writes/hard isolation | Use [single-target or separate instances](multi-target-administration.md#when-separate-instances-are-safer). This feature is not required for single-target access and does not add multi-target writes. |
+| One SAP target or hard isolation | Use [single-target or separate instances](multi-target-administration.md#when-separate-instances-are-safer). For scoped multi-target development, add [pinned PP writes](multi-target-writes.md) to this target-filtered setup. |
 
 Both access modes are supported choices. Upgrading alone does not require any target-role or IAS change.
 
@@ -32,7 +33,8 @@ Both access modes are supported choices. Upgrading alone does not require any ta
 
     Target authorization is available from ARC-1 **1.6.0**. Confirm that your selected release includes
     this feature before using the setting; older installations do not enforce it. The required
-    companion API is provided by `@arc-mcp/xsuaa-auth` 1.1.0 and included in ARC-1's dependencies.
+    companion API is included in ARC-1's dependencies. Use the library version resolved by the
+    current fixed ARC-1 release; do not pin an older library independently of that release.
     Upgrading does not enable enforcement: existing deployments keep standard access until you opt in.
 
 Use this guide, the deployment runbook and examples from the **same source revision** as the artifact.
@@ -55,7 +57,8 @@ You do not need to configure all of BTP again to add this feature:
 
 The flow is: sign in → XSUAA token with assigned targets → ARC-1 target check → PP/SAP authorization.
 SAP calls still need the existing capability permissions and server/destination settings. A target
-grant does not create an SAP user, prove backend access, or allow multi-target writes.
+grant does not create an SAP user or prove backend access. Writes additionally require the
+[separate exact write grant and pinned PP policy](multi-target-writes.md).
 
 ## What changes when you opt in
 

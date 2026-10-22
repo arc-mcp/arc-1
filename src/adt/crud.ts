@@ -12,7 +12,7 @@
 
 import { postCreate } from './create-request.js';
 import { AdtApiError, extractExceptionType, isNotFoundError } from './errors.js';
-import type { AdtHttpClient } from './http.js';
+import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { assertSourceHash } from './source-precondition.js';
 /** Lock result from SAP */
@@ -20,6 +20,7 @@ export interface LockResult {
   lockHandle: string;
   corrNr: string;
   isLocal: boolean;
+  localityKnown?: boolean;
 }
 
 /** Lock an ABAP object for editing */
@@ -30,6 +31,7 @@ export async function lockObject(
   accessMode = 'MODIFY',
   abapRelease?: string,
   systemType?: string,
+  options?: AdtRequestOptions,
 ): Promise<LockResult> {
   if (accessMode === 'MODIFY') {
     checkOperation(safety, OperationType.Lock, 'LockObject');
@@ -37,11 +39,17 @@ export async function lockObject(
 
   let resp: Awaited<ReturnType<AdtHttpClient['post']>>;
   try {
-    resp = await http.post(`${objectUrl}?_action=LOCK&accessMode=${accessMode}`, undefined, undefined, {
-      // Dual Accept: vendor-specific type for structured lock result parsing,
-      // plus wildcard fallback for SAP versions that don't support the vendor type.
-      Accept: 'application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result, application/*;q=0.8',
-    });
+    resp = await http.post(
+      `${objectUrl}?_action=LOCK&accessMode=${accessMode}`,
+      undefined,
+      undefined,
+      {
+        // Dual Accept: vendor-specific type for structured lock result parsing,
+        // plus wildcard fallback for SAP versions that don't support the vendor type.
+        Accept: 'application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result, application/*;q=0.8',
+      },
+      options,
+    );
   } catch (err) {
     const conv = convertHtmlConflictToProperError(err, objectUrl, { abapRelease, systemType, operation: 'lock' });
     if (conv) throw conv;
@@ -64,7 +72,18 @@ export async function lockObject(
     );
   }
 
-  return { lockHandle, corrNr, isLocal };
+  return {
+    lockHandle,
+    corrNr,
+    isLocal,
+    ...(options
+      ? {
+          localityKnown:
+            ['', 'X'].includes(extractXmlValue(resp.body, 'IS_LOCAL')) &&
+            /<IS_LOCAL(?:\s[^>]*)?(?:\s*\/>|>[\s\S]*?<\/IS_LOCAL>)/.test(resp.body),
+        }
+      : {}),
+  };
 }
 
 /** Unlock an ABAP object */

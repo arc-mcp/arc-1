@@ -5,8 +5,8 @@ the repository's SAP Multi-Target Application (MTA) descriptor so XSUAA, Destina
 bindings, role collections, health checks, and safe defaults are deployed together.
 
 The first acceptance target is deliberately read-only. Widen a single-target instance only after
-identity, authorization, audit, and rollback have been proven. ARC-1 multi-target routes remain
-mutation-free in v1 regardless of the single-target ceiling.
+identity, authorization, audit, and rollback have been proven. Multi-target aggregate and Basic routes
+remain mutation-free; [scoped pinned PP writes](multi-target-writes.md) require their own complete setup.
 
 !!! note "Two meanings of multi-target"
 
@@ -613,8 +613,10 @@ For multi-target v1, data preview and SQL require both application ceilings and 
 destination opt-ins. The [reviewed tool/action surface](multi-target-setup.md#allowed-tools) also
 includes offline lint, read-only transport inspection, ATC and ABAP Unit. ATC/Unit execute SAP
 workloads: keep them out of routine deployment smoke tests, and deny their actions when not approved.
-Writes, activation, transport/Git mutations, SAP-backed formatter/settings actions, plugins, UI,
-and hyperfocused mode remain unavailable.
+For scoped CLAS/INTF writes and whole-owner activation, complete the separate
+[pinned PP write setup](multi-target-writes.md) after this read-only acceptance. Aggregate and Basic
+routes remain mutation-free. Transport/Git management, SAP-backed formatter/settings actions, plugins,
+UI and hyperfocused mode remain unavailable.
 
 When data preview or SQL is enabled, keep the shipped 2 MiB cumulative response allowance and two
 process-wide data-result slots initially. Wide rows can reach the byte ceiling below the 10,000-row

@@ -174,6 +174,7 @@ describe('DevTools', () => {
         expect.stringContaining('checkObjectList'),
         'application/vnd.sap.adt.checkobjects+xml',
         expect.objectContaining({ Accept: 'application/vnd.sap.adt.checkmessages+xml' }),
+        undefined,
       );
     });
 

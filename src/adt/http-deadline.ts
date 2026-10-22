@@ -9,6 +9,8 @@ export interface RequestDeadlineOptions {
 }
 
 export interface AdtRequestOptions extends RequestDeadlineOptions {
+  /** Scoped mutations must not replay for auth, CSRF, negotiation or availability errors. */
+  noReplay?: boolean;
   /** Override the 120-second per-fetch cap for a known long-running ADT operation. */
   fetchTimeoutMs?: number;
   /** Optional ADT subresource: handled 404s may be logged at debug level. */

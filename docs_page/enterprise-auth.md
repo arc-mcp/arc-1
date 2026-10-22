@@ -53,7 +53,7 @@ explicitly; JWT calls use PP and API-key calls use the shared technical SAP iden
 instances remain the recommendation when clearer audit, authorization, operational ownership, and
 credential boundaries are preferred, but separation is not mandatory.
 
-The experimental mutation-free multi-target mode has one separately reviewed exception: a single
+The experimental multi-target mode has one separately reviewed shared-identity exception: a single
 XSUAA-protected application may contain strict PP targets and explicitly enabled Basic destinations.
 Each target keeps one fixed identity mode; Basic never replaces failed PP. Basic targets are labeled
 `shared`, require `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=true`, and make exactly one CF app instance
@@ -219,7 +219,7 @@ For BTP deployments connecting to SAP systems through centrally managed destinat
 For experimental multi-target v1, PrincipalPropagation remains recommended. A destination with
 `Authentication=BasicAuthentication` can be accepted only under the separate default-off instance
 ceiling. XSUAA still authenticates the human and applies ARC-1 scopes, but SAP sees the destination's
-shared technical user. The mode remains mutation-free, has no PP/Basic fallback, and requires one CF
+shared technical user. Basic targets remain mutation-free, have no PP/Basic fallback, and require one CF
 app instance with no rolling/blue-green overlap. Destination credentials are resolved at request
 time and never returned by ARC-1.
 See [Multi-System Setup](multi-target-setup.md).
@@ -656,3 +656,6 @@ These flags from older documentation do **not** exist in the current ARC-1 codeb
 - Verify `SAP_BTP_PP_DESTINATION` authentication type is `PrincipalPropagation` in BTP Cockpit
 - Verify Cloud Connector + backend certificate mapping configuration
 - Check Cloud Connector logs for PP errors
+
+Pinned multi-target object writes require strict PP and exact write grants; see the
+[write setup](multi-target-writes.md). The shared Basic exception never permits writes.

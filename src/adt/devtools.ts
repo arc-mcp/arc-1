@@ -55,6 +55,7 @@ export async function syntaxCheck(
   safety: SafetyConfig,
   objectUrl: string,
   options?: { version?: 'active' | 'inactive'; content?: string; artifactContentType?: 'application/json' },
+  requestOptions?: AdtRequestOptions,
 ): Promise<SyntaxCheckResult> {
   checkOperation(safety, OperationType.Read, 'SyntaxCheck');
 
@@ -73,9 +74,15 @@ export async function syntaxCheck(
     </chkrun:artifacts>
   </chkrun:checkObject>
 </chkrun:checkObjectList>`;
-    const resp = await http.post('/sap/bc/adt/checkruns?reporters=abapCheckRun', body, 'application/*', {
-      Accept: 'application/vnd.sap.adt.checkmessages+xml',
-    });
+    const resp = await http.post(
+      '/sap/bc/adt/checkruns?reporters=abapCheckRun',
+      body,
+      'application/*',
+      {
+        Accept: 'application/vnd.sap.adt.checkmessages+xml',
+      },
+      requestOptions,
+    );
     return parseSyntaxCheckResult(
       resp.body,
       options.artifactContentType === 'application/json' ? objectUrl : undefined,
@@ -87,9 +94,15 @@ export async function syntaxCheck(
   <chkrun:checkObject adtcore:uri="${escapeXmlAttr(objectUrl)}" chkrun:version="${version}"/>
 </chkrun:checkObjectList>`;
 
-  const resp = await http.post('/sap/bc/adt/checkruns', body, 'application/vnd.sap.adt.checkobjects+xml', {
-    Accept: 'application/vnd.sap.adt.checkmessages+xml',
-  });
+  const resp = await http.post(
+    '/sap/bc/adt/checkruns',
+    body,
+    'application/vnd.sap.adt.checkobjects+xml',
+    {
+      Accept: 'application/vnd.sap.adt.checkmessages+xml',
+    },
+    requestOptions,
+  );
 
   return parseSyntaxCheckResult(resp.body);
 }
@@ -175,6 +188,14 @@ function activationRequestOptions(): AdtRequestOptions {
   };
 }
 
+export interface ActivationOptions {
+  preaudit?: boolean;
+  name?: string;
+  /** Required on the multi-target boundary; validates initial and SAP-expanded references. */
+  validateReferences?: (refs: readonly { uri: string; name?: string }[]) => Promise<void>;
+  beforeSubmit?: () => void;
+}
+
 /** Activate (publish) ABAP objects.
  *
  *  Implements the ADT preaudit handshake: the first POST with preauditRequested=true
@@ -185,9 +206,15 @@ export async function activate(
   http: AdtHttpClient,
   safety: SafetyConfig,
   objectUrl: string,
-  options?: { preaudit?: boolean; name?: string },
+  options?: ActivationOptions,
 ): Promise<ActivationResult> {
-  return activateWithinBudget(http, safety, objectUrl, activationRequestOptions(), options);
+  return activateWithinBudget(
+    http,
+    safety,
+    objectUrl,
+    { ...activationRequestOptions(), noReplay: safety.multiTargetWrite?.enabled === true },
+    options,
+  );
 }
 
 async function activateWithinBudget(
@@ -195,9 +222,15 @@ async function activateWithinBudget(
   safety: SafetyConfig,
   objectUrl: string,
   requestOptions: AdtRequestOptions,
-  options?: { preaudit?: boolean; name?: string },
+  options?: ActivationOptions,
 ): Promise<ActivationResult> {
   checkOperation(safety, OperationType.Activate, 'Activate');
+  if (
+    safety.multiTargetWrite &&
+    (!safety.multiTargetWrite.enabled || !options?.validateReferences || options.preaudit === false)
+  )
+    throw new AdtSafetyError('Missing pinned activation validation context.');
+  await options?.validateReferences?.([{ uri: objectUrl, name: options.name }]);
 
   try {
     const preaudit = options?.preaudit !== false;
@@ -208,6 +241,7 @@ async function activateWithinBudget(
 </adtcore:objectReferences>`;
 
     const phase1Start = Date.now();
+    options?.beforeSubmit?.();
     const resp = await http.post(
       `/sap/bc/adt/activation?method=activate&preauditRequested=${preaudit}`,
       body,
@@ -217,12 +251,16 @@ async function activateWithinBudget(
     );
     const phase1DurationMs = Date.now() - phase1Start;
 
-    const outcome = parseActivationOutcome(resp.body);
+    const outcome = parseActivationOutcome(resp.body, safety.multiTargetWrite?.enabled === true);
     if (outcome.kind !== 'preaudit' || !preaudit) {
       return outcomeToResult(outcome);
     }
 
-    return await confirmPreaudit(http, outcome.refs, options?.name ?? objectUrl, phase1DurationMs, requestOptions);
+    await options?.validateReferences?.(outcome.refs);
+    options?.beforeSubmit?.();
+    return await confirmPreaudit(http, outcome.refs, options?.name ?? objectUrl, phase1DurationMs, requestOptions, {
+      safety,
+    });
   } catch (err) {
     return rethrowOrLockHint(err, options?.name ?? objectUrl);
   }
@@ -242,6 +280,7 @@ export async function activateBatch(
   options?: { preaudit?: boolean },
 ): Promise<ActivationResult> {
   checkOperation(safety, OperationType.Activate, 'ActivateBatch');
+  if (safety.multiTargetWrite) throw new AdtSafetyError('Multi-target batch activation is forbidden.');
   const requestOptions = activationRequestOptions();
 
   const preaudit = options?.preaudit !== false;
@@ -334,7 +373,7 @@ ${refLines}
       { Accept: 'application/xml' },
       requestOptions,
     );
-    result = outcomeToResult(parseActivationOutcome(resp.body));
+    result = outcomeToResult(parseActivationOutcome(resp.body, options?.safety.multiTargetWrite?.enabled === true));
     if (options?.ed064RetryObjects) {
       result = await retryBatchActivationIndividuallyAfterEd064(
         http,
@@ -939,8 +978,8 @@ export type ActivationOutcome =
     };
 
 /** Parse activation response into a discriminated outcome. */
-export function parseActivationOutcome(xml: string): ActivationOutcome {
-  if (!xml.trim()) return { kind: 'success', messages: [], details: [] };
+export function parseActivationOutcome(xml: string, requireExecutionEvidence = false): ActivationOutcome {
+  if (!xml.trim() && !requireExecutionEvidence) return { kind: 'success', messages: [], details: [] };
 
   const parsed = parseXml(xml);
   const msgs = findDeepNodes(parsed, 'msg');
@@ -995,6 +1034,23 @@ export function parseActivationOutcome(xml: string): ActivationOutcome {
     };
   }
 
+  if (requireExecutionEvidence) {
+    const properties = findDeepNodes(parsed, 'properties');
+    if (
+      !Object.hasOwn(parsed, 'messages') ||
+      properties.length !== 1 ||
+      properties[0]['@_activationExecuted'] !== 'true'
+    )
+      throw new AdtSafetyError(
+        'SAP did not affirm activation execution. Inspect the active and inactive owner before continuing.' +
+          (messages.length
+            ? ` SAP: ${messages
+                .slice(0, 5)
+                .map((text) => text.slice(0, 500))
+                .join('; ')}`
+            : ''),
+      );
+  }
   return { kind: 'success', messages, details };
 }
 

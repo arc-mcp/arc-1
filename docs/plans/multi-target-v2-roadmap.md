@@ -1,6 +1,6 @@
 # Multi-Target V2 Roadmap
 
-- **Status:** Draft roadmap for future pull requests
+- **Status:** Draft inventory; pinned-write design superseded by the 22 October 2026 plan below
 - **Date:** 2026-07-20
 - **Baseline:** experimental mutation-free multi-target v1 from PR
   [#579](https://github.com/arc-mcp/arc-1/pull/579)
@@ -12,6 +12,25 @@ It is deliberately a roadmap, not a specification or authorization to enable wri
 boundary change still needs its own ADR, threat-model update, implementation plan, tests, and
 review. The current normative v1 contract remains
 [destination-discovered multi-target v1](destination-discovered-multi-target-v1.md).
+
+## Current pinned-write implementation entry point
+
+Use [the pinned PP writes implementation plan](2026-10-22-multi-target-pinned-writes.md) and its
+proposed ADR for FEAT-93. The older pinned-write recommendations and prerequisite graph below are
+design history, not a second implementation contract. In particular, the current plan:
+
+- reuses `SAP_ALLOW_WRITES` without an additional global multi-target write flag;
+- requires an explicit destination package list and checks both server and destination restrictions;
+- chooses a separate exact `arc1_write_targets` attribute rather than an unresolved grant grammar;
+- starts with `$TMP` development and qualifies other packages/transportable writes separately;
+- preserves existing pinned URLs and single-target authentication;
+- does not require a generator, admin UI, dynamic refresh, cache or full fairness project before
+  the small pilot; and
+- treats current source preconditions, cancellation plumbing and activation outcome handling as
+  existing controls to qualify, rather than assuming they are absent.
+
+The dated plan and ADR are still proposed; neither enables writes or supersedes the accepted
+mutation-free ADRs by itself. The remaining non-write inventory below retains its separate scope.
 
 ## Executive Decision
 

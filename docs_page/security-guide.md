@@ -232,6 +232,13 @@ used when per-user SAP authorization or horizontal scaling is required. See
 [ADR-0007](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0007-shared-basic-identity-for-read-only-multi-target.md)
 and [Multi-System Setup](multi-target-setup.md).
 
+For [scoped pinned PP writes](multi-target-writes.md), every call also requires the global write
+ceiling, destination opt-in and restrictions, verified raw write scope, read access grant and exact
+write-target grant. Aggregate and Basic connections stay mutation-free. `MCPTargetDeveloper`
+contains application-wide functional scopes: enable target-filtered mode before assigning it.
+Package restrictions do not constrain what authored ABAP does when activated or run by ABAP Unit;
+keep `SAPDiagnose.unittest` denied unless that execution is intended.
+
 ### Shared SAP login lifetime and credential rotation
 
 Single-target HTTP deployments reuse the shared identity's SAP login cookies and CSRF token

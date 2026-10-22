@@ -13,6 +13,9 @@ describe('multi-target destination property contract', () => {
       'arc1.allow_data_preview',
       'arc1.allow_free_sql',
       'arc1.target_alias',
+      'arc1.allow_writes',
+      'arc1.allowed_packages',
+      'arc1.allowed_transports',
     ]);
     expect(isSupportedMultiTargetArcProperty('arc1.enabled')).toBe(true);
     expect(isSupportedMultiTargetArcProperty('arc1.target_alias')).toBe(true);

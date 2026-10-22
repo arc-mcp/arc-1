@@ -1,0 +1,16 @@
+{
+  "Name": "ARC1_DEV_001_PP",
+  "Type": "HTTP",
+  "URL": "http://dev-pp.example.invalid:8080",
+  "ProxyType": "OnPremise",
+  "Authentication": "PrincipalPropagation",
+  "sap-sysid": "DEV",
+  "sap-client": "001",
+  "Description": "DEV client 001 - scoped per-user development",
+  "arc1.enabled": "true",
+  "arc1.allow_data_preview": "false",
+  "arc1.allow_free_sql": "false",
+  "arc1.allow_writes": "true",
+  "arc1.allowed_packages": "$TMP,ZTEAM_COMPONENT/**",
+  "arc1.allowed_transports": "DEVK900123"
+}
