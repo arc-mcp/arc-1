@@ -3,7 +3,7 @@
 ## TL;DR
 `TABL` is the canonical TADIR R3TR type covering both transparent tables (DD02L `TABCLASS=TRANSP`) and DDIC structures (`TABCLASS=INTTAB`/`APPEND`). ADT splits these into two slash subtypes: `TABL/DT` (transparent table, URL `/sap/bc/adt/ddic/tables/`) and `TABL/DS` (structure, URL `/sap/bc/adt/ddic/structures/`). PR #219 collapsed both into ARC-1's single canonical short `TABL` and removed the bogus `STRU` (kept `STRU/DS → TABL` as a legacy alias).
 
-**Read path** uses `AdtClient.getTabl()` / `resolveTablObjectUrl()` which probe `/tables/` first and fall back to `/structures/` on 404 — correct because the source body is identical either way.
+**Read path** uses `AdtClient.getTabl()` / `resolveTablObjectUrl()` which probe `/tables/` first and fall back to `/structures/` on 404. On 750, this gives a field/type representation (`define type`), not a complete table definition: table category and delivery class are absent. See the [22 October 2026 controls](../../2026-10-22-legacy-ddic-alternatives.md). Never reuse this representation for table writes.
 
 **Write path** (after issue #285) uses a separate `AdtClient.resolveTablObjectUrlForWrite()` that asks SAP via repository search for the actual subtype (TABL/DT vs TABL/DS) and refuses transparent-table writes on systems that don't expose `/sap/bc/adt/ddic/tables/` (NW 7.50/7.51 ship `/ddic/structures/` only; the database-table editor was added in NW 7.52, per ADT 2.52 release notes). Pre-fix, the read-path resolver was reused for writes — on NW 7.50 every TABL/DT write silently routed to `/structures/`, where a PUT corrupts DD02L-TABCLASS to INTTAB on the inactive draft.
 

@@ -780,8 +780,8 @@ export class AdtClient {
 
   /** Resolve the canonical ADT URL for a TABL name (transparent table or structure)
    *  for the **read** path. Probes /tables/ first and falls back to /structures/ on
-   *  404. The source body is identical either way, so the fallback is safe for reads.
-   *  Result is cached per client.
+   *  404. On 750, the fallback exposes fields/types without full table semantics.
+   *  Result is cached per client for reads only.
    *
    *  Do NOT use this for writes/activates — on NW 7.50 the /tables/ endpoint is
    *  absent entirely, so transparent tables (TABL/DT) fall through to /structures/
