@@ -20,6 +20,9 @@ Claude Code Opus 5.5 Max reviewed the plan. Follow-up changes restrict eligibili
 out-of-order expiry, discard inherited application-context cookies when opening a new write,
 and add a credential-free `transportReuse` audit field. The implementation adds no retries.
 Revocation limits and shared-session reset behavior are documented in the security guide.
+Two implementation review rounds with Claude Code 2.1.308, Opus 5.5 Max, ended with approval
+and no blockers. The final local suite passed 10,170 tests; build, typecheck, lint, policy,
+size and strict documentation checks also passed.
 
 ## Live BTP qualification
 
@@ -27,6 +30,8 @@ Candidate `185c98e4`, Node 24.19.0, one disposable CF app, XSUAA authentication 
 Cloud Connector PP to A4H client 001; SAP_BASIS 758 SP0002. Calls used the MCP SDK against the
 app through a local CF SSH tunnel. Writes were restricted to disposable `$TMP` objects;
 transport, Git, SQL and data-preview permissions stayed disabled.
+This was Option 2, using the caller's XSUAA JWT; the Destination Service token path was not
+tested live and is pooled only when its credential is a JWT with a usable expiry.
 
 | Check | Observed result |
 |---|---|
@@ -47,6 +52,8 @@ returned 404. Transport audit states do not count SAP security sessions.
 The [reporter's test of `b1a0720e`](https://github.com/arc-mcp/arc-1/pull/1086#issuecomment-6351784010)
 also passed: 33 tool calls across two short runs on the affected deployment. In its debug run,
 only the first of 235 PP requests lacked cookies; both stateful closes succeeded.
+That earlier build had broader pooling eligibility. The reporter should confirm `pooled-*`
+audit states on the final build; its cookie-count result is not a measurement of this candidate.
 
 ## Limits and follow-up
 
