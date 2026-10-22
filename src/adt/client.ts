@@ -1458,8 +1458,7 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
    * Builds the SELECT server-side from structured params. IN/NOT IN values are strictly
    * parsed as quoted literal lists (no subqueries). Uses the freestyle endpoint so
    * multi-column WHERE uses SAP's SQL parser. Requires a working freestyle endpoint;
-   * supported data sources and syntax depend on the backend release.
-   * Gated by allowDataPreview (not allowFreeSQL).
+   * sources/syntax depend on the backend. Gated by allowDataPreview (not allowFreeSQL).
    */
   async runTableQuery(
     tableName: string,
