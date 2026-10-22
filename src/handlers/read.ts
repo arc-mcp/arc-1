@@ -982,8 +982,12 @@ export async function handleSAPRead(
     }
     case 'DEVC': {
       const maxResults = args.maxResults != null ? Number(args.maxResults) : undefined;
-      const contents = await client.getPackageContents(name, maxResults);
-      const listing = describePackageListing(contents.length, maxResults);
+      const direct =
+        args.packageScope === 'direct'
+          ? await client.getDirectPackageContents(name, maxResults, args.objectType as string | undefined)
+          : undefined;
+      const contents = direct?.objects ?? (await client.getPackageContents(name, maxResults));
+      const listing = direct?.listing ?? describePackageListing(contents.length, maxResults);
       if (args.format === 'structured') return textResult(toolJson({ objects: contents, listing }));
       const result = textResult(toolJson(contents));
       result.content.push({ type: 'text', text: toolJson({ listing }) });

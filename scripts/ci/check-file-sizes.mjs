@@ -43,8 +43,8 @@ const BUDGETS = {
   // +4: parent function group for SAPTransport check/history.
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
   // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
-  'src/handlers/tools.ts': 1771, // +6: FUNC parameter description field (#1040).
-  'src/handlers/schemas.ts': 1542, // +13: FUNC parameter description validation (#1040).
+  'src/handlers/tools.ts': 1776, // +5: explicit direct package scope (#1065).
+  'src/handlers/schemas.ts': 1573, // +31: direct package inputs and mode validation (#1065).
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
@@ -76,7 +76,7 @@ const BUDGETS = {
   // -5 after removing the forwarding-only guard factory and its extra import/configuration lines.
   // TABL write-route cache removed (never cache subtype routes for mutations); +9 for refusing TABL
   // mutations whose subtype cannot be verified on 7.50/7.51 (the resolver's error text).
-  'src/adt/client.ts': 1693, // +2: enforce the DDIC preview row cap after parsing (#1068).
+  'src/adt/client.ts': 1699, // +6: thin direct package browser wrapper (#1065).
   // The single live ADT integration suite covers every read/write surface against a real system;
   // it passed the 3000-line default test budget with the ATC check-variant binding cases
   // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.

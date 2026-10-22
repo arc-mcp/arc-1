@@ -102,8 +102,12 @@ for expansion. An empty request body is not the maintained contract.
   bounded hierarchy resolver. CSRF is required because the read uses POST.
 - `getPackageContents` uses discovery-gated indexed search; it does **not** currently
   fall back to this endpoint. Classic search may ignore package filters.
+- `getDirectPackageContents` explicitly uses this endpoint for `SAPRead` with
+  `packageScope=direct`: one root plus at most one expansion of 16 returned IDs,
+  with shared byte/time/send limits. It never recurses or supplies authorization evidence.
 - Native listing has no proven server row cap; 750 responses omit descriptions, and
   an empty body does not distinguish a missing package from empty/inaccessible content.
 
-See the [live 750/758 evidence and proposed contract](../../../research/2026-10-22-legacy-package-browser.md).
-General legacy browsing remains COMPAT-17 / #1065, not an implemented capability.
+See the [live 750/758 evidence](../../../research/2026-10-22-legacy-package-browser.md)
+and [implemented contract](../../../plans/2026-10-22-direct-package-browser.md).
+COMPAT-17 retains unverified release and empty-package evidence; no native 740 support is claimed.

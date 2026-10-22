@@ -27,6 +27,7 @@ import { readEnhancementImplementation } from './enhancements.js';
 import { AdtApiError, AdtError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
+import { getDirectPackageContents } from './package-browser.js';
 import { requirePackageFilteredSearch } from './package-contents.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
 import { canonicalRevisionSourcePath } from './path-safety.js';
@@ -1195,6 +1196,11 @@ export class AdtClient {
   }
 
   // ─── Package Operations ────────────────────────────────────────────
+
+  /** Explicit bounded direct contents; does not replace indexed search or the safety resolver. */
+  async getDirectPackageContents(packageName: string, maxResults?: number, objectType?: string) {
+    return getDirectPackageContents(this.http, this.safety, packageName, maxResults, objectType);
+  }
 
   /**
    * Get package contents (objects and subpackages).
