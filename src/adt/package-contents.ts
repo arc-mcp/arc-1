@@ -3,6 +3,9 @@ import type { AdtHttpClient } from './http.js';
 import { clampUrlLimit } from './result-limits.js';
 import { findDeepNodes, parseXml } from './xml-parser.js';
 
+export const DIRECT_PACKAGE_NAME = /^(?=.{1,30}$)(?:\/[A-Z0-9_]+\/)?[A-Z0-9_$]+$/i;
+export const DIRECT_PACKAGE_TYPE = /^[A-Z0-9_]{1,8}(?:\/[A-Z0-9_]{1,8})?$/;
+
 /** Require SAP's advertised filter for getPackageContents' request (no objectType/useSearchProvider).
  *  Slash-typed objectType or useSearchProvider overrides can select classic search, which ignores packageName. */
 export function supportsPackageFilteredSearch(xml: string): boolean {
@@ -27,7 +30,7 @@ export async function requirePackageFilteredSearch(http: AdtHttpClient): Promise
   if (!supportsPackageFilteredSearch(discovery.body)) {
     throw new AdtError(
       'Package contents are unavailable: this SAP system does not advertise package-filtered ADT search. ' +
-        'Use name/type searches or the native package browser; an unfiltered search could return unrelated objects.',
+        'Use SAPRead type=DEVC with packageScope="direct" for bounded native browsing; an unfiltered search could return unrelated objects.',
     );
   }
 }

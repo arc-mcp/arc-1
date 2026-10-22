@@ -482,7 +482,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['text', 'structured', 'editable'],
             description:
-              'Default text. editable: fresh {source, sourceHash} for guarded SAPWrite; omit version/method/grep, select CLAS include. structured: CLAS metadata+includes, DEVC {objects,listing}, or action=diff JSON. DEVC text returns the array then listing metadata; diff text returns a patch.',
+              'Default text; DEVC returns array then listing metadata, diff a patch. structured: CLAS metadata+includes, DEVC {objects,listing}, diff JSON. editable: fresh {source,sourceHash} for guarded SAPWrite; omit version/method/grep, select CLAS include.',
           },
           version: {
             type: 'string',
@@ -508,7 +508,13 @@ export function getToolDefinitions(
           maxResults: {
             type: 'number',
             description:
-              'DEVC object limit (default 200, clamped to [1, 1000]). Listing metadata reports the effective limit and possible truncation. Total and full repository completeness remain unknown.',
+              'DEVC output cap: default 200, clamp 1–1000. Metadata reports possible truncation; total/completeness unknown. Direct mode does not cap SAP responses.',
+          },
+          packageScope: {
+            type: 'string',
+            enum: ['direct'],
+            description:
+              'DEVC direct contents, no recursion/descriptions (16 folders/2 MiB/10s). Omit for indexed search.',
           },
           sqlFilter: {
             type: 'string',
@@ -518,7 +524,7 @@ export function getToolDefinitions(
           objectType: {
             type: 'string',
             description:
-              'SYNTAX: required repository type (e.g. CLAS, PROG, DDLS). API_STATE: inferred if omitted. VERSIONS: type selects the endpoint; inferred from CL_/IF_/CX_, else PROG.' +
+              'DEVC direct: exact folder (CLAS/OC, TABL/DS). SYNTAX: required type (CLAS, PROG, DDLS). API_STATE: inferred. VERSIONS: endpoint type; inferred from CL_/IF_/CX_, else PROG.' +
               (btp ? '' : ' TEXT_ELEMENTS: PROG (default), CLAS or FUGR.'),
           },
           source: {

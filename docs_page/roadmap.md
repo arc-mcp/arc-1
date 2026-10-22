@@ -74,7 +74,7 @@ sequence.
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
 | [COMPAT-16](#compat-16) | API-release directory cleanup | P2 | S | Needs research | Compatibility |
-| [COMPAT-17](#compat-17) | Package contents without filtered search | P2 | M | Needs research | Compatibility |
+| [COMPAT-17](#compat-17) | Direct package browser release coverage | P2 | S | Needs research | Compatibility |
 | [COMPAT-18](#compat-18) | Newly created program metadata on 7.50 | P2 | S | Needs research | Compatibility |
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
 | [COMPAT-12](#compat-12) | Deletion with another user's text draft | P3 | S | Needs research | Compatibility |
@@ -365,23 +365,24 @@ catalog rows automatically. See the
 [state plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-12-text-pool-state.md).
 
 <a id="compat-17"></a>
-### COMPAT-17 — Package contents without filtered search
+### COMPAT-17 — Direct package browser release coverage
 
-- **Priority / effort / status:** P2 / M / Needs research
+- **Priority / effort / status:** P2 / S / Needs research
 - **Category:** Compatibility
 
-**Remaining gap.** Classic ADT quick search can ignore `packageName` (verified on 750).
-Package listing now requires the advertised filter. Native `nodestructure` can list
-direct contents in two read-only POSTs using returned type-node IDs, but lacks a server
-result cap and reliable descriptions; indexed search also includes descendant packages.
+**Remaining gap.** Explicit `packageScope=direct` now provides bounded native
+contents on verified 750 SP02 and 758 SP02 contracts. Native 740 SP04, BTP ABAP,
+and an existing empty package remain unverified; empty trees deliberately return
+an ambiguous-result error. Indexed search and write-package authorization remain
+separate.
 
-**Resume with.** A bounded native listing contract with explicit scope, missing-versus-empty
-behavior and accurate completeness metadata. Preserve the current search path's descriptions;
-do not silently substitute an unbounded tree traversal or system-wide search.
-The [750/758 investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-22-legacy-package-browser.md)
-and [#1065](https://github.com/arc-mcp/arc-1/issues/1065) propose an explicit direct-contents mode.
-API semantics, empty-package evidence and large-package load still need resolution;
-740 SP04 support is unverified.
+**Resume with.** Sanitized native root/expansion evidence on those releases, or
+independent proof distinguishing an empty package from a missing/inaccessible
+one. Preserve direct scope, client budgets and unknown completeness; no automatic
+search/RFC/helper fallback. See [#1065](https://github.com/arc-mcp/arc-1/issues/1065),
+[the initial research](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-22-legacy-package-browser.md)
+([research PR #1071](https://github.com/arc-mcp/arc-1/pull/1071)) and
+[the implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-22-direct-package-browser.md).
 
 <a id="compat-18"></a>
 ### COMPAT-18 — Newly created program metadata on 7.50

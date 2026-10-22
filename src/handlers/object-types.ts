@@ -277,7 +277,11 @@ export function normalizeTypeArgsForValidation(
         ...cleaned,
         type: normalizeObjectType(String(cleaned.type ?? '')),
         objectType:
-          cleaned.objectType === undefined ? undefined : normalizeObjectType(String(cleaned.objectType ?? '')),
+          cleaned.objectType === undefined
+            ? undefined
+            : normalizeObjectType(String(cleaned.type ?? '')) === 'DEVC' && cleaned.packageScope === 'direct'
+              ? String(cleaned.objectType).trim().toUpperCase()
+              : normalizeObjectType(String(cleaned.objectType)),
       };
     case 'SAPManage':
       // Strict-schema clients populate optional fields on unrelated actions and revoke.

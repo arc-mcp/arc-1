@@ -1,0 +1,94 @@
+<?xml version='1.0' encoding='utf-8'?>
+<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
+  <asx:values>
+    <DATA>
+      <TREE_CONTENT />
+      <OBJECT_TYPES>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>CLAS/OC</OBJECT_TYPE>
+          <CATEGORY_TAG>source_library</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL>Classes</OBJECT_TYPE_LABEL>
+          <NODE_ID>000033</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>DOMA/DD</OBJECT_TYPE>
+          <CATEGORY_TAG>dictionary</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL>Domains</OBJECT_TYPE_LABEL>
+          <NODE_ID>000028</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>DTEL/DE</OBJECT_TYPE>
+          <CATEGORY_TAG>dictionary</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL>Data Elements</OBJECT_TYPE_LABEL>
+          <NODE_ID>000022</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>ENHS/XS</OBJECT_TYPE>
+          <CATEGORY_TAG>enhancements</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL>Enhancement Spots</OBJECT_TYPE_LABEL>
+          <NODE_ID>000122</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>ENQU/DL</OBJECT_TYPE>
+          <CATEGORY_TAG>dictionary</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL>Lock Objects</OBJECT_TYPE_LABEL>
+          <NODE_ID>000030</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>FUGR/F</OBJECT_TYPE>
+          <CATEGORY_TAG>source_library</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL>Function Groups</OBJECT_TYPE_LABEL>
+          <NODE_ID>000114</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>INTF/OI</OBJECT_TYPE>
+          <CATEGORY_TAG>source_library</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL>Interfaces</OBJECT_TYPE_LABEL>
+          <NODE_ID>000089</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>PINF/KI</OBJECT_TYPE>
+          <CATEGORY_TAG>package_interfaces</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL>Package Interfaces</OBJECT_TYPE_LABEL>
+          <NODE_ID>000002</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>PROG/I</OBJECT_TYPE>
+          <CATEGORY_TAG>source_library</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL>Includes</OBJECT_TYPE_LABEL>
+          <NODE_ID>000117</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>PROG/P</OBJECT_TYPE>
+          <CATEGORY_TAG>source_library</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL>Programs</OBJECT_TYPE_LABEL>
+          <NODE_ID>000109</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>TABL/DS</OBJECT_TYPE>
+          <CATEGORY_TAG>dictionary</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL>Structures</OBJECT_TYPE_LABEL>
+          <NODE_ID>000019</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>TABL/DT</OBJECT_TYPE>
+          <CATEGORY_TAG>dictionary</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL>Database Tables</OBJECT_TYPE_LABEL>
+          <NODE_ID>000009</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>TRAN/T</OBJECT_TYPE>
+          <CATEGORY_TAG>transactions</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL>Transactions</OBJECT_TYPE_LABEL>
+          <NODE_ID>000119</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>TTYP/DA</OBJECT_TYPE>
+          <CATEGORY_TAG>dictionary</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL>Table Types</OBJECT_TYPE_LABEL>
+          <NODE_ID>000015</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+      </OBJECT_TYPES>
+    </DATA>
+  </asx:values>
+</asx:abap>

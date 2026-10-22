@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { BTPConfig, Destination } from '@arc-mcp/xsuaa-auth/btp';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -132,6 +133,54 @@ describe('multi-target principal-propagation retry', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     resetCachedFeatures();
+  });
+
+  it('keeps direct package browsing on the selected per-user target with only read scope', async () => {
+    const current = registry();
+    setCachedFeatures(featuresOff(), 'A4H/100');
+    resolveRuntimeSubaccountPpDestination.mockResolvedValue({
+      destination: DESTINATION,
+      authTokens: { sapConnectivityAuth: 'Bearer per-user-assertion' },
+    });
+    const contexts: unknown[] = [];
+    const post = vi.spyOn(AdtHttpClient.prototype, 'post').mockImplementation(async (_path, body) => {
+      contexts.push({
+        target: getCurrentContext()?.target,
+        identity: getCurrentContext()?.identity,
+        user: getCurrentContext()?.user,
+      });
+      const part = body?.includes('<TV_NODEKEY>000000</TV_NODEKEY>') ? 'root' : 'expanded';
+      return {
+        statusCode: 200,
+        headers: {},
+        body: readFileSync(new URL(`../../fixtures/xml/package-browser-750-${part}.xml`, import.meta.url), 'utf8'),
+      };
+    });
+    const server = createServer(buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, current.targets), {
+      btpConfig: BTP_CONFIG,
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
+    });
+    const result = await requestHandler(server)(
+      {
+        method: 'tools/call',
+        params: {
+          name: 'SAPRead',
+          arguments: {
+            target: 'A4H/100',
+            type: 'DEVC',
+            name: 'SABP_UNIT_CORE',
+            packageScope: 'direct',
+            format: 'structured',
+          },
+        },
+      },
+      { authInfo: READ_AUTH },
+    );
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(result.content[0].text).listing.scope).toBe('direct');
+    expect(resolveRuntimeSubaccountPpDestination).toHaveBeenCalledWith(BTP_CONFIG, DESTINATION.Name, READ_AUTH.token);
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(contexts).toEqual(Array(2).fill({ target: 'A4H/100', identity: 'per-user', user: 'RETRY_TEST_USER' }));
   });
 
   it('does not retain a failed lookup and retries successfully on the next call to the same server', async () => {

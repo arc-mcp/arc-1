@@ -5,6 +5,12 @@ Tracking: [#1065](https://github.com/arc-mcp/arc-1/issues/1065), COMPAT-17; pare
 
 ## Decision
 
+**Update:** the follow-on [implementation plan](../plans/2026-10-22-direct-package-browser.md)
+resolves the API, multi-folder expansion and bounded-load questions. It implements
+explicit direct mode; ambiguous empty trees remain errors. The original research
+and deferral below are retained as the evidence trail.
+
+
 Defer the implementation; keep the current refusal when discovery lacks package-filtered quick search. A native
 **direct-contents** browser is feasible, but it must be an explicit mode with bounded
 client work and honest completeness. It cannot silently replace descendant-inclusive

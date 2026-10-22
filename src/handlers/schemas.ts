@@ -23,6 +23,7 @@ import {
 } from '../adt/atc-batch.js';
 import { DTEL_MAX_LABEL_LENGTHS, TABLE_TYPE_DIMENSION_MAX } from '../adt/ddic-xml.js';
 import { isValidFmParameterDescription } from '../adt/fm-parameter-docs.js';
+import { DIRECT_PACKAGE_NAME, DIRECT_PACKAGE_TYPE } from '../adt/package-contents.js';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import { SYNTAX_BATCH_TYPES } from '../adt/syntax-batch.js';
@@ -94,9 +95,37 @@ function validateSapReadInput(
     objectType?: string;
     source?: string;
     version?: string;
+    packageScope?: string;
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
+  if (input.packageScope !== undefined) {
+    const allowed = new Set(['type', 'name', 'packageScope', 'objectType', 'maxResults', 'format']);
+    if (input.type !== 'DEVC')
+      ctx.addIssue({ code: 'custom', path: ['packageScope'], message: 'packageScope requires type=DEVC.' });
+    if (!DIRECT_PACKAGE_NAME.test(input.name ?? ''))
+      ctx.addIssue({
+        code: 'custom',
+        path: ['name'],
+        message: 'Direct browsing requires an exact package name (1–30 characters).',
+      });
+    if (input.objectType !== undefined && !DIRECT_PACKAGE_TYPE.test(input.objectType))
+      ctx.addIssue({
+        code: 'custom',
+        path: ['objectType'],
+        message: 'Use an exact advertised folder type, for example CLAS/OC.',
+      });
+    for (const [key, value] of Object.entries(input)) {
+      if (value !== undefined && (!allowed.has(key) || (key === 'format' && value === 'editable')))
+        ctx.addIssue({
+          code: 'custom',
+          path: [key],
+          message: `Direct package browsing does not accept ${key}=${value}.`,
+        });
+    }
+  } else if (input.type === 'DEVC' && input.objectType !== undefined) {
+    ctx.addIssue({ code: 'custom', path: ['objectType'], message: 'DEVC objectType requires packageScope="direct".' });
+  }
   if (input.type === 'SYNTAX') {
     for (const key of ['name', 'objectType'] as const) {
       if (!input[key]?.trim()) ctx.addIssue({ code: 'custom', path: [key], message: `SYNTAX requires ${key}.` });
@@ -276,6 +305,7 @@ export const SAPReadSchema = z
     maxRows: z.coerce.number().optional(),
     /** For type=DEVC: max number of objects to list. Default 200, clamped to [1, 1000]. */
     maxResults: z.coerce.number().optional(),
+    packageScope: z.enum(['direct']).optional(),
     sqlFilter: z.string().optional(),
     objectType: z.string().optional(),
     source: z.string().optional(),
@@ -319,6 +349,7 @@ export const SAPReadSchemaBtp = z
     maxRows: z.coerce.number().optional(),
     /** For type=DEVC: max number of objects to list. Default 200, clamped to [1, 1000]. */
     maxResults: z.coerce.number().optional(),
+    packageScope: z.enum(['direct']).optional(),
     sqlFilter: z.string().optional(),
     objectType: z.string().optional(),
     source: z.string().optional(),
