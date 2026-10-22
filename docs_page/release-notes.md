@@ -22,6 +22,26 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
+## 1.8.0 — OAuth consent and scoped SAP workflows (2026-10-23)
+
+XSUAA operators: upgrade every instance before resuming sign-ins and restart sign-ins already in
+progress. Refresh your MCP client's tool list after upgrading.
+
+| Change | Impact | Action |
+|---|---|---|
+| OAuth client approval ([#1088](https://github.com/arc-mcp/arc-1/pull/1088)) | Every sign-in requires explicit client approval, including existing SSO sessions and manual clients. Existing registered client IDs remain usable. | Configure the canonical public HTTPS `ARC1_PUBLIC_URL`, including any path prefix; review [proxy and rate-limit requirements](enterprise-auth.md). |
+| Scoped multi-target writes ([#1080](https://github.com/arc-mcp/arc-1/pull/1080)) | Pinned strict-PP routes support separately enabled CLAS/INTF writes. Aggregate and shared-Basic routes remain mutation-free. | Follow [write setup](multi-target-writes.md): global write switch, destination restrictions and exact write grants are all required. |
+| IDE navigation ([#1025](https://github.com/arc-mcp/arc-1/pull/1025)) | Adds SAP ADT MCP navigation and optional Eclipse links without changing source/JSON results. | Follow [IDE integration](ide-integration.md); Eclipse links require explicit configuration. |
+| Direct package browsing ([#1081](https://github.com/arc-mcp/arc-1/pull/1081)) | Explicit `packageScope="direct"` lists bounded direct contents and immediate subpackages without recursion. Completeness remains unknown. | Use [direct mode](tools.md#sapread) where indexed package search is unavailable; narrow by advertised `objectType` when needed. |
+| Table settings and previews ([#1087](https://github.com/arc-mcp/arc-1/pull/1087), [#1074](https://github.com/arc-mcp/arc-1/pull/1074)) | `TABL/DTT` can update native `loggingEnabled`; TABLE_CONTENTS enforces the requested row cap even when SAP returns a lookahead row. | Activate logging changes and check SAP's `rec/client` setting; see [technical settings](tools.md#technical-table-settings). |
+| Diagnostics ([#1084](https://github.com/arc-mcp/arc-1/pull/1084), [#1076](https://github.com/arc-mcp/arc-1/pull/1076)) | Gateway HTML whitespace parsing is more efficient; package preflight failures retain uncertainty about missing metadata APIs. | Treat an unverified package as unverified, not as proof it does not exist. |
+| Cloud Foundry and PP sessions ([#1082](https://github.com/arc-mcp/arc-1/pull/1082), [#1086](https://github.com/arc-mcp/arc-1/pull/1086)) | CF uploads retain required compiled public modules; single-target Cloud Connector PP reuses bounded, per-user sessions to reduce repeated logins. | Review [session and incident limits](security-guide.md); multi-target routes retain request-local transport. |
+
+**OAuth upgrade notes:** `ARC1_OAUTH_DCR_ENABLED=false` disables new registrations only.
+This upgrade does **not** invalidate existing access or refresh tokens; independently verify any
+incident-response invalidation. The separate [node-forge risk exception](security-guide.md) remains
+limited to 28 October 2026, 00:00 Europe/Berlin.
+
 ## 1.7.0 — application data, diagnostics and safer authoring (2026-10-22)
 
 Refresh your MCP client's tool list. Existing data-preview permissions also enable the new data actions below; review the opt-outs before upgrading.
