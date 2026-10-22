@@ -127,6 +127,23 @@ describe('ATC CI orchestration', () => {
     ).rejects.toThrow('ZMISSING');
     expect(post).not.toHaveBeenCalled();
   });
+  it('keeps an unavailable metadata endpoint distinct from a proven missing package', async () => {
+    const { http, get, post } = httpFor();
+    get.mockRejectedValue(new AdtApiError('No suitable resource found', 404, '/sap/bc/adt/packages/SABP_UNIT'));
+    await expect(verifyCiPackages(http, safety, { packages: ['SABP_UNIT'] }, {}, true)).rejects.toThrow(
+      'package metadata API may be unavailable',
+    );
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(post).not.toHaveBeenCalled();
+  });
+  it('preserves an authorization failure without trying search or starting a run', async () => {
+    const { http, get, post } = httpFor();
+    const denied = new AdtApiError('Forbidden', 403, '/sap/bc/adt/packages/ZPKG');
+    get.mockRejectedValue(denied);
+    await expect(verifyCiPackages(http, safety, { packages: ['ZPKG'] }, {}, true)).rejects.toBe(denied);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(post).not.toHaveBeenCalled();
+  });
   it('refuses an unverified or empty selection before POST', async () => {
     const { http, get, post } = httpFor();
     get.mockImplementation(async (path: string) => ({
