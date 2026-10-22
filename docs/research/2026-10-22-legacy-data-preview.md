@@ -11,8 +11,9 @@ Keep backend errors explicit and ask for native evidence before treating an unex
 failure on a supported release as a missing feature or ARC-1 defect.
 
 Sources: [SAP backend configuration guide, authorization URI table](https://help.sap.com/doc/2e65ad9a26c84878b1413009f8ac07c3/202210.000/en-US/config_guide_system_backend_abap_development_tools.pdf#page=7),
-[SAP-authored SQL Console introduction](https://community.sap.com/t5/application-development-and-automation-blog-posts/sql-console-in-aie/ba-p/13096113).
-These prerequisites are not universal endpoint/version gates: backports, routing,
+[SQL Console introduction on SAP Community](https://community.sap.com/t5/application-development-and-automation-blog-posts/sql-console-in-aie/ba-p/13096113).
+The [SAP-authored feature matrix](https://community.sap.com/t5/technology-blog-posts-by-sap/adt-feature-availability-matrix-for-as-abap-releases/ba-p/13027468)
+also lists SQL Console at 740 SP08. These prerequisites are not universal endpoint/version gates: backports, routing,
 authorization and installed configuration still matter.
 
 ## Read-only controls, 22 October 2026
@@ -62,6 +63,8 @@ alone does not establish these capabilities.
 | Catalog/source APIs | Read definitions, not table data or arbitrary SELECT results |
 | Broad release hard-block | Could reject a working backport; retain exact discovery/error evidence |
 | Direct RFC, generated ABAP or installed helper | Outside core under [ADR-0009](../adr/0009-abap-execution-and-rfc-belong-in-extensions.md) |
+| Direct database connection | Requires a separate identity/authorization design and bypasses the current per-user SAP API boundary |
+| Operator-specific OData service | No generic SP04 contract established; would be a separately configured service/extension, not a core fallback |
 | Operator GUI workflow | Human workaround where available, not an automatic MCP fallback or permission bypass |
 
 Any later adapter needs a separate issue, a proven native contract, failing regression
