@@ -367,6 +367,72 @@ XSUAA validates the first redirect to ARC-1. ARC-1 separately validates the seco
 the MCP client: known manual callbacks use a built-in policy; DCR callbacks must match their
 registration exactly. A shared SAP domain wildcard is unnecessary at either layer.
 
+## Client approval
+
+Since ARC-1 1.8.0, each new XSUAA authorization flow asks you to approve the MCP
+application before continuing to SAP sign-in. ARC-1 serves this page through
+`@arc-mcp/xsuaa-auth`; it is separate from the BTP/XSUAA login page. An existing
+SSO session can skip the login prompt, but it cannot skip client approval.
+
+### What to check
+
+1. Start the connection from the MCP application you intend to use, such as VS Code.
+   Check that the browser is on your organization's expected ARC-1 address.
+2. Review the application name, requested permissions and complete return address.
+   The application supplies its name; a familiar name is not proof of identity.
+3. Choose **Approve and continue** only for a connection you started and trust.
+   Complete any identity-provider sign-in in the same browser, then return to the client.
+   Choose **Deny** to cancel an unexpected request.
+
+The return address belongs to the MCP client. Desktop clients may use `localhost`,
+`127.0.0.1`, `[::1]` or an application scheme such as `vscode://`; hosted clients use
+an HTTPS callback. A local address explains where the browser returns, but does not
+prove which application receives it. Keep the complete address visible when checking
+it; do not rely on the application name alone.
+
+Requested scope names describe the client's request, not a new BTP role assignment.
+See [ARC-1 scopes and role templates](authorization.md#btp-xsuaa-role-templates).
+If the client omits scopes, access can include all permissions assigned to your
+account for this ARC-1 server. Approval does not raise the server safety ceiling,
+grant SAP authorizations or bypass destination-specific restrictions.
+
+### When approval appears again
+
+Approval is per **new browser authorization flow**, not per tool call or SAP
+destination. Normal refresh-token exchanges and transport reconnects using a valid
+token do not show it. If VS Code retains usable credentials, restarting VS Code alone
+does not require approval; a client may nevertheless choose to begin a new flow.
+
+You will see approval again when a client starts a new authorization flow, for example
+after signing out, clearing saved credentials, an expired or revoked refresh token,
+or reconfiguring the connection. There is no guaranteed weekly or monthly interval:
+it depends on client behavior and your XSUAA token policy.
+
+This applies both to one ARC-1 app serving one destination and to one app serving
+several destinations. Selecting another target with the existing valid token does
+not itself start authorization. Separately configured MCP connections may each
+authorize independently. Multiple Cloud Foundry instances share this behavior when
+they use the same public URL and signing configuration.
+
+There is no supported switch to suppress approval or remember it permanently.
+`ARC1_OAUTH_DCR_ENABLED=false` stops new registrations; existing and manual clients
+still require approval. **Deny** cancels only the current request and does not revoke
+tokens issued earlier.
+
+### Expired requests and troubleshooting
+
+An approval request expires after ten minutes. If it expires or is invalid, restart
+the connection from the MCP client and complete the flow in the same browser.
+Do not repeatedly submit an old approval page.
+
+If the problem persists, administrators should check the canonical public URL,
+proxy handling of `Origin`, `Cookie` and `Set-Cookie`, and the page's referrer policy.
+See the [proxy and scaling requirements](#stateless-dcr) below. Do not remove the
+approval step or loosen browser binding to work around a deployment problem.
+
+The visual layout depends on the bundled `@arc-mcp/xsuaa-auth` version; this flow
+description also applies to the original approval page shipped in ARC-1 1.8.0.
+
 ## Stateless DCR
 
 ARC-1 implements RFC 7591 Dynamic Client Registration (DCR) with a **stateless** design: each issued `client_id` is an HMAC-signed token that carries its own registration payload (redirect URIs, grant types, etc.). The signing key is derived from the XSUAA `clientsecret`, so any process with the same service binding can validate any `client_id` ever issued — **no shared store or persistent state is needed**.
@@ -374,7 +440,7 @@ ARC-1 implements RFC 7591 Dynamic Client Registration (DCR) with a **stateless**
 This means:
 
 - DCR registrations survive `cf restart`, `cf push`, `cf restage`, cell evacuations, OOM auto-recovery, and multi-instance scale-out — none of these invalidate cached `client_id`s.
-- Every sign-in now requires an ARC-1 approval page showing the client name, return address and requested permissions before XSUAA sign-in. Existing IdP SSO sessions do not skip it. Only approve a connection you started in a trusted MCP client; names are self-declared.
+- Every new authorization flow requires [client approval](#client-approval) before XSUAA sign-in, including existing SSO sessions. Refresh-token exchanges do not repeat it.
 - Approval and callback use separate host-only, HttpOnly cookies with a ten-minute lifetime. Reverse proxies must preserve `Origin` and `Cookie` headers and set `ARC1_PUBLIC_URL` to the correct public HTTPS origin and path prefix. HTTP is supported only for loopback development.
 - Outside Cloud Foundry, a non-loopback HTTP bind address is insufficient: set `ARC1_PUBLIC_URL` to the canonical HTTPS URL. All clients must use that same origin; alternate routes can lose the approval cookie. Proxies must preserve `Set-Cookie` and must not replace the approval page's `Referrer-Policy: origin`.
 - For HTTP development, use `localhost` or `127.0.0.1` as the public issuer host. The currently tested MCP SDK rejects an IPv6 HTTP issuer; IPv6 client callback URLs remain supported.
