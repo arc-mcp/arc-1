@@ -5,6 +5,18 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.9.0](https://github.com/arc-mcp/arc-1/compare/v1.8.0...v1.9.0) (2026-10-23)
+
+
+### Features
+
+* **oauth:** add DCR redirect allowlist with mandatory approval ([#1091](https://github.com/arc-mcp/arc-1/issues/1091)) ([a2fc2a8](https://github.com/arc-mcp/arc-1/commit/a2fc2a8a7212c63ea52acd135068690ee5fd32b0))
+
+
+### Bug Fixes
+
+* support include read denials consistently ([#1094](https://github.com/arc-mcp/arc-1/issues/1094)) ([1d874cf](https://github.com/arc-mcp/arc-1/commit/1d874cf8c3fd42b664f5c4646c111af0dc7f401d))
+
 ## [1.8.0](https://github.com/arc-mcp/arc-1/compare/v1.7.0...v1.8.0) (2026-10-22)
 
 
