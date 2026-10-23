@@ -26,6 +26,23 @@ define structure zbase {
         { name: 'ZCLASSIC_INC', attribute: null, kind: 'include' },
       ]);
     });
+
+    it('parses key includes of a table definition', () => {
+      const refs = parseEmbeddedStructures(`
+@AbapCatalog.tableCategory : #TRANSPARENT
+define table ztab {
+  key include zkey_inc not null;
+  key keys : include znamed_key_inc not null;
+  key client : abap.clnt not null;
+  include zdata_inc;
+}`);
+
+      expect(refs).toEqual([
+        { name: 'ZKEY_INC', attribute: null, kind: 'include' },
+        { name: 'ZNAMED_KEY_INC', attribute: 'keys', kind: 'include' },
+        { name: 'ZDATA_INC', attribute: null, kind: 'include' },
+      ]);
+    });
   });
 
   describe('buildStructureHierarchy', () => {
