@@ -4,13 +4,15 @@
  * Kept apart from read.test.ts, which is at its file-size budget.
  */
 import { readFileSync } from 'node:fs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { resolveConfig } = await import('../../../src/server/config.js');
+const { validateDenyActions } = await import('../../../src/server/deny-actions.js');
 
 // main → TOP + UXX; UXX → U01 + U02. The function module bodies live in U01/U02, which
 // only the recursive walk reaches.
@@ -56,6 +58,8 @@ describe('SAPRead FUGR grep', () => {
     serve();
   });
 
+  afterEach(() => vi.unstubAllEnvs());
+
   describe.each(['SAPRead.INCL', 'SAPRead.IN*'])('include deny policy %s', (denial) => {
     it.each([
       { label: 'explicit expansion', args: { expand_includes: true } },
@@ -68,6 +72,7 @@ describe('SAPRead FUGR grep', () => {
         args: { type: 'FUGR/F', expand_includes: true, version: 'inactive' },
       },
     ])('refuses $label before any SAP request', async ({ args }) => {
+      validateDenyActions([denial]);
       mockFetch.mockReset();
       const { isError, text } = await readFugr(args, [denial]);
 
@@ -76,6 +81,27 @@ describe('SAPRead FUGR grep', () => {
       expect(text).toContain('SAPRead(type="INCL")');
       expect(mockFetch).not.toHaveBeenCalled();
     });
+  });
+
+  it.each(['env', 'cli'])('enforces include denial parsed from %s configuration', async (source) => {
+    vi.stubEnv('SAP_DENY_ACTIONS', source === 'env' ? 'SAPRead.INCL' : undefined);
+    const { config, sources } = resolveConfig(source === 'cli' ? ['--deny-actions', 'SAPRead.INCL'] : []);
+    expect(config.denyActions).toEqual(['SAPRead.INCL']);
+    expect(sources.denyActions).toEqual(source === 'env' ? { env: 'SAP_DENY_ACTIONS' } : { flag: '--deny-actions' });
+    const client = createClient();
+    const restricted = client.withSafety({ ...client.safety, denyActions: config.denyActions });
+    mockFetch.mockReset();
+
+    for (const args of [
+      { type: 'INCL', name: 'LZDEMOU01' },
+      { type: 'FUGR', name: 'ZDEMO', expand_includes: true },
+      { type: 'FUGR', name: 'ZDEMO', grep: 'ENQUEUE_EZDEMO' },
+    ]) {
+      const result = await handleToolCall(restricted, config, 'SAPRead', args);
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('SAP_DENY_ACTIONS');
+    }
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('enforces the effective client include denial through the hyperfocused wrapper', async () => {

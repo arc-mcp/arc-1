@@ -325,6 +325,9 @@ is optional when using `grep`. Each source has its own heading and local line nu
 the response shows up to 100 matching lines across all sources and counts all matches
 in the sources searched.
 
+If `SAP_DENY_ACTIONS` denies `SAPRead.INCL`, both explicit include expansion and FUGR `grep`
+are refused before reading sources. Plain FUGR metadata reads remain available.
+
 Expansion stops at 80 source blocks (main included) or five include levels. The response
 warns when either limit leaves includes unsearched and names includes that could not be
 read. A partial search cannot establish that the whole group has no matches: large groups
