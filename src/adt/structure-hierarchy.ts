@@ -57,7 +57,8 @@ export function parseEmbeddedStructures(source: string): EmbeddedStructureRef[] 
       continue;
     }
 
-    const namedInclude = line.match(/^([a-z][a-z0-9_]*)\s*:\s*include\s+([a-z0-9_/]+)\s*;?/i);
+    // Table key includes carry a leading `key` (`key include zkey_inc not null;`).
+    const namedInclude = line.match(/^(?:key\s+)?([a-z][a-z0-9_]*)\s*:\s*include\s+([a-z0-9_/]+)\s*;?/i);
     if (namedInclude?.[1] && namedInclude[2]) {
       refs.push({
         name: namedInclude[2].toUpperCase(),
@@ -67,7 +68,7 @@ export function parseEmbeddedStructures(source: string): EmbeddedStructureRef[] 
       continue;
     }
 
-    const anonymousInclude = line.match(/^include\s+([a-z0-9_/]+)\s*;?/i);
+    const anonymousInclude = line.match(/^(?:key\s+)?include\s+([a-z0-9_/]+)\s*;?/i);
     if (anonymousInclude?.[1]) {
       refs.push({ name: anonymousInclude[1].toUpperCase(), attribute: null, kind: 'include' });
     }
