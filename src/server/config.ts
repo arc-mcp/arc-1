@@ -144,11 +144,6 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
     valueName: 'patterns',
     description: 'Allowed return addresses for new and existing OAuth client registrations',
   },
-  {
-    name: 'oauth-consent-exempt-redirect-uri-patterns',
-    valueName: 'patterns',
-    description: 'Loopback or exact HTTPS return addresses that skip the OAuth consent page',
-  },
   { name: 'oauth-dcr-ttl-seconds', valueName: 'seconds', description: 'OAuth DCR client lifetime' },
   { name: 'dcr-signing-secret', valueName: 'secret', description: 'OAuth DCR signing secret' },
   { name: 'btp-service-key', valueName: 'json', description: 'BTP ABAP service-key JSON' },
@@ -353,16 +348,6 @@ export function parseApiKeys(raw: string): Array<{ key: string; profile: string 
 /** Comma or whitespace separated redirect-URI globs; neither occurs inside a pattern. */
 export function splitRedirectPatterns(raw: string): string[] {
   return raw.split(/[,\s]+/).filter((pattern) => pattern.length > 0);
-}
-
-/** Only addresses no third party can obtain may skip consent: loopback, or one exact HTTPS host. */
-export function isConsentExemptablePattern(pattern: string): boolean {
-  const match = /^(https?):\/\/([^/]+)(\/.*)?$/i.exec(pattern);
-  if (!match) return false;
-  const [, scheme, authority] = match;
-  const host = authority.toLowerCase().replace(/:(\d+|\*)$/, '');
-  if (['127.0.0.1', 'localhost', '[::1]'].includes(host)) return true;
-  return scheme.toLowerCase() === 'https' && !authority.includes('*') && !authority.includes('@');
 }
 
 function parseUiMode(raw: string, transport: TransportType): UiMode {
@@ -826,27 +811,18 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   }
   config.xsuaaAuth = resolveBool('xsuaa-auth', 'SAP_XSUAA_AUTH', false, 'xsuaaAuth');
   config.oauthDcrEnabled = resolveBool('oauth-dcr-enabled', 'ARC1_OAUTH_DCR_ENABLED', true, 'oauthDcrEnabled');
-  const dcrRedirectPatterns = resolveOptionalStr(
-    'oauth-dcr-redirect-uri-patterns',
-    'ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS',
-    'oauthDcrRedirectUriPatterns',
-  );
-  config.oauthDcrRedirectUriPatterns = dcrRedirectPatterns ? splitRedirectPatterns(dcrRedirectPatterns) : undefined;
-  config.oauthConsentExemptRedirectUriPatterns = splitRedirectPatterns(
-    resolveStr(
-      'oauth-consent-exempt-redirect-uri-patterns',
-      'ARC1_OAUTH_CONSENT_EXEMPT_REDIRECT_URI_PATTERNS',
-      '',
-      'oauthConsentExemptRedirectUriPatterns',
-    ),
-  );
-  for (const pattern of config.oauthConsentExemptRedirectUriPatterns) {
-    if (!isConsentExemptablePattern(pattern)) {
-      throw new Error(
-        `ARC1_OAUTH_CONSENT_EXEMPT_REDIRECT_URI_PATTERNS may only name loopback HTTP or exact HTTPS hosts without wildcards: ${pattern}`,
-      );
-    }
-  }
+  // An explicitly empty policy must deny all DCR redirects, never restore defaults.
+  const dcrRedirectFlag = getFlag('oauth-dcr-redirect-uri-patterns');
+  const dcrRedirectEnv = process.env.ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS;
+  const dcrRedirectPatterns = dcrRedirectFlag ?? dcrRedirectEnv;
+  config.oauthDcrRedirectUriPatterns =
+    dcrRedirectPatterns === undefined ? undefined : splitRedirectPatterns(dcrRedirectPatterns);
+  sources.oauthDcrRedirectUriPatterns =
+    dcrRedirectFlag !== undefined
+      ? { flag: '--oauth-dcr-redirect-uri-patterns' }
+      : dcrRedirectEnv !== undefined
+        ? { env: 'ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS' }
+        : 'default';
   config.allowHttpNoAuth = resolveBool('allow-http-no-auth', 'ARC1_ALLOW_HTTP_NO_AUTH', false, 'allowHttpNoAuth');
 
   // OAuth DCR client_id lifetime. Default: 0 = never expire (no per-client

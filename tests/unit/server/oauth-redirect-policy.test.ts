@@ -279,13 +279,13 @@ describe('production OAuth redirect flow', () => {
 });
 
 describe('deployment-restricted OAuth clients', () => {
+  afterEach(() => vi.unstubAllEnvs());
   const restricted: Partial<ServerConfig> = {
     oauthDcrRedirectUriPatterns: [
       'https://vscode.dev/redirect',
       'http://127.0.0.1:*/**',
       'https://*.applicationstudio.cloud.sap/callback',
     ],
-    oauthConsentExemptRedirectUriPatterns: ['https://vscode.dev/redirect', 'http://127.0.0.1:*/**'],
   };
   const register = (app: express.Express, redirectUri: string) =>
     request(app)
@@ -299,19 +299,27 @@ describe('deployment-restricted OAuth clients', () => {
     expect(rejected.body.error).toBe('invalid_client_metadata');
   });
 
-  it('skips consent only for exempt return addresses and keeps it for BAS workspaces', async () => {
+  it.each([
+    'http://127.0.0.1:33418/',
+    'https://vscode.dev/redirect',
+    'https://port3000-workspaces-ws-x.eu10.applicationstudio.cloud.sap/callback',
+  ])('requires approval before forwarding an allowlisted client: %s', async (redirectUri) => {
     const app = await boot('https://arc1.example', true, restricted);
-    const loopback = 'http://127.0.0.1:33418/';
-    const local = await register(app, loopback);
-    const direct = await request(app).get('/authorize').query(authorization(loopback, local.body.client_id));
-    expect(direct.status).toBe(302);
-    expect(new URL(direct.headers.location).origin).toBe(CREDENTIALS.url);
-    expect(cookies(direct).some((cookie) => cookie.includes('mcp-oauth-state-'))).toBe(true);
-
-    const bas = 'https://port3000-workspaces-ws-x.eu10.applicationstudio.cloud.sap/callback';
-    const workspace = await register(app, bas);
-    const page = await request(app).get('/authorize').query(authorization(bas, workspace.body.client_id));
+    const registered = await register(app, redirectUri);
+    expect(registered.status).toBe(201);
+    const page = await request(app).get('/authorize').query(authorization(redirectUri, registered.body.client_id));
     expect(page.status).toBe(200);
     expect(page.headers.location).toBeUndefined();
+    expect(cookies(page).some((cookie) => cookie.includes('mcp-oauth-state-'))).toBe(false);
+    const approved = await approve(app, page);
+    expect(new URL(approved.headers.location).origin).toBe(CREDENTIALS.url);
+    expect(cookies(approved).some((cookie) => cookie.includes('mcp-oauth-state-'))).toBe(true);
+  });
+
+  it('denies every dynamic redirect under an explicitly empty policy', async () => {
+    const app = await boot('https://arc1.example', true, { oauthDcrRedirectUriPatterns: [] });
+    const rejected = await register(app, 'https://vscode.dev/redirect');
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.error).toBe('invalid_client_metadata');
   });
 });

@@ -1060,35 +1060,29 @@ describe('parseArgs', () => {
     expect(parseArgs(['--oauth-dcr-enabled', 'false']).oauthDcrEnabled).toBe(false);
   });
 
-  it('parses the OAuth redirect allowlist and consent exemptions', () => {
+  it('parses the OAuth redirect allowlist and records its source', () => {
     expect(parseArgs([]).oauthDcrRedirectUriPatterns).toBeUndefined();
-    expect(parseArgs([]).oauthConsentExemptRedirectUriPatterns).toEqual([]);
     vi.stubEnv(
       'ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS',
       'https://vscode.dev/redirect, http://127.0.0.1:*/**\nhttps://*.applicationstudio.cloud.sap/callback',
     );
-    vi.stubEnv('ARC1_OAUTH_CONSENT_EXEMPT_REDIRECT_URI_PATTERNS', 'https://vscode.dev/redirect,http://127.0.0.1:*/**');
-    const config = parseArgs([]);
+    const { config, sources } = resolveConfig([]);
     expect(config.oauthDcrRedirectUriPatterns).toEqual([
       'https://vscode.dev/redirect',
       'http://127.0.0.1:*/**',
       'https://*.applicationstudio.cloud.sap/callback',
     ]);
-    expect(config.oauthConsentExemptRedirectUriPatterns).toEqual([
-      'https://vscode.dev/redirect',
-      'http://127.0.0.1:*/**',
-    ]);
+    expect(sources.oauthDcrRedirectUriPatterns).toEqual({ env: 'ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS' });
+    const override = resolveConfig(['--oauth-dcr-redirect-uri-patterns=https://client.example/cb']);
+    expect(override.config.oauthDcrRedirectUriPatterns).toEqual(['https://client.example/cb']);
+    expect(override.sources.oauthDcrRedirectUriPatterns).toEqual({ flag: '--oauth-dcr-redirect-uri-patterns' });
   });
 
-  it.each([
-    'https://*.applicationstudio.cloud.sap/callback',
-    'https://*/**',
-    'http://attacker.example/cb',
-    'https://user@vscode.dev/redirect',
-    'cursor://anysphere.cursor-mcp/**',
-  ])('refuses to exempt %s from OAuth consent', (pattern) => {
-    vi.stubEnv('ARC1_OAUTH_CONSENT_EXEMPT_REDIRECT_URI_PATTERNS', pattern);
-    expect(() => parseArgs([])).toThrow(/loopback HTTP or exact HTTPS hosts/);
+  it.each(['', '  ', ', ,'])('treats an explicitly empty DCR policy as deny-all: %j', (value) => {
+    vi.stubEnv('ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS', value);
+    expect(parseArgs([]).oauthDcrRedirectUriPatterns).toEqual([]);
+    vi.stubEnv('ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS', 'https://client.example/cb');
+    expect(parseArgs(['--oauth-dcr-redirect-uri-patterns', value]).oauthDcrRedirectUriPatterns).toEqual([]);
   });
 
   // --- oauthDcrTtlSeconds ---
