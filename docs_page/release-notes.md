@@ -22,6 +22,26 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
+## 1.9.0 — OAuth registration policy and clearer approval (pending release)
+
+This release requires `@arc-mcp/xsuaa-auth` 1.2.0 or later. Upgrade every instance before
+enabling the optional policy below, then configure the same value on every instance.
+
+| Change | Impact | Action |
+|---|---|---|
+| DCR return-address allowlist ([#1091](https://github.com/arc-mcp/arc-1/pull/1091)) | `ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS` / `--oauth-dcr-redirect-uri-patterns` restricts new registrations and return addresses in existing client IDs. Unset retains the default admission rules; an explicitly empty value denies all DCR callbacks. | Follow the [configuration reference](configuration-reference.md#a4-xsuaa-oauth-btp): allow every callback the intended client registers, use exact client-owned BAS callbacks, and avoid empty deployment-template values. |
+| Clearer approval page and guidance ([#1091](https://github.com/arc-mcp/arc-1/pull/1091), [#1092](https://github.com/arc-mcp/arc-1/pull/1092)) | Shorter copy, readable destination details, keyboard focus and responsive styling. Approval remains required for every new authorization flow; token refresh does not repeat it. There are no consent exemptions. | Read [client approval](xsuaa-setup.md#client-approval). Only approve connections you started in a trusted client; application names are self-declared. |
+| Registration errors and audit ([#1091](https://github.com/arc-mcp/arc-1/pull/1091)) | Disallowed callbacks now return `400 invalid_client_metadata` instead of a server error. Callback URLs with credentials or fragments are rejected even when the new policy is unset. Rejections emit `oauth_client_registration_rejected`. | Correct incompatible client callbacks. Collect stderr/file audit logs for OAuth lifecycle events; the BTP Audit Log sink does not forward them. |
+| Dependency maintenance ([#1089](https://github.com/arc-mcp/arc-1/pull/1089)) | Updates the locked `ip-address` dependency to 10.7.4. | None. |
+
+**Policy limits:** The manual XSUAA client uses a separate callback policy. Tightening the DCR
+allowlist does not revoke access or refresh tokens. Widening it can restore previously filtered
+callbacks; rolling back to an older ARC-1 version removes this restriction. After upgrading,
+check normal browser approval and MCP reconnect before applying a narrower policy.
+
+The separate [node-forge risk exception](security-guide.md) remains limited to
+28 October 2026, 00:00 Europe/Berlin; this release does not remediate that dependency issue.
+
 ## 1.8.0 — OAuth consent and scoped SAP workflows (2026-10-23)
 
 XSUAA operators: upgrade every instance before resuming sign-ins and restart sign-ins already in
