@@ -24,6 +24,23 @@ describe('Logger', () => {
     stdoutSpy.mockRestore();
   });
 
+  it('routes DCR policy rejections through stderr and configured audit sinks', () => {
+    const logger = new Logger('json', 'info');
+    const sink: LogSink = { write: vi.fn() };
+    logger.addSink(sink);
+    const event: AuditEvent = {
+      timestamp: new Date().toISOString(),
+      level: 'warn',
+      event: 'oauth_client_registration_rejected',
+      clientName: 'Test client',
+      redirectUriHost: 'retired-client.example',
+      reason: 'redirect_uri_not_allowlisted',
+    };
+    logger.emitAudit(event);
+    expect(JSON.parse(stderrSpy.mock.calls[0]?.[0] as string)).toMatchObject(event);
+    expect(sink.write).toHaveBeenCalledWith(expect.objectContaining(event));
+  });
+
   it('outputs text format with timestamp and level', () => {
     const logger = new Logger('text', 'debug');
     logger.info('hello world');

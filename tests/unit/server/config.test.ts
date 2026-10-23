@@ -1064,13 +1064,13 @@ describe('parseArgs', () => {
     expect(parseArgs([]).oauthDcrRedirectUriPatterns).toBeUndefined();
     vi.stubEnv(
       'ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS',
-      'https://vscode.dev/redirect, http://127.0.0.1:*/**\nhttps://*.applicationstudio.cloud.sap/callback',
+      'https://vscode.dev/redirect, http://127.0.0.1:*/**\nhttps://workspace.example/callback',
     );
     const { config, sources } = resolveConfig([]);
     expect(config.oauthDcrRedirectUriPatterns).toEqual([
       'https://vscode.dev/redirect',
       'http://127.0.0.1:*/**',
-      'https://*.applicationstudio.cloud.sap/callback',
+      'https://workspace.example/callback',
     ]);
     expect(sources.oauthDcrRedirectUriPatterns).toEqual({ env: 'ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS' });
     const override = resolveConfig(['--oauth-dcr-redirect-uri-patterns=https://client.example/cb']);
@@ -1083,6 +1083,13 @@ describe('parseArgs', () => {
     expect(parseArgs([]).oauthDcrRedirectUriPatterns).toEqual([]);
     vi.stubEnv('ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS', 'https://client.example/cb');
     expect(parseArgs(['--oauth-dcr-redirect-uri-patterns', value]).oauthDcrRedirectUriPatterns).toEqual([]);
+  });
+
+  it('keeps an empty equals-style DCR flag authoritative over the environment', () => {
+    vi.stubEnv('ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS', 'https://client.example/cb');
+    const { config, sources } = resolveConfig(['--oauth-dcr-redirect-uri-patterns=']);
+    expect(config.oauthDcrRedirectUriPatterns).toEqual([]);
+    expect(sources.oauthDcrRedirectUriPatterns).toEqual({ flag: '--oauth-dcr-redirect-uri-patterns' });
   });
 
   // --- oauthDcrTtlSeconds ---

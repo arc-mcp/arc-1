@@ -369,6 +369,7 @@ tool call. See [setup](btp-cloud-foundry-deployment.md#optional-btp-audit-log-si
 | `server_start` | Server version, transport, write ceiling, configured target URL indicator, and process ID where available. |
 | `activation_preaudit_completed` | Two-phase SAP activation preaudit result, reference count, and phase durations. |
 | `oauth_client_registered` | XSUAA only: a new DCR `client_id` was minted (`/register`). Includes id length, redirect-URI count and parsed redirect hosts. |
+| `oauth_client_registration_rejected` | XSUAA only: DCR registration was refused. Includes client name, parsed callback host when available, and a reason; no submitted path, query or credentials. |
 | `oauth_client_lookup_failed` | XSUAA only: a `client_id` failed to resolve. `reason` ∈ {`unknown_prefix`, `malformed`, `bad_signature`, `invalid_payload`, `expired`}. Useful for spotting forgery / probing. |
 | `oauth_redirect_uri_registered` | XSUAA only: a redirect URI matched the manual-client policy at `/authorize` and was added to ARC-1's in-memory client metadata. The XSUAA service configuration is unchanged. |
 | `oauth_redirect_uri_rejected` | XSUAA only: an unapproved redirect URI was rejected at `/authorize`; useful for detecting interception attempts or bad client configuration. |
@@ -381,6 +382,8 @@ Every entry has `timestamp`, `level`, and `event`. Events within one MCP tool ca
 calls also add `destination`, public `target`, and `identity` (`per-user` or `shared`). Destination
 credentials, bearer tokens, cookies, authorization headers, and other secret values are centrally
 redacted before any sink write.
+
+OAuth lifecycle events are available through stderr (subject to the log level) and the configured file sink. The BTP Audit Log sink currently does not forward these events.
 
 ### Retention
 

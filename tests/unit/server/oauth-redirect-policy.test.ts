@@ -284,7 +284,7 @@ describe('deployment-restricted OAuth clients', () => {
     oauthDcrRedirectUriPatterns: [
       'https://vscode.dev/redirect',
       'http://127.0.0.1:*/**',
-      'https://*.applicationstudio.cloud.sap/callback',
+      'https://port3000-workspaces-ws-x.eu10.applicationstudio.cloud.sap/callback',
     ],
   };
   const register = (app: express.Express, redirectUri: string) =>
@@ -321,5 +321,26 @@ describe('deployment-restricted OAuth clients', () => {
     const rejected = await register(app, 'https://vscode.dev/redirect');
     expect(rejected.status).toBe(400);
     expect(rejected.body.error).toBe('invalid_client_metadata');
+  });
+
+  it('applies a narrowed policy to previously registered clients across instances', async () => {
+    const original = await boot();
+    const registered = await request(original)
+      .post('/register')
+      .send({
+        redirect_uris: ['https://vscode.dev/redirect', 'https://retired-client.example/callback'],
+        token_endpoint_auth_method: 'none',
+      });
+    expect(registered.status).toBe(201);
+    const narrowed = await boot('https://arc1.example', true, restricted);
+    const allowed = await request(narrowed)
+      .get('/authorize')
+      .query(authorization('https://vscode.dev/redirect', registered.body.client_id));
+    await approve(narrowed, allowed);
+    const retired = await request(narrowed)
+      .get('/authorize')
+      .query(authorization('https://retired-client.example/callback', registered.body.client_id));
+    expect(retired.status).toBe(400);
+    expect(retired.headers.location).toBeUndefined();
   });
 });

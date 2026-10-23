@@ -358,7 +358,7 @@ It does not belong in XSUAA's callback list.
 | Situation | Action |
 |---|---|
 | Standard MTA deployment or optional browser UI | No new callback setting: deployment registers ARC-1/AppRouter callbacks. Existing installations: check the [upgrade table](#upgrading-an-existing-deployment) first. |
-| New MCP client using Dynamic Client Registration (DCR), including a BAS workspace | Connect with the server URL. The client registers its exact callback automatically. |
+| New MCP client using Dynamic Client Registration (DCR), including a BAS workspace | Connect with the server URL. The client registers its exact callback automatically; when a DCR allowlist is configured, every callback it registers must be allowed. |
 | Supported manual client, such as Copilot Studio | Follow the client setup above; its callback is accepted by ARC-1. |
 | A different client configured with the shared XSUAA client ID | Prefer its DCR mode. Editing XSUAA cannot add it to ARC-1's built-in manual-client policy. |
 | External gateway/custom `ARC1_PUBLIC_URL` or manually managed deployment | Register ARC-1's exact public callback and logged-out URLs in the deployment-owned XSUAA configuration. |
@@ -378,7 +378,7 @@ This means:
 - Approval and callback use separate host-only, HttpOnly cookies with a ten-minute lifetime. Reverse proxies must preserve `Origin` and `Cookie` headers and set `ARC1_PUBLIC_URL` to the correct public HTTPS origin and path prefix. HTTP is supported only for loopback development.
 - Outside Cloud Foundry, a non-loopback HTTP bind address is insufficient: set `ARC1_PUBLIC_URL` to the canonical HTTPS URL. All clients must use that same origin; alternate routes can lose the approval cookie. Proxies must preserve `Set-Cookie` and must not replace the approval page's `Referrer-Policy: origin`.
 - For HTTP development, use `localhost` or `127.0.0.1` as the public issuer host. The currently tested MCP SDK rejects an IPv6 HTTP issuer; IPv6 client callback URLs remain supported.
-- Set `ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS` to restrict which return addresses dynamic clients may register, for example to VS Code (`https://vscode.dev/redirect`, `https://insiders.vscode.dev/redirect`, `http://127.0.0.1/**`, `http://127.0.0.1:*/**`) or exact BAS workspace callback URLs owned by the intended client. Do not use shared SAP platform wildcards: they admit other tenants. Every URI in a registration must match, and this setting does not change the manual XSUAA client policy. Other registrations get `400 invalid_client_metadata`, and existing client IDs lose return addresses outside the list. Paths and queries are case-sensitive. Set the same policy on every instance. An explicitly empty setting denies all DCR redirects; remove it to restore defaults. The allowlist never skips client approval and does not revoke existing access or refresh tokens.
+- Set `ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS` to restrict which return addresses dynamic clients may register, for example to VS Code (`https://vscode.dev/redirect`, `https://insiders.vscode.dev/redirect`, `http://127.0.0.1/**`, `http://127.0.0.1:*/**`) or exact BAS workspace callback URLs owned by the intended client. Do not use shared SAP platform wildcards: they admit other tenants. Every URI in a registration must match, and this setting does not change the manual XSUAA client policy. Other registrations get `400 invalid_client_metadata`, and existing client IDs lose return addresses outside the list. Paths and queries are case-sensitive. Set the same policy on every instance. An explicitly empty setting denies all DCR redirects; remove it to restore defaults. The allowlist never skips client approval and does not revoke existing access or refresh tokens. An empty deployment-template value denies all DCR redirects. Widening the policy restores previously filtered return addresses; it is not permanent revocation. Older ARC-1 versions ignore this setting, so a rollback can remove the restriction.
 - Set `ARC1_OAUTH_DCR_ENABLED=false` to stop new registrations and omit the registration discovery endpoint. Existing registered IDs and the manual XSUAA client remain usable with approval.
 - Upgrade every instance before resuming sign-ins. In-flight sign-ins must restart; old unbound state and raw upstream codes are rejected. Existing client IDs and tokens are not invalidated by the upgrade. If exposure is suspected, use documented XSUAA incident controls and verify invalidation independently; rotating the DCR signing key alone does not revoke upstream tokens.
 - A completed approval uses two `/authorize` requests (page and form submission), both counted by the existing per-IP limits. Account for shared-IP traffic when sizing the limit.
@@ -510,15 +510,16 @@ CORS applies when a browser makes a cross-origin request to ARC-1. Native or ser
 
 ### Audit events
 
-DCR lifecycle is captured in the audit stream alongside tool calls. Three event types fire:
+DCR lifecycle is captured in the audit stream alongside tool calls:
 
 - `oauth_client_registered` — `info`: a new `client_id` was minted; payload includes the issued id, client name, redirect-URI count, parsed redirect hosts, and id length (for tracking URL-budget regressions).
+- `oauth_client_registration_rejected` — `warn`: a registration was refused; includes the client name, parsed callback host (when available) and rejection reason, without the submitted path, query or credentials.
 - `oauth_client_lookup_failed` — `warn` (or `info` for `expired`): a `client_id` failed to resolve; `reason` is one of `unknown_prefix` / `malformed` / `bad_signature` / `invalid_payload` / `expired`. Useful for spotting forgery / probing attempts.
 - `oauth_redirect_uri_registered` — `info`: a redirect URI matched ARC-1's manual-client policy
   and was added at `/authorize` time to ARC-1's in-memory metadata for that client. This does not
   update the XSUAA service configuration.
 
-Events flow through the existing audit sinks (stderr / file / BTP Audit Log Service) — same pipeline used for tool-call audit.
+These events use the audit pipeline and reach stderr at the configured log level and the file sink when enabled. The BTP Audit Log sink currently does not forward OAuth lifecycle events; collect stderr or file logs if you need these records.
 
 ## Updating xs-security.json
 

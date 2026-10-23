@@ -217,6 +217,15 @@ export interface OAuthClientRegisteredEvent extends AuditEventBase {
   idBytes: number;
 }
 
+/** OAuth DCR: registration was refused before a client_id was issued. */
+export interface OAuthClientRegistrationRejectedEvent extends AuditEventBase {
+  event: 'oauth_client_registration_rejected';
+  clientName?: string;
+  /** Parsed host only; never the submitted path, query or credentials. */
+  redirectUriHost?: string;
+  reason: string;
+}
+
 /** OAuth DCR: getClient was called with an unrecognised, malformed, or
  *  forged-signature client_id. Useful for detecting probing/replay attempts. */
 export interface OAuthClientLookupFailedEvent extends AuditEventBase {
@@ -309,6 +318,7 @@ export type AuditEvent =
   | ServerStartEvent
   | ActivationPreauditEvent
   | OAuthClientRegisteredEvent
+  | OAuthClientRegistrationRejectedEvent
   | OAuthClientLookupFailedEvent
   | OAuthRedirectUriRegisteredEvent
   | OAuthRedirectUriRejectedEvent
