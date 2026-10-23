@@ -22,7 +22,7 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
-## 1.9.0 — OAuth registration policy and clearer approval (pending release)
+## 1.9.0 — OAuth registration policy and clearer approval
 
 This release requires `@arc-mcp/xsuaa-auth` 1.2.0 or later. Upgrade every instance before
 enabling the optional policy below, then configure the same value on every instance.
