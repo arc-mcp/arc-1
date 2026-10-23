@@ -3,6 +3,7 @@
  * function group instead of being ignored (the whole include tree used to come back in full).
  * Kept apart from read.test.ts, which is at its file-size budget.
  */
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -38,12 +39,14 @@ function serve(fail: string[] = []): void {
   });
 }
 
-async function readFugr(args: Record<string, unknown>) {
-  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
-    type: 'FUGR',
-    name: 'ZDEMO',
-    ...args,
-  });
+async function readFugr(args: Record<string, unknown>, denyActions: string[] = []) {
+  const client = createClient();
+  const result = await handleToolCall(
+    client.withSafety({ ...client.safety, denyActions }),
+    { ...DEFAULT_CONFIG, denyActions },
+    'SAPRead',
+    { type: 'FUGR', name: 'ZDEMO', ...args },
+  );
   return { isError: result.isError, text: result.content[0]?.text ?? '' };
 }
 
@@ -52,6 +55,72 @@ describe('SAPRead FUGR grep', () => {
     vi.resetAllMocks();
     serve();
   });
+
+  describe.each(['SAPRead.INCL', 'SAPRead.IN*'])('include deny policy %s', (denial) => {
+    it.each([
+      { label: 'explicit expansion', args: { expand_includes: true } },
+      { label: 'grep alone', args: { grep: 'ENQUEUE_EZDEMO' } },
+      { label: 'grep with expansion disabled', args: { expand_includes: false, grep: 'ENQUEUE_EZDEMO' } },
+      { label: 'expansion with grep', args: { expand_includes: true, grep: 'ENQUEUE_EZDEMO' } },
+      { label: 'normalized type and boolean', args: { type: 'fugr', expand_includes: 'true' } },
+      {
+        label: 'slash type and inactive version',
+        args: { type: 'FUGR/F', expand_includes: true, version: 'inactive' },
+      },
+    ])('refuses $label before any SAP request', async ({ args }) => {
+      mockFetch.mockReset();
+      const { isError, text } = await readFugr(args, [denial]);
+
+      expect(isError).toBe(true);
+      expect(text).toContain('SAP_DENY_ACTIONS denies');
+      expect(text).toContain('SAPRead(type="INCL")');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  it('enforces the effective client include denial through the hyperfocused wrapper', async () => {
+    mockFetch.mockReset();
+    const client = createClient();
+    const result = await handleToolCall(
+      client.withSafety({ ...client.safety, denyActions: ['SAPRead.INCL'] }),
+      { ...DEFAULT_CONFIG, toolMode: 'hyperfocused' },
+      'SAP',
+      { action: 'read', type: 'FUGR/F', name: 'ZDEMO', params: { grep: 'ENQUEUE_EZDEMO' } },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('SAP_DENY_ACTIONS denies');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it.each([{}, { expand_includes: false }, { expand_includes: 'false' }])(
+    'keeps metadata reads allowed when includes are denied: %j',
+    async (args) => {
+      const metadata = readFileSync(new URL('../../fixtures/xml/function-group.xml', import.meta.url), 'utf8');
+      mockFetch.mockResolvedValue(mockResponse(200, metadata));
+      const { isError, text } = await readFugr({ name: 'ZABAPGIT_PARALLEL', ...args }, ['SAPRead.INCL']);
+
+      expect(isError).toBeUndefined();
+      expect(JSON.parse(text)).toMatchObject({
+        name: 'ZABAPGIT_PARALLEL',
+        functions: ['Z_ABAPGIT_SERIALIZE_PACKAGE', 'Z_ABAPGIT_SERIALIZE_PARALLEL'],
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/functions/groups/ZABAPGIT_PARALLEL/objectstructure');
+    },
+  );
+
+  it.each([{}, { expand_includes: true }, { grep: 'ENQUEUE_EZDEMO' }])(
+    'keeps the direct FUGR denial effective: %j',
+    async (args) => {
+      mockFetch.mockReset();
+      const { isError, text } = await readFugr(args, ['SAPRead.FUGR']);
+
+      expect(isError).toBe(true);
+      expect(text).toContain('denied by server policy');
+      expect(mockFetch).not.toHaveBeenCalled();
+    },
+  );
 
   it('greps each include of the expanded group and returns only the matches', async () => {
     const { isError, text } = await readFugr({ expand_includes: true, grep: 'ENQUEUE_EZDEMO' });

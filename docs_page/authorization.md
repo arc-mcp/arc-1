@@ -492,6 +492,9 @@ Use intent-level deny rules (for example `SAPRead.PROG`) when a denial must cove
 and hyperfocused calls. A rule such as `SAP.read` applies only to the hyperfocused wrapper;
 direct intent calls are checked against the intent tool's rules.
 
+Denying `SAPRead.INCL` also denies include expansion for PROG, INCL and FUGR reads, including
+FUGR `grep` (which implies expansion); plain FUGR metadata reads remain allowed.
+
 ---
 
 ## Recipes

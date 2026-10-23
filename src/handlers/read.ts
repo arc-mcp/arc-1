@@ -30,6 +30,7 @@ import { extractCdsElements } from '../context/cds-deps.js';
 import { grepSource, grepSourceBlocks } from '../context/grep.js';
 import { readLineRange } from '../context/line-range.js';
 import { extractMethod, formatMethodListing, listMethods } from '../context/method-surgery.js';
+import { isActionDenied } from '../server/deny-actions.js';
 import { logger } from '../server/logger.js';
 import { type CacheSecurityContext, inactiveListUserKey, invalidateInactiveList } from './cache-security.js';
 import { readEditableSource } from './editable-source.js';
@@ -607,6 +608,12 @@ export async function handleSAPRead(
       // sources there is nothing to search and the metadata would ignore the pattern.
       const expand = Boolean(args.expand_includes) || Boolean(args.grep);
       if (expand) {
+        // Apply the same include-read ceiling as PROG/INCL expansion, including implicit grep expansion.
+        if (isActionDenied('SAPRead', 'INCL', client.safety.denyActions ?? [])) {
+          return errorResult(
+            'FUGR include expansion (including grep) reads includes like SAPRead(type="INCL"), which SAP_DENY_ACTIONS denies on this server.',
+          );
+        }
         // Recursive expansion: the function module bodies (FUNCTION…ENDFUNCTION) and
         // PBO/PAI modules live in nested includes (LZ<grp>U01, …O…, …I…) pulled in from
         // the UXX include — a one-level walk misses them. getFunctionGroupExpanded BFS-es
