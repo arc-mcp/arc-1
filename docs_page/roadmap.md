@@ -998,8 +998,10 @@ it can reuse the same safe contract.
 **Remaining gap.** `SAPQuery(action="long_text")` covers guarded discovery, ordered reads, stored header
 references, and bounded phrase search for the qualified FF06/4103 classic ITF profile
 ([implementation and evidence](https://github.com/arc-mcp/arc-1/pull/1012)). Other container/code-page
-profiles, legacy ITCRF references, and non-ITF/STXB text remain unsupported. The tested 750 system
-lacks the required ADT preview endpoint. Memory, archives, custom/upgrade persistence, and form
+profiles, legacy ITCRF references, and non-ITF/STXB text remain unsupported. 750 systems without the
+ADT preview endpoint stay unsupported. A reporter validated a test build on 750 SP23, whose
+TTXOB/TTXID lack `HANDLER_CLASS`; final-branch confirmation of [#1077](https://github.com/arc-mcp/arc-1/issues/1077)
+is pending. Memory, archives, custom/upgrade persistence, and form
 layouts need separate API evidence; they cannot be inferred from ordinary table bytes.
 
 **Resume with.** A concrete unsupported customer case and independently generated SAP oracle
