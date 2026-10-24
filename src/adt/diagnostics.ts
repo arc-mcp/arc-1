@@ -55,7 +55,7 @@ const MAX_DUMP_RESULTS_CAP = 500;
 /** Stop runaway paging if SAP ever serves very short pages: 500 results need 6 pages. */
 const MAX_DUMP_PAGES = 10;
 
-interface FeedQueryOptions {
+export interface FeedQueryOptions {
   /** Filter by SAP user (uppercase) */
   user?: string;
   /** Maximum number of entries to return (default 50) */
@@ -173,12 +173,12 @@ function appendQueryParam(path: string, key: string, value: string): string {
 }
 
 /** The feed publishes UTC, and SAP compares bounds against those same values. */
-function toSapStamp(date: Date): string {
+export function toSapStamp(date: Date): string {
   return date.toISOString().replace(/[-:T]/g, '').slice(0, 14);
 }
 
 /** Inverse of {@link toSapStamp}; the caller has already checked the 14-digit shape. */
-function sapStampToDate(stamp: string): Date {
+export function sapStampToDate(stamp: string): Date {
   const date = `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}`;
   const time = `${stamp.slice(8, 10)}:${stamp.slice(10, 12)}:${stamp.slice(12, 14)}`;
   return new Date(`${date}T${time}Z`);
@@ -1440,7 +1440,7 @@ export async function setSqlTraceState(
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
-function buildFeedQueryString(
+export function buildFeedQueryString(
   options: FeedQueryOptions | undefined,
   defaultMaxResults: number,
   userAttribute: string,
@@ -1484,7 +1484,7 @@ function normalizeLabel(label: string): string {
   return label.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function parseDumpCategories(categories: Array<Record<string, unknown>>): { error: string; program: string } {
+export function parseDumpCategories(categories: Array<Record<string, unknown>>): { error: string; program: string } {
   const normalized = categories
     .map((category) => ({
       term: String(category['@_term'] ?? ''),
@@ -1514,7 +1514,7 @@ function extractSelfLinkHref(links: Array<Record<string, unknown>>): string {
   return String(selfLink?.['@_href'] ?? links[0]?.['@_href'] ?? '');
 }
 
-function extractDumpId(entry: Record<string, unknown>): string {
+export function extractDumpId(entry: Record<string, unknown>): string {
   const links = toRecordArray(entry.link);
   const selfHref = extractSelfLinkHref(links);
   const fromLink = extractIdFromPath(selfHref, ['/runtime/dump/']);
@@ -1762,7 +1762,7 @@ function splitCamelCase(value: string): string {
     .trim();
 }
 
-function extractEntrySummaryHtml(entry: Record<string, unknown>): string {
+export function extractEntrySummaryHtml(entry: Record<string, unknown>): string {
   const summary = entry.summary;
   if (summary == null) return '';
   if (typeof summary === 'string') return summary; // already HTML: parseXml undid the XML escaping
@@ -1774,7 +1774,7 @@ function extractEntrySummaryHtml(entry: Record<string, unknown>): string {
   return String(summaryNode ?? '');
 }
 
-function extractHtmlSection(html: string, anchorId: string): string {
+export function extractHtmlSection(html: string, anchorId: string): string {
   if (!html) return '';
   const startRe = new RegExp(`<h4[^>]*id="${escapeRegex(anchorId)}"[^>]*>`, 'i');
   const start = html.search(startRe);
@@ -1822,7 +1822,7 @@ function extractGatewayExceptionsFromHtml(contextHtml: string): GatewayException
   return exceptions;
 }
 
-function extractGatewaySourceFromHtml(sourceHtml: string): { lines: GatewaySourceLine[]; errorLine: number } {
+export function extractGatewaySourceFromHtml(sourceHtml: string): { lines: GatewaySourceLine[]; errorLine: number } {
   if (!sourceHtml) return { lines: [], errorLine: 0 };
 
   // Line numbers and current-line markers sit in the first <td id="sourcetablecolumn">.
@@ -1860,7 +1860,7 @@ function extractGatewaySourceFromHtml(sourceHtml: string): { lines: GatewaySourc
   return { lines, errorLine };
 }
 
-function extractGatewayCallStackFromHtml(stackHtml: string): GatewayCallStackEntry[] {
+export function extractGatewayCallStackFromHtml(stackHtml: string): GatewayCallStackEntry[] {
   if (!stackHtml) return [];
   const tableMatch = stackHtml.match(/<table[\s\S]*?<\/table>/i);
   if (!tableMatch) return [];
@@ -1885,7 +1885,7 @@ function extractGatewayCallStackFromHtml(stackHtml: string): GatewayCallStackEnt
   return entries;
 }
 
-function sanitizeHtmlCellValue(raw: string): string {
+export function sanitizeHtmlCellValue(raw: string): string {
   let value = stripHtmlTags(raw);
   value = decodeHtmlEntities(value);
   return value.replace(/\s+/g, ' ').trim();
@@ -1921,7 +1921,7 @@ export function decodeHtmlEntities(text: string): string {
     .replace(/&amp;/gi, '&');
 }
 
-function decodeUriComponentSafe(value: string): string {
+export function decodeUriComponentSafe(value: string): string {
   if (!value?.includes('%')) return value;
   try {
     return decodeURIComponent(value);

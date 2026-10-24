@@ -441,3 +441,17 @@ than legacy `user`; do not broaden them without wire evidence.
 Tests: `tests/unit/{adt,handlers}/dump-filters.test.ts`, existing diagnostics and tool-surface tests.
 [Evidence](research/2026-10-17-dump-filter-extraction.md) distinguishes live matching from synthetic
 pagination/model checks. See [usage](../docs_page/tools.md#find-a-particular-runtime-error).
+
+## Dump detail on SAP_BASIS 7.50
+
+SAP_BASIS 7.50 registers only the dump feed: its ADT router `CL_SABP_RABAX_ADT_RES_APP` attaches
+`/runtime/dumps`, and a feed entry's id points at SAP GUI integration
+(`/sap/bc/adt/vit/runtime/dumps/{id}`, which opens ST22 — never request it). `/runtime/dump/{id}`
+therefore answers 404. `dump-feed-detail.ts` answers that 404 from the dump's feed entry, whose HTML
+summary (`lcl_summary_composer` in `CL_SABP_RABAX_ADT_RES_DUMPS`) carries the anchors HEADER,
+WHATHAPPENED, ERROR, TERMINATION, SOURCE (ten lines around the termination point) and STACK. The
+gateway error log uses the same layout, so its HTML helpers are reused. The 7.50 feed handler raises
+`from` to now minus 24 hours (`compute_timestamp_from`), so older dumps are not listed and the 404
+stands with a hint. Dump ids carry SAP system time while the feed bounds are UTC: the lookup queries
+14 hours either way, filtered to the id's user, and compares ids by field because padding and
+encoding vary. Tests: `tests/unit/{adt,handlers}/dump-feed-detail.test.ts`.

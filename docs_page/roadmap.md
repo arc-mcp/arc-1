@@ -109,6 +109,7 @@ sequence.
 | [FEAT-71](#feat-71) | Dictionary activation log | P3 | M | Needs research | Diagnostics |
 | [FEAT-91](#feat-91) | Validate the legacy dump user filter | P2 | S | Needs research | Diagnostics |
 | [FEAT-74](#feat-74) | Qualify dump-filter matching | P2 | S | Needs research | Diagnostics |
+| [FEAT-94](#feat-94) | Report a dump feed's shorter time window | P2 | S | Needs research | Diagnostics |
 | [FEAT-50](#feat-50) | ADT type-probe fixture coverage | P3 | XS each | Contributor-driven | Diagnostics |
 | [FEAT-32](#feat-32) | Stable data-preview pagination | P3 | M | Needs research | Data access |
 | [FEAT-86](#feat-86) | Additional stored-text profiles and persistence | P3 | M | Needs research | Data access |
@@ -950,6 +951,21 @@ adds compatibility tests rather than changing SAP user-name or wildcard semantic
 **Resume with.** Verify supported username characters and matching semantics, then add a narrow
 validator without schema discovery on the legacy path. Retain fail-before grammar tests and a live
 positive match. [Original finding](https://github.com/arc-mcp/arc-1/blob/5725fab6515f7a410e3e488003ae1a7aa3d8c249/docs/research/adt-vscode-1.2/evidence/diagnostics-review/claude-review-1.md).
+
+<a id="feat-94"></a>
+### FEAT-94 — Report a dump feed's shorter time window
+
+- **Priority / effort / status:** P2 / S / Needs research
+- **Category:** Diagnostics
+
+**Remaining gap.** On SAP_BASIS 7.50 the dump feed only reaches back 24 hours: its handler raises
+`from` to now minus 24 hours. A list for an older window comes back empty or cut short without a
+note, so a model reports no dumps while ST22 lists them. Dump detail already explains this when the
+feed does not list a dump.
+
+**Resume with.** A list contract that can carry a note (the result is a bare array today) and a
+signal for the shorter window that does not depend on dumps being present, verified on a 7.50
+target that has dumps older than one day. [Mechanism](https://github.com/arc-mcp/arc-1/blob/main/docs/dev-guide.md#dump-detail-on-sap_basis-750).
 
 <a id="feat-50"></a>
 ### FEAT-50 — ADT type-probe fixture coverage

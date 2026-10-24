@@ -695,6 +695,10 @@ export interface DumpDetail {
   sections: Record<string, string>;
   /** ADT URI to the termination source location */
   terminationUri?: string;
+  /** Set when the detail was rebuilt from the dump feed's summary (no ADT dump-detail resource, SAP_BASIS 7.50) */
+  origin?: 'feed-summary';
+  /** What a rebuilt detail leaves out */
+  note?: string;
 }
 
 /** ABAP profiler trace entry from /sap/bc/adt/runtime/traces/abaptraces */
