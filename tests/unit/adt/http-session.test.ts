@@ -259,3 +259,48 @@ describe('stateful ADT session lifecycle', () => {
     expect(JSON.stringify(emitSpy.mock.calls)).not.toContain('PRIVATE_CONTEXT');
   });
 });
+
+describe('sessions a caller opens and ends itself (openStatefulSession)', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  it("starts its own context and remembers the sap-contextid naming SAP's application server", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockResponse(200, '{}', {}, ['sap-contextid=SID%3aANON%3aappserver-t4w2x%3aKX9qZ-NEW; path=/']),
+    );
+    const parent = new AdtHttpClient(config);
+    (parent as any).cookieJar.set('sap-contextid', 'SID%3aANON%3aappserver-old%3aPARENT-NEW');
+    const session = parent.openStatefulSession();
+    expect(session.sessionContextId).toBeUndefined(); // never inherits a context
+
+    await session.get('/sap/bc/adt/core/http/systeminformation');
+
+    expect(request(0).headers['X-sap-adt-sessiontype']).toBe('stateful');
+    expect(session.sessionContextId).toBe('SID%3aANON%3aappserver-t4w2x%3aKX9qZ-NEW');
+    expect(parent.sessionContextId).toBe('SID%3aANON%3aappserver-old%3aPARENT-NEW');
+  });
+
+  it("ends it with Eclipse's close-session request on that context, and only when there is one", async () => {
+    mockFetch.mockResolvedValue(mockResponse(200, ''));
+    const session = new AdtHttpClient(config).openStatefulSession();
+    expect(await session.endStatefulSession()).toBeUndefined();
+    expect(mockFetch).not.toHaveBeenCalled();
+
+    (session as any).cookieJar.set('sap-contextid', 'SID%3aANON%3aappserver-t4w2x%3aKX9qZ-NEW');
+    expect(await session.endStatefulSession()).toBe(true);
+    expect(request(0)).toMatchObject({ path: closePath, method: 'GET' });
+    expect(request(0).headers).toMatchObject({
+      'X-sap-adt-sessiontype': 'stateless',
+      'sap-adt-purpose': 'close-session',
+      'sap-contextid': 'SID%3aANON%3aappserver-t4w2x%3aKX9qZ-NEW',
+    });
+  });
+
+  it('never fails the caller when SAP does not close the context', async () => {
+    mockFetch.mockResolvedValue(mockResponse(500, 'boom'));
+    const session = new AdtHttpClient(config).openStatefulSession();
+    (session as any).cookieJar.set('sap-contextid', 'SID%3aANON%3aappserver-t4w2x%3aKX9qZ-NEW');
+    await expect(session.endStatefulSession({ retryTransientErrors: false })).resolves.toBe(false);
+  });
+});

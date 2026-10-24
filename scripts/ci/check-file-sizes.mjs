@@ -43,8 +43,12 @@ const BUDGETS = {
   // +4: parent function group for SAPTransport check/history.
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
   // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
-  'src/handlers/tools.ts': 1776, // +5: explicit direct package scope (#1065).
-  'src/handlers/schemas.ts': 1573, // +31: direct package inputs and mode validation (#1065).
+  // +4 for the opt-in SAPDiagnose action="debug" hooks (description line, enum entry, property spread,
+  // import); the debug schema itself lives in tools-debug.ts.
+  'src/handlers/tools.ts': 1780, // +5: explicit direct package scope (#1065).
+  // +5: the SAPDiagnose action="debug" hooks (enum entry, field spread, refine call); its fields and
+  // cross-field rules live in debug-input.ts.
+  'src/handlers/schemas.ts': 1578, // +31: direct package inputs and mode validation (#1065).
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
@@ -76,7 +80,8 @@ const BUDGETS = {
   // -5 after removing the forwarding-only guard factory and its extra import/configuration lines.
   // TABL write-route cache removed (never cache subtype routes for mutations); +9 for refusing TABL
   // mutations whose subtype cannot be verified on 7.50/7.51 (the resolver's error text).
-  'src/adt/client.ts': 1700, // +1: forward the internal pinned-write no-replay policy (#1080).
+  // +8: usernameIsLogonUser — whether `username` is the SAP logon user, the debugger's identity fallback.
+  'src/adt/client.ts': 1708, // +1: forward the internal pinned-write no-replay policy (#1080).
   // The single live ADT integration suite covers every read/write surface against a real system;
   // it passed the 3000-line default test budget with the ATC check-variant binding cases
   // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.
@@ -85,13 +90,16 @@ const BUDGETS = {
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
   // +3: classify caller cancellation before generic network wrapping (#1045).
-  'src/adt/http.ts': 1563, // Scoped no-replay options and bounded, observable owning-session cleanup (#1080).
+  // +25: caller-owned stateful sessions (openStatefulSession/endStatefulSession, sessionContextId) — the
+  // debugger pins its attach to the debuggee's application server; the routing lives in debugger.ts.
+  'src/adt/http.ts': 1588, // Scoped no-replay options and bounded, observable owning-session cleanup (#1080).
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1477, // Exhaustive lock-holder parsing extracted to transport-locks.ts (#1080).
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed
   // XSUAA startup from main.
   // PP pool wiring and secret-free reuse audit status; logic lives in per-user-transport.ts (#1085).
-  'src/server/server.ts': 1496,
+  // +1: allowDebug in the per-request safety ceiling (SAP_ALLOW_DEBUG).
+  'src/server/server.ts': 1497,
 };
 
 const DEFAULT_SRC = 1500;

@@ -78,6 +78,9 @@ export interface SafetyConfig {
   allowGitWrites: boolean;
   /** Experimental exact-name denylist for direct and transitive SQL data sources. */
   blockedDataSources: string[];
+  /** Opt-in (SAP_ALLOW_DEBUG): one-shot ABAP debugger captures. Variable values are runtime business
+   *  data, so `checkDebug` ALSO requires `allowDataPreview`. Never implied by any other flag. */
+  allowDebug: boolean;
   allowedPackages: string[];
   allowedTransports: string[];
   /** Resolved deny-action patterns from SAP_DENY_ACTIONS. Populated at config-parse time. */
@@ -97,6 +100,7 @@ export function defaultSafetyConfig(): SafetyConfig {
     allowTransportWrites: false,
     allowGitWrites: false,
     blockedDataSources: [],
+    allowDebug: false,
     allowedPackages: ['$TMP'],
     allowedTransports: [],
     denyActions: [],
@@ -112,6 +116,7 @@ export function unrestrictedSafetyConfig(): SafetyConfig {
     allowTransportWrites: true,
     allowGitWrites: true,
     blockedDataSources: [],
+    allowDebug: true,
     allowedPackages: [],
     allowedTransports: [],
     denyActions: [],
@@ -375,6 +380,24 @@ export function checkGit(config: SafetyConfig, operation: string, isWrite = true
 }
 
 /**
+ * Check an ABAP debugger operation (`/sap/bc/adt/debugger/*`). Requires the dedicated
+ * `allowDebug` opt-in AND `allowDataPreview`: a capture reads runtime variable values, which are
+ * business data exactly like table preview. Called before every debugger HTTP request.
+ */
+export function checkDebug(config: SafetyConfig, operation: string): void {
+  if (!config.allowDebug) {
+    throw new AdtSafetyError(
+      `Debugger operation '${operation}' is blocked: allowDebug=false. Set SAP_ALLOW_DEBUG=true to enable ABAP debugger captures.`,
+    );
+  }
+  if (!config.allowDataPreview) {
+    throw new AdtSafetyError(
+      `Debugger operation '${operation}' is blocked: allowDataPreview=false. Debugger captures expose runtime variable values, so they also need SAP_ALLOW_DATA_PREVIEW=true.`,
+    );
+  }
+}
+
+/**
  * Derive a per-user effective safety config by merging the server ceiling with
  * the user's JWT scopes. Scopes can only RESTRICT further, never loosen.
  *
@@ -408,6 +431,7 @@ export function deriveUserSafety(serverConfig: SafetyConfig, scopes: string[]): 
 
   if (!expanded.has('write')) effective.allowWrites = false;
   if (!expanded.has('data')) effective.allowDataPreview = false;
+  if (!expanded.has('data')) effective.allowDebug = false;
   if (!expanded.has('sql')) effective.allowFreeSQL = false;
   if (!expanded.has('transports')) effective.allowTransportWrites = false;
   if (!expanded.has('git')) effective.allowGitWrites = false;
@@ -502,6 +526,7 @@ export function deriveUserSafetyFromProfile(
     allowFreeSQL: and(serverConfig.allowFreeSQL, profileSafety.allowFreeSQL),
     allowTransportWrites: and(serverConfig.allowTransportWrites, profileSafety.allowTransportWrites),
     allowGitWrites: and(serverConfig.allowGitWrites, profileSafety.allowGitWrites),
+    allowDebug: and(serverConfig.allowDebug, profileSafety.allowDebug),
     allowedPackages: intersectList(serverConfig.allowedPackages, profileSafety.allowedPackages),
     allowedTransports: intersectList(serverConfig.allowedTransports, profileSafety.allowedTransports),
     blockedDataSources: [...new Set([...serverConfig.blockedDataSources, ...(profileSafety.blockedDataSources ?? [])])],
@@ -520,6 +545,7 @@ export function describeSafety(config: SafetyConfig): string {
   if (config.allowFreeSQL) parts.push('FREE-SQL');
   if (config.allowTransportWrites) parts.push('TRANSPORT-WRITES');
   if (config.allowGitWrites) parts.push('GIT-WRITES');
+  if (config.allowDebug) parts.push('DEBUG');
   if (config.allowedPackages.length > 0) parts.push(`Packages=${displayAllowList(config.allowedPackages)}`);
   if (config.allowedTransports.length > 0) parts.push(`Transports=${displayAllowList(config.allowedTransports)}`);
   if (config.blockedDataSources.length > 0) parts.push(`BlockedDataSources=${config.blockedDataSources.length}`);

@@ -50,6 +50,9 @@ function buildReadOnlyRuntimeConfig(
     // Instance-wide and restrictive: every target inherits the server blocklist and no destination
     // or caller can weaken it. Destination-local policy is deliberately not part of v1.
     blockedDataSources: [...safety.blockedDataSources],
+    // Never inherited: debugger captures suspend a work process and are outside the ADR-0006
+    // mutation-free multi-target surface (SAPDiagnose.debug is also absent from its allowlist).
+    allowDebug: false,
     allowedPackages: [...safety.allowedPackages],
     allowedTransports: [...safety.allowedTransports],
     denyActions: [...new Set([...base.denyActions, ...safety.denyActions])],

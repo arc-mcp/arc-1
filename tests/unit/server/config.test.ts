@@ -382,6 +382,21 @@ describe('parseArgs', () => {
     expect(config.allowGitWrites).toBe(false);
   });
 
+  it('keeps debugger captures off by default and enables them only by explicit opt-in', () => {
+    expect(parseArgs([]).allowDebug).toBe(false);
+    process.env.SAP_ALLOW_DEBUG = 'true';
+    expect(parseArgs([]).allowDebug).toBe(true);
+    const fromCli = resolveConfig(['--allow-debug', 'false']);
+    expect(fromCli.config.allowDebug).toBe(false);
+    expect(fromCli.sources.allowDebug).toEqual({ flag: '--allow-debug' });
+  });
+
+  it('grants debugger captures only to API-key profiles that carry the data scope', () => {
+    for (const [name, profile] of Object.entries(API_KEY_PROFILES)) {
+      expect(profile.safety.allowDebug, name).toBe(profile.scopes.includes('data'));
+    }
+  });
+
   it('--allow-git-writes takes precedence over SAP_ALLOW_GIT_WRITES env', () => {
     process.env.SAP_ALLOW_GIT_WRITES = 'false';
     const config = parseArgs(['--allow-git-writes', 'true']);

@@ -1219,7 +1219,7 @@ export async function probeODataPerformance(
   };
 }
 
-function assertODataPerfUrl(url: string): void {
+export function assertODataPerfUrl(url: string): void {
   const rawPath = url.split(/[?#]/, 1)[0] ?? '';
   let parsed: URL;
   try {

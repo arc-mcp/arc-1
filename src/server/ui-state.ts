@@ -199,6 +199,7 @@ export function sanitizeSafetyConfig(config: ServerConfig): Record<string, unkno
     allowTransportWrites: config.allowTransportWrites,
     allowGitWrites: config.allowGitWrites,
     blockedDataSources: config.blockedDataSources,
+    allowDebug: config.allowDebug,
     allowedPackages: config.allowedPackages,
     allowedTransports: config.allowedTransports,
     denyActions: config.denyActions,

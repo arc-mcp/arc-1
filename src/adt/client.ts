@@ -253,6 +253,9 @@ export class AdtClient {
   private readonly bearerTokenProvider?: () => Promise<string>;
   /** True when this client authenticates via a bearer token (⇒ BTP ABAP Environment). */
   readonly usesBearerAuth: boolean;
+  /** True when `username` IS the SAP logon user (Basic auth, or SAP_USER beside operator cookies).
+   *  False under per-user tokens (PP, SAML, bearer), where `username` is a display-only JWT claim. */
+  readonly usernameIsLogonUser: boolean;
   /** Memoized JWT-derived user (resolved lazily by getEffectiveUser). */
   private effectiveUser?: string;
   /** Memoized internal ABAP user (XUBNAME) — resolved from the createdBy of a cloud object this session
@@ -279,6 +282,12 @@ export class AdtClient {
     this.username = config.username;
     this.bearerTokenProvider = config.bearerTokenProvider;
     this.usesBearerAuth = !!config.bearerTokenProvider;
+    this.usernameIsLogonUser =
+      !!config.username &&
+      !config.bearerTokenProvider &&
+      !config.sapConnectivityAuth &&
+      !config.ppProxyAuth &&
+      !config.samlAuthorization;
     this.sapClient = config.client;
     this.maxDataPreviewResponseBytes = config.maxDataPreviewResponseBytes;
     this.dataResultSemaphore = config.dataResultSemaphore ?? new Semaphore(config.maxConcurrentDataResults);

@@ -21,6 +21,7 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
     allowFreeSQL: config.allowFreeSQL,
     allowTransportWrites: config.allowTransportWrites,
     allowGitWrites: config.allowGitWrites,
+    allowDebug: config.allowDebug,
     gzipDataPreviewBody: config.gzipDataPreviewBody,
     // Exact names are NOT logged. They are not credentials, but a curated list of an
     // organisation's sensitive tables is a reconnaissance aid for anyone with log access. Count plus
@@ -44,7 +45,7 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
     `effective safety: writes=${yn(config.allowWrites)} data=${yn(config.allowDataPreview)} ` +
     `sql=${yn(config.allowFreeSQL)} packages=[${config.allowedPackages.join(',')}] ` +
     `transports=${yn(config.allowTransportWrites)} git=${yn(config.allowGitWrites)} ` +
-    `gzipDataPreview=${yn(config.gzipDataPreviewBody)} ` +
+    `debug=${yn(config.allowDebug)} gzipDataPreview=${yn(config.gzipDataPreviewBody)} ` +
     `blockedDataSources=${config.blockedDataSources.length}` +
     `${config.blockedDataSources.length > 0 ? `/${shortPolicyFingerprint(config.blockedDataSources)}` : ''} ` +
     `denyActions=${config.denyActions.length}`;
@@ -66,6 +67,7 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
     'allowFreeSQL',
     'allowTransportWrites',
     'allowGitWrites',
+    'allowDebug',
     'gzipDataPreviewBody',
     'blockedDataSources',
     'allowedPackages',
@@ -99,6 +101,12 @@ export function detectContradictions(config: ServerConfig): string[] {
 
   if (config.allowGitWrites && !config.allowWrites) {
     warnings.push('allowGitWrites=true has no effect when allowWrites=false; git writes will be blocked.');
+  }
+
+  if (config.allowDebug && !config.allowDataPreview) {
+    warnings.push(
+      'allowDebug=true has no effect when allowDataPreview=false; debugger captures expose variable values and will be blocked.',
+    );
   }
 
   if (config.gzipDataPreviewBody && !config.allowDataPreview && !config.allowFreeSQL) {

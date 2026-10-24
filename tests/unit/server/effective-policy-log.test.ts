@@ -129,6 +129,14 @@ describe('detectContradictions', () => {
     expect(warnings.some((w) => w.includes('allowGitWrites=true has no effect when allowWrites=false'))).toBe(true);
   });
 
+  it('flags allowDebug=true with allowDataPreview=false', () => {
+    const warnings = detectContradictions(makeConfig({ allowDebug: true, allowDataPreview: false }));
+    expect(warnings.some((w) => w.includes('allowDebug=true has no effect when allowDataPreview=false'))).toBe(true);
+    expect(detectContradictions(makeConfig({ allowDebug: true, allowDataPreview: true }))).not.toContainEqual(
+      expect.stringContaining('allowDebug'),
+    );
+  });
+
   it('flags data-preview gzip when neither data-preview gate can reach it', () => {
     const warnings = detectContradictions(
       makeConfig({ gzipDataPreviewBody: true, allowDataPreview: false, allowFreeSQL: false }),

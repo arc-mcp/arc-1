@@ -172,6 +172,9 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPDiagnose.sql_trace_state': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.set_sql_trace_state': { scope: 'write', opType: OperationType.Update },
   'SAPDiagnose.sql_trace_directory': { scope: 'read', opType: OperationType.Read },
+  // One-shot debugger capture: reads runtime variable values (data scope; Query keeps it behind
+  // allowDataPreview) and additionally needs the dedicated SAP_ALLOW_DEBUG opt-in (checkDebug).
+  'SAPDiagnose.debug': { scope: 'data', opType: OperationType.Query },
 
   // ── SAPTransport ─────────────────────────────────────────────────
   // CLASSIFICATION BUG FIX: check/history/list/get are reads; previously required write

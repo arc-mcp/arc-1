@@ -74,5 +74,8 @@ export const FULL: Partial<ServerConfig> = {
   allowFreeSQL: true,
 };
 
-/** onprem/btp config with every gate flag on — every tool registered. */
-export const fullConfig = (isBtp: boolean): ServerConfig => (isBtp ? btp(FULL) : onprem(FULL));
+/** FULL plus the opt-in SAPDiagnose action="debug" (SAP_ALLOW_DEBUG) — every property of every tool. */
+export const FULL_DEBUG: Partial<ServerConfig> = { ...FULL, allowDebug: true };
+
+/** onprem/btp config with every gate flag on — every tool and every opt-in property registered. */
+export const fullConfig = (isBtp: boolean): ServerConfig => (isBtp ? btp(FULL_DEBUG) : onprem(FULL_DEBUG));

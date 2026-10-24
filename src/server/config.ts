@@ -116,6 +116,7 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
     valueName: 'names',
     description: 'Experimental exact SQL/CDS source blocklist (comma-separated)',
   },
+  { name: 'allow-debug', valueName: 'boolean', description: 'Enable ABAP debugger captures (true/false)' },
   { name: 'allowed-packages', valueName: 'patterns', description: 'Comma-separated write package allowlist' },
   { name: 'allowed-transports', valueName: 'ids', description: 'Comma-separated transport allowlist' },
   { name: 'deny-actions', valueName: 'patterns', description: 'Action deny patterns or file path' },
@@ -241,6 +242,7 @@ export const API_KEY_PROFILES: Record<string, ApiKeyProfile> = {
       allowFreeSQL: false,
       allowTransportWrites: false,
       allowGitWrites: false,
+      allowDebug: false,
     },
   },
   'viewer-data': {
@@ -251,6 +253,7 @@ export const API_KEY_PROFILES: Record<string, ApiKeyProfile> = {
       allowFreeSQL: false,
       allowTransportWrites: false,
       allowGitWrites: false,
+      allowDebug: true,
     },
   },
   'viewer-sql': {
@@ -261,6 +264,7 @@ export const API_KEY_PROFILES: Record<string, ApiKeyProfile> = {
       allowFreeSQL: true,
       allowTransportWrites: false,
       allowGitWrites: false,
+      allowDebug: true,
     },
   },
   developer: {
@@ -271,6 +275,7 @@ export const API_KEY_PROFILES: Record<string, ApiKeyProfile> = {
       allowFreeSQL: false,
       allowTransportWrites: true,
       allowGitWrites: true,
+      allowDebug: false,
       allowedPackages: ['$TMP'],
     },
   },
@@ -282,6 +287,7 @@ export const API_KEY_PROFILES: Record<string, ApiKeyProfile> = {
       allowFreeSQL: false,
       allowTransportWrites: true,
       allowGitWrites: true,
+      allowDebug: true,
       allowedPackages: ['$TMP'],
     },
   },
@@ -293,6 +299,7 @@ export const API_KEY_PROFILES: Record<string, ApiKeyProfile> = {
       allowFreeSQL: true,
       allowTransportWrites: true,
       allowGitWrites: true,
+      allowDebug: true,
       allowedPackages: ['$TMP'],
     },
   },
@@ -304,6 +311,7 @@ export const API_KEY_PROFILES: Record<string, ApiKeyProfile> = {
       allowFreeSQL: true,
       allowTransportWrites: true,
       allowGitWrites: true,
+      allowDebug: true,
       allowedPackages: [],
     },
   },
@@ -685,6 +693,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     'allowTransportWrites',
   );
   config.allowGitWrites = resolveBool('allow-git-writes', 'SAP_ALLOW_GIT_WRITES', false, 'allowGitWrites');
+  config.allowDebug = resolveBool('allow-debug', 'SAP_ALLOW_DEBUG', false, 'allowDebug');
 
   // Experimental data-source blocklist. Unset / empty / ASCII-whitespace-only all mean off, which is
   // what lets the shipped Dockerfile and MTA descriptors carry a visible `""` default and still give

@@ -234,6 +234,18 @@ describe('multi-target tool surface', () => {
     expect(multiTargetInvocationDecision('Custom_Read', {}, DEFAULT_CONFIG)).toBe('forbidden');
   });
 
+  it('keeps the opt-in debugger capture off the multi-target surface even when the base config enables it', () => {
+    const config = { ...DEFAULT_CONFIG, allowDataPreview: true, allowDebug: true };
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'debug' }, config)).toBe('forbidden');
+    const diagnose = multiTargetToolDefinitions(getToolDefinitions(config), config).find(
+      (tool) => tool.name === 'SAPDiagnose',
+    );
+    expect(property(diagnose as ToolDefinition, 'action').enum).not.toContain('debug');
+    for (const name of ['breakpoints', 'exceptionClass', 'trigger', 'triggerName', 'variables', 'steps', 'stepMode']) {
+      expect(Object.keys(diagnose?.inputSchema.properties as object)).not.toContain(name);
+    }
+  });
+
   it('points target discovery at SAPTargets and keeps its schema strict', () => {
     const injected = injectTargetSchema(getToolDefinitions(DEFAULT_CONFIG)[0], [target(0)]);
     expect(property(injected, 'target').description).toContain('Call SAPTargets');

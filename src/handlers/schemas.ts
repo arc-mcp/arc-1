@@ -29,6 +29,7 @@ import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import { SYNTAX_BATCH_TYPES } from '../adt/syntax-batch.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
+import { DEBUG_INPUT_FIELDS, refineDebugInput } from './debug-input.js';
 import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
 import { dumpFilters, validateDumpFilterInputs } from './dump-filter-inputs.js';
 import { sourcePreconditionError } from './editable-source.js';
@@ -1127,12 +1128,14 @@ export const SAPDiagnoseSchema = z
       'set_sql_trace_state',
       'sql_trace_directory',
       'authorization_trace',
+      'debug',
     ]),
     name: z.string().optional(),
     url: z.string().optional(),
     type: z.string().optional(),
     objects: atcBatchObjectsSchema(ATC_BATCH_TYPES),
     source: z.string().optional(),
+    ...DEBUG_INPUT_FIELDS,
     sourceUri: z.string().optional(),
     line: z.coerce.number().optional(),
     column: z.coerce.number().optional(),
@@ -1258,15 +1261,17 @@ export const SAPDiagnoseSchema = z
       input.action !== 'unittest' &&
       input.action !== 'atc' &&
       input.action !== 'unittest_ci' &&
-      input.action !== 'atc_ci'
+      input.action !== 'atc_ci' &&
+      input.action !== 'debug'
     ) {
       ctx.addIssue({
         code: 'custom',
         path: ['timeoutSeconds'],
         message:
-          'SAPDiagnose timeoutSeconds is only supported for action="unittest", "atc", "unittest_ci", or "atc_ci".',
+          'SAPDiagnose timeoutSeconds is only supported for action="unittest", "atc", "unittest_ci", "atc_ci", or "debug".',
       });
     }
+    refineDebugInput(input, ctx);
     if (input.resultFormat !== undefined) {
       if (input.action === 'atc' && input.resultFormat === 'junit') {
         ctx.addIssue({

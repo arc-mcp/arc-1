@@ -82,7 +82,22 @@ const MULTI_TARGET_ACTION_RULES = new Map<
       ]),
       // Reviewed ATC objects[]: max 20 on this call's one selected target/identity,
       // at most two worklists sharing one deadline; repository mutations stay forbidden.
-      omittedProperties: new Set(['packages', 'packageTrees', 'configuration', 'failOnSeverity', 'includeReportXml']),
+      // `debug` is outside the reviewed multi-target surface (it suspends a work process); its
+      // properties only exist when SAP_ALLOW_DEBUG is on and would point the model at a refusal.
+      omittedProperties: new Set([
+        'packages',
+        'packageTrees',
+        'configuration',
+        'failOnSeverity',
+        'includeReportXml',
+        'breakpoints',
+        'exceptionClass',
+        'trigger',
+        'triggerName',
+        'variables',
+        'steps',
+        'stepMode',
+      ]),
     },
   ],
 ]);

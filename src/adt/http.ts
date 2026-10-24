@@ -288,19 +288,7 @@ export class AdtHttpClient {
     fn: (client: AdtHttpClient) => Promise<T>,
     cleanup?: { timeoutMs: number; noReplay: boolean; onClose: (closed: boolean | undefined) => void },
   ): Promise<T> {
-    const sessionConfig: AdtHttpConfig = {
-      ...this.config,
-      sessionType: 'stateful',
-    };
-    const sessionClient = new AdtHttpClient(sessionConfig, this.authenticationAttemptState);
-    // Share CSRF token and cookies so we don't need to re-fetch
-    sessionClient.csrfToken = this.csrfToken;
-    sessionClient.cookieJar = new Map(this.cookieJar);
-    sessionClient.cookieJar.delete('sap-contextid'); // A new write must open its own application context.
-    sessionClient.discoveryMap = this.discoveryMap;
-    sessionClient.negotiatedHeaders = new Map(this.negotiatedHeaders);
-    sessionClient.reuseStatefulProxyClient = true;
-
+    const sessionClient = this.openStatefulSession();
     try {
       return await fn(sessionClient);
     } finally {
@@ -314,11 +302,48 @@ export class AdtHttpClient {
           : undefined,
       );
       cleanup?.onClose(closed);
-      try {
-        await sessionClient.statefulProxyClient?.close();
-      } catch {
-        logger.warn('Failed to close stateful Connectivity proxy client.');
-      }
+      await sessionClient.closeStatefulProxyClient();
+    }
+  }
+
+  /**
+   * The client `withStatefulSession` hands its callback, for callers that open several sessions and
+   * keep one (the debugger pins its attach to the debuggee's application server). The caller owns it
+   * and must `endStatefulSession()` it; prefer `withStatefulSession`.
+   */
+  openStatefulSession(): AdtHttpClient {
+    const sessionConfig: AdtHttpConfig = {
+      ...this.config,
+      sessionType: 'stateful',
+    };
+    const sessionClient = new AdtHttpClient(sessionConfig, this.authenticationAttemptState);
+    // Share CSRF token and cookies so we don't need to re-fetch
+    sessionClient.csrfToken = this.csrfToken;
+    sessionClient.cookieJar = new Map(this.cookieJar);
+    sessionClient.cookieJar.delete('sap-contextid'); // A new write must open its own application context.
+    sessionClient.discoveryMap = this.discoveryMap;
+    sessionClient.negotiatedHeaders = new Map(this.negotiatedHeaders);
+    sessionClient.reuseStatefulProxyClient = true;
+    return sessionClient;
+  }
+
+  /** End a session from `openStatefulSession()`: its SAP application context, then its proxy client. */
+  async endStatefulSession(options?: AdtRequestOptions): Promise<boolean | undefined> {
+    const closed = await this.closeStatefulSession(options);
+    await this.closeStatefulProxyClient();
+    return closed;
+  }
+
+  /** The session's `sap-contextid` cookie (`SID:ANON:<application server>:<id>`, URL-encoded), if SAP set one. */
+  get sessionContextId(): string | undefined {
+    return this.cookieJar.get('sap-contextid');
+  }
+
+  private async closeStatefulProxyClient(): Promise<void> {
+    try {
+      await this.statefulProxyClient?.close();
+    } catch {
+      logger.warn('Failed to close stateful Connectivity proxy client.');
     }
   }
 
@@ -328,7 +353,7 @@ export class AdtHttpClient {
     if (!contextId || contextId === '0') return;
 
     // Eclipse ADT changes the same context to stateless while sending its dedicated close request.
-    // This client belongs only to withStatefulSession(), so it is not reused after the transition.
+    // This client belongs to one session owner, so it is not reused after the transition.
     this.config.sessionType = 'stateless';
     try {
       try {

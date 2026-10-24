@@ -914,6 +914,7 @@ export function multiTargetSafety(policy: TargetPolicy, blockedDataSources: read
     allowTransportWrites: false,
     allowGitWrites: false,
     blockedDataSources: [...blockedDataSources],
+    allowDebug: false,
     allowedPackages: ['$TMP'],
     allowedTransports: [],
     denyActions: [],

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AdtSafetyError } from '../../../src/adt/errors.js';
 import type { PackageHierarchyResolver } from '../../../src/adt/package-hierarchy.js';
 import {
+  checkDebug,
   checkGit,
   checkOperation,
   checkPackage,
@@ -508,6 +509,29 @@ describe('Safety System', () => {
       const server = unrestrictedSafetyConfig();
       const result = deriveUserSafety(server, ['read', 'write', 'git']);
       expect(result.allowGitWrites).toBe(true);
+    });
+
+    it('debugger captures need the data scope and never exceed the server ceiling', () => {
+      expect(deriveUserSafety(unrestrictedSafetyConfig(), ['read', 'write']).allowDebug).toBe(false);
+      expect(deriveUserSafety(unrestrictedSafetyConfig(), ['read', 'data']).allowDebug).toBe(true);
+      expect(deriveUserSafety(unrestrictedSafetyConfig(), ['sql']).allowDebug).toBe(true);
+      expect(deriveUserSafety(config({ allowDebug: false }), ['admin']).allowDebug).toBe(false);
+    });
+
+    it('profiles intersect allowDebug with the server ceiling', () => {
+      expect(deriveUserSafetyFromProfile(unrestrictedSafetyConfig(), { allowDebug: false }).allowDebug).toBe(false);
+      expect(deriveUserSafetyFromProfile(config({ allowDebug: false }), { allowDebug: true }).allowDebug).toBe(false);
+      expect(deriveUserSafetyFromProfile(unrestrictedSafetyConfig(), { allowDebug: true }).allowDebug).toBe(true);
+      expect(describeSafety(unrestrictedSafetyConfig())).toContain('DEBUG');
+      expect(describeSafety(config({ allowDebug: false }))).not.toContain('DEBUG');
+    });
+
+    it('checkDebug needs allowDebug AND allowDataPreview', () => {
+      expect(() => checkDebug(unrestrictedSafetyConfig(), 'X')).not.toThrow();
+      expect(() => checkDebug(config({ allowDebug: false }), 'X')).toThrow(/SAP_ALLOW_DEBUG=true/);
+      expect(() => checkDebug(config({ allowDebug: true, allowDataPreview: false }), 'X')).toThrow(
+        /SAP_ALLOW_DATA_PREVIEW=true/,
+      );
     });
 
     it('does not mutate the original server config', () => {

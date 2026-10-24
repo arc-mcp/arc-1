@@ -90,7 +90,7 @@ stdio only. No HTTP or SSE.
 
 | Feature | Priority | Effort | Status |
 |---------|----------|--------|--------|
-| ABAP Debugger (13 tools) | Low | 5d | Not planned — complex, needs WebSocket |
+| ABAP Debugger (13 tools) | Low | — | Partly covered by the one-shot `SAPDiagnose action=debug` capture (same REST resources abap-adt-api uses, no WebSocket); variable writes / jump-to-line intentionally not offered |
 | Full ATC management (exemptions) | Medium | 2d | Open — exemption mgmt useful |
 | abapGit integration (10 tools) | Medium | 3d | Open — repo management |
 | Refactoring — extract method | Medium | 2d | Open — roadmap FEAT-05, [API ref](abap-adt-api/evaluations/460200a-extract-method.md) |

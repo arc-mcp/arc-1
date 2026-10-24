@@ -159,7 +159,7 @@ mcp-go v0.17.0, Cobra, Viper, go-sqlite3, godotenv, yaml.v3, Gopher-Lua, WebSock
 | Feature | Priority | Effort | Notes |
 |---------|----------|--------|-------|
 | **Native ABAP parser/linter** (Go port, 8 rules) | Low | N/A | ARC-1 uses @abaplint/core (same source) |
-| **ABAP debugger** (8 tools) | Low | 5d | Requires ZADT_VSP deployment |
+| **ABAP debugger** (8 tools) | Low | — | Partly covered: ARC-1 ships the one-shot `SAPDiagnose action=debug` capture over plain ADT REST (VSP itself now drives the same `/sap/bc/adt/debugger/*` resources over one stateful HTTPS session — ZADT_VSP is no longer required). Interactive multi-call stepping stays out (stateless HTTP). |
 | **AMDP/HANA debugger** (7 tools) | Low | 5d | Requires WebSocket + ZADT_VSP |
 | **Lua scripting engine** (50+ bindings) | Low | N/A | Not core MCP value |
 | **WASM-to-ABAP compiler** | Low | N/A | Experimental |

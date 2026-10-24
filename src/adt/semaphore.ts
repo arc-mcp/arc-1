@@ -16,6 +16,11 @@ export class Semaphore {
     this._max = max;
   }
 
+  /** Configured slot count. */
+  get max(): number {
+    return this._max;
+  }
+
   /** Number of currently active slots */
   get inflight(): number {
     return this._inflight;

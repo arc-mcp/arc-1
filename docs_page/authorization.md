@@ -281,6 +281,7 @@ Use this table to answer: "what must be true before this action can run?" For HT
 | Read saved SAPscript long texts | `data` | `SAP_ALLOW_DATA_PREVIEW=true` | `SAPQuery(action=long_text)`; free SQL is not required |
 | Read saved SLG1 messages | `data` | `SAP_ALLOW_DATA_PREVIEW=true` | `SAPQuery(action=application_log)`; native SAP authorization applies; unavailable with any table blocklist |
 | Authorization trace (`SUAUTHVALTRC`) | `data` | `SAP_ALLOW_DATA_PREVIEW=true` | `SAPDiagnose action=authorization_trace`; on-prem STUSERTRACE read only |
+| One-shot debugger capture | `data` | `SAP_ALLOW_DEBUG=true` + `SAP_ALLOW_DATA_PREVIEW=true` | `SAPDiagnose action=debug`: reads runtime variable values and briefly suspends a run of the **logon user's** own session (never another user's; SAP names that user per session, so under principal propagation each MCP user debugs their own SAP user). SAP also needs debug authorization (`S_DEVELOP` with `OBJTYPE=DEBUG`, display). Not available in multi-target mode. |
 | Run freestyle SQL | `sql` | `SAP_ALLOW_FREE_SQL=true` | High risk on productive systems |
 | Apply exact source blocklist (experimental) | Existing `data`/`sql` scope | `SAP_BLOCKED_DATA_SOURCES=...` | Further restricts guarded data reads; cannot enable access, and unresolved lineage is denied |
 | Create / update / delete objects | `write` | `SAP_ALLOW_WRITES=true` | `SAP_ALLOWED_PACKAGES` applies; supports exact (`ZFOO`), prefix (`Z*`), and DEVCLASS subtree (`ZFOO/**`) patterns. Subtree resolution is fail-closed on SAP errors. |
@@ -589,6 +590,7 @@ Then assign role collections in BTP Cockpit. The server says what the instance c
 | `allowDataPreview=false` | Server ceiling | Set `SAP_ALLOW_DATA_PREVIEW=true` |
 | `allowFreeSQL=false` | Server ceiling | Set `SAP_ALLOW_FREE_SQL=true` |
 | `DATA_SOURCE_BLOCKED` / `DATA_SQL_UNSUPPORTED` / `DATA_LINEAGE_UNRESOLVED` / `DATA_POLICY_UNAVAILABLE` | Experimental source policy | Follow the returned path/reason; do not disable the list merely to make an unsupported query run |
+| `allowDebug=false` | Server ceiling | Set `SAP_ALLOW_DEBUG=true` (debugger captures also need `SAP_ALLOW_DATA_PREVIEW=true`) |
 | `Operations on package ... are blocked` | Server/profile safety | Adjust `SAP_ALLOWED_PACKAGES` or API-key profile choice |
 | `denied by server policy (SAP_DENY_ACTIONS)` | Deny list | Remove or narrow the deny pattern |
 | `No authorization for object ...` / SAP 403 | SAP authorization | Fix SAP user roles / PFCG / package auth |
