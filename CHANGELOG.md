@@ -5,6 +5,13 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.9.1](https://github.com/arc-mcp/arc-1/compare/v1.9.0...v1.9.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **deps:** patch body-parser and extend Forge exception ([#1102](https://github.com/arc-mcp/arc-1/issues/1102)) ([0ad22f9](https://github.com/arc-mcp/arc-1/commit/0ad22f9bf0f4fe7538f6cc0601073217803b9869))
+
 ## [1.9.0](https://github.com/arc-mcp/arc-1/compare/v1.8.0...v1.9.0) (2026-10-23)
 
 
