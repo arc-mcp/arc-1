@@ -15,6 +15,6 @@
   "overrides": {
     "@sap/logging": "9.2.3",
     "axios": "1.20.0",
-    "body-parser": "2.3.0"
+    "body-parser": "2.4.0"
   }
 }

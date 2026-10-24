@@ -27,7 +27,7 @@ describe('BTP UI AppRouter config', () => {
     expect(packageJson.overrides).toMatchObject({
       '@sap/logging': '9.2.3',
       axios: '1.20.0',
-      'body-parser': '2.3.0',
+      'body-parser': '2.4.0',
     });
     // Include nested copies: checking only the hoisted package can hide a vulnerable duplicate.
     for (const [name, version] of Object.entries({ axios: '1.20.0', '@sap/logging': '9.2.3', moment: '2.31.0' })) {
@@ -35,7 +35,7 @@ describe('BTP UI AppRouter config', () => {
       expect(entries.length).toBeGreaterThan(0);
       for (const [, entry] of entries) expect(entry.version).toBe(version);
     }
-    expect(packageLock.packages['node_modules/body-parser']?.version).toBe('2.3.0');
+    expect(packageLock.packages['node_modules/body-parser']?.version).toBe('2.4.0');
     // AppRouter owns this ws major upgrade; do not force it through an override.
     // Asserted by version rather than tree position, which npm is free to hoist.
     expect(packageJson.overrides.ws).toBeUndefined();
