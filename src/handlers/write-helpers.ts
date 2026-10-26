@@ -1208,8 +1208,9 @@ export function runPreWriteLint(
 
   // abaplint supports ABAP source (PROG/CLAS/INTF/INCL) and CDS views (DDLS) via
   // its CDS parser. DDLS lint catches syntax errors (cds_parser_error) like missing commas,
-  // wrong keywords, and invalid DDL constructs. BDEF/SRVD/SRVB/DDLX are silently ignored
-  // by abaplint (no parser for those types — garbage passes without errors). TABL (define
+  // wrong keywords, and invalid DDL constructs. BDEF has a parser as of abaplint 2.120.84,
+  // but remains outside this automatic gate; its semantic checks need related objects.
+  // SRVD/SRVB/DDLX have no parser. TABL (define
   // table syntax) is not supported by the CDS parser and produces false cds_parser_error.
   // For unsupported types, SAP server-side compilation handles validation.
   //
