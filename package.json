@@ -124,7 +124,7 @@
     "express-rate-limit": "^8.7.1",
     "fast-xml-parser": "^5.11.2",
     "helmet": "^8.3.0",
-    "jose": "^6.2.12",
+    "jose": "^6.2.13",
     "on-headers": "^1.1.0",
     "rate-limiter-flexible": "^11.2.2",
     "undici": "^8.12.2",
