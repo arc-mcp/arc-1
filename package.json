@@ -127,7 +127,7 @@
     "jose": "^6.2.13",
     "on-headers": "^1.1.0",
     "rate-limiter-flexible": "^11.2.3",
-    "undici": "^8.12.2",
+    "undici": "^8.12.3",
     "zod": "^4.6.7"
   },
   "overrides": {
