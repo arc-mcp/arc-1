@@ -10,6 +10,7 @@ import type { StoredTextHeader, StoredTextSource, TextDiscovery, TextKey } from 
 
 type Row = Record<string, string>;
 type QueryOptions = NonNullable<Parameters<AdtClient['runTableQuery']>[1]>;
+type QueryResult = Awaited<ReturnType<AdtClient['runTableQuery']>>;
 const KEY_FIELDS = ['TDOBJECT', 'TDNAME', 'TDID', 'TDSPRAS'] as const;
 const HEADER_COLUMNS = [
   'MANDT',
@@ -121,7 +122,7 @@ export async function withStoredTextSession<T>(
     if (closed || signal.aborted)
       throw new TextReadError('LIMIT_EXCEEDED', 'stored-text session ended or was cancelled');
   };
-  async function query(table: string, opts: QueryOptions): Promise<Row[]> {
+  async function query(table: string, opts: QueryOptions): Promise<QueryResult> {
     checkSession();
     if (requests >= MAX_REQUESTS) throw new TextReadError('LIMIT_EXCEEDED', 'stored-text query request limit exceeded');
     requests++;
@@ -139,7 +140,7 @@ export async function withStoredTextSession<T>(
         )
       )
         corrupt('malformed stored query row');
-      return result.rows;
+      return result;
     } catch (error) {
       checkSession();
       if (error instanceof TextReadError) throw error;
@@ -147,18 +148,32 @@ export async function withStoredTextSession<T>(
       throw new AdtNetworkError('stored-text query failed');
     }
   }
-  async function configuration(table: string, columns: string[], where: QueryOptions['where']): Promise<Row> {
+  async function configuration(
+    table: 'TTXOB' | 'TTXID' | 'T002',
+    requiredFields: string[],
+    where: QueryOptions['where'],
+  ): Promise<Row> {
     const cacheKey = JSON.stringify([table, where]);
     let pending = config.get(cacheKey);
     if (!pending) {
-      pending = query(table, { columns, where, maxRows: 2 }).then((rows) => {
+      // Read complete TTXOB/TTXID rows: older schemas lack HANDLER_CLASS. Only successful
+      // full-column metadata can establish its absence; query errors must always surface.
+      const columns = table === 'T002' ? requiredFields : undefined;
+      pending = query(table, { columns, where, maxRows: 2 }).then(({ columns: returnedColumns, rows }) => {
         if (rows.length === 0) throw new TextReadError('INVALID_KEY', 'text object, ID, or language is not configured');
         if (rows.length !== 1)
           throw new TextReadError('UNSUPPORTED_PERSISTENCE', 'required text configuration is absent or ambiguous');
-        for (const field of columns) {
-          if (typeof rows[0][field] !== 'string')
-            throw new TextReadError('UNSUPPORTED_PERSISTENCE', 'required text configuration metadata is unavailable');
-        }
+        if (
+          !Array.isArray(returnedColumns) ||
+          returnedColumns.some(
+            (field) => typeof field !== 'string' || !/^(?:\/[A-Z0-9_]+\/)?[A-Z][A-Z0-9_]*$/u.test(field),
+          ) ||
+          new Set(returnedColumns).size !== returnedColumns.length ||
+          requiredFields.some((field) => !returnedColumns.includes(field)) ||
+          returnedColumns.some((field) => typeof rows[0][field] !== 'string') ||
+          Object.keys(rows[0]).some((field) => !returnedColumns.includes(field))
+        )
+          throw new TextReadError('UNSUPPORTED_PERSISTENCE', 'required text configuration metadata is unavailable');
         return rows[0];
       });
       config.set(cacheKey, pending);
@@ -169,14 +184,10 @@ export async function withStoredTextSession<T>(
     async assertSupportedKey(requested) {
       checkSession();
       const key = canonicalKey(requested);
-      const object = await configuration(
-        'TTXOB',
-        ['TDOBJECT', 'HANDLER_CLASS'],
-        [{ field: 'TDOBJECT', op: '=', value: key.TDOBJECT }],
-      );
+      const object = await configuration('TTXOB', ['TDOBJECT'], [{ field: 'TDOBJECT', op: '=', value: key.TDOBJECT }]);
       const id = await configuration(
         'TTXID',
-        ['TDOBJECT', 'TDID', 'HANDLER_CLASS'],
+        ['TDOBJECT', 'TDID'],
         [
           { field: 'TDOBJECT', op: '=', value: key.TDOBJECT },
           { field: 'TDID', op: '=', value: key.TDID },
@@ -190,13 +201,14 @@ export async function withStoredTextSession<T>(
         unpad(language.SPRAS) !== key.TDSPRAS
       )
         throw new TextReadError('UNSUPPORTED_PERSISTENCE', 'text configuration identity mismatch');
-      const handler = unpad(id.HANDLER_CLASS) || unpad(object.HANDLER_CLASS) || 'CL_RSTXT_DEFAULT_PERSISTENCE';
+      const handler =
+        unpad(id.HANDLER_CLASS ?? '') || unpad(object.HANDLER_CLASS ?? '') || 'CL_RSTXT_DEFAULT_PERSISTENCE';
       if (handler !== 'CL_RSTXT_DEFAULT_PERSISTENCE')
         throw new TextReadError('UNSUPPORTED_PERSISTENCE', 'text uses an unsupported persistence handler');
     },
     async readHeader(requested) {
       const key = canonicalKey(requested);
-      const rows = await query('STXH', { columns: HEADER_COLUMNS, where: keyFilters(key), maxRows: 2 });
+      const { rows } = await query('STXH', { columns: HEADER_COLUMNS, where: keyFilters(key), maxRows: 2 });
       if (rows.length > 1) corrupt('duplicate stored text headers');
       return rows.length ? parseHeader(rows[0], sapClient, key) : undefined;
     },
@@ -204,7 +216,7 @@ export async function withStoredTextSession<T>(
       const key = canonicalKey(requested);
       const chunks: Row[] = [];
       for (let start = 0; start < COUNTER_COUNT; start += WINDOW_SIZE) {
-        const rows = await query('STXL', {
+        const { rows } = await query('STXL', {
           columns: CLUSTER_COLUMNS,
           where: [
             { field: 'RELID', op: '=', value: 'TX' },
@@ -270,7 +282,7 @@ export async function withStoredTextSession<T>(
         ...(input.id === undefined ? [] : [{ field: 'TDID', op: '=', value: probe.TDID }]),
         ...(input.language === undefined ? [] : [{ field: 'TDSPRAS', op: '=', value: probe.TDSPRAS }]),
       ];
-      const rows = await query('STXH', { columns: HEADER_COLUMNS, where, maxRows: limit + 1 });
+      const { rows } = await query('STXH', { columns: HEADER_COLUMNS, where, maxRows: limit + 1 });
       const headers = rows.map((row) => parseHeader(row, sapClient));
       if (
         new Set(headers.map(({ key }) => JSON.stringify(KEY_FIELDS.map((field) => key[field])))).size !== headers.length
