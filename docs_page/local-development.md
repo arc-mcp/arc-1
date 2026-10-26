@@ -22,7 +22,7 @@ npx arc-1@latest --url https://your-sap-host:44300 \
 
 npx downloads on first run and caches. `@latest` follows the npm latest tag, which can advance across minor or major releases. Best for trying things out.
 
-Slow startup on Windows? Try the [single-file executable](#windows-setup-and-updates).
+Slow startup on Windows? Try the [single-file executable](#windows-setup-and-updates). Claude Code users can also [allow more startup time](#claude-code-startup-timeout).
 
 ### npm install -g (faster startup)
 
@@ -209,6 +209,12 @@ Full per-mode table + debugging tips: [Configuration Precedence](configuration-p
 
 All MCP clients that speak stdio work the same way — they spawn `npx arc-1` as a subprocess and talk JSON-RPC over stdin/stdout. The `env` block is where credentials and safety flags go, for example `SAP_ALLOW_WRITES`, `SAP_ALLOW_FREE_SQL`, and `SAP_ALLOWED_PACKAGES`.
 
+### Short instructions for multiple connections
+
+When a session connects to several ARC-1 instances, keep one on the default `full` instructions and set `"ARC1_SERVER_INSTRUCTIONS": "short"` in the others' stdio `env` blocks. Short mode keeps the SAP capabilities introduction and `ARC1_SYSTEM_LABEL`; it omits the repeated workflow/navigation hints. Give each instance a distinct system label or `ARC1_SERVER_NAME`.
+
+For HTTP/BTP, set this on the server (for example in `.mtaext` properties), not in the client's URL configuration. It applies to every user of that deployment, so each user's session should still have a full instance. Pinned and aggregate routes keep their own instructions. A single-instance setup, including the Claude Code plugin, can stay on `full`.
+
 ### Claude Desktop
 
 `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows).
@@ -235,6 +241,19 @@ To keep the same local setup but allow SQL + named table preview while staying r
 ### Claude Code
 
 Project-scoped: create `.mcp.json` in the repo root with the same shape as above. User-scoped: `~/.claude.json` with a `mcpServers` block.
+
+#### Claude Code startup timeout
+
+For slow Windows starts, prefer the [executable](#windows-setup-and-updates) or install with npm ahead of time. The npm/npx package is unchanged; a new `@latest` release can require another download/install on first start.
+
+If Claude Code still times out during startup, allow up to three minutes by running this in PowerShell **before launching Claude Code**:
+
+```powershell
+$env:MCP_TIMEOUT = "180000"
+claude
+```
+
+This applies to Claude Code in that terminal session. Put it in Claude Code's environment, not ARC-1's `.env` or MCP server `env` block. It changes the startup deadline, not tool-call timeouts or startup speed. Claude Code currently documents a 30-second default; see its [environment-variable reference](https://code.claude.com/docs/en/env-vars).
 
 ### Cursor
 

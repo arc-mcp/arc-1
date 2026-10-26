@@ -434,6 +434,41 @@ describe('parseArgs', () => {
     expect(parseArgs([]).systemLabel).toBe('');
   });
 
+  it('defaults to full server instructions', () => {
+    const { config, sources } = resolveConfig([]);
+    expect(config.serverInstructions).toBe('full');
+    expect(sources.serverInstructions).toBe('default');
+  });
+
+  it.each(['full', 'short'] as const)('accepts %s instructions from the environment', (mode) => {
+    process.env.ARC1_SERVER_INSTRUCTIONS = mode;
+    const { config, sources } = resolveConfig([]);
+    expect(config.serverInstructions).toBe(mode);
+    expect(sources.serverInstructions).toEqual({ env: 'ARC1_SERVER_INSTRUCTIONS' });
+  });
+
+  it('lets the instruction flag override the environment and normalizes enum values', () => {
+    process.env.ARC1_SERVER_INSTRUCTIONS = 'short';
+    const { config, sources } = resolveConfig(['--server-instructions', ' FULL ']);
+    expect(config.serverInstructions).toBe('full');
+    expect(sources.serverInstructions).toEqual({ flag: '--server-instructions' });
+    expect(parseArgs(['--server-instructions=short']).serverInstructions).toBe('short');
+  });
+
+  it('treats empty instruction settings as absent', () => {
+    process.env.ARC1_SERVER_INSTRUCTIONS = '';
+    expect(parseArgs(['--server-instructions=']).serverInstructions).toBe('full');
+    process.env.ARC1_SERVER_INSTRUCTIONS = 'short';
+    expect(parseArgs(['--server-instructions=']).serverInstructions).toBe('short');
+  });
+
+  it.each(['brief', 'false', '   '])('rejects invalid instruction mode %j from env or flags', (value) => {
+    process.env.ARC1_SERVER_INSTRUCTIONS = value;
+    expect(() => parseArgs([])).toThrow('ARC1_SERVER_INSTRUCTIONS / --server-instructions: expected full or short');
+    delete process.env.ARC1_SERVER_INSTRUCTIONS;
+    expect(() => parseArgs(['--server-instructions', value])).toThrow('expected full or short');
+  });
+
   it('parses ARC1_SYSTEM_LABEL env var', () => {
     process.env.ARC1_SYSTEM_LABEL = 'ERP production (read-only)';
     expect(parseArgs([]).systemLabel).toBe('ERP production (read-only)');

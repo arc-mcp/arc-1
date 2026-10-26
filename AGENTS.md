@@ -95,7 +95,8 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_TRANSPORT` | `stdio` (default) or `http-streamable` |
 | `ARC1_PORT` / `ARC1_HTTP_ADDR` | HTTP port (8080) / full bind address |
 | `ARC1_SERVER_NAME` / `--server-name` | Server name advertised in the MCP handshake (default `arc-1`); use a unique value per direct-connect instance |
-| `ARC1_SYSTEM_LABEL` / `--system-label` | Optional model-facing single-target label (one normalized line, max 160 characters); prepended to server instructions for clients that hide the handshake name; ignored in multi-target mode |
+| `ARC1_SYSTEM_LABEL` / `--system-label` | Optional model-facing single-target label (one normalized line, max 160 characters); prepended to server instructions for clients that hide the handshake name; ignored on pinned and aggregate routes |
+| `ARC1_SERVER_INSTRUCTIONS` / `--server-instructions` | `full` (default) or `short` (SAP domain paragraph + system label); single-target connections only, including optional `/mcp` beside multi-target routes; pinned/aggregate instructions unchanged |
 | `SAP_ALLOW_WRITES` | Enable mutations (default false); prerequisite for transport/git writes |
 | `SAP_ALLOW_DATA_PREVIEW` / `SAP_ALLOW_FREE_SQL` | TABLE_CONTENTS preview / freestyle SQL (default false) |
 | `SAP_BLOCKED_DATA_SOURCES` | Experimental exact-name data-source blocklist (default empty/off). Narrows, never enables; strict SQL subset + live CDS/replacement lineage; fails closed. Adds SAP metadata calls, no cache |

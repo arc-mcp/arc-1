@@ -89,6 +89,7 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   },
   { name: 'ide-system-id', valueName: 'sid', description: 'Real SAP SID for Eclipse links (single-target only)' },
   { name: 'system-label', valueName: 'label', description: 'Connected-system label shown in MCP instructions' },
+  { name: 'server-instructions', valueName: 'mode', description: 'Single-target MCP instructions: full or short' },
   {
     name: 'ui',
     valueName: 'mode',
@@ -646,6 +647,18 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   config.systemLabel = normalizeSystemLabel(
     resolveStr('system-label', 'ARC1_SYSTEM_LABEL', DEFAULT_CONFIG.systemLabel, 'systemLabel'),
   );
+  const serverInstructions = resolveStr(
+    'server-instructions',
+    'ARC1_SERVER_INSTRUCTIONS',
+    DEFAULT_CONFIG.serverInstructions,
+    'serverInstructions',
+  )
+    .trim()
+    .toLowerCase();
+  if (serverInstructions !== 'full' && serverInstructions !== 'short') {
+    throw new Error('Invalid ARC1_SERVER_INSTRUCTIONS / --server-instructions: expected full or short.');
+  }
+  config.serverInstructions = serverInstructions;
 
   // ── Read-only Admin UI ────────────────────────────────────────────
   const uiFlag = getOptionalFlagValue('ui');

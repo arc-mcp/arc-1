@@ -107,15 +107,36 @@ describe('MCP Server', () => {
     expect((await initializeServer(config)).version).toEqual({ name: expectedName, version: VERSION });
   });
 
-  it('prepends a system label to the single-target instructions without changing their body', async () => {
-    const baseline = (await initializeServer(DEFAULT_CONFIG)).instructions;
-    const labeled = (await initializeServer({ ...DEFAULT_CONFIG, systemLabel: 'ERP production (read-only)' }))
-      .instructions;
+  it.each(['full', 'short'] as const)(
+    'prepends a normalized system label to %s instructions',
+    async (serverInstructions) => {
+      const config = { ...DEFAULT_CONFIG, serverInstructions };
+      const baseline = (await initializeServer(config)).instructions;
+      const labeled = (await initializeServer({ ...config, systemLabel: '  ERP\tproduction\n(read-only)  ' }))
+        .instructions;
 
-    expect(baseline).toMatch(/^Use ARC-1 for SAP ABAP source/);
-    expect(baseline).not.toContain('Connected SAP system:');
-    expect(labeled).toBe(`Connected SAP system: ERP production (read-only).\n\n${baseline}`);
+      expect(baseline).toMatch(/^Use ARC-1 for SAP ABAP source/);
+      expect(baseline).not.toContain('Connected SAP system:');
+      expect(labeled).toBe(`Connected SAP system: ERP production (read-only).\n\n${baseline}`);
+    },
+  );
+
+  it('keeps full instructions as the default', async () => {
+    const baseline = (await initializeServer(DEFAULT_CONFIG)).instructions;
+    expect((await initializeServer({ ...DEFAULT_CONFIG, serverInstructions: 'full' })).instructions).toBe(baseline);
   });
+
+  it.each(['standard', 'hyperfocused'] as const)(
+    'sends only the SAP domain paragraph in short %s mode',
+    async (toolMode) => {
+      const full = (await initializeServer({ ...DEFAULT_CONFIG, toolMode })).instructions;
+      const short = (await initializeServer({ ...DEFAULT_CONFIG, toolMode, serverInstructions: 'short' })).instructions;
+      expect(short).toBe(full?.split('\n')[0]);
+      expect(short).toContain('SAP ABAP source, CDS/RAP, DDIC');
+      expect(short).not.toContain(NATIVE_NAVIGATION_INSTRUCTIONS);
+      expect(short).not.toContain('Fetch targeted evidence');
+    },
+  );
 
   it.each(['standard', 'hyperfocused'] as const)(
     'preserves evidence-led reviews and targeted method reads in %s',
@@ -142,12 +163,19 @@ describe('MCP Server', () => {
     },
   );
 
-  it('keeps the maximum system label below the client instruction ceiling', async () => {
-    const instructions = (
-      await initializeServer({ ...DEFAULT_CONFIG, systemLabel: 'x'.repeat(SYSTEM_LABEL_MAX_LENGTH) })
-    ).instructions;
-    expect(instructions?.length).toBeLessThan(2_048);
-  });
+  it.each(['full', 'short'] as const)(
+    'keeps the maximum system label below the %s instruction ceiling',
+    async (serverInstructions) => {
+      const instructions = (
+        await initializeServer({
+          ...DEFAULT_CONFIG,
+          serverInstructions,
+          systemLabel: 'x'.repeat(SYSTEM_LABEL_MAX_LENGTH),
+        })
+      ).instructions;
+      expect(instructions?.length).toBeLessThan(2_048);
+    },
+  );
 
   it('advertises the SAP URI handler while retaining native-navigation identity and failure boundaries', () => {
     const instructions = NATIVE_NAVIGATION_INSTRUCTIONS;
@@ -177,11 +205,12 @@ describe('MCP Server', () => {
       message: 'safe test failure',
     });
     const metadata = await initializeServer(
-      { ...DEFAULT_CONFIG, systemLabel: 'SHOULD NOT APPEAR' },
+      { ...DEFAULT_CONFIG, serverInstructions: 'short', systemLabel: 'SHOULD NOT APPEAR' },
       { multiTarget: { mode: 'aggregate', registry, instanceConfig: DEFAULT_CONFIG } },
     );
 
     expect(metadata.instructions).toBe(MULTI_TARGET_SERVER_INSTRUCTIONS);
+    expect(metadata.instructions).toContain(NATIVE_NAVIGATION_INSTRUCTIONS);
     expect(metadata.instructions).not.toContain('SHOULD NOT APPEAR');
   });
 

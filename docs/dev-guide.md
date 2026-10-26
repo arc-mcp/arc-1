@@ -41,7 +41,8 @@ duplicating it here proved to drift). The compact per-variable table stays in AG
 ## Native IDE source links
 
 VS Code navigation composes ARC-1 research with the local SAP ADT MCP resolver. The initialize hint in
-`server-instructions.ts` is always sent to authorized connections; its wording makes navigation optional.
+`server-instructions.ts` includes the navigation hint in full single-target and authorized multi-target
+instructions. Opt-in short single-target instructions omit it; its wording makes navigation optional.
 No ARC-1 flat-file URI builder or destination-map header
 remains. Require a user-confirmed backend/client mapping; never infer it from a SID or bypass an
 ARC-1 denial. [Native acceptance and limits](research/ide-navigation-verification.md).

@@ -1,4 +1,5 @@
 import { normalizeSystemLabel } from './config.js';
+import type { ServerConfig } from './types.js';
 
 /** Optional client orchestration, not a server connection or an authorization grant. */
 export const NATIVE_NAVIGATION_INSTRUCTIONS =
@@ -7,8 +8,10 @@ export const NATIVE_NAVIGATION_INSTRUCTIONS =
 /** Sent in the MCP initialize response. Clients that defer tool loading (Claude Code enables tool
  *  search by default) use this to decide whether to look for ARC-1's tools at all, so it names the
  *  domain first. Keep under 2,048 characters — Claude Code truncates server instructions silently. */
+const SERVER_DOMAIN_INSTRUCTIONS =
+  'Use ARC-1 for SAP ABAP source, CDS/RAP, DDIC, transports, Git, ATC/Unit, SQL/data, syntax/activation and dumps/traces on this system.';
 const SERVER_INSTRUCTIONS = [
-  'Use ARC-1 for SAP ABAP source, CDS/RAP, DDIC, transports, Git, ATC/Unit, SQL/data, syntax/activation and dumps/traces on this system.',
+  SERVER_DOMAIN_INSTRUCTIONS,
   '',
   'Fetch targeted evidence:',
   '- Native relationship maps: SAPNavigate(action="relations") when listed; deps is source-derived.',
@@ -28,7 +31,11 @@ const SERVER_INSTRUCTIONS = [
   NATIVE_NAVIGATION_INSTRUCTIONS,
 ].join('\n');
 
-export function buildServerInstructions(systemLabel: string): string {
+export function buildServerInstructions(
+  systemLabel: string,
+  mode: ServerConfig['serverInstructions'] = 'full',
+): string {
   const normalizedLabel = normalizeSystemLabel(systemLabel);
-  return normalizedLabel ? `Connected SAP system: ${normalizedLabel}.\n\n${SERVER_INSTRUCTIONS}` : SERVER_INSTRUCTIONS;
+  const instructions = mode === 'short' ? SERVER_DOMAIN_INSTRUCTIONS : SERVER_INSTRUCTIONS;
+  return normalizedLabel ? `Connected SAP system: ${normalizedLabel}.\n\n${instructions}` : instructions;
 }

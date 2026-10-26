@@ -52,6 +52,8 @@ export interface ServerConfig {
   serverName: string;
   /** Human-readable single-target label prepended to model-facing MCP instructions. */
   systemLabel: string;
+  /** Single-target MCP instructions; pinned and aggregate routes keep their own guidance. */
+  serverInstructions: 'full' | 'short';
 
   // --- Read-only Admin UI ---
   /** Read-only inspection UI: off (default), local sidecar server, or mounted web routes on the HTTP server. */
@@ -289,6 +291,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   maxHttpRequestBytes: 100 * 1024,
   serverName: 'arc-1',
   systemLabel: '',
+  serverInstructions: 'full',
   uiMode: 'off',
   uiAddr: '127.0.0.1:8711',
   uiOpen: false,

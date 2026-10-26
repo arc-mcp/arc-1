@@ -707,7 +707,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
       capabilities: { tools: { listChanged: true } },
       instructions: multiTarget
         ? buildMultiTargetServerInstructions(multiTarget)
-        : buildServerInstructions(config.systemLabel),
+        : buildServerInstructions(config.systemLabel, config.serverInstructions),
     },
   );
   const apiKeyProvenanceVerifier = createConfiguredApiKeyVerifier(config);
