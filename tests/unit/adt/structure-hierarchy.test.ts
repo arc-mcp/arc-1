@@ -33,6 +33,7 @@ define structure zbase {
 define table ztab {
   key include zkey_inc not null;
   key keys : include znamed_key_inc not null;
+  key include /arc/key_inc not null;
   key client : abap.clnt not null;
   include zdata_inc;
 }`);
@@ -40,6 +41,7 @@ define table ztab {
       expect(refs).toEqual([
         { name: 'ZKEY_INC', attribute: null, kind: 'include' },
         { name: 'ZNAMED_KEY_INC', attribute: 'keys', kind: 'include' },
+        { name: '/ARC/KEY_INC', attribute: null, kind: 'include' },
         { name: 'ZDATA_INC', attribute: null, kind: 'include' },
       ]);
     });
