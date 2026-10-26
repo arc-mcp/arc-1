@@ -564,12 +564,19 @@ pick up newly published OS security fixes.
 `audit-ci.json` temporarily accepts only
 [`GHSA-86w9-cpqp-85rv`](https://github.com/advisories/GHSA-86w9-cpqp-85rv), the RSA
 signature-verification advisory affecting `node-forge` through 1.4.0 with no published patch as of
-21 October 2026. The exception expires automatically at **00:00 Europe/Berlin on 28 October 2026**.
-Its first window (to 21 October) was renewed for one week after rechecking that neither `node-forge`,
-`jks-js` nor `@sap-cloud-sdk/connectivity` had published a release that removes the affected dependency
-path. It lets unrelated dependency maintenance proceed; it does not fix the vulnerability or
-establish that ARC-1 cannot be affected. Remove the exception when the affected dependency paths are
-fixed, or reassess it before expiry in a separate reviewed change.
+24 October 2026. The exception expires automatically at **00:00 Europe/Berlin on 31 December 2026**.
+The maintainer renewed it on 24 October based on
+[SAP's completed assessment of 23 October](https://github.com/SAP/cloud-sdk-js/issues/7023#issuecomment-6365515697).
+The reviewed dependency path is `@sap-cloud-sdk/connectivity@4.9.1 → jks-js@1.1.7 → node-forge@1.4.0`.
+SAP concludes that this keystore parsing and conversion flow does not reach Forge's vulnerable RSA
+verifier; certificate verification uses Node's native TLS stack. This supports low practical risk
+for the reviewed usage. The dependency remains affected, and the assessment does not cover other
+uses of Forge.
+
+The allowlist matches the advisory ID; the reviewed dependency path is the basis for the acceptance,
+not an additional CI-enforced restriction. Upgrade and remove the exception when a validated
+upstream fix is available. Reassess sooner if dependency versions or usage change, or SAP revises
+its assessment, and review before expiry in a separate change.
 
 Run `npm run audit:ci` and `npm run audit:ci -- --directory btp/approuter` to reproduce the PR
 gates. Both retain the high/critical threshold, development dependencies, and the existing optional
