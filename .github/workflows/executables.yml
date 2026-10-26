@@ -53,6 +53,8 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22
+          # The executable embeds Node, so do not reuse an older patch from the runner cache.
+          check-latest: true
           cache: 'npm'
 
       # Native better-sqlite3 is not needed: the executable uses the node:sqlite built-in.
