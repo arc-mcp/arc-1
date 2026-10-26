@@ -99,6 +99,27 @@ describe('SAPDiagnose ATC batch contract', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
+  it.each([{}, { type: 'CLAS' }, { name: 'ZCL_A' }, { type: 'CLAS', name: '' }, { type: '', name: 'ZCL_A' }])(
+    'rejects single-object atc without type and name before any SAP call: %j',
+    async (input) => {
+      const result = await handleToolCall(client(), DEFAULT_CONFIG, 'SAPDiagnose', { action: 'atc', ...input });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('required for "atc"');
+      expect(mockFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it('still runs single-object atc when type and name are given', async () => {
+    mockRun();
+    const result = await handleToolCall(client(), DEFAULT_CONFIG, 'SAPDiagnose', {
+      action: 'atc',
+      type: 'CLAS',
+      name: 'ZCL_A',
+    });
+    expect(result.isError).not.toBe(true);
+    expect(mockFetch).toHaveBeenCalled();
+  });
+
   it('keeps server action denial effective for the entire batch', async () => {
     const result = await handleToolCall(
       client(),
