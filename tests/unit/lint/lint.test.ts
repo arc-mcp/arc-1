@@ -142,6 +142,10 @@ ENDCLASS.`;
       ],
       ['a line-comment header', "// Header\n@EndUserText.label: 'x'\ndefine view entity ZX as select from t { key a }"],
       [
+        'an obsolete -- comment header',
+        "-- Header\n@EndUserText.label: 'x'\ndefine view entity ZX as select from t { key a }",
+      ],
+      [
         'a comment between annotations',
         "@EndUserText.label: 'x'\n// note\ndefine custom entity ZX { key a : abap.char(1); }",
       ],

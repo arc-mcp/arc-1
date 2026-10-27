@@ -170,11 +170,11 @@ export function validateBeforeWrite(
   };
 }
 
-/** Leading CDS comments: `/* … *\/` blocks and `// …` lines. */
-const LEADING_CDS_COMMENTS = /^(?:\s*(?:\/\*[\s\S]*?\*\/|\/\/[^\n]*))+/;
+/** Leading CDS comments: `/* … *\/` blocks, `// …` lines and obsolete `-- …` lines. */
+const LEADING_CDS_COMMENTS = /^(?:\s*(?:\/\*[\s\S]*?\*\/|(?:\/\/|--)[^\n]*))+/;
 
 /** Leading single-line annotations and CDS comments before the first DDL keyword. */
-const LEADING_CDS_PREAMBLE = /^(?:\s*(?:@[^\n]*|\/\*[\s\S]*?\*\/|\/\/[^\n]*))*/;
+const LEADING_CDS_PREAMBLE = /^(?:\s*(?:@[^\n]*|\/\*[\s\S]*?\*\/|(?:\/\/|--)[^\n]*))*/;
 
 /** DDL source keywords (upper case, after the preamble) beyond view definitions and extensions. */
 const DDLS_KEYWORDS =
@@ -185,7 +185,7 @@ const DDLS_KEYWORDS =
  * abaplint uses the file extension to determine the object type.
  */
 export function detectFilename(source: string, objectName: string): string {
-  // Strip leading CDS comments (/* … */ blocks, // lines) — ABAP source never starts with "/" — then
+  // Strip leading CDS comments (/* … */ blocks, // and -- lines) — no ABAP statement starts with them — then
   // leading ABAP comment lines ("! doc comments, * comments) and blank lines to find the first keyword
   const withoutCdsComments = source.replace(LEADING_CDS_COMMENTS, '');
   const stripped = withoutCdsComments.replace(/^(\s*(["*!].*)?[\r\n]*)*/m, '');
