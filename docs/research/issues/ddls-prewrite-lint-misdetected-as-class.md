@@ -29,7 +29,8 @@ The cause is the file type abaplint was given. Why the message names `v702` on a
 `detectFilename(source, name)` (`src/lint/lint.ts`), which **guesses** the type from the source text:
 
 1. The leading-comment stripper `/^(\s*(["*!].*)?[\r\n]*)*/m` only removes ABAP-style lines that start with `"`, `*` or `!`.
-   A DDL block comment (`/* … */`, `/***…***/`) or a DDL line comment (`// …`) is not stripped.
+   A DDL block comment (`/* … */`, `/***…***/`) or a DDL line comment (`// …`, or the obsolete but still valid `-- …`)
+   is not stripped.
 2. The text therefore starts with `/`, which is not a known keyword and not `@`, so detection falls through to
    `return \`${name}.clas.abap\`` ("Default to class").
 3. abaplint parses the CDS as an ABAP class, and the result is `Expected CLASSDEFINITION` plus parser errors on every annotation.
@@ -45,6 +46,7 @@ Detection plus the full `validateBeforeWrite()` result, as the gate runs it and 
 |---|---|---|---|
 | `/****…*/` block comment, then annotations | `.clas.abap` | **blocked** (`Expected CLASSDEFINITION`) | pass |
 | `// …` line comment, then annotations | `.clas.abap` | **blocked** | pass |
+| `-- …` line comment, then annotations | `.clas.abap` | **blocked** | pass |
 | `define custom entity` (no annotation) | `.clas.abap` | **blocked** | pass |
 | `define abstract entity` (no annotation) | `.clas.abap` | **blocked** | pass |
 | `define hierarchy` (no annotation) | `.clas.abap` | **blocked** | pass |
@@ -58,12 +60,15 @@ Every blocked case passes once the known type is used, so the fix creates no new
 1. **Use the known type** in `runPreWriteLint()`: `type === 'DDLS'` always lints as `<name>.ddls.asddls`.
    This alone fixes every blocking case for `SAPWrite`.
 2. **Harden `detectFilename()`** for callers without a type (`SAPLint` on raw source, `SAPContext` deps):
-   - strip leading `/* … */` block comments and `// …` line comments, including between annotations
+   - strip leading `/* … */` block comments and `// …` / `-- …` line comments, including between annotations
    - recognise `DEFINE [ROOT] CUSTOM ENTITY`, `DEFINE [ROOT] ABSTRACT ENTITY`, `DEFINE TRANSIENT VIEW ENTITY`,
      `DEFINE HIERARCHY`, `EXTEND CUSTOM ENTITY`, `EXTEND ABSTRACT ENTITY` as DDLS
    - check `DEFINE TABLE FUNCTION` **before** `DEFINE TABLE` (→ DDLS, not TABL)
 3. **Unit tests** for each detector row above and `runPreWriteLint(…, 'DDLS', …)` cases (comment headers, custom/abstract
    entity) that must not block, plus one that must still report `cds_parser_error` behind a block-comment header.
+
+The `--` comment style was found after the first fix: a DDLS with a `--` first line already passed the write gate
+(known type) but `detectFilename()` still guessed `.clas.abap`, which affects `SAPLint` and `SAPContext` deps.
 
 ## Workaround (until released)
 
