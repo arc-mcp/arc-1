@@ -160,6 +160,7 @@ ENDCLASS.`;
         'define table function',
         'define table function ZX returns { key a : abap.char(1); } implemented by method zcl_x=>m;',
       ],
+      ['extend custom entity', 'extend custom entity ZY with { b : abap.char(1); }'],
       ['extend abstract entity', 'extend abstract entity ZY with { b : abap.char(1); }'],
     ])('detects CDS with %s as .ddls.asddls', (_label, source) => {
       expect(detectFilename(source, 'ZX')).toBe('zx.ddls.asddls');
