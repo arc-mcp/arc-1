@@ -1228,7 +1228,9 @@ export function runPreWriteLint(
   }
 
   try {
-    let filename = detectFilename(source, name);
+    // The object type is known here, so DDLS never relies on content detection: a leading comment header
+    // or a DDL form the detector does not recognise would otherwise fall back to ABAP class lint.
+    let filename = type === 'DDLS' ? `${name.toLowerCase()}.ddls.asddls` : detectFilename(source, name);
     if (type === 'INCL' && filename.endsWith('.clas.abap')) {
       // ABAP includes are often source fragments (FORM/MODULE/DATA...) without a REPORT/CLASS header.
       // Lint them as program-style source; treating the fallback as a class rejects valid include fragments.
