@@ -40,6 +40,7 @@ import {
   mergeLockObjectDefinition,
   parseLockObjectDefinition,
 } from '../adt/lock-object.js';
+import { checkAgainstObjectSchema, getObjectSchema } from '../adt/object-schema.js';
 import { formatRapPreflightFindings, validateRapSource } from '../adt/rap-preflight.js';
 import { checkPackage } from '../adt/safety.js';
 import {
@@ -49,6 +50,7 @@ import {
   serverDrivenCreateUnsupported,
   serverDrivenMetadataContentType,
   serverDrivenObjectUrl,
+  serverDrivenSchemaCheck,
   serverDrivenSourceFormat,
   serverDrivenUnavailableMessage,
   updateServerDrivenObjectSource,
@@ -1080,10 +1082,22 @@ export async function handleServerDrivenObjectWrite(
       const v = validateSource();
       if (!v.ok) return v.result;
       await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, metadataAccept);
+      let schemaNote = '';
+      if (serverDrivenSchemaCheck(type)) {
+        const schema = await getObjectSchema(client.http, client.safety, objUrl);
+        const problems = schema === undefined ? [] : checkAgainstObjectSchema(schema, JSON.parse(v.source));
+        if (problems.length > 0) {
+          return errorResult(
+            `SAPWrite update for ${type} ${name}: the source does not match SAP's schema for this object, and SAP would drop these values silently. Nothing was written.\n- ${problems.join('\n- ')}`,
+          );
+        }
+        if (schema === undefined)
+          schemaNote = `\nSAP's schema for ${type} could not be read; values SAP does not accept may have been dropped. Read the source back to compare.`;
+      }
       await updateServerDrivenObjectSource(client.http, client.safety, type, name, v.source, { transport });
       invalidate();
       return textResult(
-        `Updated source of ${type} ${name}.\n${activationHint}` +
+        `Updated source of ${type} ${name}.${schemaNote}\n${activationHint}` +
           (type === 'TABL/DTI' ? ' The complete index definition replaces any pending definition.' : ''),
       );
     }

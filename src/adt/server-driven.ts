@@ -80,6 +80,8 @@ export interface SdoRegistryEntry {
   lowercaseName?: true;
   /** Set when SAP offers no create for the type; the text tells the caller what to use instead. */
   createUnsupported?: string;
+  /** Check source against SAP's `<object>/schema` before saving, because SAP drops invalid values silently. */
+  schemaCheck?: true;
 }
 
 /** AFF JSON body vs plain DDL text. Required per entry — a wrong guess is a hard 415 from SAP. */
@@ -120,6 +122,11 @@ export function serverDrivenSourceContentType(code: string): string {
 /** Why SAP offers no create for a registered type, or undefined when create is supported. */
 export function serverDrivenCreateUnsupported(code: string): string | undefined {
   return sdoEntry(code).createUnsupported;
+}
+
+/** True when updates of the type are checked against SAP's object schema first. */
+export function serverDrivenSchemaCheck(code: string): boolean {
+  return sdoEntry(code).schemaCheck === true;
 }
 
 /** Declared source flavor for a registered type (drives the client-side JSON parse gate). */
@@ -291,6 +298,7 @@ export const SDO_REGISTRY = {
     ...BLUE_METADATA,
     sourceFormat: 'json',
     lowercaseName: true,
+    schemaCheck: true,
     createUnsupported:
       'SAP creates SMBC only through its object generator, together with the service and data model; use SAPWrite(action="generate", generator="smbc") from the customizing table where available.',
   },

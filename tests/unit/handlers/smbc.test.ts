@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -94,7 +95,7 @@ const DISCOVERY = `<app:service xmlns:app="http://www.w3.org/2007/app" xmlns:ato
 </app:workspace></app:service>`;
 
 /** Records every SAP send except discovery; answers lock, unlock, source PUT and DELETE. */
-function writeBackend(opts: { corrNr?: string } = {}) {
+function writeBackend(opts: { corrNr?: string; schema?: string } = {}) {
   const sends: Array<{ method: string; path: string; body: string; contentType?: string }> = [];
   let deleted = false;
   mockFetch.mockImplementation(async (url, init) => {
@@ -107,6 +108,8 @@ function writeBackend(opts: { corrNr?: string } = {}) {
       sends.push({ method, path, body: String(init?.body ?? ''), contentType: headers['Content-Type'] });
     }
     if (path.includes('_action=LOCK')) return mockResponse(200, LOCK(opts.corrNr), { 'x-csrf-token': 'T' });
+    if (parsed.pathname === `${uri}/schema`)
+      return opts.schema ? mockResponse(200, opts.schema) : mockResponse(404, 'Not Found');
     if (method === 'DELETE') deleted = true;
     if (method === 'GET' && deleted && parsed.pathname === uri) return mockResponse(404, 'Not Found');
     return mockResponse(200, '', { 'x-csrf-token': 'T' });
@@ -134,6 +137,45 @@ it('updates the SMBC source under one lock with JSON content and the lock transp
   expect(sends[put]?.path).toMatch(new RegExp(`^${uri}/source/main\\?lockHandle=LH1&corrNr=A4HK900123(&|$)`));
   expect(sends[put]?.contentType).toMatch(/^application\/json/);
   expect(sends[put]?.body).toBe(source);
+});
+
+const SMBC_SCHEMA = readFileSync(new URL('../../fixtures/sdo/smbc-schema-816.json', import.meta.url), 'utf8');
+
+it("refuses values outside SAP's schema before locking, because SAP would drop them silently", async () => {
+  const sends = writeBackend({ schema: SMBC_SCHEMA });
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'update',
+    type: 'SMBC',
+    name: '/NS/CONFIG',
+    source: '{"formatVersion":"1","appConfiguration":{"listReport":{"variantManagement":"control"}}}',
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('listReport/variantManagement: "control" is not allowed');
+  expect(result.content[0]?.text).toContain('Nothing was written');
+  expect(sends.some((r) => r.path.includes('_action=LOCK') || r.method === 'PUT')).toBe(false);
+});
+
+it('saves a schema-conform source and says so when the schema cannot be read', async () => {
+  const conform = writeBackend({ schema: SMBC_SCHEMA });
+  const ok = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'update',
+    type: 'SMBC',
+    name: '/NS/CONFIG',
+    source,
+  });
+  expect(ok.isError, ok.content[0]?.text).toBeUndefined();
+  expect(ok.content[0]?.text).not.toContain('could not be read');
+  expect(conform.some((r) => r.method === 'PUT')).toBe(true);
+
+  writeBackend();
+  const noSchema = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'update',
+    type: 'SMBC',
+    name: '/NS/CONFIG',
+    source,
+  });
+  expect(noSchema.isError, noSchema.content[0]?.text).toBeUndefined();
+  expect(noSchema.content[0]?.text).toContain("SAP's schema for SMBC could not be read");
 });
 
 it('refuses an update with invalid JSON before contacting SAP', async () => {

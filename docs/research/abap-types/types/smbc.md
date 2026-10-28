@@ -55,5 +55,25 @@ together with the service and data model it configures. ARC-1 refuses `create` w
 the generator. Delete follows the shared engine (deletion check when advertised, locked DELETE,
 absence read) and still lacks a captured ADT trace for SMBC.
 
+### Live run through ARC-1 (2026-10-28, 816)
+
+An MCP agent ran update, read-back, activation, KTD update and delete through a single-target
+BTP Cloud Foundry write instance with principal propagation. Findings:
+
+- SAP stores and activates a source with a value outside its schema without any message and
+  drops the value: `appConfiguration.listReport.variantManagement: "control"` (schema: `page`,
+  `none`) disappeared on save; activation reported success. ARC-1 therefore checks `update`
+  sources against `GET <object>/schema` (`application/vnd.sap.adt.serverdriven.schema.v1+json;
+  framework=objectTypes.v1`, the AFF `smbc-v1` schema) before locking. The schema is interpreted,
+  not compiled (`src/adt/object-schema.ts`).
+- SAP omits values that equal their schema default (`rowCountMode: "fixed"`, `initialLoad:
+  "enabled"`, `selectionMode: "multi"`); ADT's own save shows the same. The meaning is kept.
+- Inactive and active versions behaved as expected: after `update` the inactive version carried
+  the change and the object was in the inactive list; `SAPActivate` made it active.
+- Delete of the SMBC succeeded and the object read 404 afterwards. Its KTD was not deleted with it.
+- Whether SAP refuses semantically invalid but schema-valid content on save or only on activation
+  (ADT showed such errors through `checkruns`) was not exercised; the planned case did not change
+  the content.
+
 KTD documentation for an SMBC parent was captured in the same session: ADT posted the same
 `<sktd:docu>` body ARC-1 sends (`refObject` type `SMBC/TYP`, URI `/sap/bc/adt/bct/smbctyp/<name>`).
