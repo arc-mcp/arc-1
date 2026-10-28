@@ -72,6 +72,8 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'SRVD', btp: true },
   { type: 'SRVB', btp: true },
   { type: 'SMBC', btp: true },
+  // API package assignment: metadata, ORD document, resource definitions. Discovery-gated, read-only.
+  { type: 'SOD2', btp: false },
   { type: 'SKTD', btp: true },
   // Friendly alias for Knowledge Transfer Documents; normalized to canonical SKTD at dispatch.
   { type: 'KTD', btp: true },
