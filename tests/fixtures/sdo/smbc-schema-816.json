@@ -31,26 +31,14 @@
           "title": "ABAP Language Version",
           "description": "ABAP language version",
           "type": "string",
-          "enum": [
-            "standard",
-            "cloudDevelopment"
-          ],
-          "enumTitles": [
-            "Standard",
-            "ABAP Cloud Development"
-          ],
-          "enumDescriptions": [
-            "Standard",
-            "ABAP cloud development"
-          ],
+          "enum": ["standard", "cloudDevelopment"],
+          "enumTitles": ["Standard", "ABAP Cloud Development"],
+          "enumDescriptions": ["Standard", "ABAP cloud development"],
           "default": "standard"
         }
       },
       "additionalProperties": false,
-      "required": [
-        "description",
-        "originalLanguage"
-      ]
+      "required": ["description", "originalLanguage"]
     },
     "serviceConfiguration": {
       "title": "Service Configuration",
@@ -98,13 +86,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "serviceBinding",
-        "serviceName",
-        "serviceVersion",
-        "rootEntitySet",
-        "name"
-      ]
+      "required": ["serviceBinding", "serviceName", "serviceVersion", "rootEntitySet", "name"]
     },
     "appConfiguration": {
       "title": "Confguration of List Report and Object Pages",
@@ -118,16 +100,8 @@
               "title": "Initial Load",
               "description": "Defines whether data in the List Report is automatically loaded on first app start.",
               "type": "string",
-              "enum": [
-                "enabled",
-                "disabled",
-                "auto"
-              ],
-              "enumTitles": [
-                "Enabled",
-                "Disabled",
-                "Automatic"
-              ],
+              "enum": ["enabled", "disabled", "auto"],
+              "enumTitles": ["Enabled", "Disabled", "Automatic"],
               "enumDescriptions": [
                 "Data is always loaded when opening the app",
                 "Data is never loaded when opening the app without an app state",
@@ -138,14 +112,8 @@
             "variantManagement": {
               "title": "Variant Management",
               "type": "string",
-              "enum": [
-                "page",
-                "none"
-              ],
-              "enumTitles": [
-                "Page",
-                "None"
-              ],
+              "enum": ["page", "none"],
+              "enumTitles": ["Page", "None"],
               "default": "page"
             }
           },
@@ -167,27 +135,15 @@
                 "title": "Section Layout",
                 "description": "Toggle between onepage concept and tabs.",
                 "type": "string",
-                "enum": [
-                  "page",
-                  "tabs"
-                ],
-                "enumTitles": [
-                  "Page",
-                  "Tabs"
-                ],
+                "enum": ["page", "tabs"],
+                "enumTitles": ["Page", "Tabs"],
                 "default": "page"
               },
               "variantManagement": {
                 "title": "Variant Management",
                 "type": "string",
-                "enum": [
-                  "control",
-                  "none"
-                ],
-                "enumTitles": [
-                  "Control",
-                  "None"
-                ],
+                "enum": ["control", "none"],
+                "enumTitles": ["Control", "None"],
                 "default": "none"
               },
               "editableHeaderContent": {
@@ -219,33 +175,15 @@
               "tableType": {
                 "title": "Table Type",
                 "type": "string",
-                "enum": [
-                  "responsiveTable",
-                  "gridTable",
-                  "treeTable"
-                ],
-                "enumTitles": [
-                  "Responsive Table",
-                  "Grid Table",
-                  "Tree Table"
-                ],
+                "enum": ["responsiveTable", "gridTable", "treeTable"],
+                "enumTitles": ["Responsive Table", "Grid Table", "Tree Table"],
                 "default": "responsiveTable"
               },
               "selectionMode": {
                 "title": "Selection Mode",
                 "type": "string",
-                "enum": [
-                  "auto",
-                  "multi",
-                  "single",
-                  "none"
-                ],
-                "enumTitles": [
-                  "Automatic (deprecated)",
-                  "Select Multiple Entries",
-                  "Select Single Entry",
-                  "None"
-                ],
+                "enum": ["auto", "multi", "single", "none"],
+                "enumTitles": ["Automatic (deprecated)", "Select Multiple Entries", "Select Single Entry", "None"],
                 "default": "multi"
               },
               "selectAll": {
@@ -257,14 +195,8 @@
                 "title": "Row Count Mode",
                 "description": "Defines how the table handles the visible rows in the table",
                 "type": "string",
-                "enum": [
-                  "fixed",
-                  "auto"
-                ],
-                "enumTitles": [
-                  "Fixed",
-                  "Automatic"
-                ],
+                "enum": ["fixed", "auto"],
+                "enumTitles": ["Fixed", "Automatic"],
                 "enumDescriptions": [
                   "The table always has as many rows as defined in the visibleRowCount property",
                   "The visibleRowCount property is changed by the table automatically"
@@ -289,18 +221,8 @@
               "creationModeName": {
                 "title": "Table Creation Mode",
                 "type": "string",
-                "enum": [
-                  "newPage",
-                  "inline",
-                  "creationRow",
-                  "inlineCreationRows"
-                ],
-                "enumTitles": [
-                  "New Page",
-                  "Inline",
-                  "Creation Row",
-                  "Empty Row"
-                ],
+                "enum": ["newPage", "inline", "creationRow", "inlineCreationRows"],
+                "enumTitles": ["New Page", "Inline", "Creation Row", "Empty Row"],
                 "enumDescriptions": [
                   "Item is created in subpage",
                   "By clicking on 'Create' a new line is created but automatic navigation to subpage is not performed.",
@@ -363,9 +285,5 @@
     }
   },
   "additionalProperties": false,
-  "required": [
-    "formatVersion",
-    "header",
-    "serviceConfiguration"
-  ]
+  "required": ["formatVersion", "header", "serviceConfiguration"]
 }
