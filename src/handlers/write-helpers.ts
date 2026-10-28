@@ -46,6 +46,7 @@ import {
   createServerDrivenObject,
   deleteServerDrivenObject,
   ensureServerDrivenSupport,
+  serverDrivenCreateUnsupported,
   serverDrivenMetadataContentType,
   serverDrivenObjectUrl,
   serverDrivenSourceFormat,
@@ -1011,6 +1012,9 @@ export async function handleServerDrivenObjectWrite(
 
   switch (action) {
     case 'create': {
+      const createUnsupported = serverDrivenCreateUnsupported(type);
+      if (createUnsupported)
+        return errorResult(`SAPWrite create for ${type} ${name} is not available: ${createUnsupported}`);
       let pkg = String(args.package ?? '$TMP');
       if (type === 'TABL/DTI') {
         const parentPackage = await client.resolveObjectPackage(tableIndexParentUrl(name));

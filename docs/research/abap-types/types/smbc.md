@@ -28,5 +28,32 @@ The shared URI mapping also corrects activation, ATC, syntax-check and navigatio
 routing, which previously fell back to a program URI. Existing activation write
 and package gates still apply; endpoint support is decided by SAP.
 
-SAPWrite creation/update/deletion remains unsupported. KTD documentation creation
-against an existing SMBC parent is a separate, already-supported operation.
+## Writes (verified 2026-10-28 on 816)
+
+SMBC is registered as a server-driven type, so `SAPWrite` update and delete use the shared
+engine. Captured from ADT 3.60 editing an existing SMBC (list report, object pages, table
+settings and configuration group changed), then activating it:
+
+| Step | Request |
+|---|---|
+| Lock | `POST <object>?_action=LOCK&accessMode=MODIFY` (returns lock handle and the recording request) |
+| Metadata | `PUT <object>?lockHandle=…&corrNr=…`, `application/vnd.sap.adt.blues.v1+xml`, the unchanged `blueSource` |
+| Source | `PUT <object>/source/main?lockHandle=…&corrNr=…`, `application/json; charset=utf-8`, the complete JSON |
+| Unlock | `POST <object>?_action=UNLOCK&lockHandle=…` |
+| Activate | `POST /sap/bc/adt/activation?method=activate&preauditRequested=true` with the object URI |
+
+ADT re-sends the unchanged metadata; ARC-1 writes only the source, as for the other blue types,
+because SMBC has no metadata field that `update` changes. While editing, ADT validated the
+unsaved metadata and JSON through `POST /sap/bc/adt/checkruns` with both as base64 artifacts.
+SAP reported content errors there, for example an unknown configuration group or
+"Transportauswahlleiste wird nur für Wurzelentität Singleton unterstützt" for a non-root object
+page; activation runs the same checks (`checkExecuted="true"`).
+
+Create stays unsupported: discovery offers no `$new` schema/content templates for `smbctyp`
+(unlike other `bct` types), and ADT creates SMBC only through the `smbc` object generator,
+together with the service and data model it configures. ARC-1 refuses `create` with a pointer to
+the generator. Delete follows the shared engine (deletion check when advertised, locked DELETE,
+absence read) and still lacks a captured ADT trace for SMBC.
+
+KTD documentation for an SMBC parent was captured in the same session: ADT posted the same
+`<sktd:docu>` body ARC-1 sends (`refObject` type `SMBC/TYP`, URI `/sap/bc/adt/bct/smbctyp/<name>`).
