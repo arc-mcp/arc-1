@@ -42,6 +42,17 @@ Each feed entry links its endpoints by rel: `…/repository/generator/content`, 
 - ADT ran one `cts/transportchecks` per preview object before the run. ARC-1 runs the existing create transport pre-flight once, for the main object.
 - The SMBC object was active right after the run and readable as before (`GET /sap/bc/adt/bct/smbctyp/<name>`, `/source/main`).
 - The input schema contains `options.overwriteExistingObjects` (hidden in the wizard, `false` in the proposal).
+- The preview depends on the options: with `addCopyAction=false` (SAP's proposal for this table) it listed 23 objects, with `addCopyAction=true` 24, the extra one being the copy-parameter DDLS.
+- The preview lists the repository objects of the application. The run also created dependent objects that the preview does not list, in the same package and transport: one authorization default (`SUSH`), one `STOB` per DDLS and the Gateway artifact of the service binding (`G4BA`).
+- The preview and the run report the transport object under its maintenance name (`<name>`); package listing and transport show it as `<name>T`, the TADIR name with its type suffix.
+- Generating the same object set again fails in SAP's validation ("Object … of type Business Configuration Maintenance Object already exists."), both in a dry run and in a real run. SAP does not offer an update preview there.
+
+## Live run through ARC-1
+
+On 28 October 2026 the change was deployed as a test build (`v1.9.0` plus this change) to a single-target write instance on BTP Cloud Foundry (XSUAA, principal propagation through the Cloud Connector) against the 816 system above. An MCP agent ran list, filters, the refusals (missing `objectType`, unsupported generator, package outside `SAP_ALLOWED_PACKAGES`, `overwriteExistingObjects`, `metadata`), SAP's validation error, dry runs with SAP's proposal and with the names of the Eclipse run, the real run, read-back and a second run on the existing objects. All behaved as described in this note.
+
+- The real run created the 24 previewed objects plus the dependent objects above; all were active afterwards (`inactiveObjects` empty, nothing in the inactive list).
+- The objects had been generated before in Eclipse and deleted again, with the deletion still recorded in an unreleased transport. The transport pre-flight therefore found the objects locked in that request and used it although no `transport` was passed. That is the documented create behaviour; on a system where the names were never used, a transportable package without `transport` is refused instead.
 
 ## Design decisions
 
@@ -54,6 +65,7 @@ Each feed entry links its endpoints by rel: `…/repository/generator/content`, 
 
 ## Not verified
 
-- A run through a deployed BTP/Cloud Connector route with principal propagation.
+- A transportable package without `transport` on object names the system never saw (the live run hit the lock of an earlier deletion, see above).
+- Duration through ARC-1 (the agent could not time calls; Eclipse showed 34 s of server time).
 - Any generator other than `smbc`, and any run on 920 or 758.
 - Behaviour when the package is local (`$TMP`) or the generator needs no transport.

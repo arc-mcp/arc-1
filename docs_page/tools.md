@@ -1404,7 +1404,7 @@ SAPWrite(action="generate", generator="smbc", type="TABL", name="ZCUSTOMIZING",
 `type`/`name` name the referenced object the generator starts from. Every call fetches SAP's proposed input for that object and package, merges the JSON object in `source` into it (objects by key, arrays by position), and has SAP validate it and preview the result:
 
 - `dryRun=true` returns `valid`, SAP's `messages`, `plannedObjects`, the effective `input` and a compact `fields` list (title, type, enum values, maximum length) derived from SAP's JSON Schema. Nothing is written.
-- Without `dryRun`, a validation error stops the call before anything is created. Otherwise ARC-1 runs the generator once and returns `created` (the main object SAP reports), `generatedObjects` and `inactiveObjects`, the generated objects still waiting for activation (`"unknown"` when the inactive list could not be read). The smbc generator took 34 s on SAP_BASIS 816 for 24 objects.
+- Without `dryRun`, a validation error stops the call before anything is created. Otherwise ARC-1 runs the generator once and returns `created` (the main object SAP reports), `generatedObjects` and `inactiveObjects`, the generated objects still waiting for activation (`"unknown"` when the inactive list could not be read). `generatedObjects` is SAP's preview; SAP may create dependent objects that the preview does not list (for smbc: authorization default, CDS `STOB` entries, the service binding's Gateway artifact), always in the same package. The smbc generator took 34 s on SAP_BASIS 816 for 24 objects.
 
 Safety and scope:
 
