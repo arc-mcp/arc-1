@@ -1,7 +1,7 @@
 [
   {
     "name": "SAPRead",
-    "description": "Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), TABL/DTT (technical settings), TTYP, DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), ENHO. PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method=\"*\" for signatures, method=\"NAME\" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.",
+    "description": "Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), TABL/DTT (technical settings), TTYP, DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), GENERATORS (object generators; filter: name+objectType), ENHO. PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method=\"*\" for signatures, method=\"NAME\" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -38,6 +38,7 @@
             "BSP_DEPLOY",
             "API_STATE",
             "INACTIVE_OBJECTS",
+            "GENERATORS",
             "SYNTAX",
             "ENHO",
             "DESD",
@@ -293,9 +294,10 @@
             "batch_create",
             "scaffold_rap_handlers",
             "generate_behavior_implementation",
-            "edit_text_symbols"
+            "edit_text_symbols",
+            "generate"
           ],
-          "description": "Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). edit_method: replace a single method body — the token-cheap path for class edits. batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); edit_method_signature rewrites one METHODS clause and leaves the body alone; change_method_visibility moves a method to another section and preserves its body; delete_method is destructive — it discards the body, so to re-section a method use change_method_visibility, never delete+add. scaffold_rap_handlers / generate_behavior_implementation: derive behavior-pool handlers from a BDEF (the latter is the equivalent of Eclipse's \"Generate Behavior Implementation\"). edit_text_symbols: replace CLAS symbols (@MaxLength:NN\\nNNN=text; blank-line separated). Read first with SAPRead CLAS include=text_symbols; source=\"\" clears the pool. Activates texts only."
+          "description": "Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). edit_method: replace a single method body — the token-cheap path for class edits. batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); edit_method_signature rewrites one METHODS clause and leaves the body alone; change_method_visibility moves a method to another section and preserves its body; delete_method is destructive — it discards the body, so to re-section a method use change_method_visibility, never delete+add. scaffold_rap_handlers / generate_behavior_implementation: derive behavior-pool handlers from a BDEF (the latter is the equivalent of Eclipse's \"Generate Behavior Implementation\"). edit_text_symbols: replace CLAS symbols (@MaxLength:NN\\nNNN=text; blank-line separated). Read first with SAPRead CLAS include=text_symbols; source=\"\" clears the pool. Activates texts only. generate: SAP object generator (SAPRead GENERATORS) on type/name; source=JSON overrides; dryRun first."
         },
         "type": {
           "type": "string",
@@ -405,6 +407,10 @@
         "dryRun": {
           "type": "boolean",
           "description": "For generate_behavior_implementation: when true, runs discovery + cross-validation + scaffold planning and returns the report without writing or activating. Use this to preview what would change. SKTD/KTD update: reports which nodes would change, writing nothing."
+        },
+        "generator": {
+          "type": "string",
+          "description": "generate: id from SAPRead GENERATORS."
         },
         "description": {
           "type": "string",

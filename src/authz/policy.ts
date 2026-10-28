@@ -120,6 +120,9 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
     opType: OperationType.Update,
     featureGate: 'rap',
   },
+  // generate runs an SAP object generator (issue #1121) — mass creation in one package. Explicit
+  // entry so admins can block it with SAP_DENY_ACTIONS while keeping single-object create.
+  'SAPWrite.generate': { scope: 'write', opType: OperationType.Create },
 
   // ── SAPActivate ──────────────────────────────────────────────────
   SAPActivate: { scope: 'write', opType: OperationType.Activate },
