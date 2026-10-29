@@ -13,6 +13,8 @@
 import { postCreate } from './create-request.js';
 import { AdtApiError, extractExceptionType, isNotFoundError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
+import { assertMutationContext, type MutationContext, singleTargetMutationContext } from './mutation-context.js';
+import { mutationHttp, withMutationSession } from './mutation-http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { assertSourceHash } from './source-precondition.js';
 /** Lock result from SAP */
@@ -89,6 +91,59 @@ export async function lockObject(
 /** Unlock an ABAP object */
 export async function unlockObject(http: AdtHttpClient, objectUrl: string, lockHandle: string): Promise<void> {
   await http.post(`${objectUrl}?_action=UNLOCK&lockHandle=${encodeURIComponent(lockHandle)}`);
+}
+
+/** Required hooks keep policy revalidation before the operation, inside the owning lock. */
+export interface MutationLockPolicy {
+  beforeLock: () => void;
+  validateLock: (session: AdtHttpClient, lock: LockResult) => Promise<void>;
+}
+
+const legacyLockPolicy: MutationLockPolicy = {
+  beforeLock: () => {},
+  validateLock: async () => {},
+};
+
+/** Shared session/lock mechanics; adapters retain their native recording, source and result logic. */
+export async function withLockedMutation<T>(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  context: MutationContext,
+  objectUrl: string,
+  policy: MutationLockPolicy,
+  operation: (session: AdtHttpClient, lock: LockResult) => Promise<T>,
+  abapRelease?: string,
+): Promise<T> {
+  assertMutationContext(safety, context);
+  checkOperation(safety, OperationType.Update, 'MutationSession');
+  const run = async (owningSession: AdtHttpClient) => {
+    const session = mutationHttp(owningSession, safety, context);
+    policy.beforeLock();
+    const lock = await lockObject(session, safety, objectUrl, 'MODIFY', abapRelease, undefined, context.requestPolicy);
+    try {
+      await policy.validateLock(session, lock);
+      return await operation(session, lock);
+    } finally {
+      if (context.mode === 'single-target') {
+        // Preserve legacy finally precedence, including an unlock error replacing the primary error.
+        await unlockObject(owningSession, objectUrl, lock.lockHandle);
+      } else if (lock.lockHandle) {
+        try {
+          // Use the same owning session, but not the cancelled/expired operation's facade.
+          await owningSession.post(
+            `${objectUrl}?_action=UNLOCK&lockHandle=${encodeURIComponent(lock.lockHandle)}`,
+            undefined,
+            undefined,
+            undefined,
+            { deadline: Date.now() + 30_000, retryTransientErrors: false, noReplay: true },
+          );
+        } catch {
+          context.cleanup.unlockFailed = true;
+        }
+      }
+    }
+  };
+  return withMutationSession(http, safety, context, run);
 }
 
 /**
@@ -249,10 +304,14 @@ export async function safeUpdateSource(
   expectedSourceHash?: string,
 ): Promise<void> {
   checkOperation(safety, OperationType.Update, 'UpdateSource');
-  await http.withStatefulSession(async (session) => {
-    const lock = await lockObject(session, safety, objectUrl, 'MODIFY', abapRelease);
-    const effectiveTransport = transport ?? (lock.corrNr || undefined);
-    try {
+  await withLockedMutation(
+    http,
+    safety,
+    singleTargetMutationContext(safety),
+    objectUrl,
+    legacyLockPolicy,
+    async (session, lock) => {
+      const effectiveTransport = transport ?? (lock.corrNr || undefined);
       let replacement: string;
       if (expectedSourceHash !== undefined || typeof source === 'function') {
         checkOperation(safety, OperationType.Read, 'GetSource');
@@ -263,10 +322,9 @@ export async function safeUpdateSource(
         replacement = source;
       }
       await updateSource(session, safety, sourceUrl, replacement, lock.lockHandle, effectiveTransport);
-    } finally {
-      await unlockObject(session, objectUrl, lock.lockHandle);
-    }
-  });
+    },
+    abapRelease,
+  );
 }
 
 /**
@@ -336,11 +394,15 @@ export async function safeUpdateClassInclude(
   expectedSourceHash?: string,
 ): Promise<{ initialized: boolean }> {
   checkOperation(safety, OperationType.Update, 'UpdateSource');
-  return await http.withStatefulSession(async (session) => {
-    const lock = await lockObject(session, safety, classObjectUrl, 'MODIFY', abapRelease);
-    const effectiveTransport = transport ?? (lock.corrNr || undefined);
-    let initialized = false;
-    try {
+  return await withLockedMutation(
+    http,
+    safety,
+    singleTargetMutationContext(safety),
+    classObjectUrl,
+    legacyLockPolicy,
+    async (session, lock) => {
+      const effectiveTransport = transport ?? (lock.corrNr || undefined);
+      let initialized = false;
       // Probe whether the include exists. 404 → not initialised yet.
       let exists = true;
       try {
@@ -359,11 +421,10 @@ export async function safeUpdateClassInclude(
         initialized = true;
       }
       await updateSource(session, safety, includeUrl, source, lock.lockHandle, effectiveTransport);
-    } finally {
-      await unlockObject(session, classObjectUrl, lock.lockHandle);
-    }
-    return { initialized };
-  });
+      return { initialized };
+    },
+    abapRelease,
+  );
 }
 
 /**
