@@ -120,6 +120,28 @@ describe('buildApiCatalogCreateXml', () => {
 });
 
 describe('applyApiCatalogDefinition', () => {
+  // A customer-namespace API package: SAP switches type and scope dependency off and keeps the old
+  // value on save while still answering 200 (observed on SAP_BASIS 8.16).
+  const SOD1_LOCKED = SOD1.replaceAll(
+    '<pluginConfiguration:isEnabled>true</pluginConfiguration:isEnabled>',
+    '<pluginConfiguration:isEnabled>false</pluginConfiguration:isEnabled>',
+  );
+
+  it('refuses a change of a field SAP switched off for the package', () => {
+    expect(() => applyApiCatalogDefinition('SOD1', SOD1_LOCKED, { type: '2', isScopeDependent: false })).toThrow(
+      'SAP does not allow changing type, isScopeDependent of this API package',
+    );
+  });
+
+  it('accepts switched-off fields that keep their value (a full SAPRead answer as source)', () => {
+    const out = applyApiCatalogDefinition('SOD1', SOD1_LOCKED, { type: '1', isScopeDependent: true, alias: 'Demo' });
+    expect(out).toContain('<sod1:alias>Demo</sod1:alias>');
+  });
+
+  it('writes the type when SAP enables the field', () => {
+    expect(applyApiCatalogDefinition('SOD1', SOD1, { type: '2' })).toContain('<sod1:type>2</sod1:type>');
+  });
+
   it('patches only the addressed elements and keeps the rest byte for byte', () => {
     const out = applyApiCatalogDefinition('SOD1', SOD1, { alias: 'New & alias', isScopeDependent: false });
     expect(out).toContain('<sod1:alias>New &amp; alias</sod1:alias>');

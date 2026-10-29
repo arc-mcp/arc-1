@@ -50,7 +50,7 @@ Create, update and delete share the SOD1 contract, see [sod1.md](sod1.md). The c
 `packageID` (the API package), `apiWbObjectType`, `apiWbObjectName`, `apiSubWbObjectType` and
 `apiSubWbObjectName`; for an OData V4 service binding (G4BA) the sub-object is `G4S` with the
 service group name padded to 36 characters followed by the version. Eclipse's "Documentation Link"
-field writes `documentationLinkReplacement`; SAP then returns the same URL in `documentationLink`.
+field writes `documentationLinkReplacement`; SAP then returns the same URL in `documentationLink`. SAP accepts a manual documentation link only when the API package is an internal ODA package (`type` `1`); otherwise the save is refused ("manual documentation link is only allowed for internal ODA packages"). Tags follow the SOD1 rules (value help per category).
 
 ## Not covered
 

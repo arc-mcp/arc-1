@@ -323,11 +323,31 @@ export function needsFollowUpSave(type: ApiCatalogType, definition: ApiCatalogDe
   return Object.keys(definition).some((key) => !createFields.includes(key));
 }
 
+// SOD1 fields SAP can switch off per API package (Eclipse greys them out). SAP keeps its value and
+// still answers the save with success, so a change to a switched-off field is refused up front.
+const UI_ATTRIBUTES = { type: 'ui_attribute__type', isScopeDependent: 'ui_attribute__is_scope_dependent' } as const;
+
+function assertFieldsEnabled(type: ApiCatalogType, xml: string, definition: ApiCatalogDefinition): void {
+  if (type !== 'SOD1') return;
+  const items = getNestedArray(record(parseXml(xml).sod1), 'adtConfigurationItems', 'adtConfigurationItem');
+  const disabled = new Set(items.filter((i) => text(i.isEnabled) === 'false').map((i) => text(i.uiObjectId)));
+  const current = parseApiPackage(xml);
+  const blocked = (Object.keys(UI_ATTRIBUTES) as Array<keyof typeof UI_ATTRIBUTES>).filter(
+    (key) => disabled.has(UI_ATTRIBUTES[key]) && definition[key] !== undefined && definition[key] !== current[key],
+  );
+  if (blocked.length)
+    throw new AdtError(
+      `SAP does not allow changing ${blocked.join(', ')} of this API package (switched off for its package, ` +
+        'as in Eclipse); SAP would keep the old value. Nothing was saved.',
+    );
+}
+
 /** Apply a definition to the current SAP document; untouched parts are returned byte for byte. */
 export function applyApiCatalogDefinition(type: ApiCatalogType, xml: string, definition: ApiCatalogDefinition): string {
   const prefix = type.toLowerCase();
   const root = new RegExp(`<${prefix}:${prefix}\\s[^>]*>`).exec(xml);
   if (!root) throw new AdtError(`SAP returned no ${type} metadata document; nothing was saved.`);
+  assertFieldsEnabled(type, xml, definition);
   let out = xml;
   if (definition.description !== undefined) {
     const attr = `adtcore:description="${escapeXmlAttr(definition.description)}"`;

@@ -32,6 +32,21 @@ Tags are written as `<tag><value/><category/></tag>`; SAP assigns the `id` retur
 the same pattern (`technicalName`, `displayName`, `value`, `version`, `text`). `abapLanguageVersion` of a
 new API package follows its ABAP package (`cloudDevelopment` in a cloud package, `standard` otherwise).
 
+## SAP-side validation
+
+Verified 2026-10-29 through ARC-1 on the same release:
+
+- An invalid save is refused with `400` and the generic `SWB_TOOL/036` ("… contains errors and cannot be
+  saved"). A check run with the edited document as artifact of the object URI (`POST /sap/bc/adt/checkruns`,
+  `chkrun:contentType="application/vnd.sap.adt.blues.v1+xml; charset=utf-8"`), as Eclipse sends before
+  saving, names the cause. ARC-1 runs it after a refused save and adds the findings to the error.
+- Tag values come from a value help per category (`GET …/sod1/tagvaluehelp/values?name=*&data=<category>`);
+  other values are refused ("tag value … is not allowed for tag category …").
+- `adtConfigurationItems` in the metadata switch fields off per API package. In a customer-namespace package
+  (`namespace` `customer.ext`) `ui_attribute__type` and `ui_attribute__is_scope_dependent` have
+  `isEnabled=false`; SAP then keeps the stored value and still answers the save with `200`. ARC-1 refuses a
+  change to a switched-off field before saving.
+
 ## Knowledge Transfer Documents
 
 `POST /sap/bc/adt/documentation/ktd/documents?corrNr=…` with `<sktd:refObject adtcore:type="SOD1"
