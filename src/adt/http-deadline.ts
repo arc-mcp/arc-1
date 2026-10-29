@@ -30,6 +30,7 @@ export interface AdtRequestOptions extends RequestDeadlineOptions {
 /** Keep request cancellation/deadline controls while excluding result-data accounting from CSRF bootstrap. */
 export function withoutResponseBudget(options?: AdtRequestOptions): AdtRequestOptions | undefined {
   if (!options) return options;
+  if (options.responseBudget?.countAllResponses) return { ...options, discardResponseBody: false };
   const { responseBudget: _responseBudget, ...rest } = options;
   return options.attemptBudget ? { ...rest, discardResponseBody: true } : rest;
 }

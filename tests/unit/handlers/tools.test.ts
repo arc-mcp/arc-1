@@ -59,7 +59,7 @@ describe('Tool Definitions', () => {
         const read = tools.find((tool) => tool.name === 'SAPRead')!.description!;
         const context = tools.find((tool) => tool.name === 'SAPContext')!.description!;
         expect(read).toContain('specs, reviews or pre-change context, prefer SAPContext first');
-        expect(read).toContain('method="NAME" for one body');
+        expect(tools.find((tool) => tool.name === 'SAPRead')!.inputSchema.properties).toHaveProperty('method');
         expect(context).toContain('Primary tool for understanding ABAP/CDS objects');
         expect(context).toContain('KTD when available');
         expect(context).toContain('"What does <object> do?" / "Explain" / "deps before editing"');
