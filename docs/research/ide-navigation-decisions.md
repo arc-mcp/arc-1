@@ -45,8 +45,7 @@ and opens it with `vscode.open`. An already escaped inner `%20` becomes `%2520` 
 Do not reconstruct the localized tree path, substitute a flat URI or assume every alias character
 is qualified. The installed 1.1.2 bundle lacked this handler; open an ABAP workspace first.
 
-The navigation hint is sent in full single-target and authorized multi-target MCP instructions.
-`ARC1_SERVER_INSTRUCTIONS=short` omits it on single-target connections; pinned and aggregate routes keep it.
+The short MCP initialize hint is always sent to authorized connections, without a separate toggle.
 Its wording conditions navigation on a VS Code request and available native tools.
 It says to stop on errors/mismatches, preserve ARC-1
 denials and never edit/activate natively. **Instructions cannot enforce another server's behavior.**

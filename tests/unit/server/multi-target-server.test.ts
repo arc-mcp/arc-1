@@ -145,32 +145,17 @@ describe('multi-target MCP servers', () => {
 
   it.each(['PrincipalPropagation', 'BasicAuthentication'] as const)(
     'keeps native navigation conditional for aggregate and pinned %s connections',
-    async (authentication) => {
+    (authentication) => {
       const targets = registry(2, undefined, { authentication });
       for (const mode of ['aggregate', 'pinned'] as const) {
-        const options = {
+        const instructions = buildMultiTargetServerInstructions({
           mode,
           registry: targets,
           instanceConfig: { ...DEFAULT_CONFIG },
           target: mode === 'pinned' ? targets.targets[0] : undefined,
-        };
-        const instructions = buildMultiTargetServerInstructions(options);
+        });
         expect(instructions).toContain(NATIVE_NAVIGATION_INSTRUCTIONS);
         expect(instructions.length).toBeLessThan(2048);
-        const config = { ...DEFAULT_CONFIG, serverInstructions: 'short' as const, systemLabel: 'SINGLE TARGET' };
-        const server = createServer(config, { multiTarget: { ...options, instanceConfig: config } });
-        try {
-          const initialized = await requestHandler(server, 'initialize')(
-            {
-              method: 'initialize',
-              params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1' } },
-            },
-            {},
-          );
-          expect(initialized.instructions).toBe(instructions);
-        } finally {
-          await server.close();
-        }
       }
     },
   );
