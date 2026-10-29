@@ -13,6 +13,7 @@ import {
 } from './extension-discovery.js';
 import {
   NativeRelationProvider,
+  RELATION_NAME,
   RelationContextError,
   RelationProtocolError,
   relationObjectUri,
@@ -103,6 +104,8 @@ export async function discoverClassIdentities(
         const collection = { 'ENHO/XH': 'enhoxh', 'ENHO/XHH': 'enhoxhh', 'ENHO/XHB': 'enhoxhb' }[object.type];
         if (
           !collection ||
+          object.name.length > 30 ||
+          !RELATION_NAME.test(object.name) ||
           object.uri !== `/sap/bc/adt/enhancements/${collection}/${encodeURIComponent(object.name.toLowerCase())}`
         )
           throw new ExtensionProtocolError('Invalid native enhancement identity.');
@@ -205,7 +208,7 @@ export async function discoverClassSources(
         source: source.source,
       });
       if (!generated) return;
-      provider.reason = `generated_include=${generated.name}; active_revision=00000; implementation names may be absent`;
+      provider.reason = `generated_include=${generated.name}; active_revision=00000; generated_method_includes_only; implementation names may be absent`;
       for (const child of enhancementMethodIncludes(source.source, generated.name)) {
         if (session.stopped) break;
         const identity = { type: 'INCL', name: child, version: 'active' };
@@ -235,5 +238,6 @@ export async function discoverClassSources(
         });
       }
     });
+    if (provider.status === 'incomplete' || provider.status === 'denied') session.omit('sources');
   }
 }

@@ -100,7 +100,8 @@ export function enhancementMethodIncludes(source: string, parentInclude: string)
   const names = new Map<string, string>();
   const upperSource = source.toUpperCase();
   let index = 0;
-  const scanned = source.replace(/[A-Z0-9_/]+=+EM\d{3}/gi, (name) => {
+  const escapedParent = parent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const scanned = source.replace(new RegExp(`${escapedParent}M\\d{3}`, 'gi'), (name) => {
     if (name.length !== 35 || !name.toUpperCase().startsWith(parent)) return name;
     let token: string;
     do {

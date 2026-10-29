@@ -1,4 +1,6 @@
 /** ENHO read routing: XHB BAdIs, XHH source plug-ins, the legacy/generic XH route, and the include fallback. */
+
+import { XMLValidator } from 'fast-xml-parser';
 import type { AdtClient } from './client.js';
 import { enhancementIncludeName, readEnhancementIncludeRevision } from './enhancement-include.js';
 import { withFilterConditions } from './enho-filter.js';
@@ -49,9 +51,14 @@ export async function readActiveClassEnhancementSource(
   const [collection, accept] = ROUTES[identity.type];
   const path = `/sap/bc/adt/enhancements/${collection}/${encodeURIComponent(identity.name.toLowerCase())}`;
   try {
-    const result = parseEnhancementMetadata(
-      (await client.http.get(`${path}?version=active`, { Accept: accept }, request)).body,
-    );
+    const xml = (await client.http.get(`${path}?version=active`, { Accept: accept }, request)).body;
+    if (/<!DOCTYPE|<!ENTITY/i.test(xml) || XMLValidator.validate(xml) !== true) throw new RevisionHistoryError();
+    let result: EnhancementImplementationInfo;
+    try {
+      result = parseEnhancementMetadata(xml);
+    } catch {
+      throw new RevisionHistoryError();
+    }
     if (result.name.toUpperCase() !== identity.name.toUpperCase()) throw new RevisionHistoryError();
     if (identity.type === 'ENHO/XHH')
       result.source = (
