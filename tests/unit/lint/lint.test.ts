@@ -207,10 +207,23 @@ define view ZI_TEST as select from ztable {
       expect(legacyErrors.length).toBeGreaterThan(0);
     });
 
-    it('returns no issues for BDEF source (abaplint does not parse BDEF)', () => {
-      const source = 'this is total garbage that abaplint silently ignores for BDEF';
+    it('reports parser errors for malformed BDEF source', () => {
+      const source = 'this is not a behavior definition';
       const results = lintAbapSource(source, 'zi_test.bdef.asbdef');
-      expect(results).toHaveLength(0);
+      expect(results).toEqual(
+        expect.arrayContaining([expect.objectContaining({ rule: 'bdef_parser_error', severity: 'error' })]),
+      );
+    });
+
+    it('parses valid BDEF source while retaining missing-entity diagnostics', () => {
+      const source = 'projection;\ndefine behavior for ZI_TEST { use create; }';
+      const results = lintAbapSource(source, 'zi_test.bdef.asbdef');
+      expect(results.some((result) => result.rule === 'bdef_parser_error')).toBe(false);
+      expect(results).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ rule: 'bdef_check_syntax', message: 'Entity "ZI_TEST" not found' }),
+        ]),
+      );
     });
   });
 

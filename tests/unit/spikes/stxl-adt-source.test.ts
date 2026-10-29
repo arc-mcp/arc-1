@@ -7,6 +7,7 @@ import { withStoredTextSession } from '../../../src/adt/stored-text/source.js';
 import type { StoredTextSource } from '../../../src/adt/stored-text/types.js';
 import { getCurrentContext, requestContext } from '../../../src/server/context.js';
 
+const tableResult = (rows: Record<string, string>[]) => ({ columns: Object.keys(rows[0] ?? {}), rows });
 const key = { TDOBJECT: 'TEXT', TDNAME: '  Z_TEXT', TDID: 'ST', TDSPRAS: 'E' };
 const header = () => ({
   MANDT: '001',
@@ -177,15 +178,15 @@ describe('stored-text ADT source', () => {
 
   it('caches configuration within a session and honors the ID handler override', async () => {
     const { client, query } = setup();
-    query.mockImplementation(async (table) => ({
-      columns: [],
-      rows:
+    query.mockImplementation(async (table) =>
+      tableResult(
         table === 'TTXOB'
           ? [{ TDOBJECT: 'TEXT', HANDLER_CLASS: 'Z_OBJECT_CUSTOM' }]
           : table === 'TTXID'
             ? [{ TDOBJECT: 'TEXT', TDID: 'ST', HANDLER_CLASS: 'CL_RSTXT_DEFAULT_PERSISTENCE ' }]
             : [{ SPRAS: 'E' }],
-    }));
+      ),
+    );
     await withStoredTextSession(client, '001', async (source) => {
       await source.assertSupportedKey(key);
       await source.assertSupportedKey({ ...key, TDNAME: 'ANOTHER' });
@@ -195,23 +196,200 @@ describe('stored-text ADT source', () => {
     expect(query).toHaveBeenCalledTimes(6);
   });
 
-  it('rejects unknown configuration, missing handler metadata, and custom persistence', async () => {
-    for (const objectRows of [[], [{ TDOBJECT: 'TEXT' }], [{ TDOBJECT: 'TEXT', HANDLER_CLASS: 'Z_CUSTOM' }]]) {
+  it('reads complete legacy configuration rows without projecting a missing handler column', async () => {
+    const { client, query } = setup();
+    query.mockImplementation(async (table, opts) => {
+      if (opts?.columns?.includes('HANDLER_CLASS'))
+        throw new AdtApiError('SQL statement invalid', 400, '/sap/bc/adt/datapreview/freestyle');
+      return tableResult(
+        table === 'TTXOB'
+          ? [{ TDOBJECT: 'TEXT', TDSAVEMODE: 'D' }]
+          : table === 'TTXID'
+            ? [{ TDOBJECT: 'TEXT', TDID: 'ST', TDINCLID: '' }]
+            : [{ SPRAS: 'E' }],
+      );
+    });
+    await withStoredTextSession(client, '001', async (source) => {
+      await source.assertSupportedKey(key);
+      await source.assertSupportedKey({ ...key, TDNAME: 'ANOTHER' });
+    });
+    expect(query.mock.calls.map(([table, opts]) => [table, opts?.columns])).toEqual([
+      ['TTXOB', undefined],
+      ['TTXID', undefined],
+      ['T002', ['SPRAS']],
+    ]);
+    expect(query.mock.calls.every(([, opts]) => opts?.maxRows === 2)).toBe(true);
+    expect(query.mock.calls[0][1]?.where).toEqual([{ field: 'TDOBJECT', op: '=', value: 'TEXT' }]);
+    expect(query.mock.calls[1][1]?.where).toEqual([
+      { field: 'TDOBJECT', op: '=', value: 'TEXT' },
+      { field: 'TDID', op: '=', value: 'ST' },
+    ]);
+  });
+
+  it.each(['TTXOB', 'TTXID'])(
+    'rejects a custom handler in %s when the other table lacks the column',
+    async (tableWithHandler) => {
       const { client, query } = setup();
-      query.mockImplementation(async (table) => ({
-        columns: [],
-        rows:
+      query.mockImplementation(async (table) =>
+        tableResult([
+          {
+            ...(table === 'T002' ? { SPRAS: 'E' } : { TDOBJECT: 'TEXT', TDID: 'ST' }),
+            ...(table === tableWithHandler ? { HANDLER_CLASS: 'Z_CUSTOM' } : {}),
+          },
+        ]),
+      );
+      await expect(
+        withStoredTextSession(client, '001', (source) => source.assertSupportedKey(key)),
+      ).rejects.toMatchObject({ code: 'UNSUPPORTED_PERSISTENCE' });
+    },
+  );
+
+  it.each(['', 'Z_CUSTOM'])('accepts namespaced append columns without hiding the handler: %s', async (handler) => {
+    const { client, query } = setup();
+    query.mockImplementation(async (table) =>
+      tableResult(
+        table === 'T002'
+          ? [{ SPRAS: 'E' }]
+          : [
+              {
+                TDOBJECT: 'TEXT',
+                ...(table === 'TTXID' ? { TDID: 'ST' } : {}),
+                '/ARC/EXTRA': 'append data',
+                HANDLER_CLASS: handler,
+              },
+            ],
+      ),
+    );
+    const check = withStoredTextSession(client, '001', (source) => source.assertSupportedKey(key));
+    if (handler) await expect(check).rejects.toMatchObject({ code: 'UNSUPPORTED_PERSISTENCE' });
+    else await expect(check).resolves.toBeUndefined();
+    expect(query).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([400, 403, 404, 500])(
+    'propagates HTTP %s without interpreting a successful reduced query as column absence',
+    async (status) => {
+      const { client, query } = setup();
+      const failure = new AdtApiError('unrelated query failure', status, '/sap/bc/adt/datapreview/freestyle');
+      query
+        .mockImplementation(async (table) =>
+          tableResult(
+            table === 'TTXOB'
+              ? [{ TDOBJECT: 'TEXT' }]
+              : table === 'TTXID'
+                ? [{ TDOBJECT: 'TEXT', TDID: 'ST', HANDLER_CLASS: '' }]
+                : [{ SPRAS: 'E' }],
+          ),
+        )
+        .mockRejectedValueOnce(failure);
+      await expect(withStoredTextSession(client, '001', (source) => source.assertSupportedKey(key))).rejects.toBe(
+        failure,
+      );
+      expect(query).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('rejects a present but malformed handler instead of treating it as an absent legacy column', async () => {
+    const { client, query } = setup();
+    query.mockResolvedValue({
+      columns: ['TDOBJECT', 'HANDLER_CLASS'],
+      rows: [{ TDOBJECT: 'TEXT', HANDLER_CLASS: undefined! }],
+    });
+    await expect(
+      withStoredTextSession(client, '001', (source) => source.assertSupportedKey(key)),
+    ).rejects.toMatchObject({ code: 'CORRUPT_CLUSTER' });
+  });
+
+  it('rejects unknown configuration, missing identity metadata, and custom persistence', async () => {
+    for (const objectRows of [
+      [],
+      [{ HANDLER_CLASS: '' }],
+      [{ TDOBJECT: 'TEXT', HANDLER_CLASS: 'Z_CUSTOM' }],
+      [{ TDOBJECT: 'TEXT' }, { TDOBJECT: 'TEXT' }],
+    ]) {
+      const { client, query } = setup();
+      query.mockImplementation(async (table) =>
+        tableResult(
           table === 'TTXOB'
             ? objectRows
             : table === 'TTXID'
               ? [{ TDOBJECT: 'TEXT', TDID: 'ST', HANDLER_CLASS: '' }]
               : [{ SPRAS: 'E' }],
-      }));
+        ),
+      );
       await expect(
         withStoredTextSession(client, '001', (source) => source.assertSupportedKey(key)),
       ).rejects.toMatchObject({ code: objectRows.length === 0 ? 'INVALID_KEY' : 'UNSUPPORTED_PERSISTENCE' });
     }
   });
+
+  it.each([
+    { columns: [], rows: [{ TDOBJECT: 'TEXT' }] },
+    { columns: ['TDOBJECT', 'HANDLER_CLASS'], rows: [{ TDOBJECT: 'TEXT' }] },
+    { columns: ['TDOBJECT'], rows: [{ TDOBJECT: 'TEXT', HANDLER_CLASS: 'Z_CUSTOM' }] },
+    { columns: ['TDOBJECT', 'TTXOB.HANDLER_CLASS'], rows: [{ TDOBJECT: 'TEXT', 'TTXOB.HANDLER_CLASS': 'Z_CUSTOM' }] },
+    { columns: ['TDOBJECT', 'handler_class'], rows: [{ TDOBJECT: 'TEXT', handler_class: 'Z_CUSTOM' }] },
+    { columns: ['TDOBJECT', 'TDOBJECT'], rows: [{ TDOBJECT: 'TEXT' }] },
+    { columns: ['TDOBJECT'], rows: [{ TDOBJECT: 'WRONG' }] },
+  ])('rejects inconsistent or unexpected configuration metadata: %j', async (result) => {
+    const { client, query } = setup();
+    query.mockImplementation(async (table) =>
+      table === 'TTXOB'
+        ? result
+        : tableResult(table === 'TTXID' ? [{ TDOBJECT: 'TEXT', TDID: 'ST' }] : [{ SPRAS: 'E' }]),
+    );
+    await expect(
+      withStoredTextSession(client, '001', (source) => source.assertSupportedKey(key)),
+    ).rejects.toMatchObject({ code: 'UNSUPPORTED_PERSISTENCE' });
+  });
+
+  it('propagates configuration network failures without a fallback', async () => {
+    const { client, query } = setup();
+    const failure = new AdtNetworkError('timed out');
+    query.mockRejectedValue(failure);
+    await expect(withStoredTextSession(client, '001', (source) => source.assertSupportedKey(key))).rejects.toBe(
+      failure,
+    );
+    expect(query).toHaveBeenCalledOnce();
+  });
+
+  it.each([undefined, '', 'CL_RSTXT_DEFAULT_PERSISTENCE', 'Z_CUSTOM'])(
+    'checks persistence through real SQL construction and XML parsing: %s',
+    async (handler) => {
+      const { client, query } = setup();
+      query.mockRestore();
+      const post = vi.spyOn(client.http, 'post').mockImplementation(async (_path, body) => {
+        const sql = String(body);
+        const row: Record<string, string> = sql.includes('FROM TTXOB')
+          ? { TDOBJECT: 'TEXT' }
+          : sql.includes('FROM TTXID')
+            ? { TDOBJECT: 'TEXT', TDID: 'ST' }
+            : { SPRAS: 'E' };
+        if (!('SPRAS' in row) && handler !== undefined) row.HANDLER_CLASS = handler;
+        return {
+          statusCode: 200,
+          headers: {},
+          body: `<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">${Object.entries(row)
+            .map(
+              ([name, value]) =>
+                `<dataPreview:columns><dataPreview:metadata name="${name}"/><dataPreview:dataSet><dataPreview:data>${value}</dataPreview:data></dataPreview:dataSet></dataPreview:columns>`,
+            )
+            .join('')}</dataPreview:tableData>`,
+        };
+      });
+      const check = withStoredTextSession(client, '001', (source) => source.assertSupportedKey(key));
+      if (handler === 'Z_CUSTOM') await expect(check).rejects.toMatchObject({ code: 'UNSUPPORTED_PERSISTENCE' });
+      else await expect(check).resolves.toBeUndefined();
+      expect(post.mock.calls.map(([path, body]) => [path, body])).toEqual([
+        ['/sap/bc/adt/datapreview/freestyle?rowNumber=2', "SELECT * FROM TTXOB WHERE TDOBJECT = 'TEXT'"],
+        [
+          '/sap/bc/adt/datapreview/freestyle?rowNumber=2',
+          "SELECT * FROM TTXID WHERE TDOBJECT = 'TEXT' AND TDID = 'ST'",
+        ],
+        ['/sap/bc/adt/datapreview/freestyle?rowNumber=2', "SELECT SPRAS FROM T002 WHERE SPRAS = 'E'"],
+      ]);
+    },
+  );
 
   it('discovers literal prefixes with bounded extra-row detection and sorted keys', async () => {
     const { client, query } = setup();

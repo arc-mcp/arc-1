@@ -108,7 +108,7 @@
     "audit:ci": "audit-ci --config audit-ci.json"
   },
   "dependencies": {
-    "@abaplint/core": "^2.120.80",
+    "@abaplint/core": "^2.120.86",
     "@arc-mcp/xsuaa-auth": "^1.2.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@sap-cloud-sdk/connectivity": "^4.9.1",
@@ -119,15 +119,15 @@
     "commander": "^15.0.0",
     "cors": "2.8.6",
     "diff": "^9.0.0",
-    "dotenv": "^18.0.8",
+    "dotenv": "^18.0.9",
     "express": "^5.3.0",
     "express-rate-limit": "^8.7.1",
     "fast-xml-parser": "^5.11.2",
     "helmet": "^8.3.0",
-    "jose": "^6.2.12",
+    "jose": "^6.2.13",
     "on-headers": "^1.1.0",
-    "rate-limiter-flexible": "^11.2.2",
-    "undici": "^8.12.2",
+    "rate-limiter-flexible": "^11.2.3",
+    "undici": "^8.12.3",
     "zod": "^4.6.7"
   },
   "overrides": {
@@ -140,7 +140,7 @@
     "*.{ts,js,json}": "biome check --write --no-errors-on-unmatched"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.15",
+    "@biomejs/biome": "^2.6.2",
     "@types/better-sqlite3": "^9.6.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

@@ -39,7 +39,6 @@ import {
   deleteTraceRequest,
   getAuthorizationTrace,
   getCdsCreateStatements,
-  getDump,
   getGatewayErrorDetail,
   getObjectState,
   getSqlTraceDirectory,
@@ -55,6 +54,7 @@ import {
   probeODataPerformance,
   setSqlTraceState,
 } from '../adt/diagnostics.js';
+import { getDumpWithFeedFallback } from '../adt/dump-feed-detail.js';
 import { AdtApiError, AdtNetworkError } from '../adt/errors.js';
 import { type FeedFilter, readDumpFeedSchema } from '../adt/feed-schema.js';
 import { internalOperationDenial } from '../adt/internal-data-operations.js';
@@ -1032,7 +1032,7 @@ export async function handleSAPDiagnose(
     case 'dumps': {
       const id = args.id as string | undefined;
       if (id) {
-        const detail = await getDump(client.http, client.safety, id);
+        const detail = await getDumpWithFeedFallback(client.http, client.safety, id);
         const includeFullText = args.includeFullText === true || String(args.includeFullText ?? '') === 'true';
         const selectedSections = selectDumpSections(detail, args.sections);
 
@@ -1052,6 +1052,7 @@ export async function handleSAPDiagnose(
             title: chapter.title,
             line: chapter.line,
           })),
+          ...(detail.origin ? { origin: detail.origin, note: detail.note } : {}),
         };
         if (includeFullText) {
           payload.formattedText = detail.formattedText;
@@ -1247,7 +1248,9 @@ function selectDumpSections(detail: DumpDetail, requestedSections: unknown): Rec
   if (availableIds.length === 0) return {};
 
   const requestedIds = resolveRequestedDumpSectionIds(detail, requestedSections);
-  const selectedIds = requestedIds.length > 0 ? requestedIds : pickDefaultDumpSectionIds(detail);
+  // A feed summary is already the focused part of a dump, so it is returned whole by default.
+  const defaultIds = detail.origin === 'feed-summary' ? availableIds : pickDefaultDumpSectionIds(detail);
+  const selectedIds = requestedIds.length > 0 ? requestedIds : defaultIds;
   const finalIds = selectedIds.length > 0 ? selectedIds : availableIds.slice(0, 5);
 
   return Object.fromEntries(finalIds.map((id) => [id, availableSections[id] ?? '']));

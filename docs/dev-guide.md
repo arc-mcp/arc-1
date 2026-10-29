@@ -276,7 +276,7 @@ npm run btp:validate
 | Add audit event type | `src/server/audit.ts` (typed `*Event` interface + `AuditEvent` union); emit via `logger.emitAudit({...})` at the call site. |
 | Add/modify rate limiting | **Layer 1** (HTTP edge): `src/server/auth-rate-limit.ts` + `src/server/http.ts` (`buildLimiter`, mounted on OAuth endpoints + `/mcp` before auth). **Layer 2** (per-user MCP): `src/server/mcp-rate-limit.ts` + `src/handlers/dispatch.ts` (top of `handleToolCall`; returns MCP error w/ `retryAfter`, not HTTP 429). **Layer 3** (SAP-bound): shared `Semaphore` from `createAndStartServer` threaded through `buildAdtConfig`; `parseRetryAfter` in `src/adt/http.ts`. Config in `src/server/{types,config}.ts`. See `docs/adr/0004-layered-rate-limiting.md`. |
 | Add/modify Dependabot config | `.github/dependabot.yml` — npm + github-actions + docker, weekly. Grouping + ignore rules in-file. |
-| Add/modify npm audit / SAST / dep review CI gate | `.github/workflows/test.yml` (`npm run audit:ci`), `audit-ci.json` (advisory-specific expiry); `.github/workflows/dependency-review.yml` (license allow/deny). |
+| Add/modify npm audit / SAST / dep review CI gate | `.github/workflows/test.yml` (`npm run audit:ci`), `audit-ci.json` (high/critical gate, no advisory exceptions); `.github/workflows/dependency-review.yml` (license allow/deny). |
 | Add/modify container scanning | Trivy advisory in `docker.yml` + `release.yml`, scheduled native amd64/arm64 HIGH/CRITICAL maintenance gate in `security-scan.yml` (Mon/Wed/Fri), SARIF via `github/codeql-action/upload-sarif@v4`. The Dockerfile's named `runtime` stage runs `apk upgrade`; every CI build sets `pull: true` + `no-cache-filters: runtime` so repository-only package updates cannot be hidden by the GHA cache. Release scan + SARIF steps are explicitly non-blocking; keep the scheduled matrix red on real findings with `fail-fast: false`. Tests: `tests/unit/workflows/container-security.test.ts`. |
 | Add/modify the release npm SBOM | `.github/workflows/release.yml` (`publish-npm-sbom`) + `tests/unit/server/release-sbom-workflow.test.ts`. This is a best-effort release asset: preserve job-level `continue-on-error: true` so generation/upload cannot fail the release. Generate from the immutable release tag with the same pinned npm as `publish-npm`: `npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx --sbom-type=application`. Validate Release Please/package/lock/SBOM versions before upload. The asset covers only the root production npm graph, not Docker OS packages, MCPB contents, or extensions. Upload retries compare GitHub's SHA-256 digest; never use `--clobber`, which deletes the existing asset first. |
 | Write/maintain the annotated release notes | `docs_page/release-notes.md` (the page), `.claude/commands/release-notes.md` (the `/release-notes` method + entry template), `tests/unit/server/release-notes.test.ts` (coverage guard), `.github/workflows/release.yml` (`link-release-notes` appends the docs link to the GitHub Release body — append-only, idempotent, `continue-on-error: true`). Division of labour: `CHANGELOG.md` stays 100% release-please-generated (one line per PR, never hand-edited except the pointer prose above the first version heading, which release-please preserves — it splits at the first `## [` version match); the notes page adds impact, upgrade action, new config, and tool-surface changes. Annotate **while the release-please PR is open** using its body as the source: `CHANGELOG.md` gains the entry only when that PR merges, and the guard asserts CHANGELOG ⊆ notes (never the reverse), so early annotation is legal and keeps `main` green. The guard accepts a version only as its own `##`/`###` heading or as the leading cell of a table row — a prose mention is not annotation, and a bare `includes` would match `0.9.2` inside `0.9.27`. Every claim in an entry must trace to a diff that was actually read; unverifiable impact is written `(unverified)` rather than guessed. |
@@ -441,3 +441,20 @@ than legacy `user`; do not broaden them without wire evidence.
 Tests: `tests/unit/{adt,handlers}/dump-filters.test.ts`, existing diagnostics and tool-surface tests.
 [Evidence](research/2026-10-17-dump-filter-extraction.md) distinguishes live matching from synthetic
 pagination/model checks. See [usage](../docs_page/tools.md#find-a-particular-runtime-error).
+
+## Dump detail on SAP_BASIS 7.50
+
+SAP_BASIS 7.50 registers only the dump feed: its ADT router `CL_SABP_RABAX_ADT_RES_APP` attaches
+`/runtime/dumps`, and a feed entry's id points at SAP GUI integration
+(`/sap/bc/adt/vit/runtime/dumps/{id}`, which opens ST22 — never request it). `/runtime/dump/{id}`
+therefore answers 404. `dump-feed-detail.ts` answers that 404 from the dump's feed entry, whose HTML
+summary (`lcl_summary_composer` in `CL_SABP_RABAX_ADT_RES_DUMPS`) carries the anchors HEADER,
+WHATHAPPENED, ERROR, TERMINATION, SOURCE (ten lines around the termination point) and STACK. The
+gateway error log uses the same layout, so its HTML helpers are reused. The 7.50 feed handler raises
+`from` to now minus 24 hours (`compute_timestamp_from`), so older dumps are not listed and the 404
+stands with a hint. Dump ids carry SAP system time while the feed bounds are UTC: the lookup queries
+14 hours either way, filtered to the id's user, and compares ids by field because padding and
+encoding vary. A matching entry with a modern detail link is read through that canonical id.
+The fallback stops at four pages or 4 MiB. Incomplete pages, stalled paging and unreadable summaries
+must not become "dump absent"; byte-limit and authorization errors propagate.
+Tests: `tests/unit/{adt,handlers}/dump-feed-detail.test.ts`.
