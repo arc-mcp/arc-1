@@ -81,7 +81,7 @@ export async function handlePinnedWrite(
       if (typeof args.package !== 'string' || !args.package.trim())
         throw new AdtSafetyError('Creation requires an explicit package.');
       pkg = args.package.trim().toUpperCase();
-      await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
+      await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver(options));
     } else {
       pkg = (await enforceAllowedPackageForObjectUrl(client, owner, 'Pinned write', undefined, options)) ?? '';
     }

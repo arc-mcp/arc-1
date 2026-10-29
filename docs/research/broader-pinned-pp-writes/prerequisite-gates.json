@@ -1,0 +1,32 @@
+[
+  {
+    "check": "test",
+    "exit": 0,
+    "seconds": 14.8
+  },
+  {
+    "check": "typecheck",
+    "exit": 0,
+    "seconds": 1.4
+  },
+  {
+    "check": "lint",
+    "exit": 0,
+    "seconds": 0.4
+  },
+  {
+    "check": "policy",
+    "exit": 0,
+    "seconds": 0.3
+  },
+  {
+    "check": "build",
+    "exit": 0,
+    "seconds": 0.5
+  },
+  {
+    "check": "sizes",
+    "exit": 0,
+    "seconds": 0.3
+  }
+]

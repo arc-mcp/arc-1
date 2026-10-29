@@ -946,7 +946,7 @@ export async function enforceAllowedPackageForObjectUrl(
         `(no adtcore:packageRef/containerRef). Fail-closed because allowedPackages is restricted.`,
     );
   }
-  await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
+  await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver(options));
   return pkg;
 }
 

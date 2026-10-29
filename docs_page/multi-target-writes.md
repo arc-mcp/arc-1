@@ -55,6 +55,9 @@ properties. A pinned URL names the public target ID, including its alias if conf
 Here, `ZTEAM_OTHER` is not writable merely because it matches the global subtree. Conversely, a
 destination cannot permit a package excluded globally. Existing-object checks use the real SAP
 package, not a package supplied by the caller. Package subtree lookup failures deny the write.
+Pinned checks fetch fresh subtree evidence during preflight and again under the lock, within the
+write call's cancellation and deadline. A slow or unavailable hierarchy can therefore refuse a write
+that an earlier check allowed; an earlier positive result is not reused to authorize the save.
 
 Destination package lists support exact names, prefix patterns (`ZTEAM*`), DEVCLASS subtrees
 (`ZTEAM/**`) and explicit `*`. Transport lists support exact request IDs, prefixes and explicit `*`.

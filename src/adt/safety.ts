@@ -21,7 +21,7 @@
  */
 
 import { AdtSafetyError } from './errors.js';
-import type { PackageHierarchyResolver } from './package-hierarchy.js';
+import { type PackageHierarchyResolver, packageHierarchyDecision } from './package-hierarchy.js';
 
 /** Suffix that marks an `allowedPackages` entry as "this package + DEVCLASS subtree". */
 export const SUBTREE_SUFFIX = '/**';
@@ -257,11 +257,12 @@ export async function checkPackage(
   if (config.multiTargetWrite) {
     if (!config.multiTargetWrite.allowedPackages.length)
       throw new AdtSafetyError('Destination package restriction is missing.');
-    await checkPackage({ ...config, multiTargetWrite: undefined }, pkg, resolver);
+    const decisionResolver = resolver ? packageHierarchyDecision(resolver) : resolver;
+    await checkPackage({ ...config, multiTargetWrite: undefined }, pkg, decisionResolver);
     await checkPackage(
       { ...config, multiTargetWrite: undefined, allowedPackages: [...config.multiTargetWrite.allowedPackages] },
       pkg,
-      resolver,
+      decisionResolver,
     );
     return;
   }

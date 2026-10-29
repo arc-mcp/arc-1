@@ -237,6 +237,115 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     });
     expect(saves()).toHaveLength(0);
   });
+  it('rechecks subtree membership under the lock and refuses a package moved out of scope', async () => {
+    const c = client();
+    c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
+    const hierarchy = vi.spyOn(c, 'getSubpackages');
+    let checks = 0;
+    hierarchy.mockImplementation(async (root) => (root === 'ZROOT' && ++checks === 1 ? ['$TMP'] : []));
+    const result = await handlePinnedWrite(c, update(), config);
+    expect(payload(result)).toMatchObject({ state: 'unchanged', phase: 'locked-policy' });
+    expect(checks).toBe(2);
+    expect(saves()).toHaveLength(0);
+    expect(requests.some((r) => r.path.includes('_action=UNLOCK'))).toBe(true);
+    const budgets = hierarchy.mock.calls.map((call) => call[2]);
+    expect(budgets.every((budget) => budget?.noReplay && budget.deadline === budgets[0]?.deadline)).toBe(true);
+  });
+  it.each(['preflight', 'under-lock'] as const)('aborts during the hierarchy walk: %s', async (stage) => {
+    const c = client();
+    const controller = new AbortController();
+    c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
+    const fallback = mockFetch.getMockImplementation()!;
+    let roots = 0;
+    const visited: string[] = [];
+    mockFetch.mockImplementation(async (url: unknown, options: any) => {
+      const parsed = new URL(String(url));
+      if (!parsed.pathname.endsWith('/repository/nodestructure')) return fallback(url, options);
+      const root = parsed.searchParams.get('parent_name')!;
+      visited.push(root);
+      if (root === 'ZROOT' && ++roots === (stage === 'preflight' ? 1 : 2)) controller.abort();
+      return mockResponse(
+        200,
+        root === 'ZROOT'
+          ? '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><TREE_CONTENT><SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>$TMP</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE></TREE_CONTENT></DATA></asx:values></asx:abap>'
+          : '',
+      );
+    });
+    const hierarchy = vi.spyOn(c, 'getSubpackages');
+    const result = await requestContext.run({ requestId: 'hierarchy-cancel', signal: controller.signal }, () =>
+      handlePinnedWrite(c, update(), config),
+    );
+    expect(payload(result)).toMatchObject({
+      state: 'unchanged',
+      phase: stage === 'preflight' ? 'validation' : 'locked-policy',
+    });
+    expect(visited).toEqual(stage === 'preflight' ? ['ZROOT'] : ['ZROOT', '$TMP', 'ZROOT']);
+    expect(requests.some((r) => r.path.includes('_action=LOCK'))).toBe(stage === 'under-lock');
+    expect(requests.some((r) => r.path.includes('_action=UNLOCK'))).toBe(stage === 'under-lock');
+    expect(requests.some((r) => r.path.includes('/source/main'))).toBe(false);
+    expect(saves()).toHaveLength(0);
+    expect(hierarchy.mock.calls.every((call) => call[2]?.signal === controller.signal)).toBe(true);
+  });
+  it('independently denies a server subtree even when the destination subtree would allow the package', async () => {
+    const c = client();
+    c.safety.allowedPackages = ['ZGLOBAL/**'];
+    c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZDEST/**'] };
+    vi.spyOn(c, 'getSubpackages').mockImplementation(async (root) => (root === 'ZDEST' ? ['$TMP'] : []));
+    expect((await handlePinnedWrite(c, update(), config)).isError).toBe(true);
+    expect(requests.some((r) => r.path.includes('_action=LOCK'))).toBe(false);
+    expect(saves()).toHaveLength(0);
+  });
+  it('shares a hierarchy decision across both create gates, then refreshes under the lock', async () => {
+    const c = client();
+    c.safety.allowedPackages = ['ZROOT/**'];
+    c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
+    const hierarchy = vi
+      .spyOn(c, 'getSubpackages')
+      .mockImplementation(async (root) => (root === 'ZROOT' ? ['$TMP'] : []));
+    const result = await handlePinnedWrite(
+      c,
+      { action: 'create', type: 'CLAS', name: 'ZCL_TEST', package: '$TMP', source: initial },
+      config,
+    );
+    expect(result.isError, result.content[0].text).toBeUndefined();
+    expect(hierarchy.mock.calls.filter(([root]) => root === 'ZROOT')).toHaveLength(2);
+    expect(hierarchy.mock.calls.filter(([root]) => root === '$TMP')).toHaveLength(2);
+  });
+  it('refuses activation when subtree membership changes before the first preaudit submission', async () => {
+    const c = client();
+    c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
+    let roots = 0;
+    vi.spyOn(c, 'getSubpackages').mockImplementation(async (root) =>
+      root === 'ZROOT' && ++roots === 1 ? ['$TMP'] : [],
+    );
+    const result = await handlePinnedActivation(c, { type: 'CLAS', name: 'ZCL_TEST' });
+    expect(result.isError).toBe(true);
+    expect(roots).toBe(2);
+    expect(requests.some((r) => r.path.includes('/activation?'))).toBe(false);
+  });
+  it('keeps activation HTTP inside the original deadline after a slow preflight', async () => {
+    const c = client();
+    const started = Date.now();
+    let now = started;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const resolvePackage = c.resolveObjectPackage.bind(c);
+      vi.spyOn(c, 'resolveObjectPackage').mockImplementation(async (...args) => {
+        const result = await resolvePackage(...args);
+        now += 10_000;
+        return result;
+      });
+      const post = vi.spyOn(c.http, 'post');
+      const result = await handlePinnedActivation(c, { type: 'CLAS', name: 'ZCL_TEST' });
+      expect(result.isError, result.content[0].text).toBeUndefined();
+      const activation = post.mock.calls.filter(([path]) => path.includes('/activation?'));
+      expect(activation.length).toBeGreaterThan(0);
+      for (const call of activation)
+        expect(call[4]).toMatchObject({ deadline: started + 300_000, noReplay: true, retryTransientErrors: false });
+    } finally {
+      clock.mockRestore();
+    }
+  });
   it.each(['missing', 'Y', ''])('refuses unproven/mismatched local lock evidence: %s', async (value) => {
     local = value;
     const result = await handlePinnedWrite(client(), update(), config);
