@@ -7,7 +7,7 @@ No SAP writes, execution, RFC or helper installation. Targets use HTTPS 443, cli
 
 ## Reusable API for stage 3
 
-- `parseSourcePluginElements(xml, {mainObjectUri, selectedObjectUri?, sources,
+- `parseSourcePluginElements(xml, {mainObjectUri, selectedObjectUri?, selectedSourceUri?, sources,
   maxImplementations?, maxDecodedBytes?, maxSourceBytes?})`: validates bounded XML,
   root/selected-owner chains and implementation URIs, preserves 750 `fullname` and
   758 `full_name`, observed versions, individual attachments, replacement edges and
@@ -15,7 +15,7 @@ No SAP writes, execution, RFC or helper installation. Targets use HTTPS 443, cli
 - `parseSourcePluginIdentities(xml)`: outer/specific HOOK_IMPL identities with observed
   switch metadata; no claim about switch runtime applicability or nested completeness.
 - `sourcePluginResources(xml, unit)`: validates metadata owner/type/version and links;
-  selects only the requested CLAS source section. The qualified legacy 750 route needs
+  selects only the requested CLAS source section from direct include children. The qualified legacy 750 route needs
   an advertised source and exact 750 grammar marker and is labelled unadvertised.
 - `discoverSourcePlugins(client, session, request, {unit, source?})`: reuses the shared
   ExtensionDiscoverySession. A unit is PROG/INCL/FUNC/FUGR/CLAS with name, FUNC group
@@ -61,5 +61,5 @@ and SAP_PASSWORD quietly via environment, then run `npx tsx scripts/smoke-source
 with SOURCE_PLUGIN_TARGET=a4h or npl and SAP_URL=https://<target>.marianzeis.de.
 SOURCE_PLUGIN_OUTPUT optionally saves sanitized JSON. SOURCE_PLUGIN_METADATA_DIR captures
 only the script's exact standard-SAP metadata fixtures. No source or secrets are printed
-by the script. Use the unit suites `source-plugin-{parser,discovery,budget}.test.ts` for
+by the script. Use the unit suites `source-plugin-{parser,resources,discovery,budget}.test.ts` for
 replay, traversal and actual HTTP streaming/send/deadline/cancellation tests.

@@ -45,6 +45,7 @@ describe('source plug-in wire parser', () => {
   it('retains implicit include attachment and full_name spelling', () => {
     const graph = parseSourcePluginElements(fixture('include-context-758.xml'), {
       mainObjectUri: '/sap/bc/adt/programs/programs/prog_enh_subobj_check',
+      selectedObjectUri: '/sap/bc/adt/programs/includes/enh_prog_incl_implicit_opt',
       sources: true,
     });
     expect(graph.implementations[0]?.plugins[0]).toMatchObject({ mode: 'static', replacing: false });
@@ -76,6 +77,7 @@ describe('source plug-in wire parser', () => {
   it('preserves FUGR replacement chains from a positive F01 response', () => {
     const graph = parseSourcePluginElements(fixture('fugr-f01-758.xml'), {
       mainObjectUri: '/sap/bc/adt/functions/groups/seef_adt_test_aunit_fugr1',
+      selectedObjectUri: '/sap/bc/adt/programs/includes/lseef_adt_test_aunit_fugr1f01',
       sources: true,
     });
     expect(graph.implementations).toHaveLength(3);
@@ -108,10 +110,24 @@ describe('source plug-in wire parser', () => {
       );
       const graph = parseSourcePluginElements(xml, {
         mainObjectUri: '/sap/bc/adt/programs/programs/prog_enh_subobj_check',
+        selectedObjectUri: '/sap/bc/adt/programs/includes/enh_prog_incl_implicit_opt',
         sources: true,
       });
       expect(graph.implementations[0]?.plugins[0]?.sourceOmitted).toBe(reason);
     }
+  });
+  it('retains decoded BOM, CRLF and trailing whitespace exactly', () => {
+    const source = '\uFEFFENHANCEMENT 1 test.\r\n  WRITE / 1.  \r\nENDENHANCEMENT.\r\n';
+    const xml = fixture('include-context-758.xml').replace(
+      /<enh:source>[\s\S]*?<\/enh:source>/,
+      `<enh:source>${Buffer.from(source).toString('base64')}</enh:source>`,
+    );
+    const graph = parseSourcePluginElements(xml, {
+      mainObjectUri: '/sap/bc/adt/programs/programs/prog_enh_subobj_check',
+      selectedObjectUri: '/sap/bc/adt/programs/includes/enh_prog_incl_implicit_opt',
+      sources: true,
+    });
+    expect(graph.implementations[0]?.plugins[0]?.source).toBe(source);
   });
   it('accepts the valid anonymous empty response for this selected source only', () => {
     expect(
@@ -124,6 +140,10 @@ describe('source plug-in wire parser', () => {
   it.each([
     (s: string) => s.replaceAll(classUri, '/sap/bc/adt/oo/classes/other'),
     (s: string) => s.replace('enh:uri="/sap', 'enh:uri="https://evil.invalid/sap'),
+    (s: string) =>
+      s.replace('adtcore:uri="/sap/bc/adt/oo/classes/', 'adtcore:uri="https://evil.invalid/sap/bc/adt/oo/classes/'),
+    (s: string) =>
+      s.replace('/source/main#start=25,0', '/source/main?context=%2Fsap%2Fbc%2Fadt%2Foo%2Fclasses%2Fother#start=25,0'),
     (s: string) => s.replace('adtcore:version="active"', 'adtcore:version=""'),
     () => '<enh:enhancements>',
     () => '<enhancements>not a valid empty list</enhancements>',
