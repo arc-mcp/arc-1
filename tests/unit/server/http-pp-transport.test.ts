@@ -83,6 +83,7 @@ async function setup() {
     authorization: string | undefined;
   }> = [];
   const custom: { reply?: RequestListener } = {};
+  // Synthetic SAP cookies use browser-safe attributes; the native client retains only name/value.
   const proxy = createProxy((req, res) => {
     const cookie = req.headers.cookie ?? '';
     const credential = String(req.headers['sap-connectivity-authentication'] ?? '');
@@ -96,7 +97,8 @@ async function setup() {
       authorization: req.headers.authorization,
     });
     if (custom.reply) return custom.reply(req, res);
-    if (!cookie.includes('SAP_SESSIONID')) res.setHeader('set-cookie', `SAP_SESSIONID_A4H_001=S${++issued}; path=/`);
+    if (!cookie.includes('SAP_SESSIONID'))
+      res.setHeader('set-cookie', `SAP_SESSIONID_A4H_001=S${++issued}; Path=/; HttpOnly; Secure`);
     res.setHeader('x-csrf-token', 'T');
     res.end('REPORT ztest.');
   });
@@ -186,13 +188,14 @@ it('coordinates cold concurrent calls across fresh clients and retains separate 
 
   // A stateless read's stray application cookie must not be inherited by a new write.
   sap.custom.reply = (_req, res) => {
-    res.setHeader('set-cookie', 'sap-contextid=STALE; path=/');
+    res.setHeader('set-cookie', 'sap-contextid=STALE; Path=/; HttpOnly; Secure');
     res.end('ok');
   };
   await clients[0].http.get('/stray-context');
   let contexts = 0;
   sap.custom.reply = (req, res) => {
-    if (req.url?.includes('_action=LOCK')) res.setHeader('set-cookie', `sap-contextid=C${++contexts}; path=/`);
+    if (req.url?.includes('_action=LOCK'))
+      res.setHeader('set-cookie', `sap-contextid=C${++contexts}; Path=/; HttpOnly; Secure`);
     res.end('ok');
   };
   await Promise.all(
@@ -245,14 +248,14 @@ it('keeps an in-flight write and its late cookies isolated when the login is ren
   sap.custom.reply = (req, res) => {
     if (req.method === 'PUT') {
       release = () => {
-        res.setHeader('set-cookie', 'SAP_SESSIONID_A4H_001=OLD_LATE; path=/');
+        res.setHeader('set-cookie', 'SAP_SESSIONID_A4H_001=OLD_LATE; Path=/; HttpOnly; Secure');
         res.end('saved');
       };
       entered();
       return;
     }
-    if (req.url?.includes('_action=LOCK')) res.setHeader('set-cookie', 'sap-contextid=C1; path=/');
-    else if (!req.headers.cookie) res.setHeader('set-cookie', 'SAP_SESSIONID_A4H_001=NEW; path=/');
+    if (req.url?.includes('_action=LOCK')) res.setHeader('set-cookie', 'sap-contextid=C1; Path=/; HttpOnly; Secure');
+    else if (!req.headers.cookie) res.setHeader('set-cookie', 'SAP_SESSIONID_A4H_001=NEW; Path=/; HttpOnly; Secure');
     res.end('ok');
   };
   const write = old.http.withStatefulSession(async (session) => {
