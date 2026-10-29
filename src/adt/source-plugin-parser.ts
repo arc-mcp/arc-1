@@ -80,7 +80,10 @@ export function parseSourcePluginElements(xml: string, options: PluginParseOptio
     invalid();
   const parsed = parseXml(xml);
   if (!Object.hasOwn(parsed, 'enhancements')) invalid();
+  if (Array.isArray(parsed.enhancements) || (typeof parsed.enhancements === 'string' && parsed.enhancements.trim()))
+    invalid();
   const root = row(parsed.enhancements);
+  if (Object.keys(root).some((k) => !k.startsWith('@_') && k !== 'enhancementImplementations')) invalid();
   const all = rows(root.enhancementImplementations);
   if (all.length > 256) invalid();
   const byName = new Map<string, Row>();
@@ -201,6 +204,13 @@ export function parseSourcePluginIdentities(
     invalid();
   const parsed = parseXml(xml);
   if (!Object.hasOwn(parsed, 'enhancementImplementation')) invalid();
+  if (
+    Array.isArray(parsed.enhancementImplementation) ||
+    (typeof parsed.enhancementImplementation === 'string' && parsed.enhancementImplementation.trim())
+  )
+    invalid();
+  if (Object.keys(row(parsed.enhancementImplementation)).some((k) => !k.startsWith('@_') && k !== 'implementation'))
+    invalid();
   const items = rows(row(parsed.enhancementImplementation).implementation);
   if (items.length > 256) invalid();
   return items.map((item) => {

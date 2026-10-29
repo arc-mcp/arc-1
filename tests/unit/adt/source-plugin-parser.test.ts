@@ -126,6 +126,8 @@ describe('source plug-in wire parser', () => {
     (s: string) => s.replace('enh:uri="/sap', 'enh:uri="https://evil.invalid/sap'),
     (s: string) => s.replace('adtcore:version="active"', 'adtcore:version=""'),
     () => '<enh:enhancements>',
+    () => '<enhancements>not a valid empty list</enhancements>',
+    () => '<enhancements><unknown/></enhancements>',
     () => '<!DOCTYPE a [<!ENTITY a "foo">]><enhancements/>',
   ])('rejects unsafe, malformed or wrong-owner evidence', (mutate) => {
     expect(() =>
