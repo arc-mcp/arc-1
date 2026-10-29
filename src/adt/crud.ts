@@ -13,7 +13,12 @@
 import { postCreate } from './create-request.js';
 import { AdtApiError, extractExceptionType, isNotFoundError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
-import { assertMutationContext, type MutationContext, singleTargetMutationContext } from './mutation-context.js';
+import {
+  assertMutationContext,
+  type MutationContext,
+  pinnedSessionCleanup,
+  singleTargetMutationContext,
+} from './mutation-context.js';
 import { mutationHttp, withMutationSession } from './mutation-http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { assertSourceHash } from './source-precondition.js';
@@ -143,7 +148,13 @@ export async function withLockedMutation<T>(
       }
     }
   };
-  return withMutationSession(http, safety, context, run);
+  return withMutationSession(
+    http,
+    safety,
+    context,
+    run,
+    context.mode === 'pinned-pp' ? pinnedSessionCleanup(context) : undefined,
+  );
 }
 
 /**

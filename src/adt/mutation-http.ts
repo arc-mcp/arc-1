@@ -2,12 +2,7 @@
 
 import { AdtSafetyError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
-import {
-  assertMutationContext,
-  type MutationContext,
-  type PinnedMutationContext,
-  pinnedSessionCleanup,
-} from './mutation-context.js';
+import { assertMutationContext, type MutationContext, type PinnedMutationContext } from './mutation-context.js';
 import type { SafetyConfig } from './safety.js';
 
 const facades = new WeakMap<AdtHttpClient, { http: AdtHttpClient; context: MutationContext }>();
@@ -31,14 +26,10 @@ export function withMutationSession<T>(
   const owning = owningHttp(http, context);
   if (context.mode === 'single-target') return owning.withStatefulSession(fn);
   if (cleanup && !Number.isFinite(cleanup.timeoutMs)) throw new AdtSafetyError('Invalid mutation cleanup budget.');
-  const boundedCleanup = pinnedSessionCleanup(context);
   return owning.withStatefulSession(fn, {
-    ...boundedCleanup,
-    timeoutMs: Math.min(boundedCleanup.timeoutMs, cleanup?.timeoutMs ?? boundedCleanup.timeoutMs),
-    onClose: (closed) => {
-      boundedCleanup.onClose(closed);
-      cleanup?.onClose(closed);
-    },
+    timeoutMs: Math.min(30_000, cleanup?.timeoutMs ?? 30_000),
+    noReplay: true,
+    onClose: (closed) => cleanup?.onClose(closed),
   });
 }
 
@@ -79,6 +70,8 @@ export function mutationHttp(http: AdtHttpClient, safety: SafetyConfig, context:
     put: (path, body, contentType, headers, input) => http.put(path, body, contentType, headers, options(input)),
     delete: (path, headers, input) => http.delete(path, headers, options(input)),
     fetchCsrfToken: (input) => http.fetchCsrfToken(options(input)),
+    // A NEW SAP context: it does not own a lock acquired in the parent session. Its close
+    // result belongs only to its callback, never the mutation owner's shared cleanup state.
     withStatefulSession: (fn, cleanup) =>
       withMutationSession(http, safety, context, (session) => fn(mutationHttp(session, safety, context)), cleanup),
   };

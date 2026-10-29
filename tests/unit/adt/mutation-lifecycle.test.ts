@@ -172,6 +172,20 @@ describe('request policy reaches the real ADT transport', () => {
     },
   );
 
+  it.each(['response-lost', 'database-error'] as const)('does not replay a nested PUT after %s', async (failure) => {
+    const { scoped, safety } = fixture();
+    const fallback = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url: string, options) => {
+      if (options.method !== 'PUT') return fallback(url, options);
+      if (failure === 'response-lost') throw new TypeError('fetch failed');
+      return mockResponse(500, 'database connection is not open');
+    });
+    await expect(updateSource(scoped, safety, `${owner}/source/main`, 'x', 'test')).rejects.toMatchObject(
+      failure === 'response-lost' ? { name: 'AdtNetworkError' } : { statusCode: 500 },
+    );
+    expect(mockFetch.mock.calls.filter(([, options]) => options.method === 'PUT')).toHaveLength(1);
+  });
+
   it('carries the scope into nested sessions and uses bounded independent session closure', async () => {
     const { scoped, controller, cleanup } = fixture();
     const closed = vi.fn();
@@ -189,7 +203,7 @@ describe('request policy reaches the real ADT transport', () => {
       ),
     ).rejects.toThrow();
     expect(mockFetch.mock.calls.filter(([, options]) => options.method === 'PUT')).toHaveLength(0);
-    expect(cleanup.sessionClosed).toBe(true);
+    expect(cleanup.sessionClosed).toBeUndefined();
     expect(closed).toHaveBeenCalledExactlyOnceWith(true);
     const close = mockFetch.mock.calls.find(([url]) => url.includes('/http/sessions'));
     expect(close?.[1].headers['sap-contextid']).toBe('owning');
@@ -197,6 +211,58 @@ describe('request policy reaches the real ADT transport', () => {
 });
 
 describe('shared lock lifecycle', () => {
+  it('reports only the owning close when an independent nested session fails to close', async () => {
+    const { scoped, safety, context, cleanup } = fixture();
+    const fallback = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url: string, options) => {
+      if (url.includes('/child')) return mockResponse(200, '', {}, ['sap-contextid=child; Path=/']);
+      if (url.includes('/http/sessions') && options.headers['sap-contextid'] === 'child')
+        return mockResponse(503, 'close unavailable');
+      return fallback(url, options);
+    });
+    const childClosed = vi.fn();
+    await withLockedMutation(
+      scoped,
+      safety,
+      context,
+      owner,
+      { beforeLock: () => {}, validateLock: async () => {} },
+      async (session) => {
+        await session.withStatefulSession(
+          async (child) => {
+            await child.get('/child');
+          },
+          { timeoutMs: 30_000, noReplay: true, onClose: childClosed },
+        );
+        expect(childClosed).toHaveBeenCalledExactlyOnceWith(false);
+        expect(cleanup.sessionClosed).toBeUndefined();
+      },
+    );
+    expect(cleanup.sessionClosed).toBe(true);
+    const closes = mockFetch.mock.calls.filter(([url]) => url.includes('/http/sessions'));
+    expect(closes.map(([, options]) => options.headers['sap-contextid'])).toEqual(['child', 'owning']);
+  });
+
+  it('does not report a sibling session as the owner when the mutation is refused before opening', async () => {
+    const { scoped, safety, context, cleanup } = fixture();
+    await scoped.withStatefulSession(async (session) => {
+      await session.post(`${owner}?_action=LOCK`);
+    });
+    expect(cleanup.sessionClosed).toBeUndefined();
+    safety.allowWrites = false;
+    await expect(
+      withLockedMutation(
+        scoped,
+        safety,
+        context,
+        owner,
+        { beforeLock: () => {}, validateLock: async () => {} },
+        vi.fn(),
+      ),
+    ).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(cleanup.sessionClosed).toBeUndefined();
+  });
+
   it.each(['abort', 'deadline'] as const)(
     'cleans up on its owning session after %s without replacing the primary error',
     async (cause) => {

@@ -12,7 +12,7 @@ vi.mock('undici', async (importOriginal) => ({
 }));
 const { AdtHttpClient } = await import('../../../src/adt/http.js');
 
-it('isolates overlapping users, targets, cancellation and owning-session cleanup', async () => {
+it.each([false, true])('isolates overlapping users and cleanup; same target=%s', async (sameTarget) => {
   const requests: Array<{ target: string; url: string; method: string; headers: Record<string, string> }> = [];
   let unlockBarrier!: () => void;
   const bothLocked = new Promise<void>((resolve) => {
@@ -20,7 +20,7 @@ it('isolates overlapping users, targets, cancellation and owning-session cleanup
   });
   let locked = 0;
   mockFetch.mockImplementation(async (url: string, options) => {
-    const target = new URL(url).hostname.split('.')[0]!;
+    const target = Buffer.from(String(options.headers.Authorization).slice(6), 'base64').toString().split(':')[0]!;
     requests.push({ target, url, method: options.method, headers: { ...options.headers } });
     if (options.method === 'HEAD') return mockResponse(200, '', { 'x-csrf-token': `csrf-${target}` });
     if (url.includes('_action=LOCK')) {
@@ -33,17 +33,26 @@ it('isolates overlapping users, targets, cancellation and owning-session cleanup
     return mockResponse(200, '');
   });
 
+  const sharedPolicy = {
+    target: 'shared',
+    enabled: true,
+    allowedPackages: ['$TMP'],
+    allowedTransports: [],
+    serverAllowedTransports: [],
+  };
   const contexts = ['first', 'second'].map((target) => {
     const safety = {
       ...defaultSafetyConfig(),
       allowWrites: true,
-      multiTargetWrite: {
-        target,
-        enabled: true,
-        allowedPackages: ['$TMP'],
-        allowedTransports: [],
-        serverAllowedTransports: [],
-      },
+      multiTargetWrite: sameTarget
+        ? sharedPolicy
+        : {
+            target,
+            enabled: true,
+            allowedPackages: ['$TMP'],
+            allowedTransports: [],
+            serverAllowedTransports: [],
+          },
     };
     const controller = new AbortController();
     const cleanup = { unlockFailed: false, sessionClosed: undefined as boolean | undefined };
@@ -52,7 +61,11 @@ it('isolates overlapping users, targets, cancellation and owning-session cleanup
       { deadline: Date.now() + 300_000, signal: controller.signal },
       cleanup,
     );
-    const raw = new AdtHttpClient({ baseUrl: `https://${target}.example.com`, username: target, password: 'test' });
+    const raw = new AdtHttpClient({
+      baseUrl: `https://${sameTarget ? 'shared' : target}.example.com`,
+      username: target,
+      password: 'test',
+    });
     return { safety, controller, cleanup, context, http: mutationHttp(raw, safety, context), target };
   });
   const owner = '/sap/bc/adt/oo/classes/zcl_same';
@@ -74,6 +87,8 @@ it('isolates overlapping users, targets, cancellation and owning-session cleanup
     ),
   );
   expect(results.map((result) => result.status)).toEqual(['rejected', 'fulfilled']);
+  if (results[0]?.status === 'rejected')
+    expect(results[0].reason).toMatchObject({ name: 'AdtNetworkError', cause: { name: 'AbortError' } });
   expect(requests.filter((request) => request.method === 'PUT').map((request) => request.target)).toEqual(['second']);
   for (const { target, cleanup } of contexts) {
     expect(cleanup).toEqual({ unlockFailed: false, sessionClosed: true });
