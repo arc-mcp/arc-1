@@ -30,6 +30,7 @@ import {
   sourceUrlForType,
 } from './object-types.js';
 import { errorResult, type ToolResult } from './shared.js';
+import { writeApiCatalogObject } from './write/api-catalog.js';
 import {
   writeActionAddMethod,
   writeActionChangeMethodVisibility,
@@ -98,6 +99,8 @@ export async function handleSAPWrite(
   if (preconditionError) return errorResult(preconditionError);
 
   if (type === 'TABL/DTT') return writeTableSettings(client, action, name, args, cachingLayer, cacheSecurity);
+  if (type === 'SOD1' || type === 'SOD2')
+    return writeApiCatalogObject(client, action, type, name, args, config, cachingLayer, cacheSecurity);
 
   // Types in SDO_REGISTRY use the shared engine (POST metadata → PUT source → activate).
   if (isServerDrivenObjectType(type)) {

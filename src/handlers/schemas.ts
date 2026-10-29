@@ -42,6 +42,7 @@ import {
   SAPCONTEXT_TYPES_ONPREM,
   SAPREAD_TYPES_BTP,
   SAPREAD_TYPES_ONPREM,
+  SAPWRITE_BATCH_EXCLUDED,
   SAPWRITE_TYPES_BTP,
   SAPWRITE_TYPES_ONPREM,
 } from './tool-registry.js';
@@ -662,7 +663,7 @@ const tableTypeDimensionSchema = z
 
 const batchObjectSchemaOnprem = z
   .object({
-    type: z.enum(SAPWRITE_TYPES_ONPREM).exclude(['TABL/DTT']),
+    type: z.enum(SAPWRITE_TYPES_ONPREM).exclude([...SAPWRITE_BATCH_EXCLUDED]),
     name: z.string(),
     source: z.string().optional(),
     description: z.string().optional(),

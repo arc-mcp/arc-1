@@ -13,6 +13,7 @@
  * with one format repeat it in both slots. Availability is therefore decided from the content, not from
  * the API type and not from the ORD resourceDefinitions (which advertise formats ADT does not deliver).
  */
+import { apiCatalogObjectUrl } from './api-packages.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { getNestedArray, parseXml } from './xml-parser.js';
@@ -50,12 +51,6 @@ export interface ResourceDefinition {
   /** True when the other tab held a different document of the same kind (seen for events). */
   otherSlotDiffers: boolean;
   content: string;
-}
-
-/** False only when discovery is loaded and lacks the collection; an unloaded map lets SAP answer. */
-export function apiPackageAssignmentsAvailable(http: AdtHttpClient): boolean {
-  if (!http.hasDiscoveryData()) return true;
-  return http.discoveryAcceptFor(SOD2_COLLECTION) !== undefined;
 }
 
 function text(value: unknown): string {
@@ -126,7 +121,7 @@ export async function getApiPackageAssignment(
 ): Promise<ApiPackageAssignmentInfo> {
   checkOperation(safety, OperationType.Read, 'GetSOD2');
   // Eclipse lowercases the name in the object path; the query parameters below keep it upper case.
-  const resp = await http.get(`${SOD2_COLLECTION}/${encodeURIComponent(name.toLowerCase())}`, {
+  const resp = await http.get(apiCatalogObjectUrl('SOD2', name), {
     Accept: 'application/vnd.sap.adt.blues.v1+xml',
   });
   return parseApiPackageAssignment(resp.body);

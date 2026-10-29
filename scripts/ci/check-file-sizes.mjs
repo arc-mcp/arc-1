@@ -43,8 +43,8 @@ const BUDGETS = {
   // +4: parent function group for SAPTransport check/history.
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
   // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
-  'src/handlers/tools.ts': 1776, // +5: explicit direct package scope (#1065).
-  'src/handlers/schemas.ts': 1573, // +31: direct package inputs and mode validation (#1065).
+  'src/handlers/tools.ts': 1777, // +1: batch type enum shares SAPWRITE_BATCH_EXCLUDED (SOD1/SOD2).
+  'src/handlers/schemas.ts': 1574, // +1: batch type enum shares SAPWRITE_BATCH_EXCLUDED (SOD1/SOD2).
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.

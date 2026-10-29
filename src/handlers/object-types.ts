@@ -137,6 +137,7 @@ export const KNOWN_BASE_TYPES = new Set([
   'VIEW',
   'SKTD',
   'SMBC',
+  'SOD1',
   'SOD2',
   'TTYP',
   'ENQU',
@@ -517,6 +518,9 @@ export function objectBasePath(type: string): string {
       return '/sap/bc/adt/vit/wb/object_type/viewdv/object_name/';
     case 'SKTD':
       return '/sap/bc/adt/documentation/ktd/documents/';
+    case 'SOD1':
+      // API packages; Eclipse ADT 3.60 on 8.16. docs/research/abap-types/types/sod1.md.
+      return '/sap/bc/adt/aps/com/sod1/';
     case 'SOD2':
       // API package assignments; Eclipse ADT 3.60 on 8.16. docs/research/abap-types/types/sod2.md.
       return '/sap/bc/adt/aps/com/sod2/';
@@ -558,8 +562,8 @@ export function objectBasePath(type: string): string {
 /** Map object type + name to the ADT object URL used by CRUD/DevTools/etc. Name is URI-encoded. */
 export function objectUrlForType(type: string, name: string): string {
   if (type === 'TABL/DTI') return serverDrivenObjectUrl(type, name);
-  // KTD, SMBC and SOD2 use lowercase names in their verified ADT paths.
-  const effectiveName = type === 'SKTD' || type === 'SMBC' || type === 'SOD2' ? name.toLowerCase() : name;
+  // KTD, SMBC, SOD1 and SOD2 use lowercase names in their verified ADT paths.
+  const effectiveName = ['SKTD', 'SMBC', 'SOD1', 'SOD2'].includes(type) ? name.toLowerCase() : name;
   return `${objectBasePath(type)}${encodeURIComponent(effectiveName)}`;
 }
 

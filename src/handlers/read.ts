@@ -32,7 +32,7 @@ import { readLineRange } from '../context/line-range.js';
 import { extractMethod, formatMethodListing, listMethods } from '../context/method-surgery.js';
 import { isActionDenied } from '../server/deny-actions.js';
 import { logger } from '../server/logger.js';
-import { readApiPackageAssignment } from './api-package-assignment-read.js';
+import { readApiPackage, readApiPackageAssignment } from './api-package-assignment-read.js';
 import { type CacheSecurityContext, inactiveListUserKey, invalidateInactiveList } from './cache-security.js';
 import { readEditableSource } from './editable-source.js';
 import { includeSearchHint, readExpandedSource } from './expanded-read.js';
@@ -237,6 +237,7 @@ export async function handleSAPRead(
     return errorResult(BTP_HINTS[type]);
   }
 
+  if (type === 'SOD1') return readApiPackage(client, args);
   if (type === 'SOD2') return readApiPackageAssignment(client, args);
 
   if (args.format === 'editable') return readEditableSource(client, args, type, name);

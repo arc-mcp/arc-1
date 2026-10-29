@@ -7,13 +7,13 @@
  * SOD2_MAX_DOCUMENT_CHARS needs one of the two instead of a full read.
  */
 import {
-  apiPackageAssignmentsAvailable,
   getApiPackageAssignment,
   getOrdDocument,
   getResourceDefinitions,
   type ResourceDefinition,
   SOD2_INCLUDES,
 } from '../adt/api-package-assignment.js';
+import { apiCatalogAvailable, apiCatalogUnavailableMessage, getApiPackage } from '../adt/api-packages.js';
 import type { AdtClient } from '../adt/client.js';
 import { isNotFoundError } from '../adt/errors.js';
 import { breakJsonLines, breakXmlLines, needsLineBreaks } from '../context/document-lines.js';
@@ -85,10 +85,7 @@ export async function readApiPackageAssignment(client: AdtClient, args: Record<s
     );
   if ((args.grep !== undefined || args.lineStart !== undefined) && (include === undefined || include === 'specs'))
     return errorResult('For type SOD2, grep and lineStart/lineEnd need include="ord" or a resource definition kind.');
-  if (!apiPackageAssignmentsAvailable(client.http))
-    return errorResult(
-      'API package assignments (SOD2) are not available on this system: ADT discovery does not list /sap/bc/adt/aps/com/sod2.',
-    );
+  if (!apiCatalogAvailable(client.http, 'SOD2')) return errorResult(apiCatalogUnavailableMessage('SOD2'));
 
   try {
     if (include === undefined) {
@@ -141,6 +138,24 @@ export async function readApiPackageAssignment(client: AdtClient, args: Record<s
     );
   } catch (err) {
     if (isNotFoundError(err)) return errorResult(`API package assignment (SOD2) ${name} not found.`);
+    throw err;
+  }
+}
+
+/** SAPRead type=SOD1: the API package with the assignments that point to it. */
+export async function readApiPackage(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
+  const name = String(args.name ?? '').trim();
+  if (!name) return errorResult('"name" is required for SAPRead type=SOD1.');
+  for (const option of [...UNSUPPORTED_OPTIONS, 'include', 'grep', 'lineStart'] as const) {
+    if (args[option] !== undefined) return errorResult(`${option} is not supported for SAPRead type=SOD1.`);
+  }
+  if (args.format !== undefined && args.format !== 'text')
+    return errorResult(`format="${String(args.format)}" is not supported for SAPRead type=SOD1.`);
+  if (!apiCatalogAvailable(client.http, 'SOD1')) return errorResult(apiCatalogUnavailableMessage('SOD1'));
+  try {
+    return textResult(toolJson(await getApiPackage(client.http, client.safety, name)));
+  } catch (err) {
+    if (isNotFoundError(err)) return errorResult(`API package (SOD1) ${name} not found.`);
     throw err;
   }
 }

@@ -44,7 +44,16 @@ OData V2 EDMX was 527 KB). ARC-1 adds ignorable whitespace before grep or line-r
 broken only between directly adjacent tags, JSON is re-indented outside string literals without a
 parse round trip. A document above 100,000 characters needs `grep` or `lineStart`/`lineEnd`.
 
+## Writes
+
+Create, update and delete share the SOD1 contract, see [sod1.md](sod1.md). The create document carries
+`packageID` (the API package), `apiWbObjectType`, `apiWbObjectName`, `apiSubWbObjectType` and
+`apiSubWbObjectName`; for an OData V4 service binding (G4BA) the sub-object is `G4S` with the
+service group name padded to 36 characters followed by the version. Eclipse's "Documentation Link"
+field writes `documentationLinkReplacement`; SAP then returns the same URL in `documentationLink`.
+
 ## Not covered
 
-Creating, changing and deleting assignments; reading the API package (SOD1). Not verified on
-SAP_BASIS 7.58 or BTP ABAP Environment; availability is discovery-gated.
+`$apidetails` and the value helps (`apiobjecttype`, `tadir`, `odatav4groupservice`,
+`leadingbusinessobjecttype`). Not verified on SAP_BASIS 7.58 or BTP ABAP Environment; availability is
+discovery-gated.
