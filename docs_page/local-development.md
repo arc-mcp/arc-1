@@ -209,11 +209,15 @@ Full per-mode table + debugging tips: [Configuration Precedence](configuration-p
 
 All MCP clients that speak stdio work the same way — they spawn `npx arc-1` as a subprocess and talk JSON-RPC over stdin/stdout. The `env` block is where credentials and safety flags go, for example `SAP_ALLOW_WRITES`, `SAP_ALLOW_FREE_SQL`, and `SAP_ALLOWED_PACKAGES`.
 
-### Short instructions for multiple connections
+### Short server instructions
 
-When a session connects to several ARC-1 instances, keep one on the default `full` instructions and set `"ARC1_SERVER_INSTRUCTIONS": "short"` in the others' stdio `env` blocks. Short mode keeps the SAP capabilities introduction and `ARC1_SYSTEM_LABEL`; it omits the repeated workflow/navigation hints. Give each instance a distinct system label or `ARC1_SERVER_NAME`.
+**Keep `full` (the default) for general SAP work, reviews and test design.** `short` keeps the SAP introduction and system label, but removes guidance about requirements, evidence, incomplete checks and native navigation. Tools and permissions stay the same.
 
-For HTTP/BTP, set this on the server (for example in `.mtaext` properties), not in the client's URL configuration. It applies to every user of that deployment, so each user's session should still have a full instance. Pinned and aggregate routes keep their own instructions. A single-instance setup, including the Claude Code plugin, can stay on `full`.
+Consider `short` for a narrow, tested workflow such as reading a known method or listing signatures. Our small offline evaluation found correct core answers in both modes for these tasks. For test design without documented requirements, short mode sometimes presented current behavior as a business rule; Codex preserved that distinction more consistently with full in this sample. Full did not prevent errors in every model. The local-model saving was about **371 input tokens (2.9% with its tool catalog)**, not a demonstrated speed improvement. [Evaluation and limits](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-27-short-instructions-evaluation.md).
+
+Multiple connections alone are not a reason to use short: a client may load each server's instructions only when needed. Do not assume another full instance supplies the missing guidance.
+
+For stdio, set `"ARC1_SERVER_INSTRUCTIONS": "short"` in that server's `env` block. For HTTP/BTP, set it on the server, for example in `.mtaext` properties; it affects every user of that deployment. Restart and reconnect after changing it. Pinned and aggregate routes retain their own instructions. This setting reduces instruction text, not tool schemas or npm startup time.
 
 ### Claude Desktop
 
