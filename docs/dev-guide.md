@@ -194,6 +194,34 @@ npx vitest run \
 npm run btp:validate
 ```
 
+### Shared mutation lifecycle
+
+`src/adt/crud.ts::withLockedMutation` is shared by single-target `safeUpdateSource`,
+`safeUpdateClassInclude`, and the pinned CLAS/INTF adapter in `handlers/write/pinned.ts`.
+`mutation-context.ts` requires a factory-created legacy or pinned context; a multi-target client
+cannot enter the legacy wrapper. The required callbacks keep package/recording revalidation in
+the pinned adapter. This is not a generic metadata, deletion, transport or activation engine.
+
+`mutation-http.ts` gives nested helpers a scoped transport with the pinned deadline, cancellation
+and no-replay options. Child options cannot relax those limits; nested stateful sessions inherit
+them. The lifecycle retains the owning transport for unlock/close with independent bounded cleanup,
+including when the operation was cancelled. Facade bookkeeping is weakly keyed by the transport
+object; it is not a target or user cache. Do not unwrap this facade in an operation callback.
+Opening `withStatefulSession` through the facade creates an independent SAP context; never use
+the parent's lock handle there. Its close callback is independent. Only the coordinator's
+owning session updates the mutation result's `sessionClosed` field.
+
+Preserve the legacy absence of request options, `localityKnown`, session identity and unlock-error
+precedence. Pinned cleanup instead retains the primary outcome and reports cleanup status. Its
+result serializer lives in `write/pinned-result.ts`; activation still uses its existing independent
+validator and state machine. Existing schemas, capabilities and ADR-0010 constraints are unchanged.
+
+Focused tests: `tests/unit/adt/mutation-{compatibility,lifecycle,isolation}.test.ts` and
+`tests/unit/handlers/pinned-writes.test.ts`. The optional destructive integration test
+`tests/integration/mutation-lifecycle.integration.test.ts` creates and deletes one unique `$TMP`
+class using the configured direct test identity. It exercises both adapters, not real PP routing.
+See the [implementation evidence](research/2026-10-29-shared-mutation-infrastructure.md).
+
 ## Key Files for Common Tasks — full reference
 
 | Task | Files |
