@@ -2,6 +2,7 @@
 import { TextDecoder } from 'node:util';
 import { XMLValidator } from 'fast-xml-parser';
 import { AdtError } from './errors.js';
+import { canonicalHostRelativeAdtPath } from './path-safety.js';
 import { parseXml } from './xml-parser.js';
 
 type Row = Record<string, unknown>;
@@ -66,6 +67,7 @@ export interface PluginParseOptions {
   mainObjectUri: string;
   /** An include can own its own plug-ins even when read with an enclosing main-object context. */
   selectedObjectUri?: string;
+  selectedSourceUri?: string;
   sources: boolean;
   maxImplementations?: number;
   maxDecodedBytes?: number;
@@ -136,6 +138,38 @@ export function parseSourcePluginElements(xml: string, options: PluginParseOptio
       const id = attr(p, 'id').trim();
       if (!/^\d+$/.test(id)) invalid();
       const option = row(row(p.option).sourceCodePluginOption);
+      if (option.position) {
+        const position = attr(row(option.position), 'uri');
+        const [pathAndQuery, fragment] = position.split('#');
+        if (!fragment || !/^start=\d+,\d+$/.test(fragment)) invalid();
+        const [path, query] = pathAndQuery!.split('?');
+        const parent = reference(impl.enhancedObject);
+        if (parent.type.startsWith('ENHO/')) pluginUri(`${path}#${fragment}`, parent.name);
+        else {
+          const selected = options.selectedObjectUri ?? options.mainObjectUri;
+          const allowed = new Set(
+            [`${options.mainObjectUri}/source/main`, `${selected}/source/main`, options.selectedSourceUri]
+              .filter(Boolean)
+              .map((p) => p!.toUpperCase()),
+          );
+          if (
+            selected.startsWith('/sap/bc/adt/programs/includes/') &&
+            options.mainObjectUri.startsWith('/sap/bc/adt/functions/groups/')
+          )
+            allowed.add(`${options.mainObjectUri}/includes/${selected.split('/').at(-1)}/source/main`.toUpperCase());
+          if (
+            !canonicalHostRelativeAdtPath(path!, '/sap/bc/adt/', { allowRawEncodedSlash: true }) ||
+            !allowed.has(path!.toUpperCase())
+          )
+            invalid();
+        }
+        if (query) {
+          const params = new URLSearchParams(query);
+          if ([...params.keys()].some((k) => k !== 'context') || params.getAll('context').length !== 1) invalid();
+          const context = params.get('context')!;
+          if (![options.mainObjectUri, options.selectedObjectUri].some((u) => u && same(u, context))) invalid();
+        }
+      }
       const fullName = attr(p, 'full_name') || attr(p, 'fullname');
       if (!fullName || fullName.length > 4096) invalid();
       const plugin: SourcePlugin = {

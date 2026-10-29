@@ -121,6 +121,7 @@ export async function discoverSourcePlugins(
               parseSourcePluginElements(response.body, {
                 mainObjectUri,
                 selectedObjectUri: resources.objectUri,
+                selectedSourceUri: resources.sourceUri,
                 sources: session.mode === 'sources',
                 maxImplementations: session.limits.nodes - (session.mode === 'sources' ? seen.size : 0),
               }),
