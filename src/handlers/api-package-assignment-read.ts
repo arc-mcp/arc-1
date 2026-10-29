@@ -64,7 +64,7 @@ function documentResult(
     return textResult(
       `${label} has ${document.length} characters on ${document.split('\n').length} lines, above the ` +
         `${SOD2_MAX_DOCUMENT_CHARS}-character limit for a full read. Read it in parts with grep` +
-        `${example ? ` (e.g. grep="${example}")` : ''} or lineStart/lineEnd.`,
+        `${example ? ` (e.g. grep=${JSON.stringify(example)})` : ''} or lineStart/lineEnd.`,
     );
   }
   return textResult(document);

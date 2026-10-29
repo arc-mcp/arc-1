@@ -118,6 +118,11 @@ describe('SAPRead type=SOD2', () => {
     expect(text(missing)).toContain('has no wsdl resource definition. Available: openapi, edmx.');
   });
 
+  it('quotes a grep example that contains quotes so it can be copied', async () => {
+    backend(swaggerFile(`{"openapi":"3.0.0","info":{"description":"${'x'.repeat(SOD2_MAX_DOCUMENT_CHARS)}"}}`, ''));
+    expect(text(await read({ include: 'openapi' }))).toContain('(e.g. grep="\\"summary\\"")');
+  });
+
   it('guards a large single-line EDMX and serves it through grep and line ranges', async () => {
     backend(swaggerFile('', edmxV2(2000)));
     const full = await read({ include: 'edmx' });

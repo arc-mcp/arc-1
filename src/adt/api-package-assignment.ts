@@ -71,7 +71,8 @@ function apiKindOf(details: Record<string, string>, apiObjectType: string): stri
   if (details.rfcFunctionModuleName) return 'rfc';
   if (details.sqlServiceName) return 'sql';
   if (apiObjectType === 'CLAS') return 'custom';
-  return apiObjectType || 'unknown';
+  // Other API types (HTTP, …) keep SAP's object type, in the lower case of the kinds above.
+  return (apiObjectType || 'unknown').toLowerCase();
 }
 
 /** Parse the <sod2:sod2> metadata document into the compact SAPRead answer. */

@@ -66,6 +66,12 @@ describe('parseApiPackageAssignment', () => {
     expect(parseApiPackageAssignment(xml).apiKind).toBe('custom');
   });
 
+  it('keeps other API types as lower-case kinds', () => {
+    const xml =
+      '<sod2:sod2 xmlns:sod2="http://www.sap.com/oda/sod2" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="Z_A"><sod2:content><sod2:apiWbObjectType>HTTP</sod2:apiWbObjectType></sod2:content><sod2:apiDetails/></sod2:sod2>';
+    expect(parseApiPackageAssignment(xml).apiKind).toBe('http');
+  });
+
   it('rejects a document that is not an API package assignment', () => {
     expect(() => parseApiPackageAssignment('<other/>')).toThrow(/not an API package assignment/);
   });
