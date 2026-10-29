@@ -4,6 +4,7 @@ import { CI_REPORT_XML_LIMIT, runAtcCiCheck, verifyCiPackages } from '../adt/ci-
 import type { AtcCiSeverity } from '../adt/ci-quality-xml.js';
 import type { AdtClient } from '../adt/client.js';
 import { getCurrentContext } from '../server/context.js';
+import { getCachedFeatures } from './feature-cache.js';
 import { type ToolResult, textResult, toolJson } from './shared.js';
 
 type RunDiagnose = (
@@ -34,6 +35,7 @@ export async function handleCiQuality(
           configuration: args.configuration as string | undefined,
           failOnSeverity: args.failOnSeverity as AtcCiSeverity | undefined,
           includeReportXml: args.includeReportXml === true,
+          systemType: getCachedFeatures()?.systemType,
         }),
       ),
     );

@@ -111,3 +111,30 @@ for a single package, but does not replace this multi-package result or ATC's na
 Checkstyle output. The strict MCP schemas own selection and timeout input bounds;
 normalization runs once during package verification. XML escaping and canonical
 returned-path validation remain at their sinks.
+
+### On-premise ATC CI runs never start, 29 October 2026
+
+S/4HANA 2025 FPS01 private cloud, SAP_BASIS 816, principal propagation, read-scoped
+calls through MCP. Every `atc_ci` call ended at its deadline with `Not Yet Started` /
+"Job noch nicht gestartet": exact leaf package with the default variant, the same
+package with a customer variant, and a package tree, each with a 120 s budget. Agent
+sessions since 5 October show the same outcome with 600–1800 s budgets; users
+cancelled the longer ones, and agents retried with a longer timeout after the first
+incomplete answer.
+
+The run ID from the returned location never appeared in `SATC_RT_RUN`,
+`SATC_RT_RUN_EXE` or `SATC_AC_RESULTH`, and `TBTCO` held no job carrying it, also
+28 minutes later and for runs from October. Runs SAP does start are in these tables
+at once with an `ATC:…` job: an object `atc` call and an Eclipse package run in the
+same window. Background processing itself worked: `unittest_ci` on the same package
+completed in 11 s, and the object `atc` call completed during the same minutes.
+
+`atc` with `type="DEVC"` uses the classic `/sap/bc/adt/atc/runs?clientWait=false`
+flow with the package URI and completed in under a minute for the package tree.
+Its worklist matched the Eclipse package run (virtual-folder object reference) object
+for object: 51 objects from five subpackages and 168 findings.
+
+Consequences in ARC-1: `atc_ci` is refused before any request when the probed or
+configured system type is `onprem`, and a run that stays `Not Yet Started` for 60 s
+returns `incomplete` with a pointer to `atc` with `type="DEVC"` instead of waiting
+for the full budget. BTP ABAP Environment remains unverified.

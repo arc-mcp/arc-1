@@ -8,6 +8,7 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 
 function payload(outcome = 'passed', tests = 1) {
   return textResult(
@@ -136,6 +137,21 @@ describe('CI action inputs and adapters', () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('API is not available');
     expect(result.content[0].text).not.toContain('Object ""');
+  });
+  it('refuses ATC CI on an on-premise system without any SAP request', async () => {
+    setCachedFeatures({ systemType: 'onprem' });
+    try {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'atc_ci',
+        packageTrees: ['ZPKG'],
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('not started on on-premise systems');
+      expect(result.content[0].text).toContain('type="DEVC"');
+      expect(mockFetch).not.toHaveBeenCalled();
+    } finally {
+      resetCachedFeatures();
+    }
   });
   it('includes only explicitly requested bounded XML', async () => {
     const result = await handleCiQuality(
