@@ -120,7 +120,7 @@
             "summary",
             "sources"
           ],
-          "description": "TABL full reads default summary; partial reads default none. sources adds bounded labelled appends/includes. Other families/inactive: unsupported."
+          "description": "Full source reads: summary; partial: none. sources adds bounded labelled bodies. CLAS: hooks + EXTED_OBJ. INTF/inactive coverage limited."
         },
         "enhancementContext": {
           "type": "object",

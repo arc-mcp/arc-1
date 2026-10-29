@@ -16,7 +16,8 @@ Sources remain separate labelled representations. The active known-subtype ENHO 
 generated include revision only for a qualified source-unavailable failure: 404/resource-read failure,
 or the observed 750 unsupported-technology/758 null-reference error with its release guard. Ordinary
 500s, authorization, throttle, network and exhausted budgets do not permit fallback. Returned authored
-metadata must name the requested enhancement and its owning class.
+metadata must name the requested enhancement and its owning class or discovered parent. The
+observed XHH parent `/source/main` URI is accepted only with the exact native parent name/type.
 
 The shared PR #1124 helper is hardened here: candidate names are validated, the feed must name the
 same include with type REPS, and only one id 00000 is eligible. Its canonical content URI must refer

@@ -1,4 +1,6 @@
 /** One handler boundary for optional family adapters; legacy base content is never rewritten. */
+
+import { discoverClassExtensions } from '../adt/class-extensions.js';
 import type { AdtClient } from '../adt/client.js';
 import { ddicExtensionAdapter } from '../adt/ddic-extension-adapter.js';
 import {
@@ -8,6 +10,8 @@ import {
   renderExtensionDiscovery,
 } from '../adt/extension-discovery.js';
 import { getCurrentContext } from '../server/context.js';
+import { getCachedFeatures } from './feature-cache.js';
+import { detectLocalHandlerInclude } from './object-types.js';
 import type { ToolResult } from './shared.js';
 
 export const EXTENSION_READ_TYPES = new Set(['TABL', 'PROG', 'INCL', 'FUNC', 'FUGR', 'CLAS', 'INTF', 'BDEF']);
@@ -15,16 +19,16 @@ export const EXTENSION_READ_TYPES = new Set(['TABL', 'PROG', 'INCL', 'FUNC', 'FU
 export function extensionReadMode(args: Record<string, unknown>): ExtensionMode {
   if (args.extensions === 'none' || args.extensions === 'summary' || args.extensions === 'sources')
     return args.extensions;
-  // Stage 1 enables automatic summaries only for the qualified DDIC adapter.
   if (
-    String(args.type).toUpperCase() !== 'TABL' ||
+    !['TABL', 'CLAS', 'INTF'].includes(String(args.type).toUpperCase()) ||
     args.method ||
     args.grep ||
     args.lineStart !== undefined ||
     args.lineEnd !== undefined ||
     args.include ||
     args.action ||
-    args.format === 'editable'
+    args.format === 'editable' ||
+    args.format === 'structured'
   )
     return 'none';
   return 'summary';
@@ -43,13 +47,24 @@ export async function appendReadExtensions(
     name = String(args.name);
   const partial = args.method || args.grep || args.lineStart !== undefined || args.include;
   const request: ExtensionRequest = {
-    root: { type, name, version },
+    root: { type, name, version: args.format === 'structured' ? 'provider_current' : version },
     scope: `${type} ${name}${partial ? ` owning object/source (base filtered${args.include ? `; section=${args.include}` : ''})` : ' full root source'}`,
     ...(args.enhancementContext ? { context: args.enhancementContext as ExtensionRequest['context'] } : {}),
   };
   const session = new ExtensionDiscoverySession(mode, request, client.safety, { signal: getCurrentContext()?.signal });
   if (type === 'TABL') await ddicExtensionAdapter(client, baseSource)(session, request);
-  else
+  else if (type === 'CLAS' || type === 'INTF') {
+    const section = (args.include ??
+      (args.method ? detectLocalHandlerInclude(String(args.method)) : undefined) ??
+      'main') as 'main' | 'definitions' | 'implementations' | 'macros' | 'testclasses';
+    await discoverClassExtensions(
+      client,
+      session,
+      request,
+      { unit: { type: 'CLAS', name, section }, source: baseSource },
+      getCachedFeatures()?.abapRelease,
+    );
+  } else
     session.result.providers.push({
       id: 'family_adapter',
       family: type,

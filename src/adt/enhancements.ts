@@ -69,7 +69,8 @@ export async function readActiveClassEnhancementSource(
       result.enhancedObject &&
       !expectedOwners.some(
         (owner) =>
-          result.enhancedObject!.uri === owner.uri &&
+          (result.enhancedObject!.uri === owner.uri ||
+            (owner.type === 'ENHO/XHH' && result.enhancedObject!.uri === `${owner.uri}/source/main`)) &&
           result.enhancedObject!.type === owner.type &&
           result.enhancedObject!.name.toUpperCase() === owner.name.toUpperCase(),
       )

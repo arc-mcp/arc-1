@@ -202,7 +202,7 @@ export async function discoverClassIdentities(
       const node = identities.get(edge.from);
       const parent = identities.get(edge.to);
       if (node && (edge.to === root.uri || parent))
-        session.result.edges.push({
+        session.addEdge({
           from: extensionKey(node),
           to: extensionKey(parent ?? request.root),
           kind: 'extends',
@@ -224,7 +224,8 @@ export async function discoverClassSources(
   for (const node of nodes) {
     if (session.stopped) break;
     const provider: ExtensionProvider = {
-      id: `${PROVIDER}_source:${node.name}`,
+      id: `${PROVIDER}_source`,
+      scope: `${node.type} ${node.name}`,
       family: FAMILY,
       status: 'returned',
       coverage: 'selected_source',
@@ -255,11 +256,13 @@ export async function discoverClassSources(
       };
       const expectedOwners = [
         { ...session.request.root, type: 'CLAS/OC', uri: relationObjectUri('CLAS', session.request.root.name) },
-        ...session.result.nodes.filter((parent) =>
-          session.result.edges.some(
-            (edge) => edge.kind === 'extends' && edge.from === extensionKey(node) && edge.to === extensionKey(parent),
-          ),
-        ),
+        ...session.result.nodes
+          .filter((parent) =>
+            session.result.edges.some(
+              (edge) => edge.kind === 'extends' && edge.from === extensionKey(node) && edge.to === extensionKey(parent),
+            ),
+          )
+          .flatMap((parent) => (parent.uri ? [{ name: parent.name, type: parent.type, uri: parent.uri }] : [])),
       ];
       const source = await session.read('ENHO', (options) =>
         protocol(() => readActiveClassEnhancementSource(guarded, node, options, expectedOwners, release)),
@@ -277,7 +280,7 @@ export async function discoverClassSources(
         return;
       }
       if (generated)
-        session.result.edges.push({
+        session.addEdge({
           from: extensionKey(node),
           to: extensionKey(identity),
           kind: 'generated_include_revision',
@@ -297,7 +300,7 @@ export async function discoverClassSources(
           session.omit('sources');
           continue;
         }
-        session.result.edges.push({
+        session.addEdge({
           from: extensionKey({ type: 'INCL', name: generated.name, version: 'active' }),
           to: extensionKey(identity),
           kind: 'generated_method_include',

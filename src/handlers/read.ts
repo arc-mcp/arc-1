@@ -381,9 +381,11 @@ async function handleSAPReadBase(
   ): Promise<{ source: string; cacheHit: boolean; revalidated: boolean }> => {
     if (!cachingLayer) {
       const result = await fetcher(undefined);
+      extensionBase.source = result.source;
       return { source: result.source, cacheHit: false, revalidated: false };
     }
     const { source, hit, revalidated } = await cachingLayer.getSource(objType, objName, fetcher, { version });
+    extensionBase.source = source;
     return { source, cacheHit: hit, revalidated };
   };
 
@@ -489,6 +491,7 @@ async function handleSAPReadBase(
         const probedAbapRelease = getCachedFeatures()?.abapRelease;
         const abaplintVer = probedAbapRelease ? mapSapReleaseToAbaplintVersion(probedAbapRelease) : undefined;
         // MethodInfo is a structural superset of grepSource's MethodRange — pass through directly.
+        extensionBase.source = clasSource;
         const listing = listMethods(clasSource, name, abaplintVer);
         const g = grepSource(clasSource, String(args.grep), listing.success ? { methods: listing.methods } : undefined);
         return g.invalidPattern
@@ -536,6 +539,7 @@ async function handleSAPReadBase(
             )
           ).source;
         }
+        extensionBase.source = methodSource;
         const probedAbapRelease = getCachedFeatures()?.abapRelease;
         const abaplintVer = probedAbapRelease ? mapSapReleaseToAbaplintVersion(probedAbapRelease) : undefined;
         if (methodParam === '*') {
@@ -564,6 +568,10 @@ async function handleSAPReadBase(
         const includeResult = hasLineRange
           ? await client.getClassInclude(name, String(args.include).toLowerCase(), { version: effectiveVersion })
           : await client.getClass(name, args.include as string | undefined, { version: effectiveVersion });
+        extensionBase.source = includeResult.source;
+        // getClass(include) labels its legacy output; the discovery scanner needs the raw selected body.
+        const heading = `=== ${String(args.include).trim().toLowerCase()} ===\n`;
+        if (extensionBase.source.startsWith(heading)) extensionBase.source = extensionBase.source.slice(heading.length);
         return cachedTextResult(includeResult.source, false, false, versionWarning);
       } catch (err) {
         if (hasLineRange && isNotFoundError(err))

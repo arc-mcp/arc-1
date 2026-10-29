@@ -88,7 +88,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. With `method=`, an explicit include selects that exact source (including `main`) before method extraction. For DDLS: `elements` (extract CDS view elements). For TEXT_ELEMENTS: `symbols`, `selections`, or `headings` — one part of the text pool; omit for the whole PROG/FUGR pool or CLAS symbols. |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. For FUGR, `grep` implies `expand_includes` and searches each include on its own: matches are grouped under `=== <include> ===` with line numbers counted within that include. For PROG and INCL, `grep` searches the object itself unless `expand_includes=true`; the response then names the includes that the expansion would also search. Falls back to a literal search when the pattern is not valid regex. |
-| `extensions` | string | No | `none`, `summary`, or `sources`. Full TABL source reads default to a bounded append summary; partial reads default to none. Sources adds separate labelled append/include bodies. Other listed families currently return explicit unsupported coverage. See [Extension discovery](#extension-discovery). |
+| `extensions` | string | No | `none`, `summary`, or `sources`. Full TABL/CLAS/INTF source reads default to bounded discovery; partial reads default to none. Sources adds separate labelled bodies. Interface coverage is limited. See [Extension discovery](#extension-discovery). |
 | `enhancementContext` | object | No | Standalone INCL only: `{type: "PROG"\|"FUGR"\|"CLAS", name: "..."}` identifies the owning main object. The current stage reports unsupported for source plug-in families; this reserves their shared request contract. |
 | `lineStart` | integer | No | First source line (1-based, inclusive); requires `lineEnd`. Supports PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, DDLX and TABL. CLAS `include` selects one source section. Plain text only: do not combine with grep, method, diff, structured/editable output, signature or element extraction. Draft/version notices precede the numbered source. |
 | `lineEnd` | integer | No | Last source line (inclusive); requires `lineStart`. Clamped to the source end; a start beyond the source is an error. |
@@ -117,12 +117,25 @@ include/append graph and separate bodies labelled `representation=authored_sourc
 occurrences, attributes and suffixes remain distinct; bodies are fetched once per request.
 
 The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02 and 758 SP02. The public
-contract also accepts PROG, INCL, FUNC, FUGR, CLAS, INTF and BDEF, but explicit requests for those
+contract also accepts PROG, INCL, FUNC, FUGR and BDEF, but explicit requests for those
 families currently report `unsupported`; their adapters are separate implementation stages.
 BTP and other releases are unqualified. CDS/DDLX extensions and BAdIs are outside this feature.
 
+CLAS combines selected-source hook coverage with a separate native `EXTED_OBJ` graph for the owning
+class. Main and local sections stay distinct. A class can have structural enhancements despite an
+empty hook/source response. Native graph edges retain their direction and ENHO types; the type
+alone does not identify enhancement technology. The native provider is qualified on 758; 750's
+unsupported response remains explicit. Hook wire formats are qualified on both releases.
+
+Class sources retain rendered plug-ins or authored ENHO bodies as separate blocks. A qualified
+active-source failure may use a generated include's exact active revision (`00000`, matching REPS
+owner and content URI). Generated source may omit implementation names; only a method include
+actually named by that returned source is followed. It remains a labelled representation, not an
+inferred edit target. INTF's tested 758 ENV fallback is `unsupported_context`; 750 is an unsupported
+provider. Neither is evidence of absent interface extensions. Positive interface coverage is unqualified.
+
 Method, grep, line-window and class-include reads default to none. An explicit mode on a partial
-TABL read describes its **owning object/source**, without claiming the extension bodies match the
+source read describes its **owning object/source**, without claiming the extension bodies match the
 base filter. Inactive base reads report `unsupported_version` and do not substitute active
 extension sources. An unversioned list is labelled `provider_current`; source bodies explicitly
 read active are labelled active. These are separate SAP observations, not an atomic snapshot.
