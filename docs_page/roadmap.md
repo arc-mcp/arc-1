@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-10-22
+**Last reviewed:** 2026-10-26
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -68,7 +68,7 @@ sequence.
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing | P1 | M | Ready | Architecture |
 | [ARCH-02](#arch-02) | Server-driven source-state version verification | P3 | S | Needs research | Architecture |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server API | P3 | L | Revisit on trigger | Architecture |
-| [FEAT-93](#feat-93) | Broader pinned PP mutation capabilities | P2 | XL | Needs research | Architecture |
+| [FEAT-93](#feat-93) | Broader pinned PP mutation capabilities | P2 | XL | Design reviewed | Architecture |
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
@@ -182,21 +182,34 @@ and upgrade requirements. Do not widen the mutation-free multi-target contract a
 <a id="feat-93"></a>
 ### FEAT-93 — Broader pinned PP mutation capabilities
 
-- **Priority / effort / status:** P2 / XL / Needs research
+- **Priority / effort / status:** P2 / XL / Design reviewed
 - **Category:** Architecture
 
 **Remaining gap.** PR [#1080](https://github.com/arc-mcp/arc-1/pull/1080) implements the scoped
 CLAS/INTF create/main-update, CLAS method-edit and whole-owner activation contract for local and
 transportable packages, with exact target write grants and independent server/destination policy.
-Additional types, include editing, deletes, batches, package changes, RAP/DDIC and publication still
-need their own reviewed package, ownership, recording and activation contracts. General single-target
-parity is not implied. Aggregate and Basic writes remain rejected architectural alternatives.
+The owner selected broader built-in development and management parity, including object types,
+includes, deletes, batches, package changes, RAP/DDIC, publication, transport management, runtime
+tracing and classic FLP. Git and custom extensions/plugins are excluded. None of this expansion
+is enabled by the shared-infrastructure extraction; aggregate and Basic writes remain excluded.
 
-**Resume when.** A concrete development workflow needs one of those additional capabilities and
-its complete effect on SAP can be bounded and qualified. Extend the [ADR-0010 contract](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0010-pinned-pp-multi-target-writes.md)
-for that capability, including negative tests and live PP evidence; do not remove the explicit
-allowlist or add a second global write switch. Transport/Git management, caching, SaaS and embedding
-remain separate work. Keep operator configuration and effective-denial explanations explicit.
+**Design evidence.** The [26 October research](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-26-multi-target-write-parity.md)
+separates accepted scope from proposed resource policies and live qualification gaps. It proposes
+[PR 1](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-shared-mutation-infrastructure.md)
+for behavior-preserving shared mutation infrastructure, now implemented for review with
+[separate qualification evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-29-shared-mutation-infrastructure.md), followed by
+[PR 2](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-broader-pinned-pp-writes.md)
+for the capability expansion. Existing opted-in writers may gain the documented capabilities;
+read-only applications/destinations must remain mutation-free.
+Author review and two Claude Code Opus 5.5 max reviews are recorded with findings and dispositions
+in the research record. The remaining implementation is PR 2's capability expansion; its live
+qualification remains outstanding.
+
+**Resume when.** PR 1 is accepted and the owner requests PR 2. Preserve the shared foundation's
+existing behavior; PR 2 requires a new reviewed ADR qualifying ADR-0010, explicit per-operation
+resource policies, negative tests and real PP evidence. Do not remove the explicit action matrix
+or add a duplicate global write switch. Caching, SaaS and embedding remain separate work. The
+roadmap entry stays open until the expanded scope is implemented and verified.
 
 **Prior work.** [#906](https://github.com/arc-mcp/arc-1/pull/906), the
 [alternatives assessment](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-22-multi-target-write-strategy.md)
