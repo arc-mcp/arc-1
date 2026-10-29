@@ -120,7 +120,7 @@
             "summary",
             "sources"
           ],
-          "description": "TABL/PROG/INCL/FUNC/FUGR: full=summary, partial=none; sources adds bounded labelled bodies. Inactive: unsupported."
+          "description": "Full source reads: summary; partial: none. sources adds bounded labelled bodies. CLAS: hooks + EXTED_OBJ. INTF/inactive coverage limited."
         },
         "enhancementContext": {
           "type": "object",
