@@ -232,6 +232,14 @@ export async function discoverClassSources(
       nested: 'bounded',
     };
     await session.provider(provider, async () => {
+      const depth = classNodeDepth(session, node);
+      if (depth >= session.limits.depth) {
+        provider.status = 'incomplete';
+        provider.reason = 'source_depth_limit';
+        session.omit('depth');
+        session.omit('sources');
+        return;
+      }
       if (!['ENHO/XH', 'ENHO/XHH'].includes(node.type)) {
         provider.status = 'unsupported';
         provider.reason = 'unsupported_source_provider';
@@ -264,7 +272,7 @@ export async function discoverClassSources(
       }
       const generated = source.enhancementInclude;
       const identity = generated ? { type: 'INCL', name: generated.name, version: 'active' } : node;
-      if (generated && !session.addNode({ ...identity, provider: provider.id, family: FAMILY }, 1)) {
+      if (generated && !session.addNode({ ...identity, provider: provider.id, family: FAMILY }, depth + 1)) {
         session.omit('sources');
         return;
       }
@@ -285,7 +293,7 @@ export async function discoverClassSources(
       for (const child of enhancementMethodIncludes(source.source, generated.name)) {
         if (session.stopped) break;
         const identity = { type: 'INCL', name: child, version: 'active' };
-        if (!session.addNode({ ...identity, provider: provider.id, family: FAMILY }, 1)) {
+        if (!session.addNode({ ...identity, provider: provider.id, family: FAMILY }, depth + 2)) {
           session.omit('sources');
           continue;
         }
@@ -313,4 +321,22 @@ export async function discoverClassSources(
     });
     if (provider.status === 'incomplete' || provider.status === 'denied') session.omit('sources');
   }
+}
+
+/** Native ownership depth, with cycle protection; direct implementations share the hook adapter's depth 0. */
+function classNodeDepth(session: ExtensionDiscoverySession, node: ExtensionNode): number {
+  const root = extensionKey(session.request.root);
+  const pending = [{ key: extensionKey(node), depth: 0 }];
+  const seen = new Set<string>();
+  for (let index = 0; index < pending.length; index++) {
+    const current = pending[index]!;
+    if (seen.has(current.key)) continue;
+    seen.add(current.key);
+    for (const edge of session.result.edges) {
+      if (edge.kind !== 'extends' || edge.from !== current.key) continue;
+      if (edge.to === root) return current.depth;
+      pending.push({ key: edge.to, depth: current.depth + 1 });
+    }
+  }
+  return 0;
 }

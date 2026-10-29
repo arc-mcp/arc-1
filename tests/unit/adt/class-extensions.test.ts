@@ -230,4 +230,20 @@ describe('class-bound enhancements', () => {
     expect(s.getRevisions).not.toHaveBeenCalled();
     expect(s.session.result.sources).toEqual([]);
   });
+  it('applies the same depth cap to generated representations and discovered method children', async () => {
+    const s = setup();
+    const nodes = await discoverClassIdentities(s.client, s.session, s.request);
+    s.session.result.edges.length = 0;
+    for (let depth = 0; depth < 4; depth++)
+      s.session.result.edges.push({
+        from: depth === 0 ? `ENHO/XH:${enhancement}:active` : `ENHO/XHH:ZPARENT${depth}:active`,
+        to: `ENHO/XHH:ZPARENT${depth + 1}:active`,
+        kind: 'extends',
+      });
+    s.session.result.edges.push({ from: 'ENHO/XHH:ZPARENT4:active', to: `CLAS:${name}:active`, kind: 'extends' });
+    await discoverClassSources(s.client, s.session, nodes, '750');
+    expect(s.session.result.sources.map((source) => source.identity.name)).toEqual([parent]);
+    expect(s.getRevisions).toHaveBeenCalledTimes(1);
+    expect(s.session.result.omissions.depth).toBe(1);
+  });
 });
