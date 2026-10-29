@@ -62,6 +62,8 @@ describe('source plug-in transport bounds', () => {
     expect(sends).toBe(20);
     expect(s.finish().consumed.sends).toBe(20);
     expect(s.result.omissions.requests).toBe(1);
+    expect(s.result.omissions.sources).toBeGreaterThan(0);
+    expect(s.result.issues.some((i) => i.startsWith('source_unit_unreadable:INCL:'))).toBe(true);
     expect(s.stopped).toBe(true);
   });
   it('stops while streaming a response above the aggregate wire-byte allowance', async () => {

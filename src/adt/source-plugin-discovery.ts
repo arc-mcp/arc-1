@@ -1,4 +1,6 @@
 /** Optional source-code plug-in discovery. All I/O shares the caller's session and SAP identity. */
+
+import { createHash } from 'node:crypto';
 import type { AdtClient } from './client.js';
 import { AdtApiError } from './errors.js';
 import {
@@ -172,11 +174,16 @@ export async function discoverSourcePlugins(
       } catch (error) {
         if (error instanceof ExtensionProtocolError)
           session.result.issues.push(`invalid_source_unit:${unit.type}:${unit.name}`);
-        if (session.stopped || session.options.signal?.aborted) throw error;
-        unavailable = true;
         session.result.issues.push(
           `source_unit_unreadable:${unit.type}:${unit.name}:${error instanceof AdtApiError ? error.statusCode : 'read_failed'}`,
         );
+        if (session.stopped) {
+          session.omit('sources', pending.length + 1);
+          for (const left of pending.slice(0, 20))
+            session.result.issues.push(`source_unit_not_checked:${left.unit.type}:${left.unit.name}`);
+        }
+        if (session.stopped || session.options.signal?.aborted) throw error;
+        unavailable = true;
         if (depth === 0) throw error;
       }
     }
@@ -234,7 +241,9 @@ function recordGraph(
         location: `${plugin.fullName} ${plugin.position ?? ''}`,
         suffix: plugin.mode,
       });
-      const bodyKey = `${extensionKey(impl)}:${plugin.id}:${plugin.uri}`;
+      const bodyKey = `${extensionKey(impl)}:${plugin.id}:${plugin.uri}:${createHash('sha256')
+        .update(plugin.source ?? '')
+        .digest('hex')}`;
       if (plugin.source !== undefined && !emitted.has(bodyKey)) {
         emitted.add(bodyKey);
         session.result.sources.push({
