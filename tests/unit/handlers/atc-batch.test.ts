@@ -99,25 +99,53 @@ describe('SAPDiagnose ATC batch contract', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it.each([{}, { type: 'CLAS' }, { name: 'ZCL_A' }, { type: 'CLAS', name: '' }, { type: '', name: 'ZCL_A' }])(
-    'rejects single-object atc without type and name before any SAP call: %j',
-    async (input) => {
-      const result = await handleToolCall(client(), DEFAULT_CONFIG, 'SAPDiagnose', { action: 'atc', ...input });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('required for "atc"');
-      expect(mockFetch).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    {},
+    { type: 'CLAS' },
+    { name: 'ZCL_A' },
+    { type: 'CLAS', name: '' },
+    { type: '', name: 'ZCL_A' },
+    { type: 'CLAS', name: ' \t\n' },
+    { type: ' \t\n', name: 'ZCL_A' },
+    { type: ' \t\n', name: ' \t\n' },
+    { type: 'CLAS', name: null },
+    { type: null, name: 'ZCL_A' },
+    { type: 'CLAS', objects: [] },
+    { name: 'ZCL_A', objects: [] },
+  ])('rejects single-object atc without type and name before any SAP call: %j', async (input) => {
+    const result = await handleToolCall(client(), DEFAULT_CONFIG, 'SAPDiagnose', { action: 'atc', ...input });
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('required for "atc"');
+    expect(result.content[0]?.text).toContain('"objects" for a batch');
+    expect(result.content[0]?.text).toContain('action="atc_ci"');
+  });
 
-  it('still runs single-object atc when type and name are given', async () => {
+  it.each([
+    { type: 'CLAS', name: 'ZCL_A', uri: '/sap/bc/adt/oo/classes/ZCL_A' },
+    { type: ' clas/oc ', name: 'zcl_a', uri: '/sap/bc/adt/oo/classes/zcl_a' },
+    { type: 'CLAS/OC', name: '/ARC/CL_A', uri: '/sap/bc/adt/oo/classes/%2FARC%2FCL_A' },
+    { type: 'CLAS', name: 'ZCL_A', objects: [], uri: '/sap/bc/adt/oo/classes/ZCL_A' },
+  ])('runs one single-object ATC check on the normalized target: %j', async ({ uri, ...input }) => {
     mockRun();
-    const result = await handleToolCall(client(), DEFAULT_CONFIG, 'SAPDiagnose', {
-      action: 'atc',
-      type: 'CLAS',
-      name: 'ZCL_A',
-    });
+    const result = await handleToolCall(client(), DEFAULT_CONFIG, 'SAPDiagnose', { action: 'atc', ...input });
     expect(result.isError).not.toBe(true);
-    expect(mockFetch).toHaveBeenCalled();
+    expect(JSON.parse(result.content[0]!.text as string)).toEqual({
+      findings: [],
+      variant: 'DEFAULT',
+      variantSource: 'systemDefault',
+    });
+    const worklists = mockFetch.mock.calls.filter(
+      (call) => call[1].method === 'POST' && new URL(String(call[0])).pathname.endsWith('/worklists'),
+    );
+    expect(worklists).toHaveLength(1);
+    const runs = mockFetch.mock.calls.filter(
+      (call) => call[1].method === 'POST' && new URL(String(call[0])).pathname.endsWith('/runs'),
+    );
+    expect(runs).toHaveLength(1);
+    const body = runs[0]![1].body as string;
+    expect(body.match(/<adtcore:objectReference /g)).toHaveLength(1);
+    expect(body).toContain(`<adtcore:objectReference adtcore:uri="${uri}"/>`);
   });
 
   it('keeps server action denial effective for the entire batch', async () => {
