@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseApiPackageAssignment } from '../../../src/adt/api-package-assignment.js';
 import {
+  apiCatalogAvailable,
   applyApiCatalogDefinition,
   buildApiCatalogCreateXml,
   needsFollowUpSave,
@@ -9,6 +10,8 @@ import {
   parseApiPackage,
   parseApiPackageAssignments,
 } from '../../../src/adt/api-packages.js';
+import { AdtHttpClient } from '../../../src/adt/http.js';
+import { parseDiscoveryDocument } from '../../../src/adt/xml-parser.js';
 
 // Anonymized Eclipse ADT 3.60 captures (SAP_BASIS 8.16) after editing an API package and an
 // OData V4 API package assignment. docs/research/abap-types/types/sod1.md and sod2.md.
@@ -171,5 +174,44 @@ describe('needsFollowUpSave', () => {
   it('is true for fields the create POST does not carry', () => {
     expect(needsFollowUpSave('SOD1', { abbreviation: 'ZX', tags: [] })).toBe(true);
     expect(needsFollowUpSave('SOD2', { apiPackage: 'P', leadingBusinessObjectType: 'X' })).toBe(true);
+  });
+});
+
+describe('apiCatalogAvailable', () => {
+  // Shape of the API-Management workspace that SAP_BASIS 8.16 returns to a display-only user:
+  // the collections are listed, but with an empty <app:accept/>.
+  const discovery = (accept: string) => `<?xml version="1.0" encoding="utf-8"?>
+<app:service xmlns:app="http://www.w3.org/2007/app" xmlns:atom="http://www.w3.org/2005/Atom">
+  <app:workspace>
+    <atom:title>API-Management</atom:title>
+    <app:collection href="/sap/bc/adt/aps/com/sod1">${accept}</app:collection>
+    <app:collection href="/sap/bc/adt/aps/com/sod2">${accept}</app:collection>
+  </app:workspace>
+  <app:workspace>
+    <atom:title>Sources</atom:title>
+    <app:collection href="/sap/bc/adt/oo/classes"><app:accept>application/vnd.sap.adt.oo.classes.v4+xml</app:accept></app:collection>
+  </app:workspace>
+</app:service>`;
+  const http = (xml: string) => {
+    const client = new AdtHttpClient({ baseUrl: 'https://sap.example.test', username: 'test', password: 'test' });
+    client.setDiscoveryMap(parseDiscoveryDocument(xml));
+    return client;
+  };
+
+  it('accepts collections listed with an empty accept element', () => {
+    const client = http(discovery('<app:accept/>'));
+    expect(apiCatalogAvailable(client, 'SOD1')).toBe(true);
+    expect(apiCatalogAvailable(client, 'SOD2')).toBe(true);
+  });
+
+  it('accepts collections listed with media types', () => {
+    expect(
+      apiCatalogAvailable(http(discovery('<app:accept>application/vnd.sap.adt.blues.v1+xml</app:accept>')), 'SOD2'),
+    ).toBe(true);
+  });
+
+  it('refuses when discovery is loaded and does not list the collection', () => {
+    const client = http(discovery('').replace(/aps\/com\/sod[12]/g, 'other/collection'));
+    expect(apiCatalogAvailable(client, 'SOD2')).toBe(false);
   });
 });
