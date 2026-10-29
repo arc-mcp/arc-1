@@ -8,7 +8,7 @@ and `sod2-metadata-odatav4.xml` / `sod2-deletion-check-with-ktd.xml` are anonymi
 | Contract | Observed value |
 |---|---|
 | ADT type | `SOD1` (no slash subtype) |
-| Collection | `/sap/bc/adt/aps/com/sod1`, advertised by discovery with `application/vnd.sap.adt.blues.v1+xml` |
+| Collection | `/sap/bc/adt/aps/com/sod1`, advertised by discovery with `application/vnd.sap.adt.blues.v1+xml`; a display-only user gets the collection with an empty `<app:accept/>`, so ARC-1 gates on the listing, not on the media type |
 | Metadata | `GET` collection + lowercase name, root `sod1:sod1` (namespace `http://www.sap.com/oda/sod1`) |
 | Assignments | `GET …/sod1/$packageassignments?name=<NAME>`, `application/vnd.sap.adt.oda.packageassignments+xml` |
 | Name check | `POST …/sod1/validation?objtype=sod1&objname=…&description=…` (Eclipse wizard; not used by ARC-1) |

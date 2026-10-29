@@ -7,7 +7,7 @@ copies of those responses.
 | Contract | Observed value |
 |---|---|
 | ADT type | `SOD2` (no slash subtype; search uses `objectType=SOD2`) |
-| Collection | `/sap/bc/adt/aps/com/sod2`, advertised by discovery with `application/vnd.sap.adt.blues.v1+xml` |
+| Collection | `/sap/bc/adt/aps/com/sod2`, advertised by discovery with `application/vnd.sap.adt.blues.v1+xml`; a display-only user gets the collection with an empty `<app:accept/>`, so ARC-1 gates on the listing, not on the media type |
 | Metadata | `GET` collection + lowercase name, `application/vnd.sap.adt.blues.v1+xml`, root `sod2:sod2` (namespace `http://www.sap.com/oda/sod2`), ETag/304 supported |
 | ORD document | `GET …/sod2/$ordfile?packageAssignmentId=<NAME>`, `application/vnd.sap.adt.oda.ordfile+xml` → `<sod2:ordFile><sod2:ordDocumentFile>` |
 | Resource definition | `GET …/sod2/$swaggerfile?packageAssignmentId=<NAME>`, `application/vnd.sap.adt.oda.swaggerfile+xml` → `<sod2:swaggerFile>` with `<sod2:jsonFile>` and `<sod2:edmxFile>` |
