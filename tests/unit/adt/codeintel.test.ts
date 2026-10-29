@@ -270,6 +270,7 @@ describe('Code Intelligence', () => {
         expect.objectContaining({
           Accept: 'application/vnd.sap.adt.repository.usagereferences.result.v1+xml',
         }),
+        undefined,
       );
     });
   });
