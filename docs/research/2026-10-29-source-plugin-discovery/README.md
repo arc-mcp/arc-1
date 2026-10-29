@@ -63,3 +63,46 @@ SOURCE_PLUGIN_OUTPUT optionally saves sanitized JSON. SOURCE_PLUGIN_METADATA_DIR
 only the script's exact standard-SAP metadata fixtures. No source or secrets are printed
 by the script. Use the unit suites `source-plugin-{parser,resources,discovery,budget}.test.ts` for
 replay, traversal and actual HTTP streaming/send/deadline/cancellation tests.
+
+
+## Final SAPRead integration and validation
+
+The branch `codex/automatic-source-plugin-discovery` imports the completed DDIC integration
+`a761b5e2d8a0d4b6654c6bcfb48ec5b166c6ebbf` as local commit `ea9762d0`. Its shared
+`addEdge` boundary now bounds occurrences with explicit edge omissions. PROG, INCL, FUNC and
+FUGR full reads default to summary; partial reads default none. The handler captures unfiltered
+source and the already-resolved FUNC group during the base read. None skips all optional work.
+CLAS, INTF and BDEF public routing remains with later stages. CLAS hooks/section resources are
+ready for the stage 3 adapter caller; this does not claim class-bound enhancement coverage.
+
+`handler-a4h-live.json` and `handler-npl-live.json` record the final public handler checks.
+Every first content block matched the corresponding none-mode legacy read byte-for-byte.
+On 750, ENH_NESTED_DEMO returned four identities and four sources in 2 optional sends
+(7,985 bytes, 797 ms). On 758, the contextual include and each documented FUNC returned one
+identity and one source in 2 sends. The FUGR summary returned one outer identity in 2 sends.
+Its sources traversal retained the three F01 implementations, replacement edges and five
+rendered bodies, then stopped at exactly 20 sends / 29,711 bytes / 5,099 ms with the later
+SEEF_ADT_TEST_AUNIT_INCLUDE_3 unit explicitly unread. The earlier direct adapter run found
+that include-owned implementation too; the final bounded run does not claim it was checked.
+Source-unit omissions do not estimate the number of unseen implementations.
+
+The U01 ownership edge uses a physical structural include but a public function source location.
+`selectedFunctionSourceUri` is enabled only by the first real FUNCTION header of an actually-read
+FUGR include. The location is retained as evidence and never fetched. External, mismatched,
+comment/string-only aliases remain rejected. `selectedObjectUri` and `selectedSourceUri` bind
+other attachment locations to the selected source or inherited main object.
+
+Final gates passed: 391 unit files / 10,701 tests; typecheck; Biome lint (only two unchanged
+upstream informational suggestions); ACTION_POLICY validation; build; file-size and tool-schema
+ratchets. Seven reviewed schema fixture changes only update the extension-mode description.
+The focused source family/handler suites contain 63 tests. Real HTTP tests cover actual sends,
+streamed bytes, deadlines, cancellation and 401/403/429. The existing PP transport test now also
+checks that default hidden metadata reads retain each user's own SAP session.
+
+Reproduce the public handler checks with `SOURCE_PLUGIN_HANDLER=true` in addition to the
+variables above. `SOURCE_PLUGIN_HANDLER` omits fixture capture and records only the baseline
+hash, preservation boolean, bounded summary/graph and source-block hashes/labels.
+The shared primary checkout was preserved. No SAP writes, merge or release was performed.
+No roadmap impact: the current roadmap's FEAT-03 concerns enhancement authoring, which this
+read-only feature does not implement. Other releases/BTP and unobserved family/release pairs,
+runtime switch applicability and atomic snapshots remain unqualified.

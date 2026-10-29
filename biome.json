@@ -60,6 +60,7 @@
       "bin/**",
       "scripts/smoke-live-relations.ts",
       "scripts/smoke-ddic-extensions.ts",
+      "scripts/smoke-source-plugins.ts",
       "scripts/bench-context-parsing.ts",
       "scripts/spikes/pr677-target-authorization/**",
       "scripts/spikes/stxl/**",

@@ -333,8 +333,9 @@ it('isolates users with identical display names and fails closed after a warm ex
   expect(sap.issued()).toBe(2);
   const aliceCookies = sap.requests.filter((r) => r.credential === `Bearer ${alice}`).map((r) => r.cookie);
   const bobCookies = sap.requests.filter((r) => r.credential === `Bearer ${bob}`).map((r) => r.cookie);
-  expect(aliceCookies).toEqual(['', 'SAP_SESSIONID_A4H_001=S1']);
-  expect(bobCookies).toEqual(['', 'SAP_SESSIONID_A4H_001=S2']);
+  // Base reads and their optional source-discovery metadata remain in the same per-user SAP session.
+  expect(aliceCookies).toEqual(['', ...Array(3).fill('SAP_SESSIONID_A4H_001=S1')]);
+  expect(bobCookies).toEqual(['', ...Array(3).fill('SAP_SESSIONID_A4H_001=S2')]);
   const before = sap.requests.length;
   boundary.lookup.mockRejectedValue(new Error('exchange unavailable'));
   expect((await call(alice)).isError).toBe(true);

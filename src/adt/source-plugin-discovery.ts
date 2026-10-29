@@ -83,6 +83,29 @@ export async function discoverSourcePlugins(
           return protocol(() => sourcePluginResources(response.body, unit));
         });
         legacy ||= resources.legacyUnadvertised === true;
+        let source = current.source ?? session.sourceCache.get(key);
+        const readSource = () =>
+          session.read(unit.type, async (options) => {
+            const response = await client.http.get(
+              `${resources.sourceUri}?version=active`,
+              { Accept: 'text/plain' },
+              options,
+            );
+            return response.body;
+          });
+        let selectedFunctionSourceUri: string | undefined;
+        if (session.mode === 'sources' && unit.type === 'INCL' && mainUnit.type === 'FUGR') {
+          source ??= await readSource();
+          // A structural Uxx include's location uses its function's public ADT source route.
+          // Bind that alias to the first real FUNCTION header in this actually-read include.
+          const first =
+            source.length <= 256 * 1024 ? source.replace(/^\*[^\r\n]*|^\s*"[^\r\n]*/gm, '').trimStart() : '';
+          const functionName = /^FUNCTION\s+((?:\/[A-Z0-9_]+\/)?[A-Z0-9_]+)(?=[\s.])/i.exec(first)?.[1];
+          if (functionName)
+            selectedFunctionSourceUri = protocol(
+              () => `${sourcePluginObjectUri({ type: 'FUNC', name: functionName, group: mainUnit.name })}/source/main`,
+            );
+        }
         if (session.mode === 'summary' && resources.identities) {
           Object.assign(provider, {
             coverage: 'direct_identities',
@@ -122,6 +145,7 @@ export async function discoverSourcePlugins(
                 mainObjectUri,
                 selectedObjectUri: resources.objectUri,
                 selectedSourceUri: resources.sourceUri,
+                selectedFunctionSourceUri,
                 sources: session.mode === 'sources',
                 maxImplementations: session.limits.nodes - (session.mode === 'sources' ? seen.size : 0),
               }),
@@ -133,17 +157,7 @@ export async function discoverSourcePlugins(
           session.result.issues.push(`enhancement_relation_not_advertised:${unit.type}:${unit.name}`);
         }
         if (session.mode !== 'sources') return;
-        let source = current.source ?? session.sourceCache.get(key);
-        if (source === undefined) {
-          source = await session.read(unit.type, async (options) => {
-            const response = await client.http.get(
-              `${resources.sourceUri}?version=active`,
-              { Accept: 'text/plain' },
-              options,
-            );
-            return response.body;
-          });
-        }
+        source ??= await readSource();
         session.sourceCache.set(key, source);
         if (Buffer.byteLength(source) > 256 * 1024) {
           session.omit('sources');
@@ -159,7 +173,7 @@ export async function discoverSourcePlugins(
           }
           const child = { type: 'INCL' as const, name: include.name };
           const childKey = extensionKey({ ...child, version: 'active' });
-          session.result.edges.push({ from: key, to: childKey, kind: 'include', location: `line ${include.line}` });
+          session.addEdge({ from: key, to: childKey, kind: 'include', location: `line ${include.line}` });
           if (seen.has(childKey)) continue;
           if (depth >= session.limits.depth) {
             session.omit('depth');
@@ -234,7 +248,7 @@ function recordGraph(
     )
       continue;
     for (const plugin of impl.plugins) {
-      session.result.edges.push({
+      session.addEdge({
         from: sourceKey,
         to: extensionKey(impl),
         kind: 'attachment',
@@ -257,7 +271,7 @@ function recordGraph(
     }
   }
   for (const edge of graph.edges)
-    session.result.edges.push({
+    session.addEdge({
       from: keys.get(edge.from) ?? edge.from,
       to: keys.get(edge.to) ?? edge.to,
       kind: edge.kind,

@@ -68,6 +68,8 @@ export interface PluginParseOptions {
   /** An include can own its own plug-ins even when read with an enclosing main-object context. */
   selectedObjectUri?: string;
   selectedSourceUri?: string;
+  /** Adapter-verified FUNCTION header of a physical FUGR include; never a metadata fetch target. */
+  selectedFunctionSourceUri?: string;
   sources: boolean;
   maxImplementations?: number;
   maxDecodedBytes?: number;
@@ -152,6 +154,11 @@ export function parseSourcePluginElements(xml: string, options: PluginParseOptio
               .filter(Boolean)
               .map((p) => p!.toUpperCase()),
           );
+          if (
+            options.mainObjectUri.startsWith('/sap/bc/adt/functions/groups/') &&
+            options.selectedFunctionSourceUri?.startsWith(`${options.mainObjectUri}/fmodules/`)
+          )
+            allowed.add(options.selectedFunctionSourceUri.toUpperCase());
           if (
             selected.startsWith('/sap/bc/adt/programs/includes/') &&
             options.mainObjectUri.startsWith('/sap/bc/adt/functions/groups/')
