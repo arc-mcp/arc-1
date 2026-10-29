@@ -6,7 +6,8 @@ identities bound to the owning class. Empty hooks do not imply an empty native r
 CL_OO_ADT_ENHANCED_CLASS has a structural enhancement despite empty authored/hook source.
 
 The native provider requires exact activeContext, active root identity and parent/child references
-bound to that root. It retains enhancement-to-base edges and native ENHO types. An ENHO/XH identity
+connected to that root through validated ENHO ownership. Native nested edges retain their direction;
+hook replacement semantics come from the separate source element response. It retains enhancement-to-base edges and native ENHO types. An ENHO/XH identity
 is not proof of its enhancement technology or runtime switch applicability. ENV/WUL consumers retain
 their original behavior. INTF ENV fallback is unsupported_context; 750's unsupported provider is
 reported explicitly. Positive interface coverage and other SAP releases/BTP remain unqualified.

@@ -6,6 +6,8 @@ data are included. Source fixture line endings may be normalized by Git; the ada
 actual response source unchanged.
 
 - `class-exted.xml`: A4H exact EXTED_OBJ identity/edge for CL_OO_ADT_ENHANCED_CLASS.
+- `class-hook-native.xml`: fresh 758 EXTED_OBJ graph with nested enhancement ownership;
+  the native parent/child edges do not themselves identify hook replacement semantics.
 - `interface-env.xml`: A4H's ENV fallback for IF_DSH_ENHANCED_OPTIONS; negative coverage evidence.
 - `class-feed.xml`, `class-generated.abap`: exact REPS owner, active id 00000 and generated parent.
 - `method-feed.xml`, `method-generated.abap`: the EM001 child actually named by that parent;

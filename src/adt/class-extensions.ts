@@ -19,9 +19,45 @@ import {
   relationObjectUri,
 } from './repository-relations.js';
 import { RevisionHistoryError } from './revision-feed.js';
+import { discoverSourcePlugins, type SourcePluginSelection } from './source-plugin-discovery.js';
 
 const PROVIDER = 'class_exted_obj';
 const FAMILY = 'class_bound_enhancement';
+
+/** Both providers share one session, while main/local hook coverage stays selected-source scoped. */
+export async function discoverClassExtensions(
+  client: AdtClient,
+  session: ExtensionDiscoverySession,
+  request: ExtensionRequest,
+  selection: SourcePluginSelection,
+  release?: string,
+): Promise<void> {
+  const identities = await discoverClassIdentities(client, session, request);
+  if (request.root.type === 'INTF') return;
+  if (session.stopped) {
+    session.result.providers.push({
+      id: 'source_plugins',
+      family: 'source_plugin',
+      status: 'incomplete',
+      coverage: 'selected_source',
+      reason: 'optional_phase_stopped',
+      nested: 'not_expanded',
+    });
+    return;
+  }
+  await discoverSourcePlugins(client, session, request, selection);
+  const hooks = session.result.providers.find((provider) => provider.id === 'source_plugins');
+  if (hooks) hooks.reason = `class_section=${selection.unit.section ?? 'main'}; ${hooks.reason ?? ''}`;
+  // Rendered hooks already represent these implementations; generated fallback is for missing sources.
+  const missing = identities.filter(
+    (node) =>
+      !session.result.sources.some(
+        (source) =>
+          source.identity.name.toUpperCase() === node.name.toUpperCase() && source.identity.version === 'active',
+      ),
+  );
+  await discoverClassSources(client, session, missing, release);
+}
 
 /** Normalize untrusted provider failures inside session.read so malformed responses stop the phase. */
 async function protocol<T>(operation: () => Promise<T>): Promise<T> {
@@ -98,14 +134,31 @@ export async function discoverClassIdentities(
       provider.reason = 'unsupported_context';
       return;
     }
-    // The native normalizer retains direction; validate subtype paths before exposing/fetching identities.
-    const selected = network.objects.filter(
-      (object) =>
-        /^ENHO\//.test(object.type) && network.edges.some((edge) => edge.from === object.uri && edge.to === root.uri),
+    // EXTED_OBJ can return a nested graph in one response. Walk only ENHO-to-owner paths rooted here.
+    const eligible = new Map(
+      network.objects.filter((object) => /^ENHO\//.test(object.type)).map((object) => [object.uri, object]),
     );
+    const depths = new Map([[root.uri, -1]]);
+    const pending = [root.uri];
+    const children = new Map<string, string[]>();
+    for (const edge of network.edges) {
+      if (!eligible.has(edge.from)) continue;
+      const list = children.get(edge.to) ?? [];
+      list.push(edge.from);
+      children.set(edge.to, list);
+    }
+    for (let index = 0; index < pending.length; index++) {
+      const parent = pending[index]!;
+      for (const child of children.get(parent) ?? []) {
+        if (depths.has(child)) continue;
+        depths.set(child, depths.get(parent)! + 1);
+        pending.push(child);
+      }
+    }
     const identities = new Map<string, ExtensionNode>();
     await session.read('ENHO', async () => {
-      for (const object of selected) {
+      for (const uri of pending.slice(1)) {
+        const object = eligible.get(uri)!;
         const collection = { 'ENHO/XH': 'enhoxh', 'ENHO/XHH': 'enhoxhh', 'ENHO/XHB': 'enhoxhb' }[object.type];
         if (
           !collection ||
@@ -123,18 +176,23 @@ export async function discoverClassIdentities(
           family: FAMILY,
           applicability: 'unknown',
         };
-        if (session.addNode(node)) {
+        if (session.addNode(node, session.mode === 'summary' ? 0 : depths.get(uri))) {
           identities.set(object.uri, node);
           nodes.push(node);
         }
       }
     });
+    provider.coverage = 'bounded_traversal';
+    provider.nested = 'bounded';
+    provider.reason =
+      'provider_returned_EXTED_OBJ_graph; owning_object_scope; technology and runtime applicability unknown';
     for (const edge of network.edges) {
       const node = identities.get(edge.from);
-      if (node && edge.to === root.uri)
+      const parent = identities.get(edge.to);
+      if (node && (edge.to === root.uri || parent))
         session.result.edges.push({
           from: extensionKey(node),
-          to: extensionKey(request.root),
+          to: extensionKey(parent ?? request.root),
           kind: 'extends',
           location: 'EXTED_OBJ; enhancement_to_base',
         });
@@ -178,11 +236,23 @@ export async function discoverClassSources(
       const source = await session.read('ENHO', (options) =>
         protocol(async () => {
           const source = await readActiveClassEnhancementSource(guarded, node, options, release);
+          const expectedOwners = [
+            { ...session.request.root, type: 'CLAS/OC', uri: relationObjectUri('CLAS', session.request.root.name) },
+            ...session.result.nodes.filter((parent) =>
+              session.result.edges.some(
+                (edge) =>
+                  edge.kind === 'extends' && edge.from === extensionKey(node) && edge.to === extensionKey(parent),
+              ),
+            ),
+          ];
           if (
             source.enhancedObject &&
-            (source.enhancedObject.uri !== relationObjectUri('CLAS', session.request.root.name) ||
-              source.enhancedObject.name.toUpperCase() !== session.request.root.name.toUpperCase() ||
-              source.enhancedObject.type !== 'CLAS/OC')
+            !expectedOwners.some(
+              (owner) =>
+                source.enhancedObject!.uri === owner.uri &&
+                source.enhancedObject!.type === owner.type &&
+                source.enhancedObject!.name.toUpperCase() === owner.name.toUpperCase(),
+            )
           )
             throw new ExtensionProtocolError('Enhancement source belongs to another class.');
           return source;

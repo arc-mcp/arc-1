@@ -155,7 +155,7 @@ export function normalizeRelationNetwork<C extends RelationContext>(
     if (
       raw['@_relationType'] !== 'parentChild' ||
       raw['@_state'] !== 'A' ||
-      a !== requested.uri ||
+      (context !== 'EXTED_OBJ' && a !== requested.uri) ||
       !objects.has(a) ||
       !objects.has(b)
     )
