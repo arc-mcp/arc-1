@@ -2,7 +2,12 @@
 
 import { AdtSafetyError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
-import { assertMutationContext, type MutationContext, pinnedSessionCleanup } from './mutation-context.js';
+import {
+  assertMutationContext,
+  type MutationContext,
+  type PinnedMutationContext,
+  pinnedSessionCleanup,
+} from './mutation-context.js';
 import type { SafetyConfig } from './safety.js';
 
 const facades = new WeakMap<AdtHttpClient, { http: AdtHttpClient; context: MutationContext }>();
@@ -25,6 +30,7 @@ export function withMutationSession<T>(
   assertMutationContext(safety, context);
   const owning = owningHttp(http, context);
   if (context.mode === 'single-target') return owning.withStatefulSession(fn);
+  if (cleanup && !Number.isFinite(cleanup.timeoutMs)) throw new AdtSafetyError('Invalid mutation cleanup budget.');
   const boundedCleanup = pinnedSessionCleanup(context);
   return owning.withStatefulSession(fn, {
     ...boundedCleanup,
@@ -36,13 +42,18 @@ export function withMutationSession<T>(
   });
 }
 
-function composeOptions(policy: AdtRequestOptions, options?: AdtRequestOptions): AdtRequestOptions {
+function composeOptions(
+  policy: PinnedMutationContext['requestPolicy'],
+  options?: AdtRequestOptions,
+): AdtRequestOptions {
+  if (options?.deadline !== undefined && !Number.isFinite(options.deadline))
+    throw new AdtSafetyError('Invalid nested mutation deadline.');
   const signals = [policy.signal, options?.signal].filter((value): value is AbortSignal => value !== undefined);
   return {
     ...options,
     noReplay: true,
     retryTransientErrors: false,
-    deadline: options?.deadline === undefined ? policy.deadline : Math.min(policy.deadline!, options.deadline),
+    deadline: options?.deadline === undefined ? policy.deadline : Math.min(policy.deadline, options.deadline),
     signal: signals.length > 1 && signals[0] !== signals[1] ? AbortSignal.any(signals) : signals[0],
   };
 }

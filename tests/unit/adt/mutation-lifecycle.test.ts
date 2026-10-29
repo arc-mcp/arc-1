@@ -89,6 +89,15 @@ describe('required mutation context', () => {
 });
 
 describe('request policy reaches the real ADT transport', () => {
+  it('rejects non-finite nested budgets before they can erase the outer deadline', async () => {
+    const { scoped } = fixture();
+    expect(() => scoped.get('/source', undefined, { deadline: Number.NaN })).toThrow('deadline');
+    expect(() =>
+      scoped.withStatefulSession(async () => {}, { timeoutMs: Number.NaN, noReplay: false, onClose: () => {} }),
+    ).toThrow('budget');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('applies policy to every public request method and preserves stricter nested budgets', async () => {
     const { http, scoped, context } = fixture();
     const get = vi.spyOn(http, 'get');

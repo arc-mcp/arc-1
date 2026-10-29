@@ -1,4 +1,4 @@
-/** Small reviewed write pipeline for pinned PP targets. General single-target writes stay separate. */
+/** Pinned PP policy and source adapter over the shared lock/session lifecycle. */
 import type { AdtClient } from '../../adt/client.js';
 import { withLockedMutation } from '../../adt/crud.js';
 import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
@@ -16,16 +16,15 @@ import type { ServerConfig } from '../../server/types.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import { objectUrlForType } from '../object-types.js';
 import { type ToolResult, textResult, toolJson } from '../shared.js';
-import { pinnedFailure } from './pinned-result.js';
-
-export { pinnedFailure } from './pinned-result.js';
-
 import {
   buildCreateXml,
   enforceAllowedPackageForObjectUrl,
   runPreWriteLint,
   runPreWriteSyntaxCheck,
 } from '../write-helpers.js';
+import { pinnedFailure } from './pinned-result.js';
+
+export { pinnedFailure } from './pinned-result.js';
 
 export async function handlePinnedWrite(
   client: AdtClient,
