@@ -32,6 +32,8 @@ describe('pre-write lint uses the supplied object type', () => {
     ['INCL', localInterfaceInclude],
     ['INCL', 'DATA lv TYPE i.\nFORM run.\nlv = 1.\nENDFORM.'],
     ['INCL', 'MODULE status_0100 OUTPUT.\nENDMODULE.'],
+    ['INCL', 'FUNCTION-POOL zfg.'],
+    ['INCL', 'FUNCTION z_func.\nENDFUNCTION.'],
     ['CLAS', '* header\nCLASS z_test DEFINITION PUBLIC.\nENDCLASS.\nCLASS z_test IMPLEMENTATION.\nENDCLASS.'],
     ['INTF', '"! header\nINTERFACE z_test PUBLIC.\nMETHODS run.\nENDINTERFACE.'],
   ])('accepts valid %s source: %s', (type, source) => {
@@ -41,6 +43,8 @@ describe('pre-write lint uses the supplied object type', () => {
   it.each([
     ['PROG', `${modulePool}\nINVALID SYNTAX HERE.`, 'parser_error'],
     ['INCL', 'FORM run.\nINVALID SYNTAX HERE.\nENDFORM.', 'parser_error'],
+    ['INCL', 'FUNCTION-POOL zfg.\nINVALID SYNTAX HERE.', 'parser_error'],
+    ['INCL', 'FUNCTION z_func.\nINVALID SYNTAX HERE.\nENDFUNCTION.', 'parser_error'],
     ['CLAS', 'CLASS z_test DEFINITION PUBLIC.\nINVALID SYNTAX HERE.\nENDCLASS.', 'parser_error'],
     ['INTF', 'INTERFACE z_test PUBLIC.\nINVALID SYNTAX HERE.\nENDINTERFACE.', 'parser_error'],
     ['CLAS', 'REPORT z_test.\nWRITE / 1.', 'Expected CLASSDEFINITION'],
@@ -65,6 +69,13 @@ describe('pre-write lint uses the supplied object type', () => {
     expect(runPreWriteLint(invalidCds, 'DDLS', 'Z_TEST', { ...config, lintBeforeWrite: false }, true).blocked).toBe(
       true,
     );
+  });
+
+  it('keeps source-based function signatures unsupported in INCL, as with the old FUGR parser selection', () => {
+    const source = 'FUNCTION z_func\n  IMPORTING\n    VALUE(iv_value) TYPE i\n.\nENDFUNCTION.';
+    const lint = runPreWriteLint(source, 'INCL', 'Z_TEST', config);
+    expect(lint.blocked).toBe(true);
+    expect(lint.result?.content[0]?.text).toContain('parser_error');
   });
 
   it.each([
@@ -116,5 +127,19 @@ describe('pre-write lint uses the supplied object type', () => {
       .filter(([, opts]) => opts?.method === 'PUT')
       .map(([url, opts]) => ({ path: new URL(String(url)).pathname, source: opts.body }));
     expect(writes).toContainEqual({ path: '/sap/bc/adt/programs/programs/Z_TEST/source/main', source: modulePool });
+  });
+
+  it('normalizes batch aliases and rejects a bad second item before creating the valid first item', async () => {
+    const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+      action: 'batch_create',
+      objects: [
+        { type: 'PROG/P', name: 'Z_TEST', package: '$TMP', source: modulePool },
+        { type: 'DDLS/DF', name: 'Z_BAD', package: '$TMP', source: invalidCds.replace('Z_TEST', 'Z_BAD') },
+      ],
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('cds_parser_error');
+    expect(result.content[0]?.text).not.toContain('CLASSDEFINITION');
+    expect(mockFetch.mock.calls.filter(([, opts]) => ['POST', 'PUT', 'DELETE'].includes(opts?.method))).toEqual([]);
   });
 });

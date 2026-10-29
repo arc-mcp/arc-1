@@ -95,7 +95,7 @@ changes. Roadmap checked at start and end: no roadmap impact.
 ## Verification (29 October)
 
 Built revision `06cb250e7ca8399468445e4f71f2d4467e0165a9` (original contributor commits preserved, merged with
-main `721755d5`). Node 24.11.1. `npm test`: **375 files / 10,351 tests passed**. Typecheck, Biome lint,
+main `721755d5`). Node 24.11.1. Final `npm test`: **375 files / 10,357 tests passed**. Typecheck, Biome lint,
 policy validation, build and file/tool-schema budgets passed; Biome reports two existing informational findings
 outside this diff. The new routing tests expose eight failures on the original PR code before the mapping.
 
@@ -118,6 +118,14 @@ An earlier run (`ZAL780F4A79C9*`) passed batch creation/activation and initial r
 `AdtNetworkError: ADT network error: fetch failed` during the independent read after DDLS update/activation.
 Its cleanup also verified all four names absent. The fresh run used new names and unchanged assertions;
 no retries were added. The network failure's cause remains uninvestigated and is not attributed to this fix.
+
+Claude Code 2.1.308, `claude-opus-5-5` with Max effort, reviewed the supplied plan/code and final diff.
+Final review found no blocking defect. Follow-up tests cover FUNCTION-POOL/FUNCTION-shaped INCL sources
+(valid and invalid), slash-type batch normalization and rejection of a bad second batch item before any write.
+Source-based function signatures remain unsupported by both the old FUGR selection and the program parser;
+FUNC still skips the automatic gate. Direct inspection confirmed that class include update/method-surgery
+paths already bypass this gate. Existing fragment limitations in RAP scaffolding, custom lint rules and
+namespaced filenames are outside this change; no broader support is claimed.
 
 Limits: the live PROG was an executable program whose first line is INCLUDE, not a program with module-pool
 metadata. INCLUDE/MODULE source and table-function/new-DDL routing are covered by local parser tests. No live
