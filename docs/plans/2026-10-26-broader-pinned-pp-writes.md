@@ -181,6 +181,10 @@ All new adapters receive PR 1's scoped HTTP facade, including direct HTTP calls 
 FLP, trace, formatter, CTS and publication helpers. Its policy reaches every modifying request;
 session-close options or `postCreate` alone do not establish no-replay behavior. Ordinary reads
 outside the mutation scope retain their current policies.
+Include package-hierarchy dependency reads made during mutation validation: the existing
+`getPackageHierarchyResolver()` uses the raw client without the mutation deadline/signal.
+This predates PR 1 and is not a replayed-write gap, but PR 2 must propagate the scope there too.
+Test a subtree allowlist with cancellation during hierarchy resolution and assert no later GET/save.
 
 ### Mapped SAP identity inventory
 

@@ -92,6 +92,12 @@ it.each([false, true])('isolates overlapping users and cleanup; same target=%s',
   expect(requests.filter((request) => request.method === 'PUT').map((request) => request.target)).toEqual(['second']);
   for (const { target, cleanup } of contexts) {
     expect(cleanup).toEqual({ unlockFailed: false, sessionClosed: true });
+    const own = requests.filter((request) => request.target === target);
+    for (const request of own) {
+      expect(new URL(request.url).hostname).toBe(`${sameTarget ? 'shared' : target}.example.com`);
+      if (['POST', 'PUT', 'DELETE'].includes(request.method))
+        expect(request.headers['X-CSRF-Token']).toBe(`csrf-${target}`);
+    }
     const unlocks = requests.filter((request) => request.target === target && request.url.includes('_action=UNLOCK'));
     expect(unlocks).toHaveLength(1);
     expect(unlocks[0]!.headers.Cookie).toContain(`sap-contextid=session-${target}`);

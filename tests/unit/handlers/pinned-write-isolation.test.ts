@@ -122,8 +122,10 @@ it('keeps concurrent pinned recording, save, result and audit evidence on their 
       const saves = own.filter((request) => request.method === 'PUT');
       expect(saves).toHaveLength(1);
       expect(saves[0]!.path).toContain(`corrNr=${transport(host)}`);
+      expect(saves[0]!.path).toContain(`lockHandle=lock-${host}`);
       expect(saves[0]!.body).toContain(`* ${host}`);
       expect(own.find((request) => request.path.includes('_action=UNLOCK'))?.cookie).toContain(`session-${host}`);
+      expect(own.find((request) => request.path.includes('_action=UNLOCK'))?.path).toContain(`lockHandle=lock-${host}`);
       const events = audit.mock.calls
         .map(([event]) => event)
         .filter((event) => event.event.startsWith('tool_call_') && event.requestId === `request-${host}`);

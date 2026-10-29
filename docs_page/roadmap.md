@@ -191,20 +191,22 @@ transportable packages, with exact target write grants and independent server/de
 The owner selected broader built-in development and management parity, including object types,
 includes, deletes, batches, package changes, RAP/DDIC, publication, transport management, runtime
 tracing and classic FLP. Git and custom extensions/plugins are excluded. None of this expansion
-is implemented by the planning work; aggregate and Basic writes remain excluded.
+is enabled by the shared-infrastructure extraction; aggregate and Basic writes remain excluded.
 
 **Design evidence.** The [26 October research](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-26-multi-target-write-parity.md)
 separates accepted scope from proposed resource policies and live qualification gaps. It proposes
 [PR 1](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-shared-mutation-infrastructure.md)
-for behavior-preserving shared mutation infrastructure, followed by
+for behavior-preserving shared mutation infrastructure, now implemented for review with
+[separate qualification evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-29-shared-mutation-infrastructure.md), followed by
 [PR 2](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-broader-pinned-pp-writes.md)
 for the capability expansion. Existing opted-in writers may gain the documented capabilities;
 read-only applications/destinations must remain mutation-free.
 Author review and two Claude Code Opus 5.5 max reviews are recorded with findings and dispositions
-in the research record. Both plans can guide implementation; live qualification remains outstanding.
+in the research record. The remaining implementation is PR 2's capability expansion; its live
+qualification remains outstanding.
 
-**Resume when.** Implementation is requested. Keep PR 1's existing
-behavior unchanged; PR 2 requires a new reviewed ADR qualifying ADR-0010, explicit per-operation
+**Resume when.** PR 1 is accepted and the owner requests PR 2. Preserve the shared foundation's
+existing behavior; PR 2 requires a new reviewed ADR qualifying ADR-0010, explicit per-operation
 resource policies, negative tests and real PP evidence. Do not remove the explicit action matrix
 or add a duplicate global write switch. Caching, SaaS and embedding remain separate work. The
 roadmap entry stays open until the expanded scope is implemented and verified.

@@ -3,6 +3,8 @@
 Date: 26 October 2026. Baseline: `e538bf71197ddb47ea74aca225c340a856d331af`
 (package version 1.9.0). This is a planning record, not evidence that broader writes exist.
 No SAP requests, deployment changes or runtime edits were made for this research.
+The subsequent PR 1 implementation and its separate test evidence are recorded
+[on 29 October](2026-10-29-shared-mutation-infrastructure.md).
 
 Implementation plans:
 

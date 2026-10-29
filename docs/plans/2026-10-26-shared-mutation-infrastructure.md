@@ -1,8 +1,9 @@
 # PR 1: shared mutation infrastructure
 
-Status: proposed implementation plan; no runtime changes in this planning branch.
+Status: implemented for review on 29 October 2026; see the
+[implementation and qualification record](../research/2026-10-29-shared-mutation-infrastructure.md).
 Date: 26 October 2026. Baseline: `e538bf71197ddb47ea74aca225c340a856d331af`.
-Proposed PR title: `refactor: share mutation lifecycle primitives without changing write behavior`.
+PR title: `refactor: share mutation lifecycle across existing write paths`.
 Followed by [PR 2](2026-10-26-broader-pinned-pp-writes.md).
 Context and owner decisions: [research record](../research/2026-10-26-multi-target-write-parity.md).
 
