@@ -55,3 +55,8 @@ coverage on explicit line-window reads, default suppression on partial reads, un
 inactive coverage, and base preservation after optional 401/403/429 or wrong-context data.
 Candidate parsing also treats an unverifiable HTTP 200 body as incomplete, and entity
 attachments obey the shared graph-edge cap with explicit omissions.
+
+`final-public-a4h.json` repeats the public check at `d7f1491d`, after all family routing,
+class history guards and omission fixes were integrated. The saved source-tree hash binds
+this run to the final code. All base blocks remained identical; both extensions were verified.
+Summary used five sends / 4,026 bytes / 1,085 ms, sources three sends / 3,894 bytes / 746 ms.

@@ -81,6 +81,12 @@ records identical base hashes for none/summary/sources. Summary used five sends,
 sends, 3,894 bytes, and 848 ms. This is an observation with warm capability discovery,
 not a latency guarantee. Cold discovery can exhaust its own optional allowance.
 
+A [final public rerun](2026-10-29-bdef-extension-implementation/final-public-a4h.json)
+at `d7f1491d` rechecked the complete final source tree (SHA-256
+`9c3ee9533ac1cf960783936efce3a636243969eb082e653a9b2cff97fe11140e`). All
+three modes again preserved the base. Summary verified both extensions in 1,085 ms,
+five sends and 4,026 bytes; sources used 746 ms, three sends and 3,894 bytes.
+
 Family evidence and reproduction commands are in the
 [DDIC report](2026-10-29-ddic-extension-implementation/README.md),
 [source report](2026-10-29-source-plugin-discovery/README.md),
