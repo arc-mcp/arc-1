@@ -85,4 +85,28 @@ describe('combined class providers', () => {
     expect(result.edges.filter((edge) => edge.kind === 'replacement')).toHaveLength(3);
     expect(result.sources).toHaveLength(8);
   });
+  it('reports unqualified source coverage for a hypothetical exact interface context', async () => {
+    const iface = relationObject('IF_FUTURE', 'INTF/OI');
+    const enho = { ...iface, name: 'ZFUTURE', type: 'ENHO/XH', uri: '/sap/bc/adt/enhancements/enhoxh/zfuture' };
+    const req = {
+      root: { type: 'INTF', name: iface.name, version: 'active' },
+      scope: 'synthetic interface qualification boundary',
+    };
+    const safety = defaultSafetyConfig();
+    const session = new ExtensionDiscoverySession('sources', req, safety);
+    const get = vi.fn(async () => ({ body: '<abapInterface name="IF_FUTURE" type="INTF/OI" version="active"/>' }));
+    const client = {
+      safety,
+      http: { get, post: vi.fn(async () => ({ body: relationXml(iface, [enho], 'EXTED_OBJ') })) },
+    } as unknown as AdtClient;
+    await discoverClassExtensions(client, session, req, { unit: { type: 'CLAS', name: iface.name } });
+    expect(session.result.providers[0]?.id).toBe('interface_exted_obj');
+    expect(session.result.providers[1]).toMatchObject({
+      status: 'unsupported',
+      reason: 'interface_source_provider_unqualified',
+    });
+    expect(session.result.sources).toEqual([]);
+    expect(session.result.omissions.sources).toBe(1);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
 });

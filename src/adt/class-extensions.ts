@@ -33,7 +33,19 @@ export async function discoverClassExtensions(
   release?: string,
 ): Promise<void> {
   const identities = await discoverClassIdentities(client, session, request);
-  if (request.root.type === 'INTF') return;
+  if (request.root.type === 'INTF') {
+    if (session.mode === 'sources' && identities.length) {
+      session.result.providers.push({
+        id: 'interface_source',
+        family: 'interface_extension',
+        status: 'unsupported',
+        coverage: 'selected_source',
+        reason: 'interface_source_provider_unqualified',
+      });
+      session.omit('sources', identities.length);
+    }
+    return;
+  }
   if (session.stopped) {
     session.result.providers.push({
       id: 'source_plugins',
@@ -77,8 +89,8 @@ export async function discoverClassIdentities(
 ): Promise<ExtensionNode[]> {
   const nodes: ExtensionNode[] = [];
   const provider: ExtensionProvider = {
-    id: PROVIDER,
-    family: FAMILY,
+    id: request.root.type === 'INTF' ? 'interface_exted_obj' : PROVIDER,
+    family: request.root.type === 'INTF' ? 'interface_extension' : FAMILY,
     status: 'returned',
     coverage: 'direct_identities',
     version: 'provider_current',
@@ -172,8 +184,8 @@ export async function discoverClassIdentities(
           name: object.name,
           version: 'active',
           uri: object.uri,
-          provider: PROVIDER,
-          family: FAMILY,
+          provider: provider.id,
+          family: provider.family,
           applicability: 'unknown',
         };
         if (session.addNode(node, session.mode === 'summary' ? 0 : depths.get(uri))) {
