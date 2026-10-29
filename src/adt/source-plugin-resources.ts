@@ -64,7 +64,7 @@ export function sourcePluginResources(xml: string, unit: SourcePluginUnit): Sour
   const sourceUri = `${objectUri}/${unit.type === 'CLAS' && section !== 'main' ? `includes/${section}` : 'source/main'}`;
   let selected = meta;
   if (unit.type === 'CLAS') {
-    const includes = rows((meta.includes as Row | undefined)?.include);
+    const includes = rows(meta.include);
     selected = includes.find((i) => attr(i, 'includeType') === section) ?? {};
   }
   const find = (container: Row, relation: string, expectedPaths: string[]) => {

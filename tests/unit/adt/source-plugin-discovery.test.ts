@@ -40,6 +40,44 @@ const rootRoutes = {
   [`${base}/source/main/enhancements/elements`]: empty,
 };
 describe('source plugin discovery', () => {
+  it.each(['750', '758'])('exposes the complete class fixture graph to the stage 3 caller on %s', async (version) => {
+    const unit = { type: 'CLAS' as const, name: 'CL_SEEF_ADT_TEST_AUNIT_1' };
+    const uri = '/sap/bc/adt/oo/classes/cl_seef_adt_test_aunit_1';
+    const request = { root: { ...unit, version: 'active' }, scope: 'class main' };
+    const s = setup(
+      'sources',
+      {
+        [`${uri}?version=active`]: fixture(`class-metadata-${version}.xml`),
+        [`${uri}/source/main/enhancements${version === '758' ? '/elements' : ''}`]: fixture(`class-${version}.xml`),
+      },
+      [],
+      request,
+    );
+    await discoverSourcePlugins(s.client, s.session, request, { unit, source: '' });
+    expect(s.session.result.nodes).toHaveLength(7);
+    expect(s.session.result.edges.filter((e) => e.kind === 'replacement')).toHaveLength(3);
+    expect(s.session.result.sources).toHaveLength(8);
+    expect(s.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not borrow class-main identities for a selected local section', async () => {
+    const unit = { type: 'CLAS' as const, name: 'CL_SEEF_ADT_TEST_AUNIT_1', section: 'definitions' as const };
+    const uri = '/sap/bc/adt/oo/classes/cl_seef_adt_test_aunit_1';
+    const request = { root: { type: 'CLAS', name: unit.name, version: 'active' }, scope: 'class definitions' };
+    const s = setup(
+      'summary',
+      {
+        [`${uri}?version=active`]: fixture('class-metadata-758.xml'),
+        [`${uri}/includes/definitions/enhancements/elements`]: empty,
+      },
+      [],
+      request,
+    );
+    await discoverSourcePlugins(s.client, s.session, request, { unit });
+    expect(s.session.result.nodes).toEqual([]);
+    expect(s.session.result.providers[0]?.coverage).toBe('selected_source');
+    expect(s.get).toHaveBeenCalledTimes(2);
+  });
   it('uses the qualified unadvertised 750 resource without inferring a 758 route', async () => {
     const unit = { type: 'PROG' as const, name: 'ENH_NESTED_DEMO' };
     const uri = '/sap/bc/adt/programs/programs/enh_nested_demo';
