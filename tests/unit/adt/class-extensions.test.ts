@@ -161,6 +161,22 @@ describe('class-bound enhancements', () => {
     expect(s.get).not.toHaveBeenCalled();
     expect(s.post).not.toHaveBeenCalled();
   });
+  it('does not turn unresolved authorization followed by unsupported context into another provider read', async () => {
+    const s = setup({ network: fixture('class-exted.xml').replaceAll('EXTED_OBJ', 'ENV') });
+    s.session.options.attemptBudget!.authorizationFailureObserved = true;
+    const result = await s.run();
+    expect(s.session.stopped).toBe(true);
+    expect(result.providers[0]?.status).toBe('incomplete');
+    expect(s.getRevisions).not.toHaveBeenCalled();
+  });
+  it('does not use a qualified source fallback after unresolved authorization', async () => {
+    const s = setup();
+    const nodes = await discoverClassIdentities(s.client, s.session, s.request);
+    s.session.options.attemptBudget!.authorizationFailureObserved = true;
+    await discoverClassSources(s.client, s.session, nodes, '750');
+    expect(s.session.stopped).toBe(true);
+    expect(s.getRevisions).not.toHaveBeenCalled();
+  });
   it('keeps ENHO technology unknown and qualifies only the observed release-specific failures', () => {
     const err = new AdtApiError('unsupported', 500, '/enho', unsupported);
     expect(enhancementSourceUnavailable(err, '750')).toBe(true);

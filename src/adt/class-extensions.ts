@@ -75,13 +75,18 @@ export async function discoverClassIdentities(
           try {
             return await native.lookupExtending(root);
           } catch (error) {
-            if (error instanceof RelationContextError) return undefined;
+            if (error instanceof RelationContextError && !session.options.attemptBudget?.authorizationFailureObserved)
+              return undefined;
             throw error;
           }
         }),
       );
     } catch (error) {
-      if (error instanceof AdtApiError && [404, 405, 406, 501].includes(error.statusCode)) {
+      if (
+        error instanceof AdtApiError &&
+        !session.options.attemptBudget?.authorizationFailureObserved &&
+        [404, 405, 406, 501].includes(error.statusCode)
+      ) {
         provider.status = 'unsupported';
         provider.reason = 'unsupported_provider';
         return;
