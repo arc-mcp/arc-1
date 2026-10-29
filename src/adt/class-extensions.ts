@@ -233,30 +233,16 @@ export async function discoverClassSources(
           session.read('INCL', (options) => client.getRevisions(args[0], args[1], args[2], options)),
         getRevisionSource: (uri: string) => session.read('INCL', (options) => client.getRevisionSource(uri, options)),
       };
+      const expectedOwners = [
+        { ...session.request.root, type: 'CLAS/OC', uri: relationObjectUri('CLAS', session.request.root.name) },
+        ...session.result.nodes.filter((parent) =>
+          session.result.edges.some(
+            (edge) => edge.kind === 'extends' && edge.from === extensionKey(node) && edge.to === extensionKey(parent),
+          ),
+        ),
+      ];
       const source = await session.read('ENHO', (options) =>
-        protocol(async () => {
-          const source = await readActiveClassEnhancementSource(guarded, node, options, release);
-          const expectedOwners = [
-            { ...session.request.root, type: 'CLAS/OC', uri: relationObjectUri('CLAS', session.request.root.name) },
-            ...session.result.nodes.filter((parent) =>
-              session.result.edges.some(
-                (edge) =>
-                  edge.kind === 'extends' && edge.from === extensionKey(node) && edge.to === extensionKey(parent),
-              ),
-            ),
-          ];
-          if (
-            source.enhancedObject &&
-            !expectedOwners.some(
-              (owner) =>
-                source.enhancedObject!.uri === owner.uri &&
-                source.enhancedObject!.type === owner.type &&
-                source.enhancedObject!.name.toUpperCase() === owner.name.toUpperCase(),
-            )
-          )
-            throw new ExtensionProtocolError('Enhancement source belongs to another class.');
-          return source;
-        }),
+        protocol(() => readActiveClassEnhancementSource(guarded, node, options, expectedOwners, release)),
       );
       if (source.source === undefined) {
         provider.status = 'unsupported';

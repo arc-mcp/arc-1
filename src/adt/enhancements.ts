@@ -42,9 +42,11 @@ export async function readActiveClassEnhancementSource(
   client: Pick<AdtClient, 'http' | 'safety' | 'getRevisions' | 'getRevisionSource'>,
   identity: { name: string; type: string },
   request: AdtRequestOptions,
+  expectedOwners: ReadonlyArray<{ name: string; type: string; uri: string }>,
   release?: string,
 ): Promise<EnhancementImplementationInfo> {
   checkOperation(client.safety, OperationType.Read, 'GetEnhancementImplementation');
+  if (!expectedOwners.length) throw new RevisionHistoryError();
   const include = enhancementIncludeName(identity.name);
   if (identity.type !== 'ENHO/XH' && identity.type !== 'ENHO/XHH')
     throw new AdtError('No qualified class enhancement source provider for this native type.');
@@ -53,6 +55,9 @@ export async function readActiveClassEnhancementSource(
   try {
     const xml = (await client.http.get(`${path}?version=active`, { Accept: accept }, request)).body;
     if (/<!DOCTYPE|<!ENTITY/i.test(xml) || XMLValidator.validate(xml) !== true) throw new RevisionHistoryError();
+    const document = parseXml(xml);
+    const metadata = (document.enhancement ?? document.objectData) as Record<string, unknown> | undefined;
+    if (metadata?.['@_version'] && metadata['@_version'] !== 'active') throw new RevisionHistoryError();
     let result: EnhancementImplementationInfo;
     try {
       result = parseEnhancementMetadata(xml);
@@ -60,6 +65,16 @@ export async function readActiveClassEnhancementSource(
       throw new RevisionHistoryError();
     }
     if (result.name.toUpperCase() !== identity.name.toUpperCase()) throw new RevisionHistoryError();
+    if (
+      result.enhancedObject &&
+      !expectedOwners.some(
+        (owner) =>
+          result.enhancedObject!.uri === owner.uri &&
+          result.enhancedObject!.type === owner.type &&
+          result.enhancedObject!.name.toUpperCase() === owner.name.toUpperCase(),
+      )
+    )
+      throw new RevisionHistoryError();
     if (identity.type === 'ENHO/XHH')
       result.source = (
         await client.http.get(`${path}/source/main?version=active`, { Accept: 'text/plain' }, request)

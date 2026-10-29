@@ -206,10 +206,28 @@ describe('class-bound enhancements', () => {
     if (mismatch) {
       expect(s.session.stopped).toBe(true);
       expect(s.session.result.sources).toEqual([]);
+      expect(s.get).toHaveBeenCalledTimes(1);
     } else
       expect(s.session.result.sources[0]).toMatchObject({
         source: 'unchanged authored source',
         representation: 'authored_source',
       });
+  });
+  it('rejects inactive ENHO metadata before source or revision reads', async () => {
+    const s = setup();
+    const node = {
+      type: 'ENHO/XHH',
+      name: enhancement,
+      version: 'active',
+      uri: '',
+      provider: 'class_exted_obj',
+      family: 'class_bound_enhancement',
+    };
+    s.get.mockResolvedValue({ body: `<enhancement name="${enhancement}" version="inactive"/>` });
+    await discoverClassSources(s.client, s.session, [node], '758');
+    expect(s.session.stopped).toBe(true);
+    expect(s.get).toHaveBeenCalledTimes(1);
+    expect(s.getRevisions).not.toHaveBeenCalled();
+    expect(s.session.result.sources).toEqual([]);
   });
 });
