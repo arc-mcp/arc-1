@@ -6,7 +6,10 @@
  * lists its active version and serves that content. This module only derives the include name
  * and reads one revision; the callers decide when a fallback is appropriate.
  */
+
+import { isActionDenied } from '../server/deny-actions.js';
 import type { AdtClient } from './client.js';
+import { AdtSafetyError } from './errors.js';
 import type { AdtRequestOptions } from './http-deadline.js';
 import { findIncludeStatements } from './include-expansion.js';
 import { canonicalRevisionSourcePath } from './path-safety.js';
@@ -48,11 +51,15 @@ export interface EnhancementIncludeRevision {
  * decide whether the original ENHO or include failure is the better message.
  */
 export async function readEnhancementIncludeRevision(
-  client: Pick<AdtClient, 'getRevisions' | 'getRevisionSource'>,
+  client: Pick<AdtClient, 'safety' | 'getRevisions' | 'getRevisionSource'>,
   includeName: string,
   request?: AdtRequestOptions & { version?: 'active' | 'inactive' },
 ): Promise<EnhancementIncludeRevision | undefined> {
   if (request?.version === 'inactive') return undefined;
+  for (const type of ['INCL', 'VERSIONS', 'VERSION_SOURCE']) {
+    if (isActionDenied('SAPRead', type, client.safety.denyActions))
+      throw new AdtSafetyError(`SAPRead.${type} denied for generated enhancement source.`);
+  }
   const include = includeName.toUpperCase();
   // Parent E and discovered method EMnnn only. Even a metadata-derived name must be checked at the sink.
   const parent = include.slice(0, 31);

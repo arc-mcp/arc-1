@@ -55,6 +55,7 @@ export async function discoverClassExtensions(
       reason: 'optional_phase_stopped',
       nested: 'not_expanded',
     });
+    await discoverClassSources(client, session, identities, release);
     return;
   }
   await discoverSourcePlugins(client, session, request, selection);
@@ -220,9 +221,26 @@ export async function discoverClassSources(
   nodes: ExtensionNode[],
   release?: string,
 ): Promise<void> {
-  if (session.mode !== 'sources' || session.stopped) return;
-  for (const node of nodes) {
-    if (session.stopped) break;
+  if (session.mode !== 'sources') return;
+  if (session.stopped) {
+    if (nodes.length) {
+      session.result.providers.push({
+        id: `${PROVIDER}_source`,
+        family: FAMILY,
+        status: 'incomplete',
+        coverage: 'selected_source',
+        reason: 'optional_phase_stopped',
+      });
+      session.omit('sources', nodes.length);
+    }
+    return;
+  }
+  for (const [nodeIndex, node] of nodes.entries()) {
+    if (session.stopped) {
+      session.omit('sources', nodes.length - nodeIndex);
+      break;
+    }
+    let pendingSources = 1;
     const provider: ExtensionProvider = {
       id: `${PROVIDER}_source`,
       scope: `${node.type} ${node.name}`,
@@ -239,12 +257,14 @@ export async function discoverClassSources(
         provider.reason = 'source_depth_limit';
         session.omit('depth');
         session.omit('sources');
+        pendingSources = 0;
         return;
       }
       if (!['ENHO/XH', 'ENHO/XHH'].includes(node.type)) {
         provider.status = 'unsupported';
         provider.reason = 'unsupported_source_provider';
         session.omit('sources');
+        pendingSources = 0;
         return;
       }
       const guarded = {
@@ -271,12 +291,14 @@ export async function discoverClassSources(
         provider.status = 'unsupported';
         provider.reason = 'source_unavailable';
         session.omit('sources');
+        pendingSources = 0;
         return;
       }
       const generated = source.enhancementInclude;
       const identity = generated ? { type: 'INCL', name: generated.name, version: 'active' } : node;
       if (generated && !session.addNode({ ...identity, provider: provider.id, family: FAMILY }, depth + 1)) {
         session.omit('sources');
+        pendingSources = 0;
         return;
       }
       if (generated)
@@ -291,13 +313,17 @@ export async function discoverClassSources(
         representation: generated ? 'generated_include_revision' : 'authored_source',
         source: source.source,
       });
+      pendingSources = 0;
       if (!generated) return;
       provider.reason = `generated_include=${generated.name}; active_revision=00000; generated_method_includes_only; implementation names may be absent`;
-      for (const child of enhancementMethodIncludes(source.source, generated.name)) {
+      const children = enhancementMethodIncludes(source.source, generated.name);
+      pendingSources = children.length;
+      for (const child of children) {
         if (session.stopped) break;
         const identity = { type: 'INCL', name: child, version: 'active' };
         if (!session.addNode({ ...identity, provider: provider.id, family: FAMILY }, depth + 2)) {
           session.omit('sources');
+          pendingSources--;
           continue;
         }
         session.addEdge({
@@ -310,6 +336,7 @@ export async function discoverClassSources(
         );
         if (!read) {
           session.omit('sources');
+          pendingSources--;
           provider.status = 'incomplete';
           provider.reason += '; child_active_revision_missing';
           continue;
@@ -320,9 +347,10 @@ export async function discoverClassSources(
           representation: 'generated_include_revision',
           source: read.source,
         });
+        pendingSources--;
       }
     });
-    if (provider.status === 'incomplete' || provider.status === 'denied') session.omit('sources');
+    if (pendingSources > 0) session.omit('sources', pendingSources);
   }
 }
 

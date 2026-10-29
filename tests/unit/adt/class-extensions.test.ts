@@ -273,5 +273,26 @@ describe('class-bound enhancements', () => {
     expect(s.session.result.sources.map((source) => source.identity.name)).toEqual([parent]);
     expect(s.getRevisions).toHaveBeenCalledTimes(1);
     expect(s.session.result.omissions.depth).toBe(1);
+    expect(s.session.result.omissions.sources).toBe(1);
+  });
+  it('counts a missing active method child once while retaining its parent body', async () => {
+    const s = setup();
+    const nodes = await discoverClassIdentities(s.client, s.session, s.request);
+    s.getRevisions
+      .mockResolvedValueOnce(parseRevisionFeed(fixture('class-feed.xml')))
+      .mockResolvedValueOnce(parseRevisionFeed(fixture('method-feed.xml').replaceAll('00000', '00001')));
+    await discoverClassSources(s.client, s.session, nodes, '750');
+    expect(s.session.result.sources.map((source) => source.identity.name)).toEqual([parent]);
+    expect(s.session.result.omissions.sources).toBe(1);
+  });
+  it('counts known native sources left unread after a terminal failure', async () => {
+    const s = setup({ sourceError: new AdtApiError('denied', 401, '/enho') });
+    const nodes = await discoverClassIdentities(s.client, s.session, s.request);
+    const other = { ...nodes[0]!, name: 'ZUNREAD', uri: '/sap/bc/adt/enhancements/enhoxh/zunread' };
+    s.session.addNode(other);
+    nodes.push(other);
+    await discoverClassSources(s.client, s.session, nodes, '750');
+    expect(s.session.result.omissions.sources).toBe(2);
+    expect(s.get.mock.calls.filter(([path]) => path.includes('/enhancements/'))).toHaveLength(1);
   });
 });

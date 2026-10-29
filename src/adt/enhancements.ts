@@ -108,7 +108,7 @@ export async function readActiveClassEnhancementSource(
  * original SAP error.
  */
 async function readSourcePlugInFromInclude(
-  client: Pick<AdtClient, 'getRevisions' | 'getRevisionSource'>,
+  client: Pick<AdtClient, 'safety' | 'getRevisions' | 'getRevisionSource'>,
   name: string,
   attempted: string[],
 ): Promise<EnhancementImplementationInfo | undefined> {

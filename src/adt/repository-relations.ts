@@ -113,7 +113,8 @@ export function normalizeRelationNetwork<C extends RelationContext>(
   requested: RelationObject,
 ): RelationNetwork<C> {
   const root = record(parseRelationXml(xml).networkResponse);
-  if (text(root.activeContext, 32) !== context) throw new RelationContextError('SAP did not honor the requested context.');
+  if (text(root.activeContext, 32) !== context)
+    throw new RelationContextError('SAP did not honor the requested context.');
   const objects = new Map<string, RelationObject>();
   const refs = array(root.objectReference),
     relations = array(root.relation);

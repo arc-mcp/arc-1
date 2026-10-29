@@ -6,12 +6,14 @@ import {
   readEnhancementIncludeRevision,
 } from '../../../src/adt/enhancement-include.js';
 import { RequestAttemptBudget } from '../../../src/adt/request-attempt-budget.js';
+import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 
 const include = enhancementIncludeName('CL_OO_ADT_ENHANCED_CLASS1');
 const path = `/sap/bc/adt/programs/includes/${encodeURIComponent(include.toLowerCase())}/source/main/versions/19700101091123/00000/content`;
 const active = { id: '00000', author: 'SAP', timestamp: '1970-01-01', uri: path };
 function client(overrides = {}) {
   return {
+    safety: defaultSafetyConfig(),
     getRevisions: vi
       .fn()
       .mockResolvedValue({ object: { name: include, type: 'REPS' }, revisions: [active], ...overrides }),
@@ -19,6 +21,16 @@ function client(overrides = {}) {
   };
 }
 describe('qualified generated include revisions', () => {
+  it.each(['INCL', 'VERSIONS', 'VERSION_SOURCE'])(
+    'obeys the hidden SAPRead.%s denial before any feed/content read',
+    async (type) => {
+      const c = client();
+      c.safety.denyActions.push(`SAPRead.${type}`);
+      await expect(readEnhancementIncludeRevision(c, include)).rejects.toThrow('denied');
+      expect(c.getRevisions).not.toHaveBeenCalled();
+      expect(c.getRevisionSource).not.toHaveBeenCalled();
+    },
+  );
   it('binds the active entry and forwards every transport budget to both reads', async () => {
     const c = client({ revisions: [{ ...active, id: '00001', timestamp: '2099-01-01' }, active] });
     const request = {
