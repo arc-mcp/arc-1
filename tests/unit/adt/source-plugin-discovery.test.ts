@@ -127,6 +127,29 @@ describe('source plugin discovery', () => {
     expect(s.get).toHaveBeenCalledTimes(6);
     expect(JSON.stringify(s.get.mock.calls)).not.toContain('include_nested');
   });
+  it.each([true, false])(
+    'binds structural include function locations to the actual first FUNCTION header: %s',
+    async (matching) => {
+      const include = 'LSEEF_ADT_TEST_AUNIT_FUGR1U01';
+      const uri = `/sap/bc/adt/programs/includes/${include.toLowerCase()}`;
+      const source = matching
+        ? fixture('fugr-u01.abap')
+        : `" FUNCTION seef_adt_test_aunit_fmodule1.\nDATA(text) = |\nFUNCTION seef_adt_test_aunit_fmodule1.\n|.`;
+      const s = setup('sources', {
+        ...rootRoutes,
+        [`${uri}?version=active`]: metadata(include, 'PROG/I', uri),
+        [`${uri}/source/main?version=active`]: source,
+        [`${uri}/source/main/enhancements/elements?context=${encodeURIComponent(base)}`]: fixture('fugr-u01-758.xml'),
+      });
+      await discoverSourcePlugins(s.client, s.session, req, {
+        unit: { type: 'FUGR', name: group },
+        source: `INCLUDE ${include}.`,
+      });
+      expect(s.session.stopped).toBe(!matching);
+      expect(s.session.result.nodes).toHaveLength(matching ? 1 : 0);
+      expect(s.get).toHaveBeenCalledTimes(5);
+    },
+  );
   it('requires standalone INCL context before reading an apparently empty provider', async () => {
     const request = {
       root: { type: 'INCL', name: 'ENH_PROG_INCL_IMPLICIT_OPT', version: 'active' },
@@ -255,6 +278,22 @@ describe('source plugin discovery', () => {
     expect(s.session.result.omissions.sources).toBe(1);
     expect(s.session.result.providers[0]?.status).toBe('incomplete');
     expect(s.get).toHaveBeenCalledTimes(2);
+  });
+  it('caps repeated graph occurrences through the shared edge allowance without duplicate reads', async () => {
+    const uri = '/sap/bc/adt/programs/includes/zchild';
+    const s = setup('sources', {
+      ...rootRoutes,
+      [`${uri}?version=active`]: metadata('ZCHILD', 'PROG/I', uri),
+      [`${uri}/source/main/enhancements/elements?context=${encodeURIComponent(base)}`]: empty,
+      [`${uri}/source/main?version=active`]: '',
+    });
+    await discoverSourcePlugins(s.client, s.session, req, {
+      unit: { type: 'FUGR', name: group },
+      source: 'INCLUDE ZCHILD.\n'.repeat(100),
+    });
+    expect(s.get).toHaveBeenCalledTimes(5);
+    expect(s.session.result.edges).toHaveLength(80);
+    expect(s.session.result.omissions.edges).toBe(20);
   });
   it.each([
     'https://evil.invalid/path',

@@ -25,3 +25,8 @@ The 750 program metadata omits enhancement links; exact 750 grammar plus adverti
 permits the qualified legacy source endpoint, recorded as unadvertised-provider coverage.
 The include-own-parent response identifies the selected include itself even with FUGR
 context. Accept that selected owner or inherited main owner, never an unrelated object.
+
+The final focused ownership probe adds `fugr-u01-758.xml` and `fugr-u01.abap`. A physical
+U01 include reports its attachment at the corresponding public function source URL. The adapter
+binds that alias to the first real FUNCTION header in the actually-read include; comment/string
+occurrences do not qualify it. No response-provided function location is fetched.

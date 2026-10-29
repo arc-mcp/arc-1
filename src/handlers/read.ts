@@ -203,7 +203,7 @@ export async function handleSAPRead(
   cacheSecurity: CacheSecurityContext,
   minimalErrors: boolean,
 ): Promise<ToolResult> {
-  const captured: { version: SourceVersion; source: string } = { version: 'active', source: '' };
+  const captured: { version: SourceVersion; source?: string; group?: string } = { version: 'active' };
   const base = await handleSAPReadBase(client, args, cachingLayer, cacheSecurity, minimalErrors, captured);
   const type = normalizeObjectType(String(args.type ?? ''));
   if (
@@ -212,7 +212,13 @@ export async function handleSAPRead(
     (args.include && ['indexes', 'text_symbols'].includes(String(args.include).toLowerCase()))
   )
     return base;
-  return appendReadExtensions(client, { ...args, type }, base, captured.version, captured.source);
+  return appendReadExtensions(
+    client,
+    { ...args, type, ...(captured.group ? { group: captured.group } : {}) },
+    base,
+    captured.version,
+    captured.source,
+  );
 }
 
 async function handleSAPReadBase(
@@ -221,7 +227,7 @@ async function handleSAPReadBase(
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
   minimalErrors: boolean,
-  extensionBase: { version: SourceVersion; source: string },
+  extensionBase: { version: SourceVersion; source?: string; group?: string },
 ): Promise<ToolResult> {
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
@@ -602,6 +608,7 @@ async function handleSAPReadBase(
         }
         group = resolved;
       }
+      extensionBase.group = group;
       const { source, cacheHit, revalidated } = await cachedGet('FUNC', name, effectiveVersion, (ifNoneMatch) =>
         client.getFunction(group, name, { ifNoneMatch, version: effectiveVersion }),
       );

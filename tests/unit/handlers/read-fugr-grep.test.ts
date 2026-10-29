@@ -131,7 +131,8 @@ describe('SAPRead FUGR grep', () => {
         name: 'ZABAPGIT_PARALLEL',
         functions: ['Z_ABAPGIT_SERIALIZE_PACKAGE', 'Z_ABAPGIT_SERIALIZE_PARALLEL'],
       });
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/programs/includes/'))).toBe(false);
       expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/functions/groups/ZABAPGIT_PARALLEL/objectstructure');
     },
   );
