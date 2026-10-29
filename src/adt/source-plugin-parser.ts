@@ -64,6 +64,8 @@ function pluginUri(uri: string, owner: string): void {
 export interface PluginParseOptions {
   /** Validated owning main-object URL. Nested ENHO parents must ultimately lead here. */
   mainObjectUri: string;
+  /** An include can own its own plug-ins even when read with an enclosing main-object context. */
+  selectedObjectUri?: string;
   sources: boolean;
   maxImplementations?: number;
   maxDecodedBytes?: number;
@@ -72,6 +74,8 @@ export interface PluginParseOptions {
 
 /** Bounded XML and strict base64/UTF-8 decoding; omission is explicit, never a reconstructed body. */
 export function parseSourcePluginElements(xml: string, options: PluginParseOptions): PluginGraph {
+  for (const limit of [options.maxImplementations, options.maxDecodedBytes, options.maxSourceBytes])
+    if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 0)) invalid();
   if (Buffer.byteLength(xml) > 256 * 1024 || /<!DOCTYPE|<!ENTITY/i.test(xml) || XMLValidator.validate(xml) !== true)
     invalid();
   const parsed = parseXml(xml);
@@ -98,7 +102,18 @@ export function parseSourcePluginElements(xml: string, options: PluginParseOptio
         if (!next) invalid();
         current = next;
       } else {
-        if (!same(parent.uri, options.mainObjectUri)) invalid();
+        if (!same(parent.uri, options.mainObjectUri) && !same(parent.uri, options.selectedObjectUri ?? '')) invalid();
+        const expectedName = decodeURIComponent(parent.uri.split('/').at(-1) ?? '');
+        const expectedType = parent.uri.includes('/programs/includes/')
+          ? 'PROG/I'
+          : parent.uri.includes('/programs/programs/')
+            ? 'PROG/P'
+            : parent.uri.includes('/oo/classes/')
+              ? 'CLAS/OC'
+              : parent.uri.includes('/functions/groups/')
+                ? 'FUGR/F'
+                : '';
+        if (!same(parent.name, expectedName) || parent.type !== expectedType) invalid();
         break;
       }
     }
@@ -136,6 +151,7 @@ export function parseSourcePluginElements(xml: string, options: PluginParseOptio
           plugin.sourceOmitted = 'invalid_base64';
         else if (size > Math.min(remaining, options.maxSourceBytes ?? 16 * 1024))
           plugin.sourceOmitted = 'decoded_byte_limit';
+        else if (Buffer.from(encoded, 'base64').toString('base64') !== encoded) plugin.sourceOmitted = 'invalid_base64';
         else {
           const bytes = Buffer.from(encoded, 'base64');
           try {

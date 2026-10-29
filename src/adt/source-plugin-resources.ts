@@ -43,6 +43,8 @@ export interface SourcePluginResources {
   sourceUri: string;
   elements?: { uri: string; accept: string };
   identities?: { uri: string; accept: string };
+  /** Qualified 750 source resource, absent from its metadata; never a fallback after a failed read. */
+  legacyUnadvertised?: true;
 }
 
 /** Select only the requested source section, and reject a linked route belonging to another object. */
@@ -79,7 +81,21 @@ export function sourcePluginResources(xml: string, unit: SourcePluginUnit): Sour
       invalid();
     return path;
   };
-  const elements = find(selected, 'enhancements', [`${sourceUri}/enhancements`, `${sourceUri}/enhancements/elements`]);
+  let elements = find(selected, 'enhancements', [`${sourceUri}/enhancements`, `${sourceUri}/enhancements/elements`]);
+  // Qualified 750 responses omit the relation. The exact source+grammar evidence enables only
+  // the observed legacy resource, with explicit unadvertised-provider provenance.
+  const syntax = meta.syntaxConfiguration as Row | undefined;
+  const language = syntax?.language as Row | undefined;
+  const sourceAdvertised =
+    attr(selected, 'sourceUri') ===
+    (unit.type === 'CLAS' && section !== 'main' ? `includes/${section}` : 'source/main');
+  const legacy =
+    !elements &&
+    sourceAdvertised &&
+    rows(language?.link).some(
+      (l) => attr(l, 'rel') === 'http://www.sap.com/adt/relations/abapsource/parser' && attr(l, 'etag') === '750',
+    );
+  if (legacy) elements = `${sourceUri}/enhancements`;
   // Selected FUNC/INCL/CLAS sections must never borrow an owning group's/class's broader identity list.
   const identities =
     unit.type === 'PROG' || unit.type === 'FUGR' || (unit.type === 'CLAS' && section === 'main')
@@ -88,6 +104,7 @@ export function sourcePluginResources(xml: string, unit: SourcePluginUnit): Sour
   return {
     objectUri,
     sourceUri,
+    ...(legacy ? { legacyUnadvertised: true } : {}),
     ...(elements
       ? {
           elements: {
