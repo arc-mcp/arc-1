@@ -167,6 +167,20 @@ describe('SAPRead type=SOD2', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
+  it('reads when discovery lists the SOD2 collection without media types (display-only user)', async () => {
+    backend();
+    const client = readOnlyClient();
+    client.http.setDiscoveryMap(
+      new Map([
+        ['/sap/bc/adt/oo/classes', ['application/vnd.sap.adt.oo.classes.v4+xml']],
+        ['/sap/bc/adt/aps/com/sod2', []],
+      ]),
+    );
+    const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPRead', { type: 'SOD2', name: NAME });
+    expect(result.isError).toBeFalsy();
+    expect(text(result)).toContain('"apiKind":"rfc"');
+  });
+
   it('refuses when discovery is loaded and lacks the SOD2 collection', async () => {
     backend();
     const client = readOnlyClient();

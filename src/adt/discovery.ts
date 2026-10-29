@@ -52,6 +52,16 @@ export function resolveAcceptType(discoveryMap: DiscoveryMap, path: string): str
   return types?.[0];
 }
 
+/**
+ * True when discovery lists the collection itself. Unlike resolveAcceptType this also counts a
+ * presence-only entry (no media types): SAP lists the collection without `accept` elements for a
+ * user who may display but not create its objects.
+ */
+export function isCollectionListed(discoveryMap: DiscoveryMap, path: string): boolean {
+  const normalized = normalizeRequestPath(path);
+  return normalized !== '' && discoveryMap.has(normalized);
+}
+
 /** Resolve best matching Content-Type for a request path. */
 export function resolveContentType(discoveryMap: DiscoveryMap, path: string): string | undefined {
   const types = resolveTypesForPath(discoveryMap, path);
