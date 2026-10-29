@@ -184,6 +184,20 @@ ENDCLASS.`;
   });
 
   describe('CDS Lint', () => {
+    it('detects and validates a raw table function instead of silently skipping it as TABL', () => {
+      const source = `/* header */
+@EndUserText.label: 'Table function'
+// comment after annotation
+define table function Z_TEST returns { key f1 : abap.char(10); } implemented by method zcl_x=>m;`;
+      const filename = detectFilename(source, 'Z_TEST');
+      const options = { systemType: 'onprem' as const, abapRelease: '758' };
+      expect(filename).toBe('z_test.ddls.asddls');
+      expect(validateBeforeWrite(source, filename, options).pass).toBe(true);
+      const invalid = validateBeforeWrite(source.replace('f1 :', 'f1 INVALID :'), filename, options);
+      expect(invalid.pass).toBe(false);
+      expect(invalid.errors.some((issue) => issue.rule === 'cds_parser_error')).toBe(true);
+    });
+
     it('returns no cds_parser_error for valid CDS view', () => {
       const source = `define view entity ZI_TEST as select from ztable {
   key field1,

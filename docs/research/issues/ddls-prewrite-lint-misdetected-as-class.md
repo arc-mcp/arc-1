@@ -1,11 +1,12 @@
-# Pre-write lint rejects valid CDS (DDLS) as ABAP class
+# Pre-write lint misclassifies known DDLS, PROG and INCL sources
 
 - **Found:** 2026-10-27, S/4HANA on-premise (SAP_BASIS 758), `SAPWrite` `batch_create` of 4 DDLS + 1 SRVD, ARC-1 1.5.1
 - **Reproduced on:** ARC-1 1.9.0, `origin/main` `b6213ec8` (2026-10-27). `src/lint/lint.ts` last changed in `c6244452`
 - **Severity:** blocks valid DDLS writes (`create`, `batch_create`, `update`); workaround `lintBeforeWrite=false`
 - **Related:** #627 fixed the same misclassification for annotation-free `extend view entity` only, by adding
   one more keyword to `detectFilename()`. #121 introduced DDLS pre-write lint and the CDS branches of the detector.
-  No existing issue or PR covers the cases below.
+  Tracked by [#1134](https://github.com/arc-mcp/arc-1/issues/1134) and
+  [PR #1119](https://github.com/arc-mcp/arc-1/pull/1119).
 
 ## Symptom
 
@@ -53,12 +54,13 @@ Detection plus the full `validateBeforeWrite()` result, as the gate runs it and 
 | `define table function` (no annotation) | `.tabl.astabl` | pass — lint silently skipped, not blocked | pass |
 | `@…` annotations, then `define view entity` | `.ddls.asddls` | pass | pass |
 
-Every blocked case passes once the known type is used, so the fix creates no new false blocks.
+These blocked examples pass once the known type is used; this does not establish support for every CDS form.
 
 ## Fix (PR)
 
-1. **Use the known type** in `runPreWriteLint()`: `type === 'DDLS'` always lints as `<name>.ddls.asddls`.
-   This alone fixes every blocking case for `SAPWrite`.
+1. **Use the known type** in `runPreWriteLint()`: one mapping covers exactly the five already-linted types:
+   PROG/INCL → `.prog.abap`, CLAS → `.clas.abap`, INTF → `.intf.abap`, DDLS → `.ddls.asddls`.
+   Unsupported/unknown types still skip this gate. No content-based override is used for known types.
 2. **Harden `detectFilename()`** for callers without a type (`SAPLint` on raw source, `SAPContext` deps):
    - strip leading `/* … */` block comments and `// …` / `-- …` line comments, including between annotations
    - recognise `DEFINE [ROOT] CUSTOM ENTITY`, `DEFINE [ROOT] ABSTRACT ENTITY`, `DEFINE TRANSIENT VIEW ENTITY`,
@@ -69,6 +71,26 @@ Every blocked case passes once the known type is used, so the fix creates no new
 
 The `--` comment style was found after the first fix: a DDLS with a `--` first line already passed the write gate
 (known type) but `detectFilename()` still guessed `.clas.abap`, which affects `SAPLint` and `SAPContext` deps.
+
+## PROG and INCL follow-up (29 October)
+
+The contributor's October 27 comment identified the same issue for module-pool source beginning with `INCLUDE`.
+On main `721755d5`, and on the original PR head `5b2f6b01`, this source is rejected with
+`Expected CLASSDEFINITION`; the same source passes the program parser at v758:
+
+```abap
+INCLUDE ztop.
+MODULE status_0100 OUTPUT.
+ENDMODULE.
+```
+
+A PROG beginning with a local class and an INCL beginning with a local interface also select the wrong parser.
+The mapping removes both guesses and the old INCL fallback special case. Existing CLAS/INTF source remains
+linted, and source that belongs to the wrong object type is now rejected by the expected parser.
+
+Regression tests use real abaplint, including malformed sources for each mapped type, table-function parser
+controls, unsupported/unknown types, and dispatched create/batch/update paths. No tool schema or configuration
+changes. Roadmap checked at start: no roadmap impact.
 
 ## Workaround (until released)
 
