@@ -90,7 +90,39 @@ linted, and source that belongs to the wrong object type is now rejected by the 
 
 Regression tests use real abaplint, including malformed sources for each mapped type, table-function parser
 controls, unsupported/unknown types, and dispatched create/batch/update paths. No tool schema or configuration
-changes. Roadmap checked at start: no roadmap impact.
+changes. Roadmap checked at start and end: no roadmap impact.
+
+## Verification (29 October)
+
+Built revision `06cb250e7ca8399468445e4f71f2d4467e0165a9` (original contributor commits preserved, merged with
+main `721755d5`). Node 24.11.1. `npm test`: **375 files / 10,351 tests passed**. Typecheck, Biome lint,
+policy validation, build and file/tool-schema budgets passed; Biome reports two existing informational findings
+outside this diff. The new routing tests expose eight failures on the original PR code before the mapping.
+
+The exact local `dist/` was called through `handleToolCall` against **A4H, client 001, SAP_BASIS 758 SP02**, Basic
+authentication over the documented HTTPS proxy, with pre-write lint enabled and release/preset obtained by the
+native probe (`onprem`, `v758`). Tests held the exclusive local SAP lock, used unique objects in `$TMP`, and
+read source independently through a second uncached ADT client. This exercised SAPWrite dispatch and the native
+ADT lifecycle; it was not an MCP transport/PP qualification run.
+
+| Scenario | Result |
+|---|---|
+| DDLS batch with a missing field-list comma | Rejected by `cds_parser_error`; independent metadata read confirmed no object |
+| `batch_create`, `activateAtEnd=true`: block-comment DDLS view, `--`-comment abstract DDLS, INCL and INCLUDE-led PROG | Four objects created and activated together; all active sources matched independently |
+| Malformed DDLS update | Rejected by lint; active source remained unchanged |
+| Valid DDLS and PROG updates, separate SAPActivate | Both active sources matched the updated text independently |
+| Delete in reverse dependency order | All four objects deleted; independent metadata reads returned 404 |
+
+Successful run names: `ZALDBCAF5DE02V`, `ZALDBCAF5DE02A`, `ZALDBCAF5DE02T`, `ZALDBCAF5DE02P`.
+An earlier run (`ZAL780F4A79C9*`) passed batch creation/activation and initial readbacks, then failed with
+`AdtNetworkError: ADT network error: fetch failed` during the independent read after DDLS update/activation.
+Its cleanup also verified all four names absent. The fresh run used new names and unchanged assertions;
+no retries were added. The network failure's cause remains uninvestigated and is not attributed to this fix.
+
+Limits: the live PROG was an executable program whose first line is INCLUDE, not a program with module-pool
+metadata. INCLUDE/MODULE source and table-function/new-DDL routing are covered by local parser tests. No live
+table-function AMDP implementation or other SAP release was tested. The original v702-on-758 report was not
+reproduced after probing; no release-detection change is included.
 
 ## Workaround (until released)
 
