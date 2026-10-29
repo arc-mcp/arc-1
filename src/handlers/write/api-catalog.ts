@@ -102,7 +102,8 @@ export async function writeApiCatalogObject(
       } catch (cause) {
         const err =
           cause instanceof AdtError ? cause : new AdtError(cause instanceof Error ? cause.message : String(cause));
-        err.extraHint = `${type} ${name} was created in package ${pkg}, but saving the remaining fields failed. Check it with SAPRead(type="${type}", name="${name}") and use SAPWrite(action="update") — do not repeat create.`;
+        const created = `${type} ${name} was created in package ${pkg}, but saving the remaining fields failed. Check it with SAPRead(type="${type}", name="${name}") and use SAPWrite(action="update") — do not repeat create.`;
+        err.extraHint = err.extraHint ? `${err.extraHint}\n${created}` : created;
         throw err;
       }
     }

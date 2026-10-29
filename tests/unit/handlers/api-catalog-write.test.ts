@@ -28,7 +28,7 @@ interface Call {
   contentType?: string;
 }
 
-function mockSap(routes: { check?: string; deleted?: string } = {}): Call[] {
+function mockSap(routes: { check?: string; deleted?: string; putError?: string; checkRun?: string } = {}): Call[] {
   const calls: Call[] = [];
   mockFetch.mockImplementation(
     async (url: string | URL, opts: { method?: string; body?: unknown; headers?: Record<string, string> }) => {
@@ -56,6 +56,8 @@ function mockSap(routes: { check?: string; deleted?: string } = {}): Call[] {
         return mockResponse(200, routes.check ?? deletionCheck(SOD2_URL), csrf);
       if (u.pathname === '/sap/bc/adt/deletion/delete')
         return mockResponse(200, routes.deleted ?? deletionResult(SOD2_URL, true), csrf);
+      if (method === 'PUT' && routes.putError) return mockResponse(400, routes.putError, csrf);
+      if (u.pathname === '/sap/bc/adt/checkruns' && routes.checkRun) return mockResponse(200, routes.checkRun, csrf);
       if (method === 'GET' && u.pathname === SOD1_URL) return mockResponse(200, fixture('sod1-metadata.xml'), csrf);
       if (method === 'GET' && u.pathname === SOD2_URL)
         return mockResponse(200, fixture('sod2-metadata-odatav4.xml'), csrf);
@@ -162,6 +164,33 @@ describe('SAPWrite type=SOD1/SOD2', () => {
     expect(put.body).toContain('<sod2:leadingBusinessObjectType>Currency</sod2:leadingBusinessObjectType>');
     // The read-only API package stays as SAP has it.
     expect(put.body).toContain('<sod2:packageID>Z_DEMO_API_PACKAGE</sod2:packageID>');
+  });
+
+  it("names the findings of SAP's check run when SAP refuses the save", async () => {
+    const calls = mockSap({
+      putError:
+        '<?xml version="1.0" encoding="utf-8"?><exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><namespace id="com.sap.adt"/><type id="ExceptionResourceInvalidData"/><message lang="EN">API package assignment Z_UI_DEMO_DOC_O4_0001 contains errors and cannot be saved</message><properties><entry key="T100KEY-ID">SWB_TOOL</entry><entry key="T100KEY-NO">036</entry></properties></exc:exception>',
+      checkRun:
+        '<?xml version="1.0" encoding="utf-8"?><chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:triggeringUri="/sap/bc/adt/aps/com/sod2/z_ui_demo_doc_o4_0001" chkrun:status="processed"><chkrun:checkMessageList><chkrun:checkMessage chkrun:uri="/sap/bc/adt/aps/com/sod2/z_ui_demo_doc_o4_0001" chkrun:type="E" chkrun:shortText="Leading business object type Nope does not exist"/></chkrun:checkMessageList></chkrun:checkReport></chkrun:checkRunReports>',
+    });
+    const result = await write({
+      action: 'update',
+      type: 'SOD2',
+      name: 'Z_UI_DEMO_DOC_O4_0001',
+      source: '{"leadingBusinessObjectType":"Nope"}',
+    });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain('contains errors and cannot be saved');
+    expect(text(result)).toContain(
+      "SAP's check of the document reports: Leading business object type Nope does not exist",
+    );
+    const put = calls.find((c) => c.method === 'PUT')!;
+    const check = calls.find((c) => c.url.startsWith('/sap/bc/adt/checkruns'))!;
+    // Eclipse's shape: the edited metadata document as artifact of the object URI itself.
+    expect(check.body).toContain(`chkrun:uri="${SOD2_URL}"`);
+    expect(check.body).toContain('chkrun:contentType="application/vnd.sap.adt.blues.v1+xml; charset=utf-8"');
+    expect(check.body).toContain(Buffer.from(put.body, 'utf-8').toString('base64'));
+    expect(calls.at(-1)!.url).toContain('_action=UNLOCK');
   });
 
   it('refuses an update that changes nothing', async () => {

@@ -13,7 +13,8 @@
  */
 import { postCreate } from './create-request.js';
 import { lockObject, unlockObject, updateObject } from './crud.js';
-import { AdtError } from './errors.js';
+import { syntaxCheck } from './devtools.js';
+import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { escapeXmlAttr, getNestedArray, parseXml } from './xml-parser.js';
@@ -382,19 +383,50 @@ export async function updateApiCatalogObject(
     try {
       const current = await session.get(url, { Accept: BLUES_V1, 'Cache-Control': 'no-cache' });
       const body = applyApiCatalogDefinition(type, current.body, definition);
-      await updateObject(
-        session,
-        safety,
-        url,
-        body,
-        lock.lockHandle,
-        BLUES_V1,
-        transport ?? (lock.corrNr || undefined),
-      );
+      try {
+        await updateObject(
+          session,
+          safety,
+          url,
+          body,
+          lock.lockHandle,
+          BLUES_V1,
+          transport ?? (lock.corrNr || undefined),
+        );
+      } catch (err) {
+        if (err instanceof AdtApiError && err.statusCode === 400)
+          await explainRefusedSave(session, safety, url, body, err);
+        throw err;
+      }
     } finally {
       await unlockObject(session, url, lock.lockHandle);
     }
   });
+}
+
+/**
+ * SAP refuses an invalid save with one generic message ("… contains errors and cannot be saved").
+ * Eclipse checks the edited document beforehand with a check run that carries it as an artifact;
+ * the same check names the faulty fields. Best effort: without findings the original error stands.
+ */
+async function explainRefusedSave(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  url: string,
+  body: string,
+  err: AdtApiError,
+): Promise<void> {
+  try {
+    const check = await syntaxCheck(http, safety, url, {
+      content: body,
+      artifactUri: url,
+      artifactContentType: `${BLUES_V1}; charset=utf-8`,
+    });
+    const findings = check.messages.filter((m) => m.severity !== 'info').map((m) => m.text);
+    if (findings.length) err.extraHint = `SAP's check of the document reports: ${findings.join(' | ')}`;
+  } catch {
+    // Diagnostics only; the refused save is the error to report.
+  }
 }
 
 function messagesOf(node: Record<string, unknown>): string[] {
