@@ -18,6 +18,15 @@ const session = (mode: 'summary' | 'sources' = 'summary') =>
   new ExtensionDiscoverySession(mode, request, defaultSafetyConfig());
 
 describe('extension discovery contract', () => {
+  it('bounds attachment occurrences even when they share one deduplicated identity', () => {
+    const s = session('sources');
+    for (let i = 0; i < 1000; i++)
+      s.addEdge({ from: 'TABL:ZROOT:active', to: 'TABL:ZINC:active', kind: 'include', suffix: String(i) });
+    expect(s.result.edges).toHaveLength(80);
+    expect(s.result.omissions.edges).toBe(920);
+    expect(s.result.edges[0]?.suffix).toBe('0');
+    expect(s.result.edges[79]?.suffix).toBe('79');
+  });
   it('shares actual-send/response/deadline options and disables transient retries', async () => {
     const s = session();
     await s.read('TABL', async (options) => {

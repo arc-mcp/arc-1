@@ -26,6 +26,7 @@ export interface ExtensionProvider {
   coverage: 'direct_identities' | 'selected_source' | 'bounded_traversal' | 'candidate_index';
   reason?: string;
   version?: string;
+  scope?: string;
   nested?: 'not_expanded' | 'bounded';
 }
 export interface ExtensionNode extends ExtensionIdentity {
@@ -50,7 +51,16 @@ export interface ExtensionSource {
   source: string;
   provider: string;
 }
-export type ExtensionOmission = 'requests' | 'wire_bytes' | 'deadline' | 'nodes' | 'depth' | 'output' | 'sources';
+export type ExtensionOmission =
+  | 'requests'
+  | 'wire_bytes'
+  | 'deadline'
+  | 'nodes'
+  | 'depth'
+  | 'output'
+  | 'sources'
+  | 'candidates'
+  | 'edges';
 export interface ExtensionDiscoveryResult extends ExtensionRequest {
   mode: Exclude<ExtensionMode, 'none'>;
   providers: ExtensionProvider[];
@@ -75,6 +85,13 @@ export function extensionKey(identity: ExtensionIdentity): string {
   return `${identity.type.toUpperCase()}:${identity.name.toUpperCase()}:${identity.version}`;
 }
 
+/** Also used before mandatory hidden root reads whose optional-phase budget starts afterwards. */
+export function assertExtensionReadAllowed(safety: SafetyConfig, type: string): void {
+  if (isActionDenied('SAPRead', type, safety.denyActions ?? []))
+    throw new AdtSafetyError(`SAPRead.${type} denied for extension discovery.`);
+  checkOperation(safety, OperationType.Read, 'ExtensionDiscovery');
+}
+
 export class ExtensionDiscoverySession {
   readonly limits;
   readonly options: AdtRequestOptions;
@@ -94,7 +111,7 @@ export class ExtensionDiscoverySession {
       signal: parent.signal,
       deadline: Math.min(parent.deadline ?? Infinity, this.started + this.limits.timeMs),
       attemptBudget: new RequestAttemptBudget(this.limits.sends),
-      responseBudget: new DataResponseBudget(this.limits.responseBytes, 'extension-discovery'),
+      responseBudget: new DataResponseBudget(this.limits.responseBytes, 'extension-discovery', true),
       retryTransientErrors: false,
       probe: true,
     };
@@ -121,9 +138,7 @@ export class ExtensionDiscoverySession {
     if (this.stopped) throw new ExtensionStoppedError();
     try {
       throwIfRequestCancelled(this.options);
-      if (isActionDenied('SAPRead', type, this.safety.denyActions ?? []))
-        throw new AdtSafetyError(`SAPRead.${type} denied for extension discovery.`);
-      checkOperation(this.safety, OperationType.Read, 'ExtensionDiscovery');
+      assertExtensionReadAllowed(this.safety, type);
       return await operation(this.options);
     } catch (error) {
       if (this.options.signal?.aborted) throw error;
@@ -174,13 +189,26 @@ export class ExtensionDiscoverySession {
     return true;
   }
 
+  addEdge(edge: ExtensionEdge): boolean {
+    // Repeated occurrences stay distinct, but cannot grow without bound behind one deduplicated node.
+    if (this.result.edges.length >= this.limits.nodes * 4) {
+      this.omit('edges');
+      return false;
+    }
+    this.result.edges.push(edge);
+    return true;
+  }
+
   finish(): ExtensionDiscoveryResult {
     this.result.consumed = {
       sends: this.options.attemptBudget!.used,
       responseBytes: this.options.responseBudget!.consumedBytes,
       elapsedMs: Date.now() - this.started,
     };
-    logger.info('Extension discovery', {
+    logger.emitAudit({
+      event: 'extension_discovery',
+      level: 'info',
+      timestamp: new Date().toISOString(),
       providers: this.result.providers.map(({ id, status }) => ({ id, status })),
       nodes: this.result.nodes.length,
       sources: this.result.sources.length,
@@ -221,7 +249,7 @@ export function renderExtensionDiscovery(result: ExtensionDiscoveryResult): Arra
     `[extensions] ${JSON.stringify({
       root: result.root,
       scope: result.scope,
-      providers: result.providers,
+      providers: compactProviders(result.providers),
       identities: shown.map(({ type, name, version, provider, family, switch: sw }) => ({
         type,
         name,
@@ -277,4 +305,20 @@ function truncateUtf8(text: string, bytes: number, marker: string): string {
     .toString('utf8');
   if (prefix.endsWith('\uFFFD')) prefix = prefix.slice(0, -1);
   return prefix + marker;
+}
+
+/** Retain every status while bounding repeated traversal observations in the compact summary. */
+function compactProviders(
+  providers: ExtensionProvider[],
+): Array<ExtensionProvider & { observations?: number; scopes?: string[] }> {
+  const groups = new Map<string, ExtensionProvider & { observations: number; scopes: string[] }>();
+  for (const { scope, ...provider } of providers) {
+    const key = JSON.stringify(provider);
+    const group = groups.get(key);
+    if (group) {
+      group.observations++;
+      if (scope && !group.scopes.includes(scope)) group.scopes.push(scope);
+    } else groups.set(key, { ...provider, observations: 1, scopes: scope ? [scope] : [] });
+  }
+  return [...groups.values()];
 }

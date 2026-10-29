@@ -788,19 +788,20 @@ export class AdtClient {
    *  absent entirely, so transparent tables (TABL/DT) fall through to /structures/
    *  and a PUT there silently sets DD02L-TABCLASS=INTTAB (corruption). Use
    *  `resolveTablObjectUrlForWrite()` instead. See issue #285. */
-  async resolveTablObjectUrl(name: string): Promise<string> {
+  async resolveTablObjectUrl(name: string, options?: AdtRequestOptions): Promise<string> {
+    checkOperation(this.safety, OperationType.Read, 'ResolveTablObjectUrl');
     const upper = name.toUpperCase();
     const cached = this.tablUrlCache.get(upper);
     if (cached) return cached;
     const tableUrl = `/sap/bc/adt/ddic/tables/${encodeURIComponent(name)}`;
     const structUrl = `/sap/bc/adt/ddic/structures/${encodeURIComponent(name)}`;
     try {
-      await this.http.get(tableUrl);
+      await this.http.get(tableUrl, undefined, options);
       this.tablUrlCache.set(upper, tableUrl);
       return tableUrl;
     } catch (err) {
       if (err instanceof AdtApiError && err.statusCode === 404) {
-        await this.http.get(structUrl);
+        await this.http.get(structUrl, undefined, options);
         this.tablUrlCache.set(upper, structUrl);
         return structUrl;
       }
