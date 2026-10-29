@@ -11,7 +11,7 @@ import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
-const { buildCreateXml } = await import('../../../src/handlers/write-helpers.js');
+const { buildCreateXml, runPreWriteLint } = await import('../../../src/handlers/write-helpers.js');
 
 function respondToFunctionModuleMetadataLifecycle(
   metadataByPath: Map<string, string>,
@@ -1597,6 +1597,32 @@ lv = CONV string( 1 ).`,
       if (result.content[0]?.text) {
         expect(result.content[0]?.text).not.toContain('Pre-write lint check failed');
       }
+    });
+
+    const commentHeader = '/********************************\n* Pricing view\n********************************/\n';
+
+    it.each([
+      [
+        'a block-comment header',
+        `${commentHeader}@AccessControl.authorizationCheck: #NOT_REQUIRED\n@EndUserText.label: 'Prices'\ndefine view entity ZI_PRICE as select from ztable { key field1 }`,
+      ],
+      [
+        'a line-comment header',
+        "// Pricing view\n@EndUserText.label: 'Prices'\ndefine view entity ZI_PRICE as select from ztable { key field1 }",
+      ],
+      ['an annotation-free custom entity', 'define custom entity ZI_PRICE { key field1 : abap.char(10); }'],
+      ['an annotation-free abstract entity', 'define abstract entity ZI_PRICE { field1 : abap.char(10); }'],
+    ])('lints DDLS with %s as CDS, not as an ABAP class', (_label, source) => {
+      const lint = runPreWriteLint(source, 'DDLS', 'ZI_PRICE', { ...DEFAULT_CONFIG, lintBeforeWrite: true });
+      expect(lint.blocked).toBe(false);
+    });
+
+    it('still reports CDS syntax errors in DDLS with a block-comment header', () => {
+      const source = `${commentHeader}define view entity ZI_PRICE as select from ztable {\n  key field1\n  field2\n}`;
+      const lint = runPreWriteLint(source, 'DDLS', 'ZI_PRICE', { ...DEFAULT_CONFIG, lintBeforeWrite: true });
+      expect(lint.blocked).toBe(true);
+      expect(lint.result?.content[0]?.text).toContain('cds_parser_error');
+      expect(lint.result?.content[0]?.text).not.toContain('CLASSDEFINITION');
     });
 
     it('adds CDS downstream impact guidance after DDLS update', async () => {

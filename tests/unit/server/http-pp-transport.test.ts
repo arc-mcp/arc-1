@@ -172,6 +172,51 @@ it('reuses one login across separate tool calls for the same PP credential', asy
   ).toBe(true);
 });
 
+it.each([406, 415])(
+  'retains exact %s negotiation across pooled clients without leaking to children or users',
+  async (status) => {
+    const sap = await setup();
+    const pool = new PerUserTransportPool(600_000);
+    const config = {
+      baseUrl: 'http://sap.invalid:8000',
+      client: '001',
+      btpProxy: sap.btpProxy,
+      sapConnectivityAuth: `Bearer ${userToken('alice')}`,
+    };
+    const first = pool.client(config, 'PP');
+    if (status === 415) await first.client.http.fetchCsrfToken();
+    const seen: Array<string | undefined> = [];
+    sap.custom.reply = (req, res) => {
+      const media = status === 406 ? req.headers.accept : req.headers['content-type'];
+      seen.push(media);
+      res.setHeader('x-csrf-token', 'T');
+      res.statusCode = media === 'application/custom+xml' ? status : 200;
+      res.end('ok');
+    };
+    const root = '/sap/bc/adt/oo/classes/ZCL_CACHE';
+    const request = (client: typeof first.client, path: string, explicit?: string) =>
+      status === 406
+        ? client.http.get(path, explicit ? { Accept: explicit } : undefined)
+        : client.http.put(path, '<metadata/>', explicit);
+    await request(first.client, root, 'application/custom+xml');
+    expect(seen).toEqual(['application/custom+xml', 'application/xml']);
+
+    const next = pool.client(config, 'PP');
+    expect(next.transportReuse).toBe('pooled-reused');
+    expect(next.client).not.toBe(first.client);
+    expect(next.client.http).toBe(first.client.http);
+    await request(next.client, `${root}?version=inactive`);
+    expect(seen.at(-1)).toBe('application/xml');
+    await request(next.client, `${root}/source/main`);
+    expect(seen.at(-1)).toBe(status === 406 ? '*/*' : undefined);
+
+    const other = pool.client({ ...config, sapConnectivityAuth: `Bearer ${userToken('bob')}` }, 'PP');
+    expect(other.transportReuse).toBe('pooled-new');
+    await request(other.client, root);
+    expect(seen.at(-1)).toBe(status === 406 ? '*/*' : undefined);
+  },
+);
+
 it('coordinates cold concurrent calls across fresh clients and retains separate stateful contexts', async () => {
   const sap = await setup();
   const pool = new PerUserTransportPool(600_000);

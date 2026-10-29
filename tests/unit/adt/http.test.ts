@@ -1306,6 +1306,25 @@ describe('AdtHttpClient', () => {
       expect(fetchHeaders(2).Accept).toBe('application/xml');
     });
 
+    it('reuses a negotiated Accept for the same resource but not for its sub-resources', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(406, 'Not Acceptable'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'metadata'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'metadata again'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'structure'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'variants'));
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      await client.get('/sap/bc/adt/programs/programs/ZHELLO', { Accept: 'application/custom+xml' });
+      await client.get('/sap/bc/adt/programs/programs/ZHELLO?version=inactive');
+      await client.get('/sap/bc/adt/programs/programs/ZHELLO/objectstructure');
+      await client.get('/sap/bc/adt/programs/programs/ZHELLO/variants');
+
+      expect(fetchHeaders(1).Accept).toBe('application/xml');
+      expect(fetchHeaders(2).Accept).toBe('application/xml');
+      expect(fetchHeaders(3).Accept).toBe('*/*');
+      expect(fetchHeaders(4).Accept).toBe('*/*');
+    });
+
     it('caches successful 415 retry Content-Type for later writes', async () => {
       // CSRF fetch
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
