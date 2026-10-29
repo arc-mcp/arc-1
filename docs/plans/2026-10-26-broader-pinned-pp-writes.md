@@ -1,8 +1,12 @@
 # PR 2: broader built-in writes on pinned PP targets
 
-Status: proposed design and implementation plan; not implemented or live-qualified.
+Status: implementation started on 29 October; broader capabilities are not enabled or live-qualified.
 Date: 26 October 2026. Research baseline: `e538bf71197ddb47ea74aca225c340a856d331af`.
 Dependency: [PR 1 shared mutation infrastructure](2026-10-26-shared-mutation-infrastructure.md).
+PR 1 merged as [#1138](https://github.com/arc-mcp/arc-1/pull/1138), commit `ac8385fa4`.
+Implementation starts with [ADR-0011](../adr/0011-broader-pinned-pp-mutations.md), the
+[mutation inventory](../research/broader-pinned-pp-writes/inventory.md) and request-scoped package hierarchy checks.
+[Implementation checkpoint and incomplete review status](../research/2026-10-29-broader-pinned-pp-writes-progress.md).
 Proposed title: `feat: expand pinned PP writes across built-in development operations`.
 [Research and owner decisions](../research/2026-10-26-multi-target-write-parity.md).
 

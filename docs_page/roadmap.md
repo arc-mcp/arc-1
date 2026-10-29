@@ -68,7 +68,7 @@ sequence.
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing | P1 | M | Ready | Architecture |
 | [ARCH-02](#arch-02) | Server-driven source-state version verification | P3 | S | Needs research | Architecture |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server API | P3 | L | Revisit on trigger | Architecture |
-| [FEAT-93](#feat-93) | Broader pinned PP mutation capabilities | P2 | XL | Design reviewed | Architecture |
+| [FEAT-93](#feat-93) | Broader pinned PP mutation capabilities | P2 | XL | Ready | Architecture |
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
@@ -182,7 +182,7 @@ and upgrade requirements. Do not widen the mutation-free multi-target contract a
 <a id="feat-93"></a>
 ### FEAT-93 — Broader pinned PP mutation capabilities
 
-- **Priority / effort / status:** P2 / XL / Design reviewed
+- **Priority / effort / status:** P2 / XL / Ready
 - **Category:** Architecture
 
 **Remaining gap.** PR [#1080](https://github.com/arc-mcp/arc-1/pull/1080) implements the scoped
@@ -196,16 +196,20 @@ is enabled by the shared-infrastructure extraction; aggregate and Basic writes r
 **Design evidence.** The [26 October research](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-26-multi-target-write-parity.md)
 separates accepted scope from proposed resource policies and live qualification gaps. It proposes
 [PR 1](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-shared-mutation-infrastructure.md)
-for behavior-preserving shared mutation infrastructure, now implemented for review with
+for behavior-preserving shared mutation infrastructure, merged in [#1138](https://github.com/arc-mcp/arc-1/pull/1138) with
 [separate qualification evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-29-shared-mutation-infrastructure.md), followed by
 [PR 2](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-broader-pinned-pp-writes.md)
 for the capability expansion. Existing opted-in writers may gain the documented capabilities;
 read-only applications/destinations must remain mutation-free.
 Author review and two Claude Code Opus 5.5 max reviews are recorded with findings and dispositions
 in the research record. The remaining implementation is PR 2's capability expansion; its live
-qualification remains outstanding.
+qualification remains outstanding. Implementation started with
+[ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-broader-pinned-pp-mutations.md), an explicit
+[review inventory](https://github.com/arc-mcp/arc-1/blob/main/docs/research/broader-pinned-pp-writes/inventory.md)
+and request-scoped package hierarchy checks; these do not enable additional operations.
 
-**Resume when.** PR 1 is accepted and the owner requests PR 2. Preserve the shared foundation's
+**Resume when.** The PR 1 acceptance and owner request prerequisites are met. Continue the guarded
+adapters and native qualification against the reviewed PR 2 plan. Preserve the shared foundation's
 existing behavior; PR 2 requires a new reviewed ADR qualifying ADR-0010, explicit per-operation
 resource policies, negative tests and real PP evidence. Do not remove the explicit action matrix
 or add a duplicate global write switch. Caching, SaaS and embedding remain separate work. The

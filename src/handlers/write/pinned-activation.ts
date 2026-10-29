@@ -2,6 +2,8 @@
 import type { AdtClient } from '../../adt/client.js';
 import { activate } from '../../adt/devtools.js';
 import { AdtSafetyError } from '../../adt/errors.js';
+import { pinnedMutationContext } from '../../adt/mutation-context.js';
+import { mutationHttp } from '../../adt/mutation-http.js';
 import { assertPinnedOwner, pinnedRecording } from '../../adt/pinned-write-policy.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
 import { getCurrentContext } from '../../server/context.js';
@@ -36,16 +38,22 @@ export async function handlePinnedActivation(client: AdtClient, args: Record<str
     if ((args.action ?? 'activate') !== 'activate' || args.objects !== undefined || args.preaudit === false)
       throw new AdtSafetyError('Only whole-owner preaudited activation is allowed.');
     const owner = objectUrlForType(type, (name as string).toLowerCase());
-    const requestOptions = {
-      deadline: Date.now() + 300_000,
-      signal: getCurrentContext()?.signal,
-      noReplay: true,
-      retryTransientErrors: false,
-    };
+    const context = pinnedMutationContext(
+      client.safety,
+      {
+        deadline: Date.now() + 300_000,
+        signal: getCurrentContext()?.signal,
+      },
+      { unlockFailed: false },
+    );
+    const requestOptions = context.requestPolicy;
+    // The activation engine can create a child budget, but its HTTP/CSRF calls
+    // must never extend the outer preflight-to-confirmation deadline.
+    const http = mutationHttp(client.http, client.safety, context);
     const pkg = await enforceAllowedPackageForObjectUrl(client, owner, 'Pinned activation', undefined, requestOptions);
     if (!pkg) throw new AdtSafetyError('Owner package is unresolved.');
-    await pinnedRecording(client.http, client.safety, owner, pkg, '', undefined, requestOptions);
-    const result = await activate(client.http, client.safety, owner, {
+    await pinnedRecording(http, client.safety, owner, pkg, '', undefined, requestOptions);
+    const result = await activate(http, client.safety, owner, {
       name: name as string,
       validateReferences: async (refs) => {
         validatePinnedActivationReferences(owner, type, refs);
@@ -57,7 +65,7 @@ export async function handlePinnedActivation(client: AdtClient, args: Record<str
           requestOptions,
         );
         if (currentPackage !== pkg) throw new AdtSafetyError('Owner package changed before activation.');
-        await pinnedRecording(client.http, client.safety, owner, pkg, '', undefined, requestOptions);
+        await pinnedRecording(http, client.safety, owner, pkg, '', undefined, requestOptions);
       },
       beforeSubmit: () => {
         submitted = true;

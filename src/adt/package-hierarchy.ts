@@ -12,7 +12,7 @@
  *   - Resolution failure (network, permission, missing root) is fail-closed:
  *     the resolver throws and the caller (checkPackage) MUST treat the throw as
  *     "package denied". Never silently allow.
- *   - The cache is keyed by uppercased root; lookups are case-insensitive.
+ *   - Legacy caches are keyed by uppercased root; lookups are case-insensitive.
  *   - A rejected resolution purges its cache entry so a retry can succeed,
  *     but the current request still fails. This avoids cementing a transient
  *     failure for the full TTL.
@@ -22,9 +22,49 @@
  *     `AdtPackageHierarchyResolverOptions.ttlMs`. The cache can be invalidated
  *     manually via `invalidate(root?)` after admin actions that change the
  *     hierarchy (create_package / change_package / delete_package).
+ *   - Pinned checks use fresh request-bounded evidence. Only the two independent
+ *     server/destination gates of one check share a decision-local snapshot.
  */
 
 import { AdtSafetyError } from './errors.js';
+import type { AdtRequestOptions } from './http-deadline.js';
+
+/** Fresh evidence for each pinned policy check, including its under-lock recheck. */
+export function createPinnedPackageHierarchyResolver(
+  fetcher: (root: string, options: AdtRequestOptions) => Promise<string[]>,
+  options?: AdtRequestOptions,
+): PackageHierarchyResolver {
+  if (!options || !Number.isFinite(options.deadline) || options.noReplay !== true)
+    throw new AdtSafetyError('Pinned package hierarchy resolution requires a bounded mutation request policy.');
+  // Never capture a request's deadline/signal in the legacy shared cache holder.
+  const policy = Object.freeze({
+    deadline: options.deadline,
+    signal: options.signal,
+    noReplay: true,
+    retryTransientErrors: false,
+  });
+  return new AdtPackageHierarchyResolver((root) => fetcher(root, policy), { ttlMs: 0 });
+}
+
+/** Share evidence only across the independent gates of one checkPackage decision. */
+export function packageHierarchyDecision(resolver: PackageHierarchyResolver): PackageHierarchyResolver {
+  const decisions = new Map<string, Promise<boolean>>();
+  return {
+    isDescendantOrSelf: (root, pkg) => {
+      const key = `${root.toUpperCase()}\0${pkg.toUpperCase()}`;
+      let decision = decisions.get(key);
+      if (!decision) {
+        decision = resolver.isDescendantOrSelf(root, pkg);
+        decisions.set(key, decision);
+      }
+      return decision;
+    },
+    invalidate: (root) => {
+      decisions.clear();
+      resolver.invalidate(root);
+    },
+  };
+}
 
 export interface PackageHierarchyResolver {
   /**
