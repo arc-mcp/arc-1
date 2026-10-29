@@ -91,7 +91,9 @@ define table ztab {
       expect(result.summary).toMatchObject({ includes: 1, appends: 1, unresolved: 0 });
       expect(post).toHaveBeenCalledTimes(3);
       expect(post.mock.calls.every(([path]) => !path.includes('/scope'))).toBe(true);
-      expect(result.warnings).toBeUndefined();
+      expect(result.extensionDiscovery?.providers).toEqual(
+        expect.arrayContaining([expect.objectContaining({ coverage: 'candidate_index' })]),
+      );
       expect(client.getTabl).not.toHaveBeenCalledWith('ZTAB_CONSUMER', expect.anything());
       expect(client.getTabl).not.toHaveBeenCalledWith('ZCONTAINER', expect.anything());
     });
@@ -159,14 +161,16 @@ define table ztab {
       );
       const result = await buildStructureHierarchy(client, 'ZBASE');
       expect(result.tree.children).toEqual([{ structure: 'ZINC', attribute: null, kind: 'include', children: [] }]);
-      expect(result.warnings).toEqual([
-        'Where-used returned 51 structure candidates for ZBASE, exceeding the append scan limit of 50; append discovery was skipped for the rest of the tree.',
-      ]);
+      expect(result.warnings).toEqual(
+        expect.arrayContaining([
+          'Where-used returned 51 structure candidates for ZBASE, exceeding the append scan limit of 12; append discovery was skipped for the rest of the tree.',
+        ]),
+      );
       expect(post).toHaveBeenCalledTimes(1);
       expect(client.getTabl).toHaveBeenCalledTimes(2);
     });
 
-    it('propagates authorization failures instead of reporting no appends', async () => {
+    it('reports denied coverage and preserves the root after authorization failures', async () => {
       const error = new AdtApiError('Forbidden', 403, '/usageReferences');
       const client = makeStructureClient(
         { ZBASE: 'define structure zbase { field : abap.char(1); }' },
@@ -174,26 +178,32 @@ define table ztab {
           throw error;
         }),
       );
-      await expect(buildStructureHierarchy(client, 'ZBASE')).rejects.toBe(error);
+      const result = await buildStructureHierarchy(client, 'ZBASE');
+      expect(result.extensionDiscovery?.providers).toEqual(
+        expect.arrayContaining([expect.objectContaining({ status: 'denied' })]),
+      );
+      expect(result.warnings).toContain('http_403');
     });
 
-    it('still finds the last append when exactly 50 candidates are returned', async () => {
-      const candidates = Array.from({ length: 50 }, (_, i) => ({
+    it('still finds the last append when exactly 12 candidates are returned', async () => {
+      const candidates = Array.from({ length: 12 }, (_, i) => ({
         name: `ZREF${String(i).padStart(2, '0')}`,
         type: 'TABL/DS',
         uri: `/sap/bc/adt/ddic/structures/zref${i}`,
       }));
       const sources = Object.fromEntries(candidates.map(({ name }) => [name, `define structure ${name} { }`]));
       sources.ZBASE = 'define structure zbase { }';
-      sources.ZREF49 = 'extend type zbase with zref49 { }';
+      sources.ZREF11 = 'extend type zbase with zref49 { }';
       const client = makeStructureClient(
         sources,
         vi.fn(async (path: string) => ({ body: whereUsedXml(path.endsWith('ZBASE') ? candidates : []) })),
       );
 
       const result = await buildStructureHierarchy(client, 'ZBASE');
-      expect(result.tree.children).toEqual([{ structure: 'ZREF49', kind: 'append', attribute: null, children: [] }]);
-      expect(result.warnings).toBeUndefined();
+      expect(result.tree.children).toEqual([{ structure: 'ZREF11', kind: 'append', attribute: null, children: [] }]);
+      expect(result.extensionDiscovery?.providers).toEqual(
+        expect.arrayContaining([expect.objectContaining({ coverage: 'candidate_index' })]),
+      );
     });
 
     it('retains collected root appends when a nested include exceeds the scan limit', async () => {
@@ -218,11 +228,13 @@ define table ztab {
       );
       const result = await buildStructureHierarchy(client, 'ZBASE');
       expect(result.summary).toMatchObject({ includes: 1, appends: 1 });
-      expect(result.warnings?.[0]).toContain('51 structure candidates for ZINC');
+      expect(result.warnings).toEqual(
+        expect.arrayContaining([expect.stringContaining('51 structure candidates for ZINC')]),
+      );
       expect(post).toHaveBeenCalledTimes(2);
     });
 
-    it('propagates a candidate source authorization failure', async () => {
+    it('preserves the root and reports a candidate source authorization failure', async () => {
       const client = makeStructureClient(
         { ZBASE: 'define structure zbase { }' },
         vi.fn(async () => ({
@@ -236,7 +248,11 @@ define table ztab {
         statusCode: 200,
       });
       vi.mocked(client.getTabl).mockRejectedValueOnce(error);
-      await expect(buildStructureHierarchy(client, 'ZBASE')).rejects.toBe(error);
+      const result = await buildStructureHierarchy(client, 'ZBASE');
+      expect(result.extensionDiscovery?.providers).toEqual(
+        expect.arrayContaining([expect.objectContaining({ status: 'denied' })]),
+      );
+      expect(result.warnings).toContain('http_403');
     });
 
     it('marks recursive include cycles without treating shared children as cycles', async () => {
@@ -274,7 +290,12 @@ define table ztab {
 function makeStructureClient(sources: Record<string, string>, post: ReturnType<typeof vi.fn>): TestClient {
   return {
     safety: unrestrictedSafetyConfig(),
-    http: { post } as unknown as AdtClient['http'],
+    http: {
+      post,
+      get: vi.fn(async () => {
+        throw new AdtApiError('Metadata unavailable', 404, '/metadata');
+      }),
+    } as unknown as AdtClient['http'],
     resolveTablObjectUrl: vi.fn(async (name: string) => `/sap/bc/adt/ddic/structures/${encodeURIComponent(name)}`),
     getTabl: vi.fn(async (name: string, _opts?: SourceReadOptions): Promise<SourceReadResult> => {
       const source = sources[name.toUpperCase()];

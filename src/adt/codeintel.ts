@@ -1,3 +1,4 @@
+import type { AdtRequestOptions } from './http-deadline.js';
 /**
  * Code intelligence for SAP ADT.
  *
@@ -139,8 +140,10 @@ export async function findWhereUsed(
   safety: SafetyConfig,
   objectUrl: string,
   objectType?: string,
+  options?: AdtRequestOptions,
+  validateResponse?: (xml: string) => void,
 ): Promise<WhereUsedResult[]> {
-  return (await findWhereUsedWithScope(http, safety, objectUrl, objectType)).results;
+  return (await findWhereUsedWithScope(http, safety, objectUrl, objectType, options, validateResponse)).results;
 }
 
 /** Where-used results plus the symbol SAP actually searched for. */
@@ -164,6 +167,8 @@ export async function findWhereUsedWithScope(
   safety: SafetyConfig,
   objectUrl: string,
   objectType?: string,
+  options?: AdtRequestOptions,
+  validateResponse?: (xml: string) => void,
 ): Promise<WhereUsedLookup> {
   checkOperation(safety, OperationType.Intelligence, 'FindWhereUsed');
 
@@ -177,10 +182,17 @@ export async function findWhereUsedWithScope(
   ].join('\n');
 
   const url = `/sap/bc/adt/repository/informationsystem/usageReferences?uri=${encodeURIComponent(objectUrl)}`;
-  const resp = await http.post(url, body, 'application/vnd.sap.adt.repository.usagereferences.request.v1+xml', {
-    Accept: 'application/vnd.sap.adt.repository.usagereferences.result.v1+xml',
-  });
+  const resp = await http.post(
+    url,
+    body,
+    'application/vnd.sap.adt.repository.usagereferences.request.v1+xml',
+    {
+      Accept: 'application/vnd.sap.adt.repository.usagereferences.result.v1+xml',
+    },
+    options,
+  );
 
+  validateResponse?.(resp.body);
   return parseWhereUsedResponse(resp.body);
 }
 
