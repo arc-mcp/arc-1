@@ -88,7 +88,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. With `method=`, an explicit include selects that exact source (including `main`) before method extraction. For DDLS: `elements` (extract CDS view elements). For TEXT_ELEMENTS: `symbols`, `selections`, or `headings` — one part of the text pool; omit for the whole PROG/FUGR pool or CLAS symbols. |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. For FUGR, `grep` implies `expand_includes` and searches each include on its own: matches are grouped under `=== <include> ===` with line numbers counted within that include. For PROG and INCL, `grep` searches the object itself unless `expand_includes=true`; the response then names the includes that the expansion would also search. Falls back to a literal search when the pattern is not valid regex. |
-| `extensions` | string | No | `none`, `summary`, or `sources`. Full TABL, PROG, INCL, FUNC, FUGR, CLAS and INTF source reads default to a bounded summary; partial reads default to none. Sources adds separate labelled extension bodies and a bounded graph. See [Extension discovery](#extension-discovery). |
+| `extensions` | string | No | `none`, `summary`, or `sources`. Full TABL, PROG, INCL, FUNC, FUGR, CLAS, INTF and BDEF source reads default to a bounded summary; partial reads default to none. Sources adds separate labelled extension bodies and a bounded graph. Interface coverage is limited. See [Extension discovery](#extension-discovery). |
 | `enhancementContext` | object | No | Standalone INCL only: `{type: "PROG"\|"FUGR"\|"CLAS", name: "..."}` identifies the owning main object. Required for standalone include plug-in discovery; actual child includes inherit their root context. |
 | `lineStart` | integer | No | First source line (1-based, inclusive); requires `lineEnd`. Supports PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, DDLX and TABL. CLAS `include` selects one source section. Plain text only: do not combine with grep, method, diff, structured/editable output, signature or element extraction. Draft/version notices precede the numbered source. |
 | `lineEnd` | integer | No | Last source line (inclusive); requires `lineStart`. Clamped to the source end; a start beyond the source is an error. |
@@ -119,7 +119,7 @@ occurrences, attributes and suffixes remain distinct; bodies are fetched once pe
 The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02 and 758 SP02. Source
 plug-in XML is qualified on both releases. Live positive coverage includes PROG on 750 and
 INCL, FUNC and FUGR on 758; other family/release combinations remain unqualified.
-BDEF public integration remains a separate stage and explicit requests currently report `unsupported`.
+BDEF extensions are source-verified on 758; release 750 is explicitly unqualified.
 BTP and other releases are unqualified. CDS/DDLX extensions and BAdIs are outside this feature.
 
 CLAS combines selected-source hook coverage with a separate native `EXTED_OBJ` graph for the owning
@@ -134,6 +134,15 @@ owner and content URI). Generated source may omit implementation names; only a m
 actually named by that returned source is followed. It remains a labelled representation, not an
 inferred edit target. INTF's tested 758 ENV fallback is `unsupported_context`; 750 is an unsupported
 provider. Neither is evidence of absent interface extensions. Positive interface coverage is unqualified.
+
+BDEF uses a native WUL candidate index, then verifies active `extend behavior for` statements
+against entities declared by the base BDEF. Comments, strings, ordinary references and self edges
+are excluded. Summary checks at most two candidates; sources uses the shared remaining allowance
+and labels verified bodies `representation=authored_source`. Candidate omissions stay explicit.
+Even a fully checked or empty index cannot prove global absence. For example,
+`SAPRead(type="BDEF", name="DEMO_RAP_EXTENSIBLE", extensions="sources")` verifies
+DEMO_RAP_EXTEND1 and DEMO_RAP_EVENT_EXT on 758. Generic RAP/CDS availability does not qualify
+behavior extensions on 750. Cold capability discovery also consumes the optional byte/time budget.
 
 Method, grep, line-window and class-include reads default to none. An explicit mode on a partial
 read describes its **owning object/source**, without claiming the extension bodies match the

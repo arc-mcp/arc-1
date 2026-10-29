@@ -1,0 +1,47 @@
+managed implementation in class bp_demo_rap_extensible unique;
+strict(2);
+with draft;
+extensible
+{
+  with validations on save;
+  with determinations on save;
+  with determinations on modify;
+  with additional save;
+}
+
+define behavior for DEMO_RAP_EXTENSIBLE
+persistent table demo_dbtab_root
+draft table demo_dbtab_draf1
+lock master
+total etag Timestamp
+authorization master ( global )
+extensible
+{
+  create;
+  update;
+  delete;
+
+  draft action Edit;
+  draft action Activate optimized;
+  draft action Discard;
+  draft action Resume;
+  draft determine action Prepare extensible;
+
+  field(readonly:update) KeyField;
+
+  determination setID on save { create; }
+
+  determine action trigger_all extensible
+  {
+    determination ( always ) setID;
+  }
+
+  mapping for demo_dbtab_root corresponding extensible
+  {
+    KeyField = key_field;
+    DataField = data_field;
+    Timestamp = crea_date_time;
+  }
+
+
+}

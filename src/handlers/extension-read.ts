@@ -1,5 +1,6 @@
 /** One handler boundary for optional family adapters; legacy base content is never rewritten. */
 
+import { discoverBdefExtensions } from '../adt/bdef-extensions.js';
 import { discoverClassExtensions } from '../adt/class-extensions.js';
 import type { AdtClient } from '../adt/client.js';
 import { ddicExtensionAdapter } from '../adt/ddic-extension-adapter.js';
@@ -11,7 +12,7 @@ import {
 } from '../adt/extension-discovery.js';
 import { discoverSourcePlugins } from '../adt/source-plugin-discovery.js';
 import { getCurrentContext } from '../server/context.js';
-import { getCachedFeatures } from './feature-cache.js';
+import { getCachedDiscovery, getCachedFeatures } from './feature-cache.js';
 import { detectLocalHandlerInclude } from './object-types.js';
 import type { ToolResult } from './shared.js';
 
@@ -22,7 +23,7 @@ export function extensionReadMode(args: Record<string, unknown>): ExtensionMode 
   if (args.extensions === 'none' || args.extensions === 'summary' || args.extensions === 'sources')
     return args.extensions;
   if (
-    !['TABL', 'CLAS', 'INTF', ...SOURCE_PLUGIN_READ_TYPES].includes(String(args.type).toUpperCase()) ||
+    !EXTENSION_READ_TYPES.has(String(args.type).toUpperCase()) ||
     args.method ||
     args.grep ||
     args.lineStart !== undefined ||
@@ -56,7 +57,23 @@ export async function appendReadExtensions(
   };
   const session = new ExtensionDiscoverySession(mode, request, client.safety, { signal: getCurrentContext()?.signal });
   if (type === 'TABL') await ddicExtensionAdapter(client, baseSource ?? '')(session, request);
-  else if (type === 'CLAS' || type === 'INTF') {
+  else if (type === 'BDEF') {
+    const features = getCachedFeatures();
+    const discovery = getCachedDiscovery();
+    await discoverBdefExtensions(client, session, request, baseSource ?? '', {
+      discovery: discovery.size ? discovery : features?.discoveryMap,
+      abapRelease: features?.abapRelease,
+    });
+  } else if (SOURCE_PLUGIN_READ_TYPES.has(type)) {
+    await discoverSourcePlugins(client, session, request, {
+      unit: {
+        type: type as 'PROG' | 'INCL' | 'FUNC' | 'FUGR',
+        name,
+        ...(type === 'FUNC' ? { group: String(args.group ?? '') } : {}),
+      },
+      ...(baseSource !== undefined ? { source: baseSource } : {}),
+    });
+  } else if (type === 'CLAS' || type === 'INTF') {
     const section = (args.include ??
       (args.method ? detectLocalHandlerInclude(String(args.method)) : undefined) ??
       'main') as 'main' | 'definitions' | 'implementations' | 'macros' | 'testclasses';
@@ -67,15 +84,6 @@ export async function appendReadExtensions(
       { unit: { type: 'CLAS', name, section }, source: baseSource },
       getCachedFeatures()?.abapRelease,
     );
-  } else if (SOURCE_PLUGIN_READ_TYPES.has(type)) {
-    await discoverSourcePlugins(client, session, request, {
-      unit: {
-        type: type as 'PROG' | 'INCL' | 'FUNC' | 'FUGR',
-        name,
-        ...(type === 'FUNC' ? { group: String(args.group ?? '') } : {}),
-      },
-      ...(baseSource !== undefined ? { source: baseSource } : {}),
-    });
   } else
     session.result.providers.push({
       id: 'family_adapter',

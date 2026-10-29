@@ -746,6 +746,7 @@ async function handleSAPReadBase(
       const { source, cacheHit, revalidated } = await cachedGet('BDEF', name, effectiveVersion, (ifNoneMatch) =>
         client.getBdef(name, { ifNoneMatch, version: effectiveVersion }),
       );
+      extensionBase.source = source;
       if (args.grep) return grepText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
