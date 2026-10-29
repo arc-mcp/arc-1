@@ -113,6 +113,18 @@ describe('source plug-in wire parser', () => {
       expect(graph.implementations[0]?.plugins[0]?.sourceOmitted).toBe(reason);
     }
   });
+  it('retains decoded BOM, CRLF and trailing whitespace exactly', () => {
+    const source = '\uFEFFENHANCEMENT 1 test.\r\n  WRITE / 1.  \r\nENDENHANCEMENT.\r\n';
+    const xml = fixture('include-context-758.xml').replace(
+      /<enh:source>[\s\S]*?<\/enh:source>/,
+      `<enh:source>${Buffer.from(source).toString('base64')}</enh:source>`,
+    );
+    const graph = parseSourcePluginElements(xml, {
+      mainObjectUri: '/sap/bc/adt/programs/programs/prog_enh_subobj_check',
+      sources: true,
+    });
+    expect(graph.implementations[0]?.plugins[0]?.source).toBe(source);
+  });
   it('accepts the valid anonymous empty response for this selected source only', () => {
     expect(
       parseSourcePluginElements('<enh:enhancements xmlns:enh="http://www.sap.com/adt/abapsource/enhancements"/>', {

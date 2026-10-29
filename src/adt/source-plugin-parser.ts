@@ -158,7 +158,7 @@ export function parseSourcePluginElements(xml: string, options: PluginParseOptio
         else {
           const bytes = Buffer.from(encoded, 'base64');
           try {
-            plugin.source = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+            plugin.source = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
             remaining -= bytes.length;
           } catch {
             plugin.sourceOmitted = 'invalid_utf8';
