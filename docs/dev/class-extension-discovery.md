@@ -37,7 +37,8 @@ Tests: class-extensions, class-extension-budgets, enhancement-include, source-pl
 repository-relations. The real HTTP oracle covers direct and Connectivity sends, streamed bytes,
 deadlines and terminal failures. Sanitized fixtures live in tests/fixtures/class-extensions and
 source hook fixtures in tests/fixtures/extensions/source. Live qualification is recorded in
-../research/2026-10-29-class-extension-live.json, with public-flow checks recorded separately.
+../research/2026-10-29-class-extension-live.json (early helper runs) and
+../research/2026-10-29-class-extension-discovery/README.md (final public-flow evidence).
 
 Integration dependencies: shared contract commit 67e570344 and the source plug-in adapter/parser
 from stage 2. PR #1124 was open at ab5d58b48 when inspected; its original patch is retained as a
