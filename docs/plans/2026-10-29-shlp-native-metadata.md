@@ -70,3 +70,6 @@ To rerun the durable live suite with existing `TEST_SAP_*` credentials:
 ```sh
 npx vitest run --config vitest.integration.config.ts tests/integration/shlp.integration.test.ts
 ```
+
+- The strict documentation CI build found two new roadmap links outside the published docs tree.
+  Replaced them with repository URLs; `mkdocs build --strict` passes. This follow-up changes docs only.

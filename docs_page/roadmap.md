@@ -1132,8 +1132,8 @@ and effective append provenance remain unavailable. The bounded reader needs no 
 **Resume with.** A concrete full-definition use case, an independent complete-definition oracle and
 positive append fixtures covering switch/interface semantics. Preserve data/SQL permissions and
 keep execution/export extensions outside core. BTP and live restricted-user/PP qualification remain
-separate evidence requirements. See [native evidence](../docs/research/abap-types/types/shlp.md) and
-[implementation plan](../docs/plans/2026-10-29-shlp-native-metadata.md).
+separate evidence requirements. See [native evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/abap-types/types/shlp.md) and
+[implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-29-shlp-native-metadata.md).
 
 ## CI and operations
 
