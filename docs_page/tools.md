@@ -156,6 +156,7 @@ approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated
 | `VIEW` | DDIC view |
 | `DOMA` | Domain metadata (structured JSON: data type, length, fixed values, value table) |
 | `DTEL` | Data element metadata (structured JSON: type, labels and their reserved lengths, search help and its parameter, SET/GET parameter, change-document and bidi flags, and `deactivateInputHistory`). Omitted `version` and `auto` return SAP's developer view so pending drafts remain visible; explicit `active` or `inactive` is passed to SAP. |
+| `SHLP` | On-prem search-help interface metadata (`SHLP/DH` accepted): active only, partial coverage, description, optional package and parameters with types/import/export flags. Selection-method/exit headers, collective assignments, positions/defaults and appends are explicitly missing. Unnamed SAP responses are errors, not empty definitions. Omit format/version or use `text`/`active`; inactive/auto and source options are refused. |
 | `AUTH` | Authorization field metadata (structured JSON: role name, check table, domain, conversion exit, org-level info) |
 | `FEATURE_TOGGLE` | Feature toggle states (structured JSON: toggle state per system from SAP switch framework). Renamed from `FTG2` in audit Plan B (docs/research/abap-types/types/ftg2.md) — `FTG2` remains a deprecated alias with a stderr warning; use `FEATURE_TOGGLE`. |
 | `ENHO` | Enhancement metadata; BAdI implementation classes or hook locations plus ABAP source. See [enhancement reads](#enhancement-reads). |
@@ -1960,6 +1961,11 @@ SAPGit(action="push", backend="abapgit", repoId="000000000001", message="Add ord
 ---
 
 ## SAPContext
+
+For on-prem search helps, `SAPContext(type="SHLP", name="SCUSTOM")` (or `action="deps"`)
+returns the same active partial interface metadata as `SAPRead`. It performs no KTD lookup,
+source compression or dependency traversal. Other actions and supplied source are unsupported.
+The response declares missing definition fields and leaves effective translation language unknown.
 
 Get dependency API contracts, CDS impact, DDIC structure, or live where-used evidence.
 

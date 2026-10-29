@@ -119,6 +119,7 @@ sequence.
 | [FEAT-90](#feat-90) | Historical transport scope beyond source | P2 | M | Needs research | Developer workflow |
 | [FEAT-36](#feat-36) | Type information | P3 | S | Blocked | Code intelligence |
 | [FEAT-79](#feat-79) | DDIC-aware dependency context | P2 | M | Needs research | Code intelligence |
+| [FEAT-97](#feat-97) | Complete SHLP definitions and effective appends | P3 | M | Needs research | Object coverage |
 | [FEAT-42](#feat-42) | Additional CI output formats | P3 | XS | Revisit on trigger | CI |
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
@@ -1117,6 +1118,22 @@ contracts, then verify source/signature type references and lookup limits on bot
 failed attempts distinct from absent objects and preserve the existing source/cache identity policy.
 Evaluate prioritizing known function/class candidates ahead of ambiguous type guesses without
 increasing the lookup limit; verify that any ranking change improves useful coverage.
+
+<a id="feat-97"></a>
+### FEAT-97 — Complete SHLP definitions and effective appends
+
+- **Priority / effort / status:** P3 / M / Needs research
+- **Category:** Object coverage
+
+**Remaining gap.** Native active partial SHLP metadata is available through SAPRead and SAPContext.
+Selection-method/exit headers, collective assignments, parameter positions/defaults, inactive content
+and effective append provenance remain unavailable. The bounded reader needs no SQL or execution.
+
+**Resume with.** A concrete full-definition use case, an independent complete-definition oracle and
+positive append fixtures covering switch/interface semantics. Preserve data/SQL permissions and
+keep execution/export extensions outside core. BTP and live restricted-user/PP qualification remain
+separate evidence requirements. See [native evidence](../docs/research/abap-types/types/shlp.md) and
+[implementation plan](../docs/plans/2026-10-29-shlp-native-metadata.md).
 
 ## CI and operations
 

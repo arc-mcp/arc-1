@@ -43,6 +43,7 @@ import {
   normalizeObjectType,
   objectUrlForType,
 } from './object-types.js';
+import { handleSearchHelp } from './search-help.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { handleSyntaxCheck } from './syntax.js';
 
@@ -198,6 +199,8 @@ export async function handleSAPRead(
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
   const requestedVersion = (args.version ?? 'active') as RequestedSourceVersion;
+
+  if (type === 'SHLP') return handleSearchHelp(client, args);
 
   const hasLineRange = args.lineStart !== undefined || args.lineEnd !== undefined;
   if (hasLineRange) {
