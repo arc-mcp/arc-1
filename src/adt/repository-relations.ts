@@ -19,6 +19,7 @@ export const RELATIONS_PATH = '/sap/bc/adt/objectrelations/network';
 export const RELATION_XML_MAX_BYTES = 1024 * 1024;
 export const RELATIONS_MIME = 'application/vnd.sap.adt.objectrelations.request.v1+xml';
 export { RELATION_NAME, RelationProtocolError, relationObjectUri } from './relation-objects.js';
+export class RelationContextError extends RelationProtocolError {}
 export type RelationDirection = 'incoming' | 'outgoing';
 export interface RelationObject {
   uri: string;
@@ -28,17 +29,18 @@ export interface RelationObject {
   version: 'active';
   existence: 'metadata_validated' | 'observed_reference';
 }
-export interface RelationEdge {
+export type RelationContext = 'ENV' | 'WUL' | 'EXTED_OBJ';
+export interface RelationEdge<C extends RelationContext = 'ENV' | 'WUL'> {
   from: string;
   to: string;
-  kind: 'uses';
-  context: 'ENV' | 'WUL';
+  kind: C extends 'EXTED_OBJ' ? 'extends' : 'uses';
+  context: C;
   evidence: 'sap_relation_explorer';
   direct: null;
 }
-export interface RelationNetwork {
+export interface RelationNetwork<C extends RelationContext = 'ENV' | 'WUL'> {
   objects: RelationObject[];
-  edges: RelationEdge[];
+  edges: RelationEdge<C>[];
 }
 
 export function supportsRelations(map?: ReadonlyMap<string, string[]>): boolean {
@@ -105,13 +107,13 @@ export function parseRelationXml(xml: string): Record<string, unknown> {
   return parseXml(xml);
 }
 
-export function normalizeRelationNetwork(
+export function normalizeRelationNetwork<C extends RelationContext>(
   xml: string,
-  context: 'ENV' | 'WUL',
+  context: C,
   requested: RelationObject,
-): RelationNetwork {
+): RelationNetwork<C> {
   const root = record(parseRelationXml(xml).networkResponse);
-  if (root.activeContext !== context) throw new RelationProtocolError('SAP did not honor the requested context.');
+  if (root.activeContext !== context) throw new RelationContextError('SAP did not honor the requested context.');
   const objects = new Map<string, RelationObject>();
   const refs = array(root.objectReference),
     relations = array(root.relation);
@@ -145,7 +147,7 @@ export function normalizeRelationNetwork(
   ) {
     throw new RelationProtocolError('native result does not match the requested root.');
   }
-  const edges = new Map<string, RelationEdge>();
+  const edges = new Map<string, RelationEdge<C>>();
   for (const value of relations) {
     const raw = record(value);
     const a = safeUri(raw.object1),
@@ -158,12 +160,13 @@ export function normalizeRelationNetwork(
       !objects.has(b)
     )
       throw new RelationProtocolError('unsupported native relationship shape.');
+    // EXTED_OBJ lists extending objects below the base. Preserve semantic direction: enhancement → base.
     const from = context === 'ENV' ? a : b,
       to = context === 'ENV' ? b : a;
     edges.set(JSON.stringify([from, to]), {
       from,
       to,
-      kind: 'uses',
+      kind: (context === 'EXTED_OBJ' ? 'extends' : 'uses') as RelationEdge<C>['kind'],
       context,
       evidence: 'sap_relation_explorer',
       direct: null,
@@ -236,10 +239,14 @@ export class NativeRelationProvider {
     return { spec, uri };
   }
 
-  async validateRoot(type: string, name: string): Promise<RelationObject> {
+  async validateRoot(type: string, name: string, options: { version?: 'active' } = {}): Promise<RelationObject> {
     const { spec, uri } = await this.resolveRootUri(type, name);
     checkOperation(this.client.safety, OperationType.Read, 'ValidateRepositoryRelationRoot');
-    const response = await this.client.http.get(uri, { Accept: 'application/*' }, this.options);
+    const response = await this.client.http.get(
+      `${uri}${options.version ? '?version=active' : ''}`,
+      { Accept: 'application/*' },
+      this.options,
+    );
     const parsed = parseRelationXml(response.body);
     const metadata = record(parsed[spec.metadataRoot]);
     const expectedType = spec.native;
@@ -282,11 +289,22 @@ export class NativeRelationProvider {
   }
 
   async lookup(object: RelationObject, direction: RelationDirection): Promise<RelationNetwork> {
+    return this.lookupContext(object, direction === 'outgoing' ? 'ENV' : 'WUL');
+  }
+
+  /** Separate identity provider; generic ENV/WUL callers keep their existing types and behavior. */
+  async lookupExtending(object: RelationObject): Promise<RelationNetwork<'EXTED_OBJ'>> {
+    return this.lookupContext(object, 'EXTED_OBJ');
+  }
+
+  private async lookupContext<C extends RelationContext>(
+    object: RelationObject,
+    context: C,
+  ): Promise<RelationNetwork<C>> {
     // Rebuild at the sink; a returned URI can never select an arbitrary ADT operation.
     const group = object.type === 'FUGR/FF' ? relationFunctionIdentity(safeUri(object.uri)).group : undefined;
     const uri = relationObjectUri(object.type, object.name, group);
     if (uri !== object.uri) throw new RelationProtocolError('expansion identity/URI mismatch.');
-    const context = direction === 'outgoing' ? 'ENV' : 'WUL';
     const body = `<or:request xmlns:or="http://www.sap.com/adt/objectrelations" xmlns:adtcore="http://www.sap.com/adt/core"><or:reference adtcore:uri="${escapeXmlAttr(uri)}"/><or:preferredContext>${context}</or:preferredContext></or:request>`;
     checkOperation(this.client.safety, OperationType.Intelligence, 'RepositoryRelations');
     const response = await this.client.http.post(RELATIONS_PATH, body, RELATIONS_MIME, { Accept: '*/*' }, this.options);

@@ -43,7 +43,11 @@ describe('SAPRead ENHO: source plug-ins via the enhancement include (SAP_BASIS 7
       if (path.includes('informationsystem/search'))
         return mockResponse(200, searchHit(opts.subtype ?? 'ENHO/XH', collection));
       if (path.includes('/enhoxhb/')) return mockResponse(404, 'not a BAdI implementation');
-      if (path.includes(`/${collection}/`)) return mockResponse(opts.genericStatus ?? 500, 'private diagnostic');
+      if (path.includes(`/${collection}/`))
+        return mockResponse(
+          opts.genericStatus ?? 500,
+          '<exception><type id="ExceptionResourceReadFailure"/></exception>',
+        );
       if (path === `${includeBase}/source/main/versions`) {
         expect(init.headers?.Accept).toBe('application/atom+xml;type=feed');
         return mockResponse(opts.feedStatus ?? 200, opts.feedBody ?? feed);
@@ -155,7 +159,11 @@ describe('SAPRead INCL on an enhancement include', () => {
       if (String(url).includes('/discovery')) return mockResponse(200, '', { 'x-csrf-token': 'T' });
       const path = new URL(String(url)).pathname;
       calls.push(path);
-      if (path === `${base}/source/main`) return mockResponse(opts.directStatus ?? 500, 'private diagnostic');
+      if (path === `${base}/source/main`)
+        return mockResponse(
+          opts.directStatus ?? 500,
+          '<exception><type id="ExceptionResourceReadFailure"/></exception>',
+        );
       if (path === `${base}/source/main/versions`) return mockResponse(200, feed);
       if (path === contentPath('00000')) return mockResponse(200, source);
       throw new Error(`unexpected request ${path}`);

@@ -12,6 +12,7 @@ import {
   isEnhancementIncludeName,
   readEnhancementIncludeRevision,
 } from '../adt/enhancement-include.js';
+import { enhancementSourceUnavailable } from '../adt/enhancements.js';
 import { AdtApiError, extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
@@ -660,12 +661,7 @@ export async function handleSAPRead(
       } catch (error) {
         // Enhancement includes (`<implementation>=…=E`) are not served by /source/main on SAP_BASIS 750;
         // their revision feed still lists the active version. Drafts cannot be read from there.
-        if (
-          effectiveVersion === 'inactive' ||
-          !isEnhancementIncludeName(name) ||
-          !(error instanceof AdtApiError) ||
-          ![400, 404, 500].includes(error.statusCode)
-        )
+        if (effectiveVersion === 'inactive' || !isEnhancementIncludeName(name) || !enhancementSourceUnavailable(error))
           throw error;
         const fallback = await readEnhancementIncludeRevision(client, name).catch((inner: unknown) => {
           if (inner instanceof RevisionHistoryError) return undefined;

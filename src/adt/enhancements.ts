@@ -2,7 +2,8 @@
 import type { AdtClient } from './client.js';
 import { enhancementIncludeName, readEnhancementIncludeRevision } from './enhancement-include.js';
 import { withFilterConditions } from './enho-filter.js';
-import { AdtApiError, AdtError } from './errors.js';
+import { AdtApiError, AdtError, extractExceptionType } from './errors.js';
+import type { AdtRequestOptions } from './http-deadline.js';
 import { RevisionHistoryError } from './revision-feed.js';
 import { checkOperation, OperationType } from './safety.js';
 import type { EnhancementImplementationInfo } from './types.js';
@@ -16,6 +17,66 @@ const ROUTES = {
 type Subtype = keyof typeof ROUTES;
 /** SAP's own failure statuses at an ENHO route; auth, throttling and network errors never reroute. */
 const REROUTE_STATUSES = [400, 404, 500];
+
+/** Release-scoped wire evidence; an arbitrary server error never authorizes a source fallback. */
+export function enhancementSourceUnavailable(error: unknown, release?: string): boolean {
+  if (!(error instanceof AdtApiError)) return false;
+  if (error.statusCode === 404) return true;
+  if (error.statusCode !== 500) return false;
+  const body = error.responseBody ?? '';
+  const type = extractExceptionType(body);
+  if (type === 'ExceptionResourceReadFailure') return true;
+  if (release === '750' && type === 'ExceptionInternalServerError')
+    return /Enhancement technology (?:CLASENH|HOOK_IMPL) is not supported yet\./.test(body);
+  return (
+    release === '758' &&
+    type === undefined &&
+    /<span id="msgText">Dereferencing of the NULL reference\s*<\/span>/.test(body)
+  );
+}
+
+/** Read one already discovered ENHO at its exact subtype, with an explicitly active representation. */
+export async function readActiveClassEnhancementSource(
+  client: Pick<AdtClient, 'http' | 'safety' | 'getRevisions' | 'getRevisionSource'>,
+  identity: { name: string; type: string },
+  request: AdtRequestOptions,
+  release?: string,
+): Promise<EnhancementImplementationInfo> {
+  checkOperation(client.safety, OperationType.Read, 'GetEnhancementImplementation');
+  const include = enhancementIncludeName(identity.name);
+  if (identity.type !== 'ENHO/XH' && identity.type !== 'ENHO/XHH')
+    throw new AdtError('No qualified class enhancement source provider for this native type.');
+  const [collection, accept] = ROUTES[identity.type];
+  const path = `/sap/bc/adt/enhancements/${collection}/${encodeURIComponent(identity.name.toLowerCase())}`;
+  try {
+    const result = parseEnhancementMetadata(
+      (await client.http.get(`${path}?version=active`, { Accept: accept }, request)).body,
+    );
+    if (result.name.toUpperCase() !== identity.name.toUpperCase()) throw new RevisionHistoryError();
+    if (identity.type === 'ENHO/XHH')
+      result.source = (
+        await client.http.get(`${path}/source/main?version=active`, { Accept: 'text/plain' }, request)
+      ).body;
+    return result;
+  } catch (error) {
+    // This path is only for a known class-bound ENHO. Never search/reroute on an unexpected failure.
+    if (request.attemptBudget?.authorizationFailureObserved || !enhancementSourceUnavailable(error, release))
+      throw error;
+    const read = await readEnhancementIncludeRevision(client, include, { ...request, version: 'active' });
+    if (!read) throw error;
+    return {
+      name: identity.name,
+      description: '',
+      package: '',
+      technology: '',
+      switchSupported: false,
+      badiImplementations: [],
+      source: read.source,
+      enhancementInclude: { name: read.include, revision: read.revision },
+      note: 'Generated active include revision; technology and runtime switch applicability remain unknown.',
+    };
+  }
+}
 
 /**
  * Releases whose ADT serves only the generic `enhoxh` route (SAP_BASIS 750) fail inside SAP for
@@ -142,12 +203,7 @@ export async function readEnhancementImplementation(
       } catch (generic) {
         // Only the generic route has no source resource of its own; SAP fails there for source-code
         // plug-ins on releases that advertise nothing else (750). Keep every other failure as it is.
-        if (
-          subtype !== 'ENHO/XH' ||
-          !(generic instanceof AdtApiError) ||
-          !REROUTE_STATUSES.includes(generic.statusCode)
-        )
-          throw generic;
+        if (subtype !== 'ENHO/XH' || !enhancementSourceUnavailable(generic)) throw generic;
         const fallback = await readSourcePlugInFromInclude(client, name, attempted);
         if (fallback) return fallback;
         throw generic;
