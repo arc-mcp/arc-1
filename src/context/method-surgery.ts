@@ -12,6 +12,7 @@
 
 import { Comment, MemoryFile, Objects, Registry, Statements, Structures, Version } from '@abaplint/core';
 import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
+import { methodNotFoundMessage } from './method-suggestions.js';
 
 const DEFAULT_VERSION = Version.Cloud;
 
@@ -560,15 +561,6 @@ export function extractMethod(
   }
 
   if (!method || method.startLine === 0 || method.endLine === 0) {
-    // Build a helpful "available methods" list. For sources with multiple
-    // local classes, prefer the qualified form so the LLM can copy-paste it.
-    const distinctClasses = new Set(
-      listing.methods.map((m) => (m.containingClass ?? '').trim()).filter((c) => c.length > 0),
-    );
-    const available =
-      distinctClasses.size > 1
-        ? listing.methods.map((m) => (m.containingClass ? `${m.containingClass}~${m.name}` : m.name)).join(', ')
-        : listing.methods.map((m) => m.name).join(', ');
     return {
       className,
       methodName,
@@ -577,7 +569,7 @@ export function extractMethod(
       startLine: 0,
       endLine: 0,
       success: false,
-      error: `Method "${methodName}" not found in ${className}. Available methods: ${available || '(none)'}`,
+      error: methodNotFoundMessage(className, methodName, listing.methods),
     };
   }
 
