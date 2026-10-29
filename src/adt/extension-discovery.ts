@@ -245,11 +245,17 @@ export function renderExtensionDiscovery(result: ExtensionDiscoveryResult): Arra
   const cap = EXTENSION_LIMITS[result.mode].outputBytes;
   const shown = result.nodes.slice(0, 8);
   if (result.nodes.length > shown.length) result.omissions.output = result.nodes.length - shown.length;
+  let omittedProviders = 0;
+  let omittedIssues = 0;
+  const providerStatuses: Partial<Record<ExtensionProvider['status'], number>> = {};
+  for (const provider of result.providers)
+    providerStatuses[provider.status] = (providerStatuses[provider.status] ?? 0) + 1;
   const summary = () =>
     `[extensions] ${JSON.stringify({
       root: result.root,
       scope: result.scope,
       providers: compactProviders(result.providers),
+      ...(omittedProviders ? { omittedProviders, providerStatuses } : {}),
       identities: shown.map(({ type, name, version, provider, family, switch: sw }) => ({
         type,
         name,
@@ -260,6 +266,7 @@ export function renderExtensionDiscovery(result: ExtensionDiscoveryResult): Arra
       })),
       applicability: 'unknown',
       issues: result.issues,
+      ...(omittedIssues ? { omittedIssues } : {}),
       omissions: result.omissions,
       consumed: result.consumed,
     })}`;
@@ -292,6 +299,20 @@ export function renderExtensionDiscovery(result: ExtensionDiscoveryResult): Arra
   let text = summary();
   while (Buffer.byteLength(text) > 2048 && shown.length) {
     shown.pop();
+    result.omissions.output = (result.omissions.output ?? 0) + 1;
+    text = summary();
+  }
+  // Many mixed source providers can exceed the allowance even after identities are removed.
+  // Keep valid JSON and aggregate statuses; never cut through a denial or omission field silently.
+  while (Buffer.byteLength(text) > 2048 && result.issues.length) {
+    result.issues.pop();
+    omittedIssues++;
+    result.omissions.output = (result.omissions.output ?? 0) + 1;
+    text = summary();
+  }
+  while (Buffer.byteLength(text) > 2048 && result.providers.length) {
+    result.providers.pop();
+    omittedProviders++;
     result.omissions.output = (result.omissions.output ?? 0) + 1;
     text = summary();
   }

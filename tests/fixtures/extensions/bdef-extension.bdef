@@ -1,0 +1,7 @@
+extension implementation in class bp_demo_rap_extend1 unique;
+
+extend behavior for DEMO_RAP_EXTENSIBLE {
+
+ determination MyDet1 on save { create; update; }
+ extend determine action trigger_all {determination MyDet1; }
+}
