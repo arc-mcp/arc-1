@@ -183,4 +183,33 @@ describe('class-bound enhancements', () => {
     expect(enhancementSourceUnavailable(err, '816')).toBe(false);
     expect(enhancementSourceUnavailable(new AdtApiError('unrelated', 500, '/enho'), '750')).toBe(false);
   });
+  it.each([false, true])('binds authored nested source to its discovered parent; mismatch=%s', async (mismatch) => {
+    const s = setup();
+    const parentNode = {
+      type: 'ENHO/XHH',
+      name: 'ZPARENT',
+      version: 'active',
+      uri: '/sap/bc/adt/enhancements/enhoxhh/zparent',
+      provider: 'class_exted_obj',
+      family: 'class_bound_enhancement',
+    };
+    const childNode = { ...parentNode, name: 'ZCHILD', uri: '/sap/bc/adt/enhancements/enhoxhh/zchild' };
+    s.session.addNode(parentNode);
+    s.session.addNode(childNode);
+    s.session.result.edges.push({ from: 'ENHO/XHH:ZCHILD:active', to: 'ENHO/XHH:ZPARENT:active', kind: 'extends' });
+    s.get.mockImplementation(async (path) => ({
+      body: path.includes('/source/main')
+        ? 'unchanged authored source'
+        : `<enhancement name="ZCHILD"><contentSpecific><hookTechnology><enhancedObject name="ZPARENT" type="ENHO/XHH" uri="${parentNode.uri}${mismatch ? '_other' : ''}"/></hookTechnology></contentSpecific></enhancement>`,
+    }));
+    await discoverClassSources(s.client, s.session, [childNode], '758');
+    if (mismatch) {
+      expect(s.session.stopped).toBe(true);
+      expect(s.session.result.sources).toEqual([]);
+    } else
+      expect(s.session.result.sources[0]).toMatchObject({
+        source: 'unchanged authored source',
+        representation: 'authored_source',
+      });
+  });
 });
