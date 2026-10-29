@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-10-26
+**Last reviewed:** 2026-10-29
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -119,6 +119,7 @@ sequence.
 | [FEAT-90](#feat-90) | Historical transport scope beyond source | P2 | M | Needs research | Developer workflow |
 | [FEAT-36](#feat-36) | Type information | P3 | S | Blocked | Code intelligence |
 | [FEAT-79](#feat-79) | DDIC-aware dependency context | P2 | M | Needs research | Code intelligence |
+| [FEAT-96](#feat-96) | Bounded class overview and large-read policy | P2 | M | Needs research | Code intelligence |
 | [FEAT-42](#feat-42) | Additional CI output formats | P3 | XS | Revisit on trigger | CI |
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
@@ -1117,6 +1118,27 @@ contracts, then verify source/signature type references and lookup limits on bot
 failed attempts distinct from absent objects and preserve the existing source/cache identity policy.
 Evaluate prioritizing known function/class candidates ahead of ambiguous type guesses without
 increasing the lookup limit; verify that any ranking change improves useful coverage.
+
+<a id="feat-96"></a>
+### FEAT-96 — Bounded class overview and large-read policy
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Code intelligence
+
+**Remaining gap.** An optional bounded class overview and a predictable large-source response policy
+could help unknown-member discovery. Define completeness, continuation, and opt-in/default behavior
+before changing existing full-source reads. Broader local/interface/inherited signature resolution
+also needs explicit ownership and ambiguity rules. Existing named-method, grep, range and own-MAIN
+signature reads cover focused requests; they do not establish a complete inherited API.
+
+**Evidence.** [Focused-read implementation and live measurements](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-29-read-token-quick-wins/README.md)
+separate returned model context from SAP transfer. Metadata first adds a call when the member is
+already known, and caching alone does not shrink returned source.
+
+**Resume with.** Compare equal completed unknown-member tasks across representative classes and
+clients, including retries and discovery calls. Demonstrate a useful improvement before adding a
+default cap or automatic overview. Preserve source/editable hashes, version and per-user cache
+boundaries, and explicit full reads.
 
 ## CI and operations
 

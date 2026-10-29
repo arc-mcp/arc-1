@@ -35,6 +35,7 @@ import { sourcePreconditionError } from './editable-source.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES, KNOWN_BASE_TYPES } from './object-types.js';
 import { SAPQuerySchema, SAPQuerySchemaBtp } from './query-input.js';
+import { readMethodOptionError } from './read-method-options.js';
 import { LiveRelationsInput, relationNumber } from './relation-input.js';
 import {
   ATC_BATCH_TYPES_BTP,
@@ -99,6 +100,8 @@ function validateSapReadInput(
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
+  const methodError = readMethodOptionError(input, input.type);
+  if (methodError) ctx.addIssue({ code: 'custom', path: ['method'], message: methodError });
   if (input.packageScope !== undefined) {
     const allowed = new Set(['type', 'name', 'packageScope', 'objectType', 'maxResults', 'format']);
     if (input.type !== 'DEVC')
@@ -291,6 +294,7 @@ export const SAPReadSchema = z
     include: z.string().optional(),
     group: z.string().optional(),
     method: z.string().optional(),
+    methodView: z.enum(['signature']).optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     /** 1-based, inclusive start line for a raw line-range read. Requires lineEnd; mutually exclusive with grep. */
     lineStart: z.coerce.number().int().positive().optional(),
@@ -337,6 +341,7 @@ export const SAPReadSchemaBtp = z
     include: z.string().optional(),
     group: z.string().optional(),
     method: z.string().optional(),
+    methodView: z.enum(['signature']).optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     /** 1-based, inclusive start line for a raw line-range read. Requires lineEnd; mutually exclusive with grep. */
     lineStart: z.coerce.number().int().positive().optional(),

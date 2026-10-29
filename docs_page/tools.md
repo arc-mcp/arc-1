@@ -73,6 +73,20 @@ Read the supported SAP ABAP object types listed below.
 
 Use `SAPRead` for exact implementation behavior, an exact reference, one method body, grep output, inactive drafts, revision history, or metadata. For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)` for available KTD and dependency contracts, then verify source. Compare documented requirements with actual behavior and report mismatches; do not treat existing code as the specification. If KTD is missing, requirements supplied by the user or other documentation still count; without requirements, intent is unverified.
 
+For a method's parameters, use `SAPRead(type="CLAS", name="CL_HTTP_CLIENT", method="CREATE_BY_URL", methodView="signature")`.
+The response contains `className`, `scope="own-declaration"`, `methodName`, `visibility`,
+`signature`, and 1-based `startLine`/`endLine` for the selected declaration clause. Chained
+`METHODS:` declarations are returned as one standalone statement, preserving multiline parameter
+text. Abstract/declaration-only methods are supported. Unknown syntax, duplicate declarations,
+redefinitions and interface aliases are refused; use the named interface or superclass reader
+when indicated. Version selection and inactive-source warnings follow ordinary source reads.
+The server still reads/parses MAIN internally; the saving is in returned model context.
+
+Do not combine `method` with `format="structured"`: this now errors before contacting SAP.
+Explicit structured reads without `method` still return the whole structured class. A misspelled
+method returns at most five nearby suggestions from the selected source, with a `method="*"`
+or grep follow-up. The list is not the complete inherited API.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
@@ -87,6 +101,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `format` | string | No | Output format: `"text"` (default), `"structured"`, or `"editable"` (fresh source + SHA-256 for guarded writes; see [Source preconditions](#source-preconditions)). For `action="diff"`, structured returns a machine-readable diff envelope; for ordinary reads, structured supports CLAS metadata and DEVC package listings (see below). |
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. With `method=`, an explicit include selects that exact source (including `main`) before method extraction. For DDLS: `elements` (extract CDS view elements). For TEXT_ELEMENTS: `symbols`, `selections`, or `headings` — one part of the text pool; omit for the whole PROG/FUGR pool or CLAS symbols. |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
+| `methodView` | string | No | `"signature"`: return one method declaration owned by the global CLAS MAIN source, including parameter and exception clauses. Requires a bare `method` name; omit for the existing implementation-body read. No `method="*"`, locals, interface-qualified or inherited signatures; only omitted/`main` include and plain text format. Incompatible with grep, ranges, diff and editable reads. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. For FUGR, `grep` implies `expand_includes` and searches each include on its own: matches are grouped under `=== <include> ===` with line numbers counted within that include. For PROG and INCL, `grep` searches the object itself unless `expand_includes=true`; the response then names the includes that the expansion would also search. Falls back to a literal search when the pattern is not valid regex. |
 | `lineStart` | integer | No | First source line (1-based, inclusive); requires `lineEnd`. Supports PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, DDLX and TABL. CLAS `include` selects one source section. Plain text only: do not combine with grep, method, diff, structured/editable output, signature or element extraction. Draft/version notices precede the numbered source. |
 | `lineEnd` | integer | No | Last source line (inclusive); requires `lineStart`. Clamped to the source end; a start beyond the source is an error. |
