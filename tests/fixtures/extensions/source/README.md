@@ -18,3 +18,10 @@ implementations with three replacement edges; its cheap HOOK_IMPL list contains 
 An empty FUGR main enhancement list does not cover F01 or the whole group. The include
 fixture requires PROG_ENH_SUBOBJ_CHECK context. These fixtures establish observed provider
 scope, not atomic snapshots or effective runtime switch applicability.
+
+Focused implementation probes additionally captured `prog-metadata-npl.xml`,
+`func-metadata-a4h.xml`, `incl-metadata-a4h.xml`, and `include-own-parent-758.xml`.
+The 750 program metadata omits enhancement links; exact 750 grammar plus advertised source
+permits the qualified legacy source endpoint, recorded as unadvertised-provider coverage.
+The include-own-parent response identifies the selected include itself even with FUGR
+context. Accept that selected owner or inherited main owner, never an unrelated object.

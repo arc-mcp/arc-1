@@ -50,6 +50,29 @@ describe('source plug-in wire parser', () => {
     expect(graph.implementations[0]?.plugins[0]).toMatchObject({ mode: 'static', replacing: false });
     expect(graph.implementations[0]?.plugins[0]?.fullName).toContain('\\IC:ENH_PROG_INCL_IMPLICIT_OPT');
   });
+
+  it('accepts selected-include ownership inside inherited FUGR context', () => {
+    const xml = fixture('include-own-parent-758.xml');
+    const opts = { mainObjectUri: '/sap/bc/adt/functions/groups/seef_adt_test_aunit_fugr1', sources: true };
+    expect(() => parseSourcePluginElements(xml, opts)).toThrow();
+    expect(
+      parseSourcePluginElements(xml, {
+        ...opts,
+        selectedObjectUri: '/sap/bc/adt/programs/includes/seef_adt_test_aunit_include_3',
+      }).implementations[0]?.name,
+    ).toBe('SEEF_ADT_TEST_ENHO_31');
+  });
+
+  it('keeps the observed inactive implementation version under an active-base observation', () => {
+    const graph = parseSourcePluginElements(
+      fixture('class-758.xml').replaceAll('adtcore:version="active"', 'adtcore:version="inactive"'),
+      {
+        mainObjectUri: classUri,
+        sources: false,
+      },
+    );
+    expect(graph.implementations.every((i) => i.version === 'inactive')).toBe(true);
+  });
   it('preserves FUGR replacement chains from a positive F01 response', () => {
     const graph = parseSourcePluginElements(fixture('fugr-f01-758.xml'), {
       mainObjectUri: '/sap/bc/adt/functions/groups/seef_adt_test_aunit_fugr1',
