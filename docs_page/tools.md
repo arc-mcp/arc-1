@@ -391,6 +391,15 @@ navigation links). A failed source read returns an error, not successful partial
 
 ARC-1 resolves a different enhancement subtype through repository search only after
 an unsupported BAdI read. This needs search permission as well as read permission.
+When the generic `enhoxh` route fails inside SAP — on SAP_BASIS 750 for every source-code
+plug-in, on 750 and 758 for class enhancements — ARC-1 reads the active revision of the
+implementation's enhancement include (the name padded with `=` to 30 characters plus `E`) and
+returns it as `source` together with `enhancementInclude` (include name, revision id, author,
+timestamp, transport) and a `note`; technology, description, package, enhanced object and hook
+positions remain unavailable there. `SAPRead(type="INCL")` on such an include, whose direct read
+fails on 750 and 758, falls back the same way and prefixes the source with a provenance note. Both
+need read permission only; an explicit `version="inactive"` include read is not served from
+revisions.
 Some other enhancement implementations still fail inside SAP; use SE80/SE19 or Eclipse's SAP GUI
 integration when the error identifies an unavailable ADT route. Only BAdI implementations
 are writable ([BAdI implementation writes](#badi-implementation-writes-enho)); ENHO source filtering
