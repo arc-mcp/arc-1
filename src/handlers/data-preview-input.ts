@@ -1,12 +1,13 @@
 /** SAPRead input rules for the two data preview types, TABLE_QUERY and TABLE_CONTENTS. */
 
-interface DataPreviewInput {
+/** The SAPRead fields these rules read; validateSapReadInput extends it with the rest. */
+export type DataPreviewInput = {
   type: string;
   name?: string;
   sqlFilter?: string;
   columns?: string[];
   where?: unknown[];
-}
+};
 
 type IssueContext = { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void };
 

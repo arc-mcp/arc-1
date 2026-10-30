@@ -29,7 +29,7 @@ import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import { SYNTAX_BATCH_TYPES } from '../adt/syntax-batch.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
-import { validateDataPreviewInput } from './data-preview-input.js';
+import { type DataPreviewInput, validateDataPreviewInput } from './data-preview-input.js';
 import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
 import { dumpFilters, validateDumpFilterInputs } from './dump-filter-inputs.js';
 import { sourcePreconditionError } from './editable-source.js';
@@ -86,15 +86,10 @@ const SAPREAD_CLAS_INCLUDES = ['main', 'testclasses', 'definitions', 'implementa
 const SAPREAD_CLAS_READ_INCLUDES = [...SAPREAD_CLAS_INCLUDES, 'text_symbols'] as const;
 const SAPREAD_DDLS_INCLUDES = ['elements'] as const;
 function validateSapReadInput(
-  input: {
-    type: string;
-    name?: string;
+  input: DataPreviewInput & {
     action?: string;
     include?: string;
     versionUri?: string;
-    sqlFilter?: string;
-    columns?: string[];
-    where?: unknown[];
     objectType?: string;
     source?: string;
     version?: string;
