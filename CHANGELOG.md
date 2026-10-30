@@ -5,6 +5,22 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.9.1](https://github.com/arc-mcp/arc-1/compare/v1.9.0...v1.9.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* accept harmless SAPDiagnose includeSubpackages defaults ([#1137](https://github.com/arc-mcp/arc-1/issues/1137)) ([0ea21e5](https://github.com/arc-mcp/arc-1/commit/0ea21e575062e13cea514c84493bc63c53ea7733))
+* build executables with the latest Node 22 patch ([#1114](https://github.com/arc-mcp/arc-1/issues/1114)) ([66e6b4d](https://github.com/arc-mcp/arc-1/commit/66e6b4d4f4f98575f0e7890f716f44d1392569f3))
+* **deps:** patch body-parser and extend Forge exception ([#1102](https://github.com/arc-mcp/arc-1/issues/1102)) ([0ad22f9](https://github.com/arc-mcp/arc-1/commit/0ad22f9bf0f4fe7538f6cc0601073217803b9869))
+* **deps:** update node-forge and retire audit exception ([#1129](https://github.com/arc-mcp/arc-1/issues/1129)) ([721755d](https://github.com/arc-mcp/arc-1/commit/721755d51b9fa955becc50673f420eb3916c69f9))
+* **dumps:** restore SAP 7.50 dump details from the feed ([#1103](https://github.com/arc-mcp/arc-1/issues/1103)) ([b6213ec](https://github.com/arc-mcp/arc-1/commit/b6213ec80edecf92edda5113d7751bbb581af5b9))
+* isolate negotiated media types to the exact resource ([#1126](https://github.com/arc-mcp/arc-1/issues/1126)) ([5530aca](https://github.com/arc-mcp/arc-1/commit/5530aca006670d924372f900227d2b541fa3174e))
+* keep table key includes in SAPContext structure trees ([#1100](https://github.com/arc-mcp/arc-1/issues/1100)) ([58346fb](https://github.com/arc-mcp/arc-1/commit/58346fb7e993b77697698fdeec90522cd81eadc5))
+* **long_text:** read texts where TTXOB/TTXID have no HANDLER_CLASS column ([#1078](https://github.com/arc-mcp/arc-1/issues/1078)) ([11126cd](https://github.com/arc-mcp/arc-1/commit/11126cd3d22e4c215bc85449084bc706bf9a01a0))
+* require type and name for single-object SAPDiagnose atc ([#1118](https://github.com/arc-mcp/arc-1/issues/1118)) ([90abdfc](https://github.com/arc-mcp/arc-1/commit/90abdfc3dcd2b9ac04c4c2d4c21dd07d4dec0d98))
+* use known object types for pre-write lint ([#1119](https://github.com/arc-mcp/arc-1/issues/1119)) ([14aafd6](https://github.com/arc-mcp/arc-1/commit/14aafd6fe6ca6cfa72e753723ee393be119bfc35))
+
 ## [1.9.0](https://github.com/arc-mcp/arc-1/compare/v1.8.0...v1.9.0) (2026-10-23)
 
 
