@@ -55,7 +55,9 @@ import {
   setSqlTraceState,
 } from '../adt/diagnostics.js';
 import { getDumpWithFeedFallback } from '../adt/dump-feed-detail.js';
+import { dayLimitedDumpListNote, feedUpdatedAt } from '../adt/dump-list-window.js';
 import { AdtApiError, AdtNetworkError } from '../adt/errors.js';
+import { detectAbapRelease } from '../adt/features.js';
 import { type FeedFilter, readDumpFeedSchema } from '../adt/feed-schema.js';
 import { internalOperationDenial } from '../adt/internal-data-operations.js';
 import { isServerDrivenObjectType } from '../adt/server-driven.js';
@@ -69,7 +71,7 @@ import type {
 } from '../adt/types.js';
 import { getCurrentContext } from '../server/context.js';
 import { handleCiQuality } from './diagnose-ci.js';
-import { isBtpSystem } from './feature-cache.js';
+import { cacheFeatureEvidence, getCachedFeatures, isBtpSystem } from './feature-cache.js';
 import { classIncludeUrl, normalizeObjectType, objectUrlForType, sourceUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { handleSyntaxCheck } from './syntax.js';
@@ -642,7 +644,7 @@ export async function handleSAPDiagnose(
   client: AdtClient,
   args: Record<string, unknown>,
   minimalErrors: boolean,
-  options: { deadline?: number; signal?: AbortSignal } = {},
+  options: { deadline?: number; signal?: AbortSignal; configuredAbapRelease?: string } = {},
 ): Promise<ToolResult> {
   const action = String(args.action ?? '');
   const name = String(args.name ?? '');
@@ -1064,14 +1066,23 @@ export async function handleSAPDiagnose(
       const maxResults = args.maxResults ? Number(args.maxResults) : undefined;
       const from = args.from as string | undefined;
       const to = args.to as string | undefined;
+      let feedClock: Date | undefined;
       const dumps = await listDumps(client.http, client.safety, {
         user,
         maxResults,
         from,
         to,
         filters: args.filters as FeedFilter[] | undefined,
+        onFirstPage: (body) => {
+          feedClock = feedUpdatedAt(body);
+        },
       });
-      return textResult(toolJson(dumps));
+      const result = textResult(toolJson(dumps));
+      // The list stays a plain array; the window note is a separate text block after it.
+      const abapRelease = await dumpListRelease(client, options.configuredAbapRelease);
+      const note = dayLimitedDumpListNote({ abapRelease, from, to, feedClock, empty: dumps.length === 0 });
+      if (note) result.content.push({ type: 'text', text: note });
+      return result;
     }
     case 'traces': {
       const id = args.id as string | undefined;
@@ -1240,6 +1251,19 @@ export async function handleSAPDiagnose(
         `Unknown SAPDiagnose action: ${action}. Supported: syntax, unittest, unittest_ci, atc, atc_ci, atc_variants, cds_testcases, object_state, quickfix, apply_quickfix, dumps, traces, trace_start, trace_requests, trace_cancel, system_messages, gateway_errors, odata_perf, cds_sql, sql_trace_state, set_sql_trace_state, sql_trace_directory, authorization_trace`,
       );
   }
+}
+
+/**
+ * SAP_BASIS for the dump window note: the probed release, else SAP_ABAP_RELEASE, else one read as this
+ * caller. A startup probe under a restricted technical user can miss it; a read release is shared like
+ * other lazily learned facts, so later lists skip the read.
+ */
+async function dumpListRelease(client: AdtClient, configured: string | undefined): Promise<string | undefined> {
+  const known = getCachedFeatures()?.abapRelease ?? configured;
+  if (known) return known;
+  const detected = await detectAbapRelease(client.http);
+  if (detected) cacheFeatureEvidence({ abapRelease: detected }, true);
+  return detected;
 }
 
 function selectDumpSections(detail: DumpDetail, requestedSections: unknown): Record<string, string> {

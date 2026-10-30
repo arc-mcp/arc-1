@@ -312,6 +312,16 @@ async function detectReleaseFromSyntaxConfigurations(client: AdtHttpClient): Pro
 }
 
 /**
+ * SAP_BASIS as the feature probe reads it, for callers that need the release when the probe could not
+ * read it (for example a startup probe under a restricted technical user). Never throws.
+ */
+export async function detectAbapRelease(client: AdtHttpClient): Promise<string | undefined> {
+  return (
+    (await detectSystemFromComponents(client)).abapRelease ?? (await detectReleaseFromSyntaxConfigurations(client))
+  );
+}
+
+/**
  * Detect HANA DB presence from installed software components (exported for testing).
  *
  * Rules (any match → HANA):

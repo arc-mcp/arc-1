@@ -109,7 +109,7 @@ sequence.
 | [FEAT-71](#feat-71) | Dictionary activation log | P3 | M | Needs research | Diagnostics |
 | [FEAT-91](#feat-91) | Validate the legacy dump user filter | P2 | S | Needs research | Diagnostics |
 | [FEAT-74](#feat-74) | Qualify dump-filter matching | P2 | S | Needs research | Diagnostics |
-| [FEAT-94](#feat-94) | Report a dump feed's shorter time window | P2 | S | Needs research | Diagnostics |
+| [FEAT-94](#feat-94) | Verify the dump feed window on more releases | P3 | S | Needs environment | Diagnostics |
 | [FEAT-50](#feat-50) | ADT type-probe fixture coverage | P3 | XS each | Contributor-driven | Diagnostics |
 | [FEAT-32](#feat-32) | Stable data-preview pagination | P3 | M | Needs research | Data access |
 | [FEAT-86](#feat-86) | Additional stored-text profiles and persistence | P3 | M | Needs research | Data access |
@@ -966,19 +966,21 @@ validator without schema discovery on the legacy path. Retain fail-before gramma
 positive match. [Original finding](https://github.com/arc-mcp/arc-1/blob/5725fab6515f7a410e3e488003ae1a7aa3d8c249/docs/research/adt-vscode-1.2/evidence/diagnostics-review/claude-review-1.md).
 
 <a id="feat-94"></a>
-### FEAT-94 — Report a dump feed's shorter time window
+### FEAT-94 — Verify the dump feed window on more releases
 
-- **Priority / effort / status:** P2 / S / Needs research
+- **Priority / effort / status:** P3 / S / Needs environment
 - **Category:** Diagnostics
 
-**Remaining gap.** On SAP_BASIS 7.50 the dump feed only reaches back 24 hours: its handler raises
-`from` to now minus 24 hours. A list for an older window comes back empty or cut short without a
-note, so a model reports no dumps while ST22 lists them. Dump detail already explains this when the
-feed does not list a dump.
+**Remaining gap.** Dump lists from a SAP_BASIS release below 7.53 carry a note when the older feed
+handler may have cut them to 24 hours. The class per release comes from SAP Note correction
+instructions; the window itself was read on 7.50 (24 hours) and 7.58 (2000 days) only. 7.31, 7.40,
+7.51 and 7.52 run the same older class, and 7.53–7.57 and 8.16 the newer one, unverified. A target
+that reports its release neither to the probe nor to the caller's own read, and has no
+`SAP_ABAP_RELEASE`, gets no note.
 
-**Resume with.** A list contract that can carry a note (the result is a bare array today) and a
-signal for the shorter window that does not depend on dumps being present, verified on a 7.50
-target that has dumps older than one day. [Mechanism](https://github.com/arc-mcp/arc-1/blob/main/docs/dev-guide.md#dump-detail-on-sap_basis-750).
+**Resume with.** A target on one of those releases: read the `compute_timestamp_from` call in its
+dump feed handler, or list dumps older than one day and compare with ST22. Adjust the release
+threshold only on that evidence. [Mechanism and release table](https://github.com/arc-mcp/arc-1/blob/main/docs/dev-guide.md#dump-detail-on-sap_basis-750).
 
 <a id="feat-50"></a>
 ### FEAT-50 — ADT type-probe fixture coverage
