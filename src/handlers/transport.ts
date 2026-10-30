@@ -204,6 +204,9 @@ async function resolveTransportObjectUrl(
     if (!parent)
       throw new Error(`Cannot resolve function group for FM "${name}". Provide the "group" parameter explicitly.`);
   }
+  // Without the group an INCL maps to /programs/includes, which has no lock/candidates for a
+  // function-group include and reads as a false "clear". No owning group = standalone include.
+  if (type === 'INCL' && !parent) parent = (await client.resolveFunctionGroupForInclude(name)) ?? undefined;
   if (type === 'FUNC' && parent) return functionModuleObjectUrl(parent, name);
   if (type === 'INCL' && parent)
     return `${functionGroupObjectUrl(parent)}/includes/${encodeURIComponent(name.toLowerCase())}`;
@@ -586,6 +589,8 @@ export async function handleSAPTransport(
       );
       const primary = await getObjectTransports(client.http, client.safety, objectUrl);
       let candidateTransports = primary.candidateTransports;
+      let lockedTransport = primary.lockedTransport;
+      let relatedTransports = primary.relatedTransports;
 
       // Fallback: if per-object transport lookup is empty, derive the package via
       // the object metadata endpoint and ask transportchecks for candidate transports.
@@ -595,27 +600,40 @@ export async function handleSAPTransport(
           if (pkg && pkg !== '$TMP') {
             const info = await getTransportInfo(client.http, client.safety, objectUrl, pkg, '');
             candidateTransports = info.existingTransports;
+            // transportchecks reports locks (incl. other users') that /transports omitted.
+            if (info.lockedTransport) {
+              lockedTransport = info.lockedTransport;
+              const owner = info.lockedTransportOwner ?? '';
+              relatedTransports = [
+                {
+                  id: info.lockedTransport,
+                  description: candidateTransports.find((t) => t.id === info.lockedTransport)?.description ?? '',
+                  owner,
+                  status: 'D',
+                },
+              ];
+            }
           }
         } catch {
           // best-effort-fallback
         }
       }
 
-      const lockOwner = primary.relatedTransports[0]?.owner;
+      const lockOwner = relatedTransports[0]?.owner;
       const candidateTotal = candidateTransports.length;
       const candidateLimit = clampSearchResults(args.maxResults as number | undefined, DEFAULT_TRANSPORT_RESULTS);
       const boundedCandidates = candidateTransports.slice(0, candidateLimit);
       const candidateTruncated = candidateTotal > boundedCandidates.length;
-      const summary = primary.lockedTransport
-        ? `Object ${objectName} is locked in transport ${primary.lockedTransport}${lockOwner ? ` by ${lockOwner}` : ''}.`
+      const summary = lockedTransport
+        ? `Object ${objectName} is locked in transport ${lockedTransport}${lockOwner ? ` by ${lockOwner}` : ''}.`
         : candidateTotal > 0
           ? `Object ${objectName} has no active lock; ${candidateTotal} transport(s) available for assignment.`
           : `Object ${objectName} has no current lock or assignment candidates.`;
 
       const history: ObjectTransportHistory = {
         object: { type: objectType, name: objectName, uri: objectUrl },
-        ...(primary.lockedTransport ? { lockedTransport: primary.lockedTransport } : {}),
-        relatedTransports: primary.relatedTransports,
+        ...(lockedTransport ? { lockedTransport } : {}),
+        relatedTransports,
         candidateTransports: boundedCandidates,
         candidateTotal,
         candidateTruncated,
