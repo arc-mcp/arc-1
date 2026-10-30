@@ -29,6 +29,7 @@ import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import { SYNTAX_BATCH_TYPES } from '../adt/syntax-batch.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
+import { validateDataPreviewInput } from './data-preview-input.js';
 import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
 import { dumpFilters, validateDumpFilterInputs } from './dump-filter-inputs.js';
 import { sourcePreconditionError } from './editable-source.js';
@@ -235,65 +236,7 @@ function validateSapReadInput(
     }
   }
 
-  if (input.type === 'TABLE_QUERY') {
-    if (!('name' in input) || !input.name) {
-      ctx.addIssue({ code: 'custom', path: ['name'], message: 'TABLE_QUERY requires a table or CDS view name.' });
-    }
-  }
-
-  // Each data preview type reads only its own filter parameters. A filter sent to the other type
-  // would be dropped and return unfiltered rows that look filtered, so refuse it. Empty values stay
-  // accepted: strict-mode clients send filler for every advertised property.
-  if (input.type !== 'TABLE_CONTENTS' && input.sqlFilter?.trim()) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['sqlFilter'],
-      message:
-        input.type === 'TABLE_QUERY'
-          ? 'TABLE_QUERY does not accept sqlFilter. Use where, for example where=[{"field":"MANDT","op":"=","value":"100"}].'
-          : 'sqlFilter is only supported for type=TABLE_CONTENTS.',
-    });
-  }
-  for (const key of ['columns', 'where'] as const) {
-    if (input.type !== 'TABLE_QUERY' && (input[key]?.length ?? 0) > 0) {
-      ctx.addIssue({
-        code: 'custom',
-        path: [key],
-        message:
-          input.type === 'TABLE_CONTENTS'
-            ? `TABLE_CONTENTS does not accept ${key}. Use type=TABLE_QUERY with ${key}.`
-            : `${key} is only supported for type=TABLE_QUERY.`,
-      });
-    }
-  }
-
-  if (input.type === 'TABLE_CONTENTS' && input.sqlFilter) {
-    const sqlFilter = input.sqlFilter.trim();
-    if (/^select\b/i.test(sqlFilter)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['sqlFilter'],
-        message:
-          'TABLE_CONTENTS sqlFilter must be a condition expression only (no SELECT statement). Example: "MANDT = \'100\'" or "MATNR LIKE \'Z%\'".',
-      });
-    }
-    if (/^where\b/i.test(sqlFilter)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['sqlFilter'],
-        message:
-          'TABLE_CONTENTS sqlFilter must not start with WHERE. Pass only the condition expression, for example: "MANDT = \'100\'".',
-      });
-    }
-    if (sqlFilter.includes(';')) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['sqlFilter'],
-        message:
-          'TABLE_CONTENTS sqlFilter must contain exactly one condition expression (no semicolons or multiple statements).',
-      });
-    }
-  }
+  validateDataPreviewInput(input, ctx);
 }
 
 const TableQueryWhereItemSchema = z.object({
