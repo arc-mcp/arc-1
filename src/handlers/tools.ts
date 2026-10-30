@@ -93,7 +93,7 @@ function isBtpMode(config: ServerConfig): boolean {
 const SAPREAD_DESC_ONPREM =
   'Read SAP ABAP source, metadata and syntax results. ' +
   'For source purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
-  'TABLE_QUERY: multi-column filters, data preview required; CDS needs SAP_BASIS 752+. TABLE_CONTENTS: single-column filter. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
+  'TABLE_QUERY: filter with where, data preview required; CDS needs SAP_BASIS 752+. TABLE_CONTENTS: unfiltered preview. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
   'SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method="*" for signatures, method="NAME" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers.';
 
 const SAPREAD_DESC_BTP =
