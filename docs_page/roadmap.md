@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-10-26
+**Last reviewed:** 2026-10-30
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -116,6 +116,7 @@ sequence.
 | [FEAT-87](#feat-87) | Preserve repeated spaces in general data queries | P2 | S | Needs research | Data access |
 | [FEAT-88](#feat-88) | Application-log discovery and wider qualification | P3 | M | Needs research | Data access |
 | [FEAT-89](#feat-89) | Additional typed data-cluster use cases | P3 | M | Needs research | Data access |
+| [FEAT-95](#feat-95) | Retire the TABLE_CONTENTS sqlFilter | P3 | S | Needs research | Data access |
 | [FEAT-90](#feat-90) | Historical transport scope beyond source | P2 | M | Needs research | Developer workflow |
 | [FEAT-36](#feat-36) | Type information | P3 | S | Blocked | Code intelligence |
 | [FEAT-79](#feat-79) | DDIC-aware dependency context | P2 | M | Needs research | Code intelligence |
@@ -1085,6 +1086,23 @@ semantics. Prefer purpose-specific native APIs where available.
 **Resume with.** A named customer workflow that cannot use an existing API, plus sanitized native
 fixtures and expected values across the relevant releases/platforms. Preserve data gates, blocklists,
 current-user identity, and bounded output; no RFC or executed ABAP fallback in core (ADR-0009).
+
+<a id="feat-95"></a>
+### FEAT-95 — Retire the TABLE_CONTENTS sqlFilter
+
+- **Priority / effort / status:** P3 / S / Needs research
+- **Category:** Data access
+
+**Remaining gap.** `TABLE_CONTENTS` sends `sqlFilter` as a bare condition to the DDIC data preview.
+Live 758 and 816 refuse every such body with "Only SELECT statement is allowed", so the parameter
+works on no qualified release; ARC-1 now says so and points to `TABLE_QUERY` `where`. The DDIC
+preview does accept a full `SELECT`, but on 816 it runs whatever table that statement names and
+ignores `ddicEntityName`, so wrapping the condition into a `SELECT` would turn TABLE_CONTENTS into
+free SQL outside the data-source analyzer and the `allowFreeSQL` gate.
+
+**Resume with.** A 750 check of the condition-only body. If it fails there too, deprecate and then
+remove `sqlFilter` in favor of `TABLE_QUERY` `where`. If it works, keep it release-gated. Do not
+build a `SELECT` from caller text for the DDIC preview.
 
 <a id="feat-36"></a>
 ### FEAT-36 — Type information

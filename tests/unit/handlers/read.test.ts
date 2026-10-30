@@ -1953,7 +1953,25 @@ describe('SAPRead handler', () => {
       expect(parsed.testclasses).toContain('ltcl_test');
     });
 
-    it('returns sqlFilter remediation hint for TABLE_CONTENTS parser errors', async () => {
+    it.each([
+      ['TABLE_QUERY', { sqlFilter: "MANDT = '100'" }],
+      ['TABLE_CONTENTS', { where: [{ field: 'MANDT', op: '=', value: '100' }] }],
+      ['TABLE_CONTENTS', { columns: ['MANDT'] }],
+    ])('refuses a %s filter it would ignore before any request is sent', async (type, filter) => {
+      mockFetch.mockReset();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type,
+        name: 'T000',
+        maxRows: 5,
+        ...filter,
+      });
+      expect(result.isError).toBe(true);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('points to TABLE_QUERY when the DDIC preview refuses a condition-only sqlFilter', async () => {
+      // Live 758 and 816 answer every condition-only body this way; repeating the condition-only
+      // shape hint would loop the caller.
       mockFetch.mockReset();
       mockFetch.mockRejectedValueOnce(
         new AdtApiError(
@@ -1961,6 +1979,27 @@ describe('SAPRead handler', () => {
           400,
           '/sap/bc/adt/datapreview/ddic',
           'Invalid query string. Only SELECT statement is allowed',
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'TABLE_CONTENTS',
+        name: 'MARA',
+        sqlFilter: "MANDT = '100'",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('does not accept a TABLE_CONTENTS sqlFilter');
+      expect(result.content[0]?.text).toContain('TABLE_QUERY');
+      expect(result.content[0]?.text).not.toContain('condition expression only');
+    });
+
+    it('returns sqlFilter remediation hint for other TABLE_CONTENTS parser errors', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockRejectedValueOnce(
+        new AdtApiError(
+          'The column MANDTX is invalid here',
+          400,
+          '/sap/bc/adt/datapreview/ddic',
+          'The column MANDTX is invalid here',
         ),
       );
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {

@@ -328,6 +328,14 @@ function buildBaseErrorMessage(
     }
     if (tool === 'SAPRead' && argType === 'TABLE_CONTENTS' && err.statusCode === 400) {
       const combined = `${err.message}\n${err.responseBody ?? ''}`;
+      // 758 and 816 answer every condition-only body this way, so the sqlFilter shape hint below
+      // would send the caller round in circles.
+      if (/only select statement is allowed/i.test(combined)) {
+        return (
+          `${enriched}\n\nHint: this SAP system's DDIC data preview does not accept a TABLE_CONTENTS sqlFilter. ` +
+          `Use type="TABLE_QUERY" with where=[{"field":"MANDT","op":"=","value":"100"}] instead.`
+        );
+      }
       if (hasSqlParserSignature(combined)) {
         return (
           `${enriched}\n\nHint: TABLE_CONTENTS sqlFilter must be a condition expression only ` +
