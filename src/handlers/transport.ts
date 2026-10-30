@@ -192,6 +192,17 @@ function summarizeTransport(t: TransportRequest) {
 }
 
 /** FUNC and structural INCL objects use a parent-group collection. */
+/** Owning group of a function-group include, or undefined for a standalone include. */
+async function resolveIncludeGroup(client: AdtClient, includeName: string): Promise<string | undefined> {
+  for (const r of await client.searchObject(includeName, 10)) {
+    const match = r.uri.match(/\/functions\/groups\/([^/]+)\/includes\/([^/?#]+)(?:[/?#]|$)/i);
+    if (match && decodeURIComponent(match[2]!).toUpperCase() === includeName.toUpperCase()) {
+      return decodeURIComponent(match[1]!).toUpperCase();
+    }
+  }
+  return undefined;
+}
+
 async function resolveTransportObjectUrl(
   client: AdtClient,
   type: string,
@@ -206,7 +217,7 @@ async function resolveTransportObjectUrl(
   }
   // Without the group an INCL maps to /programs/includes, which has no lock/candidates for a
   // function-group include and reads as a false "clear". No owning group = standalone include.
-  if (type === 'INCL' && !parent) parent = (await client.resolveFunctionGroupForInclude(name)) ?? undefined;
+  if (type === 'INCL' && !parent) parent = await resolveIncludeGroup(client, name);
   if (type === 'FUNC' && parent) return functionModuleObjectUrl(parent, name);
   if (type === 'INCL' && parent)
     return `${functionGroupObjectUrl(parent)}/includes/${encodeURIComponent(name.toLowerCase())}`;

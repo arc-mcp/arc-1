@@ -548,18 +548,6 @@ export class AdtClient {
     return null;
   }
 
-  /** Owning group of a function-group include, or null for a standalone include (same search as FMs). */
-  async resolveFunctionGroupForInclude(includeName: string, request?: AdtRequestOptions): Promise<string | null> {
-    const results = await this.searchObject(includeName, 10, undefined, request);
-    for (const r of results) {
-      const match = r.uri.match(/\/functions\/groups\/([^/]+)\/includes\/([^/?#]+)(?:[/?#]|$)/i);
-      if (match && decodeURIComponent(match[2]!).toUpperCase() === includeName.toUpperCase()) {
-        return decodeURIComponent(match[1]!).toUpperCase();
-      }
-    }
-    return null;
-  }
-
   /** Get function group structure (list of function modules + includes) */
   async getFunctionGroup(name: string): Promise<FunctionGroupStructure> {
     checkOperation(this.safety, OperationType.Read, 'GetFunctionGroup');
