@@ -1953,14 +1953,14 @@ describe('SAPRead handler', () => {
       expect(parsed.testclasses).toContain('ltcl_test');
     });
 
-    it('returns sqlFilter remediation hint for TABLE_CONTENTS parser errors', async () => {
+    it('returns sqlFilter remediation hint for other TABLE_CONTENTS parser errors', async () => {
       mockFetch.mockReset();
       mockFetch.mockRejectedValueOnce(
         new AdtApiError(
-          'Invalid query string. Only SELECT statement is allowed',
+          'The column MANDTX is invalid here',
           400,
           '/sap/bc/adt/datapreview/ddic',
-          'Invalid query string. Only SELECT statement is allowed',
+          'The column MANDTX is invalid here',
         ),
       );
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
