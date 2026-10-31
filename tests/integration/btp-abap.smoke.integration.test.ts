@@ -67,9 +67,12 @@ const describeIf = hasBtpCredentials() ? describe : describe.skip;
 describeIf('BTP ABAP smoke', { timeout: 30_000 }, () => {
   let client: AdtClient;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     client = getBtpSmokeClient();
-  });
+    // Complete interactive OAuth before the 30-second operation deadlines start.
+    // The callback itself has a 120-second timeout; reserve time for SAP's first response.
+    await client.getSystemInfo();
+  }, 150_000);
 
   afterAll(() => resetCachedFeatures());
 

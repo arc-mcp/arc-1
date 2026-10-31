@@ -1,3 +1,4 @@
+import { extensionReadProperties } from './extension-input.js';
 /** Intent-based tool schemas; BTP omits classic object types and adjusts descriptions. */
 
 import {
@@ -91,23 +92,23 @@ function isBtpMode(config: ServerConfig): boolean {
 }
 
 const SAPREAD_DESC_ONPREM =
-  'Read SAP ABAP source, metadata and syntax results. ' +
+  'Read SAP ABAP source/metadata. DDIC metadata: omit format. ' +
   'SHLP: active partial interface metadata; missing headers/assignments/appends are explicit. No drafts or source formats. ' +
-  'For source purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
-  'TABLE_QUERY: multi-column filters, data preview required; CDS needs SAP_BASIS 752+. TABLE_CONTENTS: single-column filter. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
-  'SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method="*" for signatures, method="NAME" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers.';
+  'For specs, reviews or pre-change context, prefer SAPContext first. ' +
+  'TABLE_QUERY: data preview required; CDS needs SAP_BASIS 752+. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
+  'SYNTAX: read-only check (objectType+name, optional source). Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers.';
 
 const SAPREAD_DESC_BTP =
   'Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
   'Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), TABL/DTT (technical settings), TTYP, DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), ENHO. PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). ' +
-  'SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method="*" for signatures, method="NAME" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. ' +
+  'SYNTAX: read-only check (objectType+name, optional source). Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. ' +
   'grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.';
 
 // ─── SAPContext Types ───────────────────────────────────────────────
 
 const SAPCONTEXT_DESC_ONPREM =
   'SHLP: default/deps returns active partial interface metadata, as SAPRead; no KTD or dependency traversal. ' +
-  'Primary tool for understanding ABAP/CDS objects before specs, reviews, explanations, or changes — use instead of SAPRead when the user asks what an object does. Returns intent first (the object KTD when available) then compressed dependency contracts. Use SAPRead after SAPContext for exact source/method bodies/grep/drafts.\n\n' +
+  'Primary tool for understanding ABAP/CDS objects. KTD when available, then dependency contracts. Use SAPRead after SAPContext for exact source/methods/grep/drafts.\n\n' +
   "Decision rule — pick the action from the user's question:\n" +
   '- "What breaks if I change <CDS>?" / "Who consumes <I_*>?" / "Blast radius" → action="impact" (DDLS only).\n' +
   '- "Which includes/appends extend <TABL>?" → action="structure", type="TABL".\n' +
@@ -115,8 +116,7 @@ const SAPCONTEXT_DESC_ONPREM =
   '- "Find all callers of <object>" → action="usages" (live SAP where-used lookup).\n\n' +
   'impact: upstream CDS dependencies, downstream where-used in RAP buckets, and sibling-consistency hints. Prefer it to SQL source scans. See action/options below.\n' +
   'deps: target KTD when available + selected dependency contracts, derived from source (not SAP-native relationships or a complete inventory). Counts distinguish root candidates from recursive attempts. Standard helper names are filtered. For CDS, includes dependency DDL/field catalogs for cl_cds_test_environment.\n' +
-  'structure (TABL only): the DDIC include/append tree.\n\n' +
-  'Non-CDS reverse-lookup: SAPNavigate(references); CDS: impact. Full detail: docs_page SAPContext.';
+  'structure (TABL only): the DDIC include/append tree.';
 
 const SAPCONTEXT_DESC_BTP =
   'Primary tool for understanding ABAP/CDS objects before specs, reviews, explanations, or changes (BTP ABAP Environment) — use instead of SAPRead when the user asks what an object does. Returns intent first (object KTD when available) then compressed dependency contracts.\n\n' +
@@ -457,6 +457,7 @@ export function getToolDefinitions(
               (btp ? '' : ', PROG, FUNC, FUGR, INCL, VIEW') +
               ').',
           },
+          ...extensionReadProperties,
           lineStart: {
             type: 'integer',
             minimum: 1,

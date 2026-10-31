@@ -1,3 +1,4 @@
+import { extensionReadFields, validateExtensionReadInput } from './extension-input.js';
 /**
  * Zod v4 input schemas for all 12 MCP tools.
  *
@@ -105,6 +106,7 @@ function validateSapReadInput(
     if (issue) ctx.addIssue({ code: 'custom', path: [issue.key], message: issue.message });
     return;
   }
+  validateExtensionReadInput(input as Record<string, unknown>, ctx);
   if (input.packageScope !== undefined) {
     const allowed = new Set(['type', 'name', 'packageScope', 'objectType', 'maxResults', 'format']);
     if (input.type !== 'DEVC')
@@ -302,6 +304,7 @@ export const SAPReadSchema = z
     lineStart: z.coerce.number().int().positive().optional(),
     /** 1-based, inclusive end line for a raw line-range read. Clamped to the source's last line. */
     lineEnd: z.coerce.number().int().positive().optional(),
+    ...extensionReadFields,
     expand_includes: looseOptionalBoolean,
     format: z.enum(['text', 'structured', 'editable']).optional(),
     // Keep omission observable: source handlers still default it to active, while DTEL/ENQU
@@ -348,6 +351,7 @@ export const SAPReadSchemaBtp = z
     lineStart: z.coerce.number().int().positive().optional(),
     /** 1-based, inclusive end line for a raw line-range read. Clamped to the source's last line. */
     lineEnd: z.coerce.number().int().positive().optional(),
+    ...extensionReadFields,
     format: z.enum(['text', 'structured', 'editable']).optional(),
     // Keep this aligned with the on-prem schema; the handler owns the per-type default.
     version: z.enum(['active', 'inactive', 'auto']).optional(),

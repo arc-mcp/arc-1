@@ -301,6 +301,10 @@ it('refuses known absence and source/draft options before HTTP, but unknown disc
     { grep: 'X' },
     { lineStart: 1, lineEnd: 2 },
     { include: 'main' },
+    { extensions: 'none' },
+    { extensions: 'summary' },
+    { extensions: 'sources' },
+    { enhancementContext: { type: 'PROG', name: 'ZMAIN' } },
     { name: 'X?path=Y' },
   ]) {
     expect((await invoke(client, 'SAPRead', args)).isError).toBe(true);
