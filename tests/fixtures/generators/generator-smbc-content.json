@@ -1,0 +1,61 @@
+{
+  "metadata": {},
+  "businessConfManagement": {
+    "maintenanceObjectId": "ZDMOPATTERNDEMOCODES",
+    "transportObject": "ZDMOPATTERNDEMOCODES"
+  },
+  "options": {
+    "transportSelectionType": "manualWithPreselection",
+    "overwriteExistingObjects": false,
+    "addIbnToExportApp": false,
+    "addCopyAction": false,
+    "showTransportSelectionStrip": true,
+    "createProjectionLayer": true,
+    "addDeprecateAction": false,
+    "addInputCheck": false,
+    "description": "Demo-Codes pflegen",
+    "copyAbstractEntityName": "ZD_CopyDmoPatternDemoCodesP"
+  },
+  "businessObject": {
+    "dataModel": {
+      "basisTableName": "ZTX_DMO_DCODE",
+      "singleton": {
+        "draftTableName": "ZTX_DMO_DCO_D_S",
+        "entityName": "DmoPatternDemoCoAll",
+        "entityLabel": "Demo-Codes Singleton",
+        "cdsInterfaceViewName": "ZI_DmoPatternDemoCodes_S",
+        "cdsProjectionViewName": "ZC_DmoPatternDemoCodes_S",
+        "keyFieldAlias": "SingletonID"
+      },
+      "tables": [
+        {
+          "name": "ZTX_DMO_DCODE",
+          "entityName": "DmoPatternDemoCodes",
+          "entityLabel": "Demo-Codes",
+          "draftTableName": "ZTX_DMO_DCODE_1",
+          "cdsInterfaceViewName": "ZI_DmoPatternDemoCodes",
+          "cdsProjectionViewName": "ZC_DmoPatternDemoCodes"
+        }
+      ],
+      "text_tables": [
+        {
+          "name": "ZTX_DMO_DCODET",
+          "entityName": "DmoPatternDemoCText",
+          "entityLabel": "Demo-Codes Text",
+          "draftTableName": "ZTX_DMO_DCODE_2",
+          "cdsInterfaceViewName": "ZI_DmoPatternDemoCText",
+          "cdsProjectionViewName": "ZC_DmoPatternDemoCText",
+          "textFieldName": "DESCRIPTION"
+        }
+      ]
+    },
+    "behaviorImplementation": {
+      "implementationClassName": "ZBP_I_DMOPATTERNDEMOCODES_S",
+      "projImplementationClassName": "ZBP_C_DMOPATTERNDEMOCODES_S"
+    }
+  },
+  "businessService": {
+    "serviceDefinitionName": "ZUI_DMOPATTERNDEMOCODES",
+    "serviceBindingName": "ZUI_DMOPATTERNDEMOCODES_O4"
+  }
+}

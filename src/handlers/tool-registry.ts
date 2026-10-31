@@ -101,6 +101,7 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'BSP_DEPLOY', btp: true },
   { type: 'API_STATE', btp: true },
   { type: 'INACTIVE_OBJECTS', btp: true },
+  { type: 'GENERATORS', btp: true },
   { type: 'SYNTAX', btp: true },
   { type: 'AUTH', btp: false },
   // FTG2 is an ARC-1-private invented identifier (see docs/research/abap-types/types/ftg2.md).

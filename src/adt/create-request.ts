@@ -1,5 +1,5 @@
 import { AdtApiError, AdtNetworkError } from './errors.js';
-import type { AdtHttpClient, AdtResponse } from './http.js';
+import type { AdtHttpClient, AdtRequestOptions, AdtResponse } from './http.js';
 
 /** A failed create response does not prove SAP rejected the mutation. */
 export async function postCreate(
@@ -8,9 +8,10 @@ export async function postCreate(
   body: string,
   contentType?: string,
   headers?: Record<string, string>,
+  options?: AdtRequestOptions,
 ): Promise<AdtResponse> {
   try {
-    return await http.post(path, body, contentType, headers, { retryTransientErrors: false });
+    return await http.post(path, body, contentType, headers, { ...options, retryTransientErrors: false });
   } catch (error) {
     if (
       error instanceof AdtNetworkError ||
