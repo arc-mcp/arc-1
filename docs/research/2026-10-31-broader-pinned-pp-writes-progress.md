@@ -104,6 +104,24 @@ added two test cases; the focused table/router run passed **21 tests in two file
 and lint repeated. The [gate record](broader-pinned-pp-writes/capability-table-gates.json) distinguishes
 the full run from those subsequent assertions.
 
+### Mixed-tool admission checkpoint (1 November)
+
+The common router and catalog can now consume explicit mutation capabilities for SAPManage,
+SAPTransport, SAPDiagnose and SAPLint. A capability needs an exact mutating action policy and
+its operation switch; a tool-level fallback or read policy cannot admit it. Raw-field and input
+validation still precede destination preparation. Catalog annotations are recomputed after scope
+and deny-action pruning, without restoring removed actions. The transport switch remains a
+separate prerequisite.
+
+**No additional production capability is registered.** Fifteen tests use synthetic registrations
+to exercise mixed tools while the real matrix contract still pins the four previously supported
+combinations. A byte comparison against the preceding catalog implementation matched in all
+24 configuration/scope combinations, including existing readers and writers. Full verification
+passed **387 files / 10,684 tests**, typecheck, lint, policy validation, build and file/schema budgets.
+The [gate record](broader-pinned-pp-writes/mixed-tool-gates.json) identifies the exact source hashes.
+Author review is complete; the actual Claude Code Opus 5.5 max review is pending its session-limit
+reset. Neither this checkpoint nor the earlier table review approves broader operation adapters.
+
 ### Native verification
 
 The direct-auth A4H client-001 source lifecycle passed: source save, stale-hash refusal, reacquired

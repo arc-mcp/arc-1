@@ -57,6 +57,10 @@ export type OperationTypeCode = (typeof OperationType)[keyof typeof OperationTyp
 /** Mutating operation types — blocked when `allowWrites=false`. */
 const MUTATING_OPS = 'CDUAWX';
 
+export function isMutatingOperationType(op: OperationTypeCode): boolean {
+  return MUTATING_OPS.includes(op);
+}
+
 function displayAllowList(list: string[]): string {
   return listDeniesAll(list) ? '[]' : `[${list.join(',')}]`;
 }
@@ -122,7 +126,7 @@ export function unrestrictedSafetyConfig(): SafetyConfig {
 /** Check if an operation type is allowed by the safety config. */
 export function isOperationAllowed(config: SafetyConfig, op: OperationTypeCode): boolean {
   // Mutating ops (Create/Update/Delete/Activate/Workflow/Transport) require allowWrites
-  if (MUTATING_OPS.includes(op) && (!config.allowWrites || config.multiTargetWrite?.enabled === false)) return false;
+  if (isMutatingOperationType(op) && (!config.allowWrites || config.multiTargetWrite?.enabled === false)) return false;
 
   // Transport mutation has an additional gate
   if (op === OperationType.Transport && !config.allowTransportWrites) return false;

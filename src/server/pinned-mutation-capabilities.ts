@@ -1,10 +1,11 @@
 /** Explicit admitted combinations. Pending PR 2 adapters must not be inferred from the single-target registry. */
 export interface PinnedMutationCapability {
-  readonly tool: 'SAPWrite' | 'SAPActivate';
+  readonly tool: 'SAPWrite' | 'SAPActivate' | 'SAPManage' | 'SAPTransport' | 'SAPDiagnose' | 'SAPLint';
   readonly action: string;
-  /** Representation label; the existing pinned handler enforces the native owner boundary. */
-  readonly resource: 'main-source' | 'whole-owner';
-  readonly types: readonly string[];
+  /** Resource family; each qualified adapter must enforce its native boundary. */
+  readonly resource: 'main-source' | 'whole-owner' | 'package' | 'cts' | 'trace' | 'settings' | 'flp';
+  /** Absent for operations without an object-type selector; raw fields still have an explicit allowlist. */
+  readonly types?: readonly string[];
   readonly fields: readonly string[];
   readonly accepts: (args: Record<string, unknown>) => boolean;
 }
@@ -47,7 +48,11 @@ const rows: PinnedMutationCapability[] = [
 ];
 export const PINNED_MUTATION_CAPABILITIES: readonly PinnedMutationCapability[] = Object.freeze(
   rows.map((row) =>
-    Object.freeze({ ...row, types: Object.freeze([...row.types]), fields: Object.freeze([...row.fields]) }),
+    Object.freeze({
+      ...row,
+      ...(row.types ? { types: Object.freeze([...row.types]) } : {}),
+      fields: Object.freeze([...row.fields]),
+    }),
   ),
 );
 
@@ -56,12 +61,12 @@ export function pinnedMutationCapability(tool: string, action: unknown): PinnedM
 }
 
 /** Action/type/field admission unions; catalog wording and required fields remain in its projection. */
-export function pinnedMutationToolSurface(tool: string) {
-  const capabilities = PINNED_MUTATION_CAPABILITIES.filter((entry) => entry.tool === tool);
+export function pinnedMutationToolSurface(tool: string, enabled: (capability: PinnedMutationCapability) => boolean) {
+  const capabilities = PINNED_MUTATION_CAPABILITIES.filter((entry) => entry.tool === tool && enabled(entry));
   if (!capabilities.length) return undefined;
   return {
     actions: capabilities.map((entry) => entry.action),
-    types: [...new Set(capabilities.flatMap((entry) => entry.types))],
+    types: [...new Set(capabilities.flatMap((entry) => entry.types ?? []))],
     fields: new Set(capabilities.flatMap((entry) => entry.fields)),
   };
 }

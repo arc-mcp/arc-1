@@ -1,4 +1,4 @@
-/** Stable read-only tool surface and target schema helpers for multi-target v1. */
+/** Explicit read and pinned-mutation surfaces, plus target schema helpers. */
 
 import { isOperationAllowed, OperationType, type OperationTypeCode } from '../adt/safety.js';
 import { getActionPolicy, invocationPolicyKey } from '../authz/policy.js';
@@ -8,6 +8,7 @@ import type { TargetDescriptor } from './destination-registry.js';
 import { TARGET_CATALOG_MAX_OFFSET, TARGET_CATALOG_MAX_QUERY_LENGTH } from './multi-target-catalog.js';
 import { TARGET_ID_PATTERN } from './multi-target-identity.js';
 import { pinnedMutationAllowed, pinnedMutationSurface } from './multi-target-write-surface.js';
+import { pinnedMutationCapability } from './pinned-mutation-capabilities.js';
 import type { ServerConfig } from './types.js';
 
 export const MULTI_TARGET_TOOLS = new Set([
@@ -103,10 +104,10 @@ export function multiTargetInvocationDecision(
   args: Record<string, unknown>,
   config: ServerConfig,
 ): 'allowed' | 'target-policy-denied' | 'forbidden' {
-  if (toolName === 'SAPWrite' || toolName === 'SAPActivate')
+  const action = invocationPolicyKey(toolName, args) ?? (toolName === 'SAPActivate' ? 'activate' : undefined);
+  if (pinnedMutationCapability(toolName, action))
     return pinnedMutationAllowed(toolName, args, config) ? 'allowed' : 'forbidden';
   if (!MULTI_TARGET_TOOLS.has(toolName)) return 'forbidden';
-  const action = invocationPolicyKey(toolName, args);
   if (toolName === 'SAPQuery' && action === 'long_text' && config.systemType === 'btp') return 'forbidden';
   const actionRule = MULTI_TARGET_ACTION_RULES.get(toolName);
   if (actionRule && (!action || !actionRule.actions.has(action.toLowerCase()))) return 'forbidden';
@@ -180,7 +181,9 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
       },
     };
   }
-  if (!MULTI_TARGET_TOOLS.has(tool.name)) return undefined;
+  const mutationSurface = pinnedMutationSurface(tool.name, config);
+  const hasReaderSurface = MULTI_TARGET_TOOLS.has(tool.name);
+  if (!hasReaderSurface && !mutationSurface) return undefined;
   const schema = tool.inputSchema;
   const properties = (schema.properties as Record<string, unknown> | undefined) ?? {};
   const field = tool.name === 'SAPRead' ? 'type' : 'action';
@@ -193,13 +196,23 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
     .filter((value) => isMultiTargetInvocationAllowed(tool.name, { [field]: value }, config));
   if (values.length === 0) return undefined;
   const actionRule = MULTI_TARGET_ACTION_RULES.get(tool.name);
-  const prunedProperties = actionRule
-    ? Object.fromEntries(Object.entries(properties).filter(([name]) => !actionRule.omittedProperties.has(name)))
-    : properties;
+  const prunedProperties = Object.fromEntries(
+    Object.entries(properties).filter(([name]) =>
+      hasReaderSurface
+        ? !actionRule?.omittedProperties.has(name) || mutationSurface?.fields.has(name)
+        : mutationSurface?.fields.has(name),
+    ),
+  );
+  const mutates = values.some((value) => !!pinnedMutationCapability(tool.name, value));
   return pruneQueryDefinition(
     {
       ...tool,
-      annotations: { ...tool.annotations, readOnlyHint: true, destructiveHint: false },
+      annotations: {
+        ...tool.annotations,
+        readOnlyHint: !mutates,
+        destructiveHint: mutates,
+        ...(mutates ? { idempotentHint: false } : {}),
+      },
       inputSchema: {
         ...schema,
         properties: {
@@ -214,6 +227,25 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
 
 export function multiTargetToolDefinitions(tools: ToolDefinition[], config: ServerConfig): ToolDefinition[] {
   return tools.map((tool) => pruneDefinition(tool, config)).filter((tool): tool is ToolDefinition => !!tool);
+}
+
+/** Functional scope/action-denial pruning runs later; annotate only the actions that survived it. */
+export function finalizeMultiTargetToolAnnotations(tools: ToolDefinition[]): ToolDefinition[] {
+  return tools.map((tool) => {
+    const properties = tool.inputSchema.properties as Record<string, { enum?: unknown[] }> | undefined;
+    const actions = properties?.action?.enum;
+    if (!Array.isArray(actions)) return tool;
+    const mutates = actions.some((action) => !!pinnedMutationCapability(tool.name, action));
+    return {
+      ...tool,
+      annotations: {
+        ...tool.annotations,
+        readOnlyHint: !mutates,
+        destructiveHint: mutates,
+        ...(mutates ? { idempotentHint: false } : {}),
+      },
+    };
+  });
 }
 
 function targetSchema(targets: readonly TargetDescriptor[]): Record<string, unknown> {
