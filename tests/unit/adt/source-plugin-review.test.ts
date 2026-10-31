@@ -117,6 +117,21 @@ describe('source plug-in review regressions', () => {
     expect(report.consumed.sends).toBe(0);
   });
 
+  it.each(['X'.repeat(6000), '\u0000'.repeat(6000)])(
+    'bounds fallback identities including escaped caller text',
+    (name) => {
+      const unit = { type: 'INCL' as const, name };
+      const s = setup('summary', unit, {}, { type: 'PROG', name });
+      const block = renderExtensionDiscovery(s.session.finish())[0]!.text;
+      expect(Buffer.byteLength(block)).toBeLessThanOrEqual(2048);
+      const report = JSON.parse(block.replace('[extensions] ', ''));
+      expect(report.root.name).toContain('omitted: output cap');
+      expect(report.context.name).toContain('omitted: output cap');
+      expect(report.omissions.output).toBeGreaterThan(0);
+      expect(report.consumed.sends).toBe(0);
+    },
+  );
+
   it.each(['occurrences', 'depth', 'nodes'] as const)(
     'does not relabel a %s cutoff as provider absence',
     async (limit) => {
@@ -218,6 +233,7 @@ describe('source plug-in review regressions', () => {
     });
     await discoverSourcePlugins(s.client, s.session, s.request, { unit, source: '' });
     expect(s.session.result.providers[0]?.nested).toBe('bounded');
+    expect(s.session.result.edges.every((e) => e.observationVersion === 'provider_current')).toBe(true);
     const keys = new Set(s.session.result.nodes.map(extensionKey));
     keys.add(extensionKey(s.request.root));
     expect(

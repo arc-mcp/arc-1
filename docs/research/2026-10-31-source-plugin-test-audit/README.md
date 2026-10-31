@@ -105,3 +105,22 @@ The renderer change retains the stable result/export shapes while bounding diagn
 and maintaining valid JSON, required report fields, omission counts and consumed budgets when
 metadata exceeds the compact summary allowance. Source/graph output remains under the same
 existing byte cap. The review fixes do not broaden authorization, routes or BTP public types.
+
+
+## Final merged build
+
+The [focused Claude Code follow-up](claude-followup.md) confirmed all ten actionable findings
+resolved with no remaining actionable regressions. Its noted long-identity library boundary
+now has an explicit omitted-field fallback and tests for both plain and JSON-escaped caller text.
+
+The updated DDIC prerequisite 13009e616 is integrated, including its auth/CSRF/redirect handling
+and CLI source-export fixes. Source graph edges now follow its observationVersion contract:
+include edges describe active source observations; plug-in attachment/parent/replacement edges
+are provider_current, separately from the referenced implementation identity's version.
+
+Final merged validation: 393 unit files / 10,762 tests, two live BTP tests and seven real HTTP MCP
+tests pass. Typecheck, Biome lint, ACTION_POLICY, build, file-size and tool-schema ratchets pass.
+The live evidence JSON files were refreshed against this final implementation. The previous
+coverage snapshot is explicitly from the pre-merge review-fix build; full tests were rerun after
+integration. No SAP writes, fixture synchronization, helper installation or release was performed.
+No roadmap impact after the final check: FEAT-03 and COMPAT-19 retain their original scopes.

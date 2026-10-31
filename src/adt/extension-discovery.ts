@@ -327,9 +327,12 @@ export function renderExtensionDiscovery(result: ExtensionDiscoveryResult): Arra
   }
   if (Buffer.byteLength(text) > 2048) {
     result.omissions.output = (result.omissions.output ?? 0) + 1;
+    // Even invalid caller identities must fit, including JSON's control-character expansion.
+    const field = (value: string) =>
+      Buffer.byteLength(JSON.stringify(value)) <= 128 ? value : '[identity field omitted: output cap]';
     const essential = {
-      root: result.root,
-      ...(result.context ? { context: result.context } : {}),
+      root: { type: field(result.root.type), name: field(result.root.name), version: field(result.root.version) },
+      ...(result.context ? { context: { type: field(result.context.type), name: field(result.context.name) } } : {}),
       scope: 'summary_metadata_output_limit',
       providers: compactProviders(result.providers).map(({ id, family, status, coverage }) => ({
         id,

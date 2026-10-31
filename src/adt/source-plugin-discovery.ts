@@ -190,7 +190,13 @@ export async function discoverSourcePlugins(
           }
           const child = { type: 'INCL' as const, name: include.name };
           const childKey = extensionKey({ ...child, version: 'active' });
-          session.addEdge({ from: key, to: childKey, kind: 'include', location: `line ${include.line}` });
+          session.addEdge({
+            from: key,
+            to: childKey,
+            kind: 'include',
+            observationVersion: 'active',
+            location: `line ${include.line}`,
+          });
           if (seen.has(childKey)) continue;
           if (depth >= session.limits.depth) {
             session.omit('depth');
@@ -289,6 +295,7 @@ function recordGraph(
         from: sourceKey,
         to: extensionKey(impl),
         kind: 'attachment',
+        observationVersion: 'provider_current',
         attribute: plugin.id,
         location: `${plugin.fullName} ${plugin.position ?? ''}`,
         suffix: plugin.mode,
@@ -315,6 +322,7 @@ function recordGraph(
       from: keys.get(edge.from)!,
       to: keys.get(edge.to) ?? extensionKey({ type: parentType, name: edge.to, version: 'active' }),
       kind: edge.kind,
+      observationVersion: 'provider_current',
       ...(edge.attachment ? { location: edge.attachment } : {}),
     });
   }

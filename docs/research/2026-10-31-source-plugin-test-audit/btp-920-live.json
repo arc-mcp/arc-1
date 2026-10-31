@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-31T21:09:18.373Z",
+  "checkedAt": "2026-10-31T21:19:59.683Z",
   "environment": {
     "abapRelease": "920",
     "cloudComponent": true
@@ -36,7 +36,7 @@
         "consumed": {
           "sends": 1,
           "responseBytes": 2622,
-          "elapsedMs": 266
+          "elapsedMs": 239
         },
         "issues": [
           "enhancement_relation_not_advertised:FUNC:RFC_SYSTEM_INFO"
@@ -75,7 +75,7 @@
         "consumed": {
           "sends": 1,
           "responseBytes": 2622,
-          "elapsedMs": 260
+          "elapsedMs": 225
         },
         "issues": [
           "enhancement_relation_not_advertised:FUNC:RFC_SYSTEM_INFO"
@@ -114,7 +114,7 @@
         "consumed": {
           "sends": 2,
           "responseBytes": 3507,
-          "elapsedMs": 370
+          "elapsedMs": 353
         },
         "issues": []
       },
@@ -154,7 +154,7 @@
         "consumed": {
           "sends": 20,
           "responseBytes": 50702,
-          "elapsedMs": 3948
+          "elapsedMs": 3774
         },
         "issues": [
           "enhancement_relation_not_advertised:FUGR:SRFC",
