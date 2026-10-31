@@ -185,3 +185,17 @@ it.each([undefined, '{"formatVersion":"1","name":"ZX_NODE"}', '{"sapObjectType":
     expect(posts()).toHaveLength(0);
   },
 );
+
+// Live 816: SAP created an inactive root node type named unlike its object type; Eclipse's validation refuses it.
+it('refuses a NONT root node whose name differs from its SAP object type before any POST', async () => {
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'create',
+    type: 'NONT',
+    name: 'ZX_SOT_ROOT',
+    package: '$TMP',
+    source: '{"formatVersion":"1","name":"ZX_SOT_ROOT","sapObjectType":"ZX_SOT","rootNode":true}',
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('NONT ZX_SOT_ROOT differs from source.sapObjectType ZX_SOT');
+  expect(posts()).toHaveLength(0);
+});

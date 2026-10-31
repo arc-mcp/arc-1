@@ -986,6 +986,10 @@ function sapObjectTypeCreationProperties(
   if (typeof aff.sapObjectType !== 'string' || !aff.sapObjectType.trim()) {
     return 'Creating NONT requires source.sapObjectType naming an existing SAP object type (RONT). Nothing was created.';
   }
+  // SAP's create accepts a mismatched root node (816); only the wizard's validation refuses it (RAP_SONT_WB/013).
+  if (aff.rootNode === true && name.toUpperCase() !== aff.sapObjectType.toUpperCase()) {
+    return `A root node type must have the name of its SAP object type: NONT ${name} differs from source.sapObjectType ${aff.sapObjectType}. Nothing was created.`;
+  }
   const rootNode = typeof aff.rootNode === 'boolean' ? { rootNode: aff.rootNode } : {};
   return { name: typeName, sapObjectType: aff.sapObjectType, ...rootNode, metadata };
 }
