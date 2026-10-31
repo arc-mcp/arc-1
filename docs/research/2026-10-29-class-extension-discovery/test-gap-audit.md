@@ -1,6 +1,6 @@
 # Class discovery test-gap audit — 2026-10-31
 
-The implementation is unchanged from `30ddc0bd4c62145fa9e121b8153489eb03a78bc0`
+At the initial audit, the implementation was unchanged from `30ddc0bd4c62145fa9e121b8153489eb03a78bc0`
 (functional implementation `6994d2f4`). This follow-up adds 17 unit cases and a dedicated,
 read-only BTP public-handler integration suite. It does not create or modify SAP fixtures.
 
@@ -65,6 +65,33 @@ hook and selected-section fixtures are opt-in so their availability is explicit.
 - Typecheck, lint, policy validation, build and file/schema size gates pass. Lint retains two
   existing informational suggestions. Standard full schema stays at 74,971/75,000 bytes.
 - All five BTP live integration cases pass, with no skips or SAP mutations.
+
+## Claude review and corrections
+
+[Claude Code review 1](claude-review-1.md) raised five findings. The runtime corrections:
+
+- Forward the probed release through public ENHO/INCL fallback checks. Tests use the exact 750
+  unsupported-technology and 758 null-reference bodies, and reject them for 920.
+- Count EIMP and other unqualified real INCLUDE references as missing sources without fetching
+  them. Comments/literals remain excluded; only the discovered, same-owner EMnnn path is read.
+- Preserve observed hook switch metadata when the same canonical active node already exists.
+  Active and provider_current summary observations remain separate: the approved contract keys
+  identities by type/name/version and labels unversioned observations without implying active
+  coverage. Collapsing those versions would hide that distinction. A regression freezes it.
+- Normalize class source-section selection case before discovery.
+- Keep the active/draft warning together with revision provenance, and give optional discovery
+  the already retrieved fallback body instead of rereading its failed direct route.
+
+The original 98.33% coverage measurement above belongs to the initial audit candidate. After the
+corrections, the final full suite passed **10,814 tests** (397 files, four workers, 40.87s). The focused
+recheck also passed 85 tests. These clean full runs supersede the earlier timing failures
+without changing any unrelated timeout. Required gates also pass.
+
+Read-only live reruns pass all eight public class cases on each A4H 758 and NPL 750 target,
+plus explicit ENHO and INCL generated-revision/provenance reads on both. BTP 920 again passes
+all five public cases, now also asserting that the switched-off hook's state survives in the
+combined active source result. Evidence: `review-fixed-*-public.json` and
+`review-fixed-*-legacy.json`. Source hashes identify the corrected runtime. No SAP writes occurred.
 
 ## Remaining qualification
 

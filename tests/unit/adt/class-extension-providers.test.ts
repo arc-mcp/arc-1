@@ -85,6 +85,9 @@ describe('combined class providers', () => {
     expect(result.providers[0]).toMatchObject({ status: 'unsupported', reason: 'unsupported_provider' });
     expect(result.providers[1]?.status).toBe('returned');
     expect(result.sources).toHaveLength(8);
+    expect(result.nodes.find((node) => node.name === 'SEEF_ADT_TEST_ENHO_CLASS_1')?.switch).toBe(
+      'SEEF_ADT_TEST_SWITCH_01:off',
+    );
   });
   it('counts native source omissions when hook authorization stops the combined phase', async () => {
     const s = setup('sources', 'main', true);
@@ -121,6 +124,18 @@ describe('combined class providers', () => {
     );
     expect(result.edges.filter((edge) => edge.kind === 'replacement')).toHaveLength(3);
     expect(result.sources).toHaveLength(8);
+    expect(result.nodes.find((node) => node.name === 'SEEF_ADT_TEST_ENHO_CLASS_1')?.switch).toBe(
+      'SEEF_ADT_TEST_SWITCH_01:off',
+    );
+  });
+  it('keeps distinct active/current summary observations and qualifies the hook switch state', async () => {
+    const result = await setup('summary', 'main', true).run();
+    const observations = result.nodes.filter((node) => node.name === 'SEEF_ADT_TEST_ENHO_CLASS_1');
+    expect(observations.map((node) => node.version).sort()).toEqual(['active', 'provider_current']);
+    expect(observations.find((node) => node.version === 'provider_current')?.switch).toBe(
+      'SEEF_ADT_TEST_SWITCH_01:off',
+    );
+    expect(result.omissions.nodes).toBe(1);
   });
   it('reports unqualified source coverage for a hypothetical exact interface context', async () => {
     const iface = relationObject('IF_FUTURE', 'INTF/OI');

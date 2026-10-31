@@ -134,6 +134,15 @@ describe('class-bound enhancements', () => {
     await s.run();
     expect(s.getRevisions).toHaveBeenCalledTimes(1);
   });
+  it('counts an actual EIMP reference as unqualified without fetching it', async () => {
+    const s = setup({ source: `* INCLUDE ${parent}M002.\nINCLUDE ${parent}IMP.\nINCLUDE ZOTHER.` });
+    const result = await s.run();
+    expect(result.sources).toHaveLength(1);
+    expect(result.omissions.sources).toBe(2);
+    expect(result.providers.at(-1)).toMatchObject({ status: 'incomplete' });
+    expect(result.providers.at(-1)?.reason).toContain('unqualified_generated_include_references');
+    expect(s.getRevisions).toHaveBeenCalledTimes(1);
+  });
   it.each([
     ['ENV', fixture('class-exted.xml').replaceAll('EXTED_OBJ', 'ENV')],
     ['WUL', fixture('class-exted.xml').replaceAll('EXTED_OBJ', 'WUL')],

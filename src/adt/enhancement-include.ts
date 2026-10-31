@@ -102,14 +102,21 @@ export async function readEnhancementIncludeRevision(
 /** Follow only actual INCLUDE statements bound to this generated enhancement owner; never guess EM001. */
 export function enhancementMethodIncludes(source: string, parentInclude: string): string[] {
   const parent = parentInclude.toUpperCase();
+  return enhancementIncludeReferences(source, parent).filter(
+    (name) => name.startsWith(parent) && /^M\d{3}$/.test(name.slice(parent.length)),
+  );
+}
+
+/** All real references are needed for omission accounting, including unqualified EIMP/other includes. */
+export function enhancementIncludeReferences(source: string, parentInclude: string): string[] {
+  const parent = parentInclude.toUpperCase();
   // Authored INCLUDE grammar excludes '=' in generated names. Substitute collision-free identifiers
   // for parsing only; comments, literals and non-INCLUDE statements still stay excluded.
   const names = new Map<string, string>();
   const upperSource = source.toUpperCase();
   let index = 0;
   const escapedParent = parent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const scanned = source.replace(new RegExp(`${escapedParent}M\\d{3}`, 'gi'), (name) => {
-    if (name.length !== 35 || !name.toUpperCase().startsWith(parent)) return name;
+  const scanned = source.replace(new RegExp(`${escapedParent}[A-Z0-9_]+`, 'gi'), (name) => {
     let token: string;
     do {
       token = `ZARC1_GENERATED_CHILD_${index++}`;
@@ -117,7 +124,11 @@ export function enhancementMethodIncludes(source: string, parentInclude: string)
     names.set(token, name.toUpperCase());
     return token;
   });
-  return [...new Set(findIncludeStatements(scanned).flatMap((item) => names.get(item.name.toUpperCase()) ?? []))];
+  return [
+    ...new Set(
+      findIncludeStatements(scanned).map((item) => names.get(item.name.toUpperCase()) ?? item.name.toUpperCase()),
+    ),
+  ];
 }
 
 /** One-line provenance note for callers that return plain source text. */

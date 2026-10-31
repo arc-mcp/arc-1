@@ -155,6 +155,18 @@ describe('SAPRead class extensions', () => {
     expect(result.content[0]).toEqual(base.content[0]);
     expect(summary(result).scope).toContain('owning object/source (base filtered)');
   });
+  it.each(['MAIN', 'DEFINITIONS'])('normalizes %s for the same selected hook reads', async (include) => {
+    const s = setup();
+    const lower = await s.read({ include: include.toLowerCase(), extensions: 'sources' });
+    expect(lower.isError).toBeUndefined();
+    const calls = s.calls.filter((call) => !call.startsWith('HEAD '));
+    s.calls.length = 0;
+    const upper = await s.read({ include, extensions: 'sources' });
+    expect(upper.isError).toBeUndefined();
+    expect(upper.content[0]).toEqual(lower.content[0]);
+    expect(summary(upper).providers).toEqual(summary(lower).providers);
+    expect(s.calls.filter((call) => !call.startsWith('HEAD '))).toEqual(calls);
+  });
   it.each([401, 403, 429])(
     'retains the base after terminal optional HTTP %s and stops source fallback',
     async (status) => {

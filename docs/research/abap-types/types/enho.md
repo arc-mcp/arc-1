@@ -69,11 +69,16 @@ known object path also qualifies. ARC-1 never follows a returned URI, probes all
 collections, or retries with another identity. Unknown or ambiguous results keep
 the original failure; denied searches and source errors propagate.
 
-When the generic XH read fails with 400/404/500, ARC-1 reads the enhancement include's
+When the generic XH read has a qualified source-unavailable failure, ARC-1 reads the enhancement include's
 revision feed and returns the active revision's content as `source` with
 `enhancementInclude` and a `note`; a feed that is missing, empty or invalid keeps the
 original SAP error, which then lists the include route among the attempted routes.
 Content reads denied by SAP propagate unchanged.
+
+The current guard accepts 404, typed `ExceptionResourceReadFailure` 500s, and only the observed
+750 unsupported-technology / 758 null-reference 500 bodies when the matching release is probed.
+Arbitrary 400/500, authentication, throttling and network failures never authorize revision fallback.
+Unqualified generated references such as EIMP are counted as missing sources, without fetching them.
 
 XHH returns `source`, `enhancedObject` and `hookImplementations` in addition to the
 common metadata. Hook entries retain IDs, spots, programs, methods, overwrite

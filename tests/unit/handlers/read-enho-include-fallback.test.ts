@@ -4,6 +4,9 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
+const { CachingLayer } = await import('../../../src/cache/caching-layer.js');
+const { MemoryCache } = await import('../../../src/cache/memory.js');
 const { enhancementIncludeName, isEnhancementIncludeName } = await import('../../../src/adt/enhancement-include.js');
 
 const name = 'ZD0120_FUELLEN';
@@ -21,12 +24,16 @@ const searchHit = (type: string, collection: string) =>
   `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:name="${name}" adtcore:type="${type}" adtcore:uri="/sap/bc/adt/enhancements/${collection}/${name.toLowerCase()}" adtcore:packageName="ZLES"/></adtcore:objectReferences>`;
 
 describe('SAPRead ENHO: source plug-ins via the enhancement include (SAP_BASIS 750)', () => {
-  beforeEach(() => vi.resetAllMocks());
+  beforeEach(() => {
+    vi.resetAllMocks();
+    resetCachedFeatures();
+  });
 
   function setup(
     opts: {
       subtype?: string;
       genericStatus?: number;
+      genericBody?: string;
       feedStatus?: number;
       feedBody?: string;
       contentStatus?: number;
@@ -46,7 +53,7 @@ describe('SAPRead ENHO: source plug-ins via the enhancement include (SAP_BASIS 7
       if (path.includes(`/${collection}/`))
         return mockResponse(
           opts.genericStatus ?? 500,
-          '<exception><type id="ExceptionResourceReadFailure"/></exception>',
+          opts.genericBody ?? '<exception><type id="ExceptionResourceReadFailure"/></exception>',
         );
       if (path === `${includeBase}/source/main/versions`) {
         expect(init.headers?.Accept).toBe('application/atom+xml;type=feed');
@@ -62,6 +69,22 @@ describe('SAPRead ENHO: source plug-ins via the enhancement include (SAP_BASIS 7
   }
 
   const read = () => handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'ENHO', name });
+
+  it.each([
+    [
+      '750',
+      '<exception><type id="ExceptionInternalServerError"/><message>Enhancement technology CLASENH is not supported yet.</message></exception>',
+    ],
+    ['758', '<span id="msgText">Dereferencing of the NULL reference </span>'],
+  ])('passes the probed %s release to the qualified public ENHO fallback', async (release, genericBody) => {
+    const calls = setup({ genericBody });
+    setCachedFeatures({ abapRelease: release });
+    expect((await read()).isError).toBeUndefined();
+    expect(calls.at(-1)).toBe(contentPath('00000'));
+    setup({ genericBody });
+    setCachedFeatures({ abapRelease: '920' });
+    expect((await read()).isError).toBe(true);
+  });
 
   it('reads the active revision of the enhancement include after the generic route fails', async () => {
     const calls = setup();
@@ -149,9 +172,12 @@ describe('enhancement include names', () => {
 });
 
 describe('SAPRead INCL on an enhancement include', () => {
-  beforeEach(() => vi.resetAllMocks());
+  beforeEach(() => {
+    vi.resetAllMocks();
+    resetCachedFeatures();
+  });
 
-  function setup(opts: { directStatus?: number; name?: string } = {}) {
+  function setup(opts: { directStatus?: number; directBody?: string; name?: string; context?: boolean } = {}) {
     const calls: string[] = [];
     const target = opts.name ?? include;
     const base = `/sap/bc/adt/programs/includes/${encodeURIComponent(target)}`;
@@ -162,14 +188,59 @@ describe('SAPRead INCL on an enhancement include', () => {
       if (path === `${base}/source/main`)
         return mockResponse(
           opts.directStatus ?? 500,
-          '<exception><type id="ExceptionResourceReadFailure"/></exception>',
+          opts.directBody ?? '<exception><type id="ExceptionResourceReadFailure"/></exception>',
         );
       if (path === `${base}/source/main/versions`) return mockResponse(200, feed);
       if (path === contentPath('00000')) return mockResponse(200, source);
+      if (opts.context && path.toUpperCase() === base.toUpperCase())
+        return mockResponse(
+          200,
+          `<include name="${include}" type="PROG/I" version="active"><link rel="http://www.sap.com/adt/relations/enhancements" href="source/main/enhancements/elements"/></include>`,
+        );
+      if (opts.context && path.endsWith('/enhancements/elements')) return mockResponse(200, '<enhancements/>');
+      if (opts.context && path.toUpperCase() === '/SAP/BC/ADT/PROGRAMS/PROGRAMS/ZROOT')
+        return mockResponse(200, '<program name="ZROOT" type="PROG/P" version="active"/>');
       throw new Error(`unexpected request ${path}`);
     });
     return calls;
   }
+
+  it('keeps the active draft warning with revision provenance', async () => {
+    setup();
+    const client = createClient();
+    vi.spyOn(client, 'getInactiveObjects').mockResolvedValue([{ name: include, type: 'PROG/I', uri: includeBase }]);
+    const result = await handleToolCall(
+      client,
+      DEFAULT_CONFIG,
+      'SAPRead',
+      { type: 'INCL', name: include, extensions: 'none' },
+      undefined,
+      undefined,
+      new CachingLayer(new MemoryCache()),
+    );
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain('LAST ACTIVATED');
+    expect(result.content[0]?.text).toContain('Source read from revision 00000');
+  });
+  it('reuses fallback source for context-bound discovery without retrying its failed source route', async () => {
+    const calls = setup({ context: true });
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+      type: 'INCL',
+      name: include,
+      extensions: 'sources',
+      enhancementContext: { type: 'PROG', name: 'ZROOT' },
+    });
+    expect(result.isError).toBeUndefined();
+    expect(calls.filter((path) => path === `${includeBase}/source/main`)).toHaveLength(1);
+    expect(result.content[1]?.text).not.toContain('provider_read_failed');
+  });
+  it('uses a matching probed release for a qualified direct include failure', async () => {
+    const calls = setup({ directBody: '<span id="msgText">Dereferencing of the NULL reference </span>' });
+    setCachedFeatures({ abapRelease: '758' });
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'INCL', name: include });
+    expect(result.isError).toBeUndefined();
+    expect(calls.at(-1)).toBe(contentPath('00000'));
+  });
 
   it('returns the active revision with a provenance note when the direct read fails', async () => {
     const calls = setup();

@@ -110,6 +110,9 @@ describeIf('BTP class extension public reads', () => {
             );
             expect(graph.filter((edge: { kind: string }) => edge.kind === 'extends')).toHaveLength(7);
             expect(graph.filter((edge: { kind: string }) => edge.kind === 'replacement')).toHaveLength(3);
+            expect(
+              summary.identities.find((node: { name: string }) => node.name === 'SEEF_ADT_TEST_ENHO_CLASS_1')?.switch,
+            ).toBe('SEEF_ADT_TEST_SWITCH_01:off');
             expect(extra.filter((block) => block.text.includes('representation=rendered_plugin_source'))).toHaveLength(
               8,
             );

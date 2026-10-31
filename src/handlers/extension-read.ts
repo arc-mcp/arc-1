@@ -57,9 +57,9 @@ export async function appendReadExtensions(
   const session = new ExtensionDiscoverySession(mode, request, client.safety, { signal: getCurrentContext()?.signal });
   if (type === 'TABL') await ddicExtensionAdapter(client, baseSource ?? '')(session, request);
   else if (type === 'CLAS' || type === 'INTF') {
-    const section = (args.include ??
-      (args.method ? detectLocalHandlerInclude(String(args.method)) : undefined) ??
-      'main') as 'main' | 'definitions' | 'implementations' | 'macros' | 'testclasses';
+    const section = String(
+      args.include ?? (args.method ? detectLocalHandlerInclude(String(args.method)) : undefined) ?? 'main',
+    ).toLowerCase() as 'main' | 'definitions' | 'implementations' | 'macros' | 'testclasses';
     await discoverClassExtensions(
       client,
       session,
