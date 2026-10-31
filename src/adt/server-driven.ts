@@ -138,6 +138,8 @@ export const SDO_TYPES = [
   'APLO',
   'SAJC',
   'SAJT',
+  'RONT',
+  'NONT',
   'TABL/DTI',
 ] as const;
 
@@ -257,6 +259,24 @@ export const SDO_REGISTRY = {
     href: '/sap/bc/adt/applicationjob/templates',
     label: 'Application Job Template',
     createType: 'SAJT',
+    metadataContentType: BLUES_V2,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+  },
+  // SAP object type and its node types (RAP business object modeling): blues v2, AFF JSON source.
+  // Create needs the wizard input as creation properties. Contract: docs/research/2026-10-31-ront-nont-adt-contract.md
+  RONT: {
+    href: '/sap/bc/adt/businessobjects/rontrot',
+    label: 'SAP Object Type',
+    createType: 'RONT/ROT',
+    metadataContentType: BLUES_V2,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+  },
+  NONT: {
+    href: '/sap/bc/adt/businessobjects/nontnot',
+    label: 'SAP Object Node Type',
+    createType: 'NONT/NOT',
     metadataContentType: BLUES_V2,
     ...BLUE_METADATA,
     sourceFormat: 'json',
@@ -422,7 +442,7 @@ export function buildServerDrivenMetadataXml(
   pkg: string,
   description: string,
   uiadLanguageVersion?: UiadLanguageVersion,
-  creationProperties?: Record<string, string>,
+  creationProperties?: Record<string, unknown>,
 ): string {
   const entry = sdoEntry(code);
   const [prefix] = entry.metadataRootQName.split(':');
@@ -459,7 +479,7 @@ export async function createServerDrivenObject(
     description: string;
     transport?: string;
     uiadLanguageVersion?: UiadLanguageVersion;
-    creationProperties?: Record<string, string>;
+    creationProperties?: Record<string, unknown>;
   },
 ): Promise<string> {
   checkOperation(safety, OperationType.Create, 'CreateServerDrivenObject');
@@ -557,6 +577,18 @@ async function checkServerDrivenDeletion(
   if (objects.length !== 1 || object?.['@_uri'] !== objUrl || object?.['@_isDeletable'] !== 'true') {
     throw new AdtError(
       'SAP did not confirm that this object can be deleted. Review its deletion check in ADT and resolve dependencies or other refusals. No DELETE was sent.',
+    );
+  }
+  // ADT deletes a documented object together with its KTD in one deletion request; a plain DELETE
+  // of the parent alone could leave the KTD behind. ARC-1 deletes the KTD first instead.
+  const included = Array.isArray(object.includedObject) ? object.includedObject : [object.includedObject];
+  const ktd = (included as Array<Record<string, unknown> | undefined>).find(
+    (entry) => entry?.['@_type'] === 'SKTD/TYP',
+  );
+  if (ktd) {
+    const ktdName = String(ktd['@_name'] ?? '');
+    throw new AdtError(
+      `SAP lists the knowledge transfer document ${ktdName} as part of this deletion. Delete it first with SAPWrite(action="delete", type="SKTD", name="${ktdName}"), then retry. No DELETE was sent.`,
     );
   }
 }

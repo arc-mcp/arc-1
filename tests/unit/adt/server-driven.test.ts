@@ -299,8 +299,8 @@ describe('SDO registry write metadata', () => {
     }
   });
 
-  it('the blue family uses blues content types (EVTO/UIAD/SAJC/SAJT v2, rest v1); DTDC uses its own (verified live)', () => {
-    for (const code of ['EVTO', 'UIAD', 'SAJC', 'SAJT'] as const) {
+  it('the blue family uses blues content types (EVTO/UIAD/SAJC/SAJT/RONT/NONT v2, rest v1); DTDC uses its own (verified live)', () => {
+    for (const code of ['EVTO', 'UIAD', 'SAJC', 'SAJT', 'RONT', 'NONT'] as const) {
       expect(SDO_REGISTRY[code].metadataContentType).toContain('blues.v2');
     }
     for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'COTA', 'DSFD', 'DRTY', 'APLO'] as const) {
@@ -321,7 +321,7 @@ describe('SDO registry write metadata', () => {
   // hardcoded 'application/json' for every type, which SAP answers with 415 for the DDL-text
   // ones — DTSC write was dead on arrival. Content types live-verified per type on 816.
   it('maps each type to the source content type SAP actually accepts (live-verified 816)', () => {
-    for (const code of ['DESD', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'APLO', 'SAJC', 'SAJT'] as const) {
+    for (const code of ['DESD', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'APLO', 'SAJC', 'SAJT', 'RONT', 'NONT'] as const) {
       expect(serverDrivenSourceContentType(code)).toBe('application/json');
     }
     for (const code of ['DTSC', 'DSFD', 'DTDC', 'DRTY'] as const) {
@@ -334,6 +334,14 @@ describe('SDO registry write metadata', () => {
   it('DRTY is pinned to the collection and subtype read live (816)', () => {
     expect(SDO_REGISTRY.DRTY.href).toBe('/sap/bc/adt/ddic/drty/sources');
     expect(SDO_REGISTRY.DRTY.createType).toBe('DRTY/STY');
+  });
+
+  // Collections and subtypes from the Eclipse ADT trace of a SAP object type with its root node type.
+  it('RONT/NONT are pinned to the business object collections and subtypes ADT uses', () => {
+    expect(SDO_REGISTRY.RONT.href).toBe('/sap/bc/adt/businessobjects/rontrot');
+    expect(SDO_REGISTRY.RONT.createType).toBe('RONT/ROT');
+    expect(SDO_REGISTRY.NONT.href).toBe('/sap/bc/adt/businessobjects/nontnot');
+    expect(SDO_REGISTRY.NONT.createType).toBe('NONT/NOT');
   });
 });
 
@@ -431,6 +439,17 @@ describe('buildServerDrivenMetadataXml', () => {
         '  <adtcore:packageRef adtcore:name="$TMP"/>\n' +
         '  <blue:additionalCreationProperties><adtcore:content adtcore:type="application/vnd.sap.adt.objecttype.new.content.additional.v1+json">{&quot;catalogName&quot;:&quot;Z\\&quot;C&amp;&quot;}</adtcore:content></blue:additionalCreationProperties>\n' +
         '</blue:blueSource>',
+    );
+  });
+  it('serializes nested creation properties of a SAP object type into the same element', () => {
+    const xml = buildServerDrivenMetadataXml('RONT', 'ZX_SOT', '$TMP', 'd', undefined, {
+      name: 'ZX_SOT',
+      typeCategory: 'bo',
+      metadata: { name: 'ZX_SOT', description: 'A & B', package: '$TMP' },
+    });
+    expect(xml).toContain('adtcore:type="RONT/ROT"');
+    expect(xml).toContain(
+      '{&quot;name&quot;:&quot;ZX_SOT&quot;,&quot;typeCategory&quot;:&quot;bo&quot;,&quot;metadata&quot;:{&quot;name&quot;:&quot;ZX_SOT&quot;,&quot;description&quot;:&quot;A &amp; B&quot;,&quot;package&quot;:&quot;$TMP&quot;}}</adtcore:content>',
     );
   });
   it('emits the per-type createType, packageRef, and escapes the description', () => {
