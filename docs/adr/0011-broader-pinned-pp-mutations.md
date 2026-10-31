@@ -81,17 +81,18 @@ consumer or later native side effect:
   [target groups and delivery routes](https://learning.sap.com/courses/technical-implementation-and-operation-ii-of-sap-s-4hana-and-sap-business-suite/configuring-extended-transport-control-1).
 - DDIC activation can adjust active dependent objects outside the edited package, including
   database structures. SAP's preaudit references do not enumerate all such effects. Interface
-  changes can also break callers elsewhere. The chosen policy accepts these native dependency
+  changes can also break callers elsewhere. The proposed policy accepts these native dependency
   effects; it does not introduce a mandatory where-used closure as an authorization boundary.
   Every explicitly submitted/expanded activation reference still requires the independent package
   checks. See SAP's [direct and indirect table adjustments](https://learning.sap.com/courses/building-data-models-with-the-abap-dictionary-and-abap-core-data-services/handling-changes-to-database-tables_d6d6d97a-979e-4efe-b5c3-f3e3d85332fb).
 - Existing ABAP Unit reads can execute authored test code under the requesting SAP principal,
   including a reader or CI identity. Treat [author-declared test properties](https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABAPCLASS_FOR_TESTING.html) as test selection controls, not an authorization sandbox. Keep the
   existing reader surface, document this interaction, and offer `SAP_DENY_ACTIONS=SAPDiagnose.unittest`
-  where executing writers' tests is inappropriate. A writes-off destination blocks ARC-1 mutation
+  where executing writers' tests is inappropriate. `unittest_ci` remains refused on multi-target;
+  if later admitted, the opt-out must deny both `SAPDiagnose.unittest` and `SAPDiagnose.unittest_ci`. A writes-off destination blocks ARC-1 mutation
   calls; it does not isolate shared repository code from execution through other allowed workflows.
 - Explicit trace subjects may identify another SAP user when SAP authorizes it. Existing trace
-  reads retain their read scope and native authorization; they may expose results produced by a
+  reads retain their current scopes and native authorization; they may expose results produced by a
   writer. This is an explicit native-authorization tradeoff, without a new self-only/data gate.
   ST05 state may cover an application-server instance beyond the route's client. Qualify and report
   the actual filter/client/instance scope before admitting each control; never claim client isolation

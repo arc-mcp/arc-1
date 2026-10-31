@@ -311,8 +311,6 @@ export async function checkPackage(
   );
 }
 
-/** Check if a transport is in the whitelist. */
-
 /**
  * Check transport operation. Writes require `allowWrites && allowTransportWrites`.
  * Reads are always allowed at this layer (scope check enforces user gating upstream).

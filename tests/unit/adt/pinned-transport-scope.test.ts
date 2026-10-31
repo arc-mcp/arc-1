@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { pinnedMutationContext } from '../../../src/adt/mutation-context.js';
@@ -253,18 +254,67 @@ describe('pinned CTS request scope', () => {
     },
   );
 
-  it.each(['delete', 'reassign', 'release'] as const)(
+  it.each(['delete', 'reassign', 'release', 'remove_object'] as const)(
     'cannot widen a selected task to its parent or sibling: %s',
     async (action) => {
       const { http, safety, context } = setup(tree(`<tm:task tm:number="${task}"/><tm:task tm:number="${other}"/>`));
       const prepared = await preparePinnedTransport(http, safety, context, action, task);
-      const operation = { delete: 'DeleteTransport', reassign: 'ReassignTransport', release: 'ReleaseTransport' }[
-        action
-      ];
+      const operation = {
+        delete: 'DeleteTransport',
+        reassign: 'ReassignTransport',
+        release: 'ReleaseTransport',
+        remove_object: 'RemoveTransportObject',
+      }[action];
       for (const id of [parent, other])
         expect(() => checkTransport(prepared.safety, id, operation, true, prepared.http)).toThrow('selected resource');
     },
   );
+
+  it.each(
+    (['delete', 'reassign'] as const).flatMap((action) =>
+      (['added', 'omitted', 'conflict', 'duplicate'] as const).map((shape) => ({ action, shape })),
+    ),
+  )('refuses $shape second-read membership before any $action mutation', async ({ action, shape }) => {
+    const { http, safety, context } = setup();
+    const prepared = await preparePinnedTransport(http, safety, context, action, parent);
+    const body =
+      shape === 'omitted'
+        ? tree('')
+        : envelope(
+            `<tm:request tm:number="${parent}"><tm:task tm:number="${task}" tm:status="D"/></tm:request>` +
+              `<tm:task tm:number="${shape === 'added' ? other : task}" tm:parent="${shape === 'conflict' ? other : parent}" tm:status="D"/>`,
+          );
+    vi.mocked(http.get).mockResolvedValue(response(body));
+    await expect(
+      action === 'delete'
+        ? deleteTransport(prepared.http, prepared.safety, parent, true, true)
+        : reassignTransport(prepared.http, prepared.safety, parent, 'DEVUSER', true),
+    ).rejects.toThrow(/outside verified|omitted verified|duplicate|conflicting/);
+    expect(http.put).not.toHaveBeenCalled();
+    expect(http.delete).not.toHaveBeenCalled();
+  });
+
+  it('accepts a nested task whose parent attribute is explicitly empty', async () => {
+    const { http, safety, context } = setup(tree(`<tm:task tm:number="${task}" tm:parent=""/>`));
+    expect((await preparePinnedTransport(http, safety, context, 'delete', parent)).verifiedIds).toEqual([parent, task]);
+  });
+
+  it('distinguishes a cancelled unsent task from the earlier release submission', async () => {
+    const { http, safety, context, signal } = setup(
+      tree(`<tm:task tm:number="${task}" tm:status="D"/><tm:task tm:number="${other}" tm:status="D"/>`),
+    );
+    const prepared = await preparePinnedTransport(http, safety, context, 'release_recursive', parent);
+    vi.mocked(http.post).mockImplementation(async () => {
+      signal.abort();
+      return response('');
+    });
+    const result = await releaseTransportRecursive(prepared.http, prepared.safety, parent);
+    expect(http.post).toHaveBeenCalledTimes(1);
+    expect(result.submissions).toHaveLength(2);
+    expect(result.submissions[0].notSubmitted).toBeUndefined();
+    expect(result.submissions[1]).toMatchObject({ id: other, notSubmitted: true });
+    expect(result.lastReadError).toContain('admission refused before submission');
+  });
 
   it('separates a parent-only release and delete cleanup from other submissions', async () => {
     const { http, safety, context } = setup();
@@ -394,5 +444,3 @@ describe('pinned CTS request scope', () => {
     expect(http.post).not.toHaveBeenCalled();
   });
 });
-
-import { readFileSync } from 'node:fs';

@@ -83,8 +83,12 @@ function parentId(value: unknown): string {
 
 async function readTree(http: AdtHttpClient, id: string): Promise<XmlNode> {
   const response = await http.get(`/sap/bc/adt/cts/transportrequests/${id}`, { Accept: CTS_CONTENT_TYPE_ORGANIZER });
-  if (response.body.length > 1024 * 1024) throw new AdtSafetyError('CTS membership evidence exceeds 1 MiB.');
-  const parsed = parseXml(response.body);
+  return parseTree(response.body);
+}
+
+function parseTree(body: string): XmlNode {
+  if (body.length > 1024 * 1024) throw new AdtSafetyError('CTS membership evidence exceeds 1 MiB.');
+  const parsed = parseXml(body);
   const roots = nodes(parsed.root ?? (parsed.task ? { task: parsed.task } : undefined));
   if (roots.length !== 1) throw new AdtSafetyError('CTS membership document must contain one organizer root.');
   return roots[0];
@@ -106,7 +110,10 @@ async function resolveTree(http: AdtHttpClient, requested: string): Promise<{ pa
     matches = nodes(root.request).filter((request) => request['@_number'] === parent);
   }
   if (matches.length !== 1) throw new AdtSafetyError('CTS parent membership is missing or ambiguous.');
-  const request = matches[0];
+  return parentMembers(root, matches[0], requested);
+}
+
+function parentMembers(root: XmlNode, request: XmlNode, requested: string): { parent: string; ids: Set<string> } {
   const parent = request['@_number'];
   requireId(parent);
   const siblings = nodes(root.task);
@@ -182,15 +189,31 @@ export function assertPinnedTransportWrite(
     return;
   }
   if (!scope.parent || !scope.ids.has(id)) throw new AdtSafetyError('CTS ID is outside verified native membership.');
-  if (
-    scope.action !== 'remove_object' &&
-    (scope.action === 'release' || scope.requested !== scope.parent) &&
-    id !== scope.requested
-  )
+  if ((scope.action === 'release' || scope.requested !== scope.parent) && id !== scope.requested)
     throw new AdtSafetyError('CTS ID is outside the selected resource scope.');
   checkPinnedRequest(safety, scope.parent);
   if (operation === 'ReleaseTransportRecursive' && id !== scope.parent)
     throw new AdtSafetyError('Recursive release requires the canonical parent request.');
+}
+
+/** Validate the same raw document the operation will parse, including root-level task siblings. */
+export function assertPinnedTransportDocument(
+  safety: SafetyConfig,
+  http: AdtHttpClient,
+  selected: string,
+  body: string,
+  operation: string,
+): void {
+  assertPinnedTransportWrite(safety, selected, operation, http);
+  const root = parseTree(body);
+  const matches = nodes(root.request).filter((request) => request['@_number'] === selected);
+  if (matches.length !== 1) throw new AdtSafetyError('CTS second read did not establish task membership.');
+  const evidence = parentMembers(root, matches[0], selected);
+  const scope = scopes.get(safety)!;
+  if (evidence.parent !== scope.parent || [...evidence.ids].some((id) => !scope.ids.has(id)))
+    throw new AdtSafetyError('CTS second read is outside verified native membership.');
+  if ([...scope.ids].some((id) => !evidence.ids.has(id)))
+    throw new AdtSafetyError('CTS second read omitted verified task membership.');
 }
 
 /** Preflight the complete second-read set before a recursive operation can submit its first child. */

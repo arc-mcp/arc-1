@@ -18,6 +18,7 @@ import { postCreate } from './create-request.js';
 import { AdtApiError, AdtNetworkError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import {
+  assertPinnedTransportDocument,
   assertPinnedTransportTasks,
   checkRecursiveTransportReleaseScope,
   pinnedTransportRequestPolicy,
@@ -980,6 +981,20 @@ async function removeTransportObject(http: AdtHttpClient, taskId: string, obj: T
   });
 }
 
+/** Pinned recursive operations validate every native member before parsing operation-specific fields. */
+async function getTransportForMutation(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  id: string,
+  operation: string,
+): Promise<TransportRequest | null> {
+  if (!safety.multiTargetWrite) return getTransport(http, safety, id);
+  const url = `/sap/bc/adt/cts/transportrequests/${encodeURIComponent(id)}`;
+  const response = await http.get(url, { Accept: CTS_CONTENT_TYPE_ORGANIZER });
+  assertPinnedTransportDocument(safety, http, id, response.body, operation);
+  return parseTransportList(response.body, url).find((request) => request.id === id) ?? null;
+}
+
 /**
  * Delete a transport request.
  *
@@ -999,7 +1014,12 @@ export async function deleteTransport(
   checkTransport(safety, transportId, 'DeleteTransport', true, http);
 
   if (recursive || removeLockedObjects) {
-    const transport = await getTransport(http, safety, transportId);
+    const transport = await getTransportForMutation(
+      http,
+      safety,
+      transportId,
+      recursive ? 'DeleteTransport' : 'DeleteTransportObject',
+    );
     if (safety.multiTargetWrite && !transport)
       throw new AdtSafetyError('CTS second read did not establish task membership.');
     if (transport) {
@@ -1094,7 +1114,7 @@ export async function reassignTransport(
   checkTransport(safety, transportId, 'ReassignTransport', true, http);
 
   if (recursive) {
-    const transport = await getTransport(http, safety, transportId);
+    const transport = await getTransportForMutation(http, safety, transportId, 'ReassignTransport');
     if (safety.multiTargetWrite && !transport)
       throw new AdtSafetyError('CTS second read did not establish task membership.');
     if (transport) {

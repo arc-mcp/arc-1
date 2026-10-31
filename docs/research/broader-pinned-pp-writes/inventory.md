@@ -4,8 +4,8 @@ Baseline: merged PR #1138, `ac8385fa47b6c40c2c77c6507e03c376bfc3b613`.
 This is an implementation review inventory, **not an authorization table or a parity claim**.
 [inventory.json](inventory.json) freezes mutation policy rows, write types, relevant slash aliases
 and top-level runtime input fields. Full action lists also detect additions classified as reads/tests.
-[nested-input-contracts.json](nested-input-contracts.json) snapshots batch/activation objects and
-FLP tile input schemas; custom refinements and handler branch combinations still need separate
+[nested-input-contracts.json](nested-input-contracts.json) snapshots every object-valued field (including nested arrays, batch/activation objects, quickfix
+objects, KTD short texts and FLP tiles) in both on-premise and BTP schema variants; custom refinements and handler branch combinations still need separate
 behavioral review. The drift tests require deliberate updates as PR 2 proceeds.
 The current runtime still permits only ADR-0010's scoped subset. The full
 [plan](../../plans/2026-10-26-broader-pinned-pp-writes.md) and proposed
@@ -55,6 +55,6 @@ concepts. Tests must not assert that an explicit responsibility field establishe
 ## Remaining gates
 
 Resolve every action/type/input combination, aliases and nested fields into the runtime admission
-matrix as its guarded adapter lands. The snapshots catch action, type, alias, top-level and selected nested-schema drift; they do not
+matrix as its guarded adapter lands. The snapshots catch action, type, alias, top-level and all object-valued nested-schema drift in both platform variants; they do not
 replace branch-level behavioral tests, backend qualification, native identity evidence or review.
 Keep pending combinations refused and document them. Full PR 2 remains in progress.

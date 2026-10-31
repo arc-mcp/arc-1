@@ -17,6 +17,8 @@ const inventory = JSON.parse(
   aliases: Record<string, string>;
   fields: Record<string, string[]>;
   actionLists: Record<string, string[]>;
+  btpFields: Record<string, string[]>;
+  btpActionLists: Record<string, string[]>;
 };
 
 const nestedInputs = JSON.parse(
@@ -24,7 +26,7 @@ const nestedInputs = JSON.parse(
     new URL('../../../docs/research/broader-pinned-pp-writes/nested-input-contracts.json', import.meta.url),
     'utf8',
   ),
-) as Record<string, unknown>;
+) as Record<'common' | 'onprem' | 'btp', Record<string, unknown>>;
 
 describe('PR 2 review inventory drift guard (not runtime authorization)', () => {
   it('keeps hyperfocused SAP aliases out of every multi-target invocation', () => {
@@ -64,34 +66,40 @@ describe('PR 2 review inventory drift guard (not runtime authorization)', () => 
     expect(inventory.aliases['STRU/DS']).toBe('TABL/DS');
   });
 
-  it('requires input review when top-level fields change on a tool with included mutations', () => {
+  it.each([false, true])('requires input review when top-level fields change (BTP=%s)', (btp) => {
     for (const [tool, fields] of Object.entries(inventory.fields)) {
-      const schema = getToolSchema(tool, false) as unknown as { shape: Record<string, unknown> };
-      expect(Object.keys(schema.shape).sort(), tool).toEqual(fields);
+      const schema = getToolSchema(tool, btp) as unknown as { shape: Record<string, unknown> };
+      expect(Object.keys(schema.shape).sort(), tool).toEqual((btp && inventory.btpFields[tool]) || fields);
     }
   });
 
-  it('detects newly added actions even if their policy is classified as read or test', () => {
+  it.each([false, true])('detects newly added actions including reads/tests (BTP=%s)', (btp) => {
     expect(Object.keys(inventory.actionLists).sort()).toEqual(Object.keys(inventory.fields).sort());
     for (const [tool, actions] of Object.entries(inventory.actionLists)) {
-      const schema = getToolSchema(tool, false) as z.ZodObject;
+      const schema = getToolSchema(tool, btp) as z.ZodObject;
       let action = schema.shape.action;
       while (action instanceof z.ZodOptional || action instanceof z.ZodDefault || action instanceof z.ZodNullable)
         action = action.unwrap();
       expect(action).toBeInstanceOf(z.ZodEnum);
-      expect([...(action as z.ZodEnum).options].sort(), tool).toEqual(actions);
+      expect([...(action as z.ZodEnum).options].sort(), tool).toEqual(
+        (btp && inventory.btpActionLists[tool]) || actions,
+      );
     }
   });
 
-  it('freezes nested batch, activation and FLP contracts before their adapters are admitted', () => {
-    expect(Object.keys(nestedInputs).sort()).toEqual(['SAPActivate.objects', 'SAPManage.tile', 'SAPWrite.objects']);
-    for (const [key, expected] of Object.entries(nestedInputs)) {
-      const [tool, field] = key.split('.');
-      const schema = getToolSchema(tool, false) as z.ZodObject;
-      expect(
-        z.toJSONSchema(schema.shape[field], { target: 'draft-7', io: 'input', unrepresentable: 'any' }),
-        key,
-      ).toEqual(expected);
+  it.each([false, true])('freezes every object-valued field, including nested arrays (BTP=%s)', (btp) => {
+    const containsObject = (value: unknown): boolean =>
+      value !== null &&
+      typeof value === 'object' &&
+      ((value as { type?: string }).type === 'object' || Object.values(value).some(containsObject));
+    const actual: Record<string, unknown> = {};
+    for (const tool of Object.keys(inventory.fields)) {
+      const schema = getToolSchema(tool, btp) as z.ZodObject;
+      for (const [field, value] of Object.entries(schema.shape)) {
+        const contract = z.toJSONSchema(value, { target: 'draft-7', io: 'input', unrepresentable: 'any' });
+        if (containsObject(contract)) actual[`${tool}.${field}`] = contract;
+      }
     }
+    expect(actual).toEqual({ ...nestedInputs.common, ...nestedInputs[btp ? 'btp' : 'onprem'] });
   });
 });

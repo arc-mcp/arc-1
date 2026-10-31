@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtClient } from '../../../src/adt/client.js';
 import { AdtSafetyError } from '../../../src/adt/errors.js';
+import { createPinnedPackageHierarchyResolver } from '../../../src/adt/package-hierarchy.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 
@@ -38,6 +39,49 @@ beforeEach(() => {
 });
 
 describe('pinned package hierarchy policy', () => {
+  it('stops a positive check at its native path without reading remaining branches or the target children', async () => {
+    const fetcher = vi.fn(async (root: string) =>
+      root === 'ZROOT' ? ['ZMID', 'ZUNRELATED'] : root === 'ZMID' ? ['ZTARGET'] : [],
+    );
+    const resolver = createPinnedPackageHierarchyResolver(fetcher, policy());
+    expect(await resolver.isDescendantOrSelf('ZROOT', 'ZTARGET')).toBe(true);
+    expect(fetcher.mock.calls.map(([root]) => root)).toEqual(['ZROOT', 'ZMID']);
+    fetcher.mockClear();
+    expect(await resolver.isDescendantOrSelf('ZROOT', 'ZUNRELATED')).toBe(true);
+    expect(fetcher.mock.calls.map(([root]) => root)).toEqual(['ZROOT']);
+  });
+
+  it('fully explores a negative decision, terminates cycles and refreshes the next decision', async () => {
+    const fetcher = vi.fn(async (root: string) => (root === 'ZROOT' ? ['ZA', 'ZB'] : ['ZROOT']));
+    const resolver = createPinnedPackageHierarchyResolver(fetcher, policy());
+    expect(await resolver.isDescendantOrSelf('ZROOT', 'ZTARGET')).toBe(false);
+    expect(fetcher.mock.calls.map(([root]) => root)).toEqual(['ZROOT', 'ZA', 'ZB']);
+    fetcher.mockResolvedValue(['ZTARGET']);
+    expect(await resolver.isDescendantOrSelf('ZROOT', 'ZTARGET')).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+
+  it('retains traversal limits and rejects cancellation even when the response contains the target', async () => {
+    const broad = createPinnedPackageHierarchyResolver(
+      async () => Array.from({ length: 10_001 }, (_, i) => `Z${i}`),
+      policy(),
+    );
+    expect(await broad.isDescendantOrSelf('ZROOT', 'Z9998')).toBe(true);
+    await expect(broad.isDescendantOrSelf('ZROOT', 'Z9999')).rejects.toThrow('maxPackages');
+    await expect(broad.isDescendantOrSelf('ZROOT', 'ZMISSING')).rejects.toThrow('maxPackages');
+    const deep = createPinnedPackageHierarchyResolver(async (root) => [`Z${Number(root.slice(1)) + 1}`], policy());
+    expect(await deep.isDescendantOrSelf('Z0', 'Z50')).toBe(true);
+    await expect(deep.isDescendantOrSelf('Z0', 'Z51')).rejects.toThrow('maxDepth');
+    const controller = new AbortController();
+    const cancelled = createPinnedPackageHierarchyResolver(
+      async () => {
+        controller.abort();
+        return ['ZTARGET'];
+      },
+      { ...policy(), signal: controller.signal },
+    );
+    await expect(cancelled.isDescendantOrSelf('ZROOT', 'ZTARGET')).rejects.toThrow(AdtSafetyError);
+  });
   it('refuses a missing, unbounded or replayable request policy', () => {
     const c = client();
     for (const options of [undefined, {}, { ...policy(), deadline: Infinity }, { ...policy(), noReplay: false }])
@@ -60,10 +104,10 @@ describe('pinned package hierarchy policy', () => {
     const budget = { ...policy(), signal: new AbortController().signal };
     const post = vi.spyOn(c.http, 'post').mockImplementation(async (url) => ({
       statusCode: 200,
-      body: nodes(url.includes('parent_name=ZROOT') ? ['ZA'] : []),
+      body: nodes(url.includes('parent_name=ZROOT') ? ['ZA'] : ['ZB']),
       headers: {},
     }));
-    expect(await c.getPackageHierarchyResolver(budget).isDescendantOrSelf('ZROOT', 'ZA')).toBe(true);
+    expect(await c.getPackageHierarchyResolver(budget).isDescendantOrSelf('ZROOT', 'ZB')).toBe(true);
     expect(post).toHaveBeenCalledTimes(2);
     for (const call of post.mock.calls) expect(call[4]).toEqual(budget);
   });
@@ -74,6 +118,9 @@ describe('pinned package hierarchy policy', () => {
     if (reason === 'abort') controller.abort();
     else budget.deadline = Date.now() - 1;
     await expect(client().getPackageHierarchyResolver(budget).isDescendantOrSelf('ZROOT', 'ZA')).rejects.toThrow(
+      AdtSafetyError,
+    );
+    await expect(client().getPackageHierarchyResolver(budget).isDescendantOrSelf('ZROOT', 'ZROOT')).rejects.toThrow(
       AdtSafetyError,
     );
     expect(mockFetch).not.toHaveBeenCalled();
@@ -91,7 +138,7 @@ describe('pinned package hierarchy policy', () => {
     await expect(
       client()
         .getPackageHierarchyResolver({ ...policy(), signal: controller.signal })
-        .isDescendantOrSelf('ZROOT', 'ZA'),
+        .isDescendantOrSelf('ZROOT', 'ZB'),
     ).rejects.toThrow(AdtSafetyError);
     expect(mockFetch.mock.calls.filter(([url]) => String(url).includes('parent_name=ZA'))).toHaveLength(0);
   });

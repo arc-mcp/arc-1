@@ -27,7 +27,7 @@
  */
 
 import { AdtSafetyError } from './errors.js';
-import type { AdtRequestOptions } from './http-deadline.js';
+import { type AdtRequestOptions, throwIfRequestCancelled } from './http-deadline.js';
 
 /** Fresh evidence for each pinned policy check, including its under-lock recheck. */
 export function createPinnedPackageHierarchyResolver(
@@ -43,7 +43,32 @@ export function createPinnedPackageHierarchyResolver(
     noReplay: true,
     retryTransientErrors: false,
   });
-  return new AdtPackageHierarchyResolver((root) => fetcher(root, policy), { ttlMs: 0 });
+  return {
+    async isDescendantOrSelf(root, pkg) {
+      const upperRoot = root.toUpperCase();
+      const target = pkg.toUpperCase();
+      try {
+        throwIfRequestCancelled(policy);
+        if (upperRoot === target) return true;
+        const visited = await walkHierarchy(
+          upperRoot,
+          async (current) => {
+            throwIfRequestCancelled(policy);
+            const children = await fetcher(current, policy);
+            throwIfRequestCancelled(policy);
+            return children;
+          },
+          DEFAULT_MAX_DEPTH,
+          DEFAULT_MAX_PACKAGES,
+          target,
+        );
+        return visited.has(target);
+      } catch (error) {
+        throw hierarchyFailure(upperRoot, error);
+      }
+    },
+    invalidate() {}, // No evidence survives this individual membership lookup.
+  };
 }
 
 /** Share evidence only across the independent gates of one checkPackage decision. */
@@ -147,43 +172,59 @@ export class AdtPackageHierarchyResolver implements PackageHierarchyResolver {
       // Fail-closed: purge so a retry can succeed; rethrow as AdtSafetyError
       // so callers see a stable error type at the safety boundary.
       this.cache.delete(upperRoot);
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new AdtSafetyError(
-        `Failed to resolve DEVCLASS subtree under '${upperRoot}' for allowedPackages rule (denying for safety): ${msg}`,
-      );
+      throw hierarchyFailure(upperRoot, err);
     });
     this.cache.set(upperRoot, { expires: now + this.ttlMs, subtree });
     return subtree;
   }
 
-  private async computeSubtree(upperRoot: string): Promise<Set<string>> {
-    const result = new Set<string>([upperRoot]);
-    let frontier: string[] = [upperRoot];
-    let depth = 0;
-    while (frontier.length > 0) {
-      if (depth >= this.maxDepth) {
-        throw new Error(
-          `DEVCLASS hierarchy under '${upperRoot}' exceeds maxDepth=${this.maxDepth} (possible cycle in TDEVC.PARENTCL)`,
-        );
-      }
-      const nextFrontier: string[] = [];
-      for (const cur of frontier) {
-        const children = await this.fetcher(cur);
-        for (const child of children) {
-          const upper = child.toUpperCase();
-          if (result.has(upper)) continue;
-          result.add(upper);
-          if (result.size > this.maxPackages) {
-            throw new Error(
-              `DEVCLASS subtree under '${upperRoot}' exceeds maxPackages=${this.maxPackages}; refusing for safety`,
-            );
-          }
-          nextFrontier.push(upper);
-        }
-      }
-      frontier = nextFrontier;
-      depth++;
-    }
-    return result;
+  private computeSubtree(upperRoot: string): Promise<Set<string>> {
+    return walkHierarchy(upperRoot, this.fetcher, this.maxDepth, this.maxPackages);
   }
+}
+
+/** A positive path is sufficient evidence; negative decisions still walk the bounded reachable tree. */
+async function walkHierarchy(
+  upperRoot: string,
+  fetcher: DirectSubpackageFetcher,
+  maxDepth: number,
+  maxPackages: number,
+  stopAt?: string,
+): Promise<Set<string>> {
+  const result = new Set<string>([upperRoot]);
+  let frontier: string[] = [upperRoot];
+  let depth = 0;
+  while (frontier.length > 0) {
+    if (depth >= maxDepth) {
+      throw new Error(
+        `DEVCLASS hierarchy under '${upperRoot}' exceeds maxDepth=${maxDepth} (possible cycle in TDEVC.PARENTCL)`,
+      );
+    }
+    const nextFrontier: string[] = [];
+    for (const cur of frontier) {
+      const children = await fetcher(cur);
+      for (const child of children) {
+        const upper = child.toUpperCase();
+        if (result.has(upper)) continue;
+        result.add(upper);
+        if (result.size > maxPackages) {
+          throw new Error(
+            `DEVCLASS subtree under '${upperRoot}' exceeds maxPackages=${maxPackages}; refusing for safety`,
+          );
+        }
+        if (upper === stopAt) return result;
+        nextFrontier.push(upper);
+      }
+    }
+    frontier = nextFrontier;
+    depth++;
+  }
+  return result;
+}
+
+function hierarchyFailure(root: string, error: unknown): AdtSafetyError {
+  const message = error instanceof Error ? error.message : String(error);
+  return new AdtSafetyError(
+    `Failed to resolve DEVCLASS subtree under '${root}' for allowedPackages rule (denying for safety): ${message}`,
+  );
 }

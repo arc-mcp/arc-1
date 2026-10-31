@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getMutationContext } from '../../../src/adt/mutation-http.js';
 import { resolvePinnedRequest } from '../../../src/adt/pinned-write-policy.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
@@ -247,6 +248,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     const c = client();
     c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
     const hierarchy = vi.spyOn(AdtClient.prototype, 'getSubpackages');
+    const packages = vi.spyOn(AdtClient.prototype, 'resolveObjectPackage');
     let checks = 0;
     hierarchy.mockImplementation(async (root) => (root === 'ZROOT' && ++checks === 1 ? ['$TMP'] : []));
     const result = await handlePinnedWrite(c, update(), config);
@@ -254,6 +256,13 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect(checks).toBe(2);
     expect(saves()).toHaveLength(0);
     expect(requests.some((r) => r.path.includes('_action=UNLOCK'))).toBe(true);
+    const preflight = packages.mock.contexts[0] as InstanceType<typeof AdtClient>;
+    const locked = packages.mock.contexts[1] as InstanceType<typeof AdtClient>;
+    expect(locked.http).not.toBe(preflight.http);
+    expect((hierarchy.mock.contexts[0] as InstanceType<typeof AdtClient>).http).toBe(preflight.http);
+    expect((hierarchy.mock.contexts[1] as InstanceType<typeof AdtClient>).http).toBe(locked.http);
+    expect(getMutationContext(locked.http, locked.safety)).toBe(getMutationContext(preflight.http, preflight.safety));
+    expect(getMutationContext(locked.http, locked.safety)).toBeDefined();
     const budgets = hierarchy.mock.calls.map((call) => call[2]);
     expect(budgets.every((budget) => budget?.noReplay && budget.deadline === budgets[0]?.deadline)).toBe(true);
   });
@@ -285,7 +294,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
       state: 'unchanged',
       phase: stage === 'preflight' ? 'validation' : 'locked-policy',
     });
-    expect(visited).toEqual(stage === 'preflight' ? ['ZROOT'] : ['ZROOT', '$TMP', 'ZROOT']);
+    expect(visited).toEqual(stage === 'preflight' ? ['ZROOT'] : ['ZROOT', 'ZROOT']);
     expect(requests.some((r) => r.path.includes('_action=LOCK'))).toBe(stage === 'under-lock');
     expect(requests.some((r) => r.path.includes('_action=UNLOCK'))).toBe(stage === 'under-lock');
     expect(requests.some((r) => r.path.includes('/source/main'))).toBe(false);
@@ -317,7 +326,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     );
     expect(result.isError, result.content[0].text).toBeUndefined();
     expect(hierarchy.mock.calls.filter(([root]) => root === 'ZROOT')).toHaveLength(2);
-    expect(hierarchy.mock.calls.filter(([root]) => root === '$TMP')).toHaveLength(2);
+    expect(hierarchy.mock.calls.filter(([root]) => root === '$TMP')).toHaveLength(0);
   });
   it('refuses activation when subtree membership changes before the first preaudit submission', async () => {
     const c = client();

@@ -27,6 +27,15 @@ describe('pinned CTS scope against native SAP', () => {
     try {
       const native = await getTransport(client.http, client.safety, id);
       expect(native?.description).toBe(description);
+      expect(native!.tasks.length).toBeGreaterThan(0);
+      const selectedTask = await preparePinnedTransport(
+        client.http,
+        safety,
+        context(),
+        'reassign',
+        native!.tasks[0].id,
+      );
+      expect(selectedTask.parentId).toBe(id);
       const deletion = await preparePinnedTransport(client.http, safety, context(), 'delete', id);
       expect(deletion.verifiedIds).toEqual([id, ...native!.tasks.map((task) => task.id)]);
       await deleteTransport(deletion.http, deletion.safety, id, true, true);
