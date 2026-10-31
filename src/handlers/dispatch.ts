@@ -292,6 +292,7 @@ function buildBaseErrorMessage(
     }
 
     if (err.isNotFound) {
+      if (err.creationOutcome === 'confirmed') return enriched;
       if (err.resourceExistenceAfterDelete === 'exists') {
         return (
           `${enriched}\n\n` +

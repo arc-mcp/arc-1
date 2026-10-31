@@ -20,8 +20,8 @@ import { decodeXmlEntities } from './xml-entities.js';
 
 /** Base error for all ADT-related errors */
 export class AdtError extends Error {
-  /** A create request failed without establishing whether SAP committed it. */
-  creationOutcome?: 'unknown';
+  /** Creation was confirmed before a later failure, or its outcome could not be established. */
+  creationOutcome?: 'unknown' | 'confirmed';
 
   /** A plugin POST failed without establishing whether its service executed it. */
   pluginPostOutcome?: 'unknown';
