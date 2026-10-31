@@ -123,7 +123,7 @@ BDEF extensions are source-verified on 758 and BTP SAP_BASIS 920; release 750 is
 unqualified. BTP 920 also qualifies DDIC appends, FUGR/class hooks and native class identities.
 Its PROG/INCL public read types remain excluded by the existing schema; structural class source
 access returned 403, and interfaces reported unsupported context. Other release/family combinations
-remain unqualified. See the [BTP qualification](https://github.com/arc-mcp/arc-1/blob/codex/automatic-extension-bdef/docs/research/2026-10-31-extension-test-gaps.md).
+remain unqualified. See the [BTP qualification](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-31-extension-test-gaps.md).
 CDS/DDLX extensions and BAdIs are outside this feature.
 
 CLAS combines selected-source hook coverage with a separate native `EXTED_OBJ` graph for the owning
@@ -168,8 +168,9 @@ base plus qualified partial coverage. Caller cancellation still propagates.
 | Graph/source expansion | 8 rendered identities, no nested reads | 20 nodes, depth 5, 80 edges |
 | Additional output | 2 KiB | 16 KiB |
 
-All hidden reads use the caller's client and SAPRead deny rules. Optional reads disable transient
-retries. Graph, source, request, byte, deadline and output omissions remain visible, and cut source
+All hidden reads use the caller's client and SAPRead deny rules. Native WUL/EXTED_OBJ lookups also
+honor `SAPNavigate.relations` and whole-`SAPNavigate` denials; a denied optional provider preserves
+the base read. Optional reads disable transient retries. Graph, source, request, byte, deadline and output omissions remain visible, and cut source
 bodies have explicit markers. No source is spliced into editable base text.
 
 Source plug-in summaries use an advertised HOOK_IMPL identity list on a root where available.

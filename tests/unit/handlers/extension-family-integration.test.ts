@@ -1,11 +1,57 @@
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { expect, it } from 'vitest';
+import { BDEF_COLLECTION } from '../../../src/adt/bdef-extension-candidates.js';
 import { AdtClient } from '../../../src/adt/client.js';
-import { RELATIONS_PATH } from '../../../src/adt/repository-relations.js';
+import { RELATIONS_MIME, RELATIONS_PATH, relationObjectUri } from '../../../src/adt/repository-relations.js';
 import { handleToolCall } from '../../../src/handlers/dispatch.js';
-import { resetCachedFeatures } from '../../../src/handlers/feature-cache.js';
+import { resetCachedFeatures, setCachedDiscovery, setCachedFeatures } from '../../../src/handlers/feature-cache.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+
+it.each(
+  ['CLAS', 'INTF', 'BDEF'].flatMap((type) => ['SAPNavigate', 'SAPNavigate.relations'].map((deny) => ({ type, deny }))),
+)('$type preserves the base and makes no native graph send when $deny is denied', async ({ type, deny }) => {
+  const uri = relationObjectUri(type, 'ZROOT');
+  const source = type === 'BDEF' ? 'define behavior for ENTITY {}' : `${type} original source`;
+  const paths: string[] = [];
+  const server = createServer((req, res) => {
+    const path = new URL(req.url!, 'http://loopback.invalid').pathname.toLowerCase();
+    paths.push(path);
+    if (path === `${uri}/source/main`) res.end(source);
+    else if (path === uri) {
+      const tag = type === 'CLAS' ? 'abapClass' : 'abapInterface';
+      res.end(`<${tag} name="ZROOT" type="${type === 'CLAS' ? 'CLAS/OC' : 'INTF/OI'}" version="active"/>`);
+    } else res.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Expected listener');
+    const client = new AdtClient({ baseUrl: `http://127.0.0.1:${address.port}` });
+    client.safety.denyActions.push(deny);
+    const discovery = new Map([
+      [BDEF_COLLECTION, []],
+      [RELATIONS_PATH, [RELATIONS_MIME]],
+    ]);
+    setCachedDiscovery(discovery);
+    setCachedFeatures({ abapRelease: '758', discoveryMap: discovery });
+    const read = (extensions: string) =>
+      handleToolCall(client, DEFAULT_CONFIG, 'SAPRead', { type, name: 'ZROOT', version: 'active', extensions });
+    const legacy = await read('none');
+    const result = await read('sources');
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]).toEqual(legacy.content[0]);
+    const summary = JSON.parse(result.content[1]!.text.slice('[extensions] '.length));
+    expect(summary.providers[0].status).toBe('denied');
+    expect(summary.identities).toEqual([]);
+    expect(summary.consumed.sends).toBe(0);
+    expect(paths).not.toContain(RELATIONS_PATH);
+  } finally {
+    resetCachedFeatures();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
 
 it('retains native class identities after a hook failure under one shared optional allowance', async () => {
   const name = 'CL_SEEF_ADT_TEST_AUNIT_1';

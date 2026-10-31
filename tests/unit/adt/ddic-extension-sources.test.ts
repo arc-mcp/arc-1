@@ -37,6 +37,18 @@ function setup(sources: Record<string, string>, appends: Record<string, string[]
 }
 
 describe('bounded DDIC source graph', () => {
+  it('ignores block-commented includes in both sources discovery and structure context', async () => {
+    const source = 'define structure zroot {\n/*\ninclude zghost;\n*/\n}';
+    const { client, session, getSource } = setup({ ZROOT: source, ZGHOST: 'define structure zghost {}' });
+    await ddicExtensionAdapter(client, source)(session, session.request);
+    expect(session.result.nodes).toEqual([]);
+    expect(session.result.edges).toEqual([]);
+    expect(getSource).not.toHaveBeenCalled();
+    const hierarchy = await buildStructureHierarchy(client, 'ZROOT', { includeExtensions: false });
+    expect(hierarchy.tree.children).toEqual([]);
+    expect(getSource).toHaveBeenCalledTimes(1);
+    expect(getSource.mock.calls[0]![0]).toBe('ZROOT');
+  });
   it('honors a hidden TABL denial before the mandatory explicit-context root read', async () => {
     const { client, getSource } = setup({ ZROOT: 'define structure zroot {}' });
     client.safety.denyActions = ['SAPRead.TABL'];

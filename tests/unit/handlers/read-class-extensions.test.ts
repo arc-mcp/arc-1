@@ -52,6 +52,27 @@ beforeEach(() => {
   setCachedFeatures({ abapRelease: '758' });
 });
 describe('SAPRead class extensions', () => {
+  it.each(['definitions', 'DEFINITIONS'])('selects the actual hook section for include=%s', async (include) => {
+    const s = setup();
+    const result = await s.read({ include, extensions: 'summary' });
+    expect(result.isError).toBeUndefined();
+    expect(s.calls).toContain(`GET ${uri}/includes/definitions/enhancements/elements`);
+    expect(summary(result).providers.find((p: { id: string }) => p.id === 'source_plugins')).toMatchObject({
+      status: 'returned',
+      reason: expect.stringContaining('class_section=definitions'),
+    });
+  });
+
+  it.each(['definitions,implementations', ' Definitions '])(
+    'keeps the public schema rejection for include=%s',
+    async (include) => {
+      const s = setup();
+      const result = await s.read({ include, extensions: 'summary' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]!.text).toContain('Invalid include value');
+      expect(s.calls).toEqual([]);
+    },
+  );
   it('keeps none-mode legacy result and defaults a full read to a separate summary', async () => {
     const s = setup();
     const legacy = await s.read({ extensions: 'none' });

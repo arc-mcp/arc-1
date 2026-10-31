@@ -5,7 +5,7 @@ import { AdtApiError } from '../../../src/adt/errors.js';
 import { ExtensionDiscoverySession } from '../../../src/adt/extension-discovery.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { discoverSourcePlugins } from '../../../src/adt/source-plugin-discovery.js';
-import { sourcePluginResources } from '../../../src/adt/source-plugin-resources.js';
+import { sourcePluginObjectUri, sourcePluginResources } from '../../../src/adt/source-plugin-resources.js';
 
 const fixture = (name: string) =>
   readFileSync(new URL(`../../fixtures/extensions/source/${name}`, import.meta.url), 'utf8');
@@ -40,6 +40,21 @@ const rootRoutes = {
   [`${base}/source/main/enhancements/elements`]: empty,
 };
 describe('source plugin discovery', () => {
+  it.each([
+    { type: 'FUNC' as const, name: 'ZFUNC', group: 'ZGROUP' },
+    { type: 'CLAS' as const, name: 'ZCLASS', section: 'definitions' as const },
+  ])('reports an unadvertised summary provider for $type instead of a valid empty list', async (unit) => {
+    const uri = sourcePluginObjectUri(unit);
+    const nativeType = unit.type === 'FUNC' ? 'FUGR/FF' : 'CLAS/OC';
+    const s = setup('summary', {
+      [`${uri}?version=active`]: `<object name="${unit.name}" type="${nativeType}" version="active"/>`,
+    });
+    await discoverSourcePlugins(s.client, s.session, req, { unit });
+    expect(s.session.result.providers[0]?.status).toBe('not_advertised');
+    expect(s.session.result.issues).toContain(`enhancement_relation_not_advertised:${unit.type}:${unit.name}`);
+    expect(s.get).toHaveBeenCalledTimes(1);
+    expect(s.session.result.nodes).toEqual([]);
+  });
   it.each(['750', '758'])('exposes the complete class fixture graph to the stage 3 caller on %s', async (version) => {
     const unit = { type: 'CLAS' as const, name: 'CL_SEEF_ADT_TEST_AUNIT_1' };
     const uri = '/sap/bc/adt/oo/classes/cl_seef_adt_test_aunit_1';
@@ -78,12 +93,12 @@ describe('source plugin discovery', () => {
     expect(s.session.result.providers[0]?.coverage).toBe('selected_source');
     expect(s.get).toHaveBeenCalledTimes(2);
   });
-  it('uses the qualified unadvertised 750 resource without inferring a 758 route', async () => {
+  it.each(['summary', 'sources'] as const)('keeps the qualified 750 provenance in %s mode', async (mode) => {
     const unit = { type: 'PROG' as const, name: 'ENH_NESTED_DEMO' };
     const uri = '/sap/bc/adt/programs/programs/enh_nested_demo';
     const request = { root: { ...unit, version: 'active' }, scope: '750 program' };
     const s = setup(
-      'sources',
+      mode,
       {
         [`${uri}?version=active`]: fixture('prog-metadata-npl.xml'),
         [`${uri}/source/main/enhancements`]: fixture('nested-750.xml'),
@@ -93,7 +108,7 @@ describe('source plugin discovery', () => {
     );
     await discoverSourcePlugins(s.client, s.session, request, { unit, source: '' });
     expect(s.session.result.nodes).toHaveLength(4);
-    expect(s.session.result.sources).toHaveLength(4);
+    expect(s.session.result.sources).toHaveLength(mode === 'sources' ? 4 : 0);
     expect(s.session.result.providers[0]?.reason).toContain('750 unadvertised');
     expect(s.get).toHaveBeenCalledTimes(2);
   });

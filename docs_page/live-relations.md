@@ -60,7 +60,9 @@ instance, service key, AI Core subscription, or separate route**.
    ADT discovery, Cloud Connector resources and the user's SAP authorization before changing roles.
 
 To disable this action, append `SAPNavigate.relations` to the existing `SAP_DENY_ACTIONS` list
-and redeploy/restart. This both hides the action and rejects invocation; preserve other denials.
+and redeploy/restart. This hides the action, rejects invocation and prevents automatic extension
+discovery from calling the native Relation Explorer provider. Base SAPRead results remain available;
+preserve other denials.
 For early preview upgrades, remove `ARC1_LIVE_RELATIONS` / `--live-relations`: that switch no
 longer exists. An old environment value of `false` is not a denial; use `SAP_DENY_ACTIONS` instead.
 Do not change your existing XSUAA/PP/shared-identity topology for this feature.

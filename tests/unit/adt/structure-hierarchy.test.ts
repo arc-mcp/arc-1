@@ -8,6 +8,22 @@ type TestClient = Pick<AdtClient, 'getTabl' | 'resolveTablObjectUrl' | 'http' | 
 
 describe('structure hierarchy', () => {
   describe('parseEmbeddedStructures', () => {
+    it('does not turn comments or multiline literals into include evidence', () => {
+      expect(
+        parseEmbeddedStructures(`
+/* include zghost;
+/* nested */ include zghost2;
+*/
+* unmatched comment token /*
+@EndUserText.label: 'literal /*
+include zliteral;
+*/ ''quoted'''
+include /* comment */ zreal with suffix real;
+/* unfinished
+include zunfinished;
+`),
+      ).toEqual([{ name: 'ZREAL', attribute: null, kind: 'include', suffix: 'real' }]);
+    });
     it('parses modern and classic includes but not append syntax from source', () => {
       const refs = parseEmbeddedStructures(`
 @AbapCatalog.enhancement.category: #EXTENSIBLE_CHARACTER_NUMERIC

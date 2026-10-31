@@ -15,7 +15,8 @@ revision binding and active/inactive separation. No SAP writes or helpers were n
 | Modern-release BDEF gates | Exact collection/MIME requirements and public default-summary/base preservation now run on release values 758, 816 and 920. These synthetic cases alone do not qualify a live release. |
 | Live BTP | `scripts/smoke-btp-extensions.ts` asserts public base preservation, output/request/response caps, expected positive fixture identities and the separately labelled BDEF body. It distinguishes schema-excluded types and repeats summary after sources. |
 
-The source implementation is unchanged from `5f8f0b5a`. The test/harness commit is
+At this qualification checkpoint, the source implementation was unchanged from
+`5f8f0b5a`. The test/harness commit is
 `1836f40780beb014f6ac6f8964efb78caf3ea4bc`. The final full suite passed 404 files /
 10,881 tests, including the 69-test focused BDEF run. Typecheck, lint, policy, build and
 size/schema gates passed. Lint retains two
@@ -58,3 +59,7 @@ OAuth flow. Output contains hashes, labels and coverage metadata, never source o
 Other release/family combinations, positive interface coverage, generated structural-class
 source access on BTP, inactive extension snapshots, runtime switch applicability and
 exhaustive WUL coverage remain unqualified. Roadmap checked: no roadmap impact.
+
+The subsequent [Claude Code review and triage](2026-10-31-extension-claude-review.md)
+records the repaired provider states, native deny gate, class section normalization and
+DDIC comment handling, with additional regression and live verification.

@@ -130,7 +130,7 @@ export async function discoverSourcePlugins(
               });
             }
           });
-          return;
+          break;
         }
         if (resources.elements) {
           const context = unit.type === 'INCL' ? `?context=${encodeURIComponent(mainObjectUri)}` : '';
@@ -156,7 +156,7 @@ export async function discoverSourcePlugins(
           unavailable = true;
           session.result.issues.push(`enhancement_relation_not_advertised:${unit.type}:${unit.name}`);
         }
-        if (session.mode !== 'sources') return;
+        if (session.mode !== 'sources') break;
         source ??= await readSource();
         session.sourceCache.set(key, source);
         if (Buffer.byteLength(source) > 256 * 1024) {
@@ -203,11 +203,16 @@ export async function discoverSourcePlugins(
       }
     }
     if (unavailable)
-      Object.assign(provider, { status: 'incomplete', reason: 'source_units_unavailable_or_not_advertised' });
+      Object.assign(provider, {
+        status: session.mode === 'summary' ? 'not_advertised' : 'incomplete',
+        reason:
+          session.mode === 'summary'
+            ? 'enhancement_relation_not_advertised'
+            : 'source_units_unavailable_or_not_advertised',
+      });
     else if (session.mode === 'sources')
       provider.reason = 'bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown';
     if (legacy) provider.reason += '; qualified 750 unadvertised source provider';
-    if (session.mode === 'summary' && unavailable) Object.assign(provider, { status: 'unsupported' });
   });
 }
 

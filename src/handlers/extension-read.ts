@@ -74,9 +74,9 @@ export async function appendReadExtensions(
       ...(baseSource !== undefined ? { source: baseSource } : {}),
     });
   } else if (type === 'CLAS' || type === 'INTF') {
-    const section = (args.include ??
-      (args.method ? detectLocalHandlerInclude(String(args.method)) : undefined) ??
-      'main') as 'main' | 'definitions' | 'implementations' | 'macros' | 'testclasses';
+    const section = String(
+      args.include ?? (args.method ? detectLocalHandlerInclude(String(args.method)) : undefined) ?? 'main',
+    ).toLowerCase() as 'main' | 'definitions' | 'implementations' | 'macros' | 'testclasses';
     await discoverClassExtensions(
       client,
       session,
