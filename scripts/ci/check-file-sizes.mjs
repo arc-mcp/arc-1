@@ -43,7 +43,7 @@ const BUDGETS = {
   // +4: parent function group for SAPTransport check/history.
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
   // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
-  'src/handlers/tools.ts': 1776, // +5: explicit direct package scope (#1065).
+  'src/handlers/tools.ts': 1775, // -1: shorter SAPWrite description text (SMBC writes).
   'src/handlers/schemas.ts': 1573, // +31: direct package inputs and mode validation (#1065).
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and

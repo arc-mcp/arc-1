@@ -714,8 +714,7 @@ export function getToolDefinitions(
           },
           description: {
             type: 'string',
-            description:
-              'Object description for create action (defaults to name if omitted). Max 60 chars for most types.',
+            description: 'Object description for create (default: name). Max 60 chars for most types.',
           },
           package: {
             type: 'string',

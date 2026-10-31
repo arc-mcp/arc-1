@@ -28,7 +28,7 @@ import { logger } from '../server/logger.js';
 import { postCreate } from './create-request.js';
 import { lockObject, unlockObject } from './crud.js';
 import { fetchDiscoveryDocument, resolveAcceptType } from './discovery.js';
-import { AdtApiError, AdtError } from './errors.js';
+import { AdtApiError, AdtError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { parseTableIndexName, TABLE_INDEX_COLLECTION, tableIndexParentUrl } from './table-index.js';
@@ -76,6 +76,12 @@ export interface SdoRegistryEntry {
    * application/json. Live-verified per type on 816.
    */
   sourceFormat: SdoSourceFormat;
+  /** Object URLs use the lower-case name (SAP's own clients address these types in lower case). */
+  lowercaseName?: true;
+  /** Set when SAP offers no create for the type; the text tells the caller what to use instead. */
+  createUnsupported?: string;
+  /** Check source against SAP's `<object>/schema` before saving, because SAP drops invalid values silently. */
+  schemaCheck?: true;
 }
 
 /** AFF JSON body vs plain DDL text. Required per entry — a wrong guess is a hard 415 from SAP. */
@@ -113,6 +119,16 @@ export function serverDrivenSourceContentType(code: string): string {
   }
 }
 
+/** Why SAP offers no create for a registered type, or undefined when create is supported. */
+export function serverDrivenCreateUnsupported(code: string): string | undefined {
+  return sdoEntry(code).createUnsupported;
+}
+
+/** True when updates of the type are checked against SAP's object schema first. */
+export function serverDrivenSchemaCheck(code: string): boolean {
+  return sdoEntry(code).schemaCheck === true;
+}
+
 /** Declared source flavor for a registered type (drives the client-side JSON parse gate). */
 export function serverDrivenSourceFormat(code: string): SdoSourceFormat {
   return sdoEntry(code).sourceFormat;
@@ -139,6 +155,7 @@ export const SDO_TYPES = [
   'SAJC',
   'SAJT',
   'TABL/DTI',
+  'SMBC',
 ] as const;
 
 /** Curated registry of high-value server-driven object types — keys are exactly SDO_TYPES. */
@@ -268,6 +285,22 @@ export const SDO_REGISTRY = {
     metadataContentType: BLUES_V1,
     ...BLUE_METADATA,
     sourceFormat: 'json',
+    lowercaseName: true,
+  },
+  // Business Configuration Maintenance Object. SAP creates it only through the smbc object
+  // generator (discovery has no $new templates for it); update and delete follow the blue pattern.
+  // Verified 816: docs/research/abap-types/types/smbc.md
+  SMBC: {
+    href: '/sap/bc/adt/bct/smbctyp',
+    label: 'Business Configuration Maintenance Object',
+    createType: 'SMBC/TYP',
+    metadataContentType: BLUES_V1,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+    lowercaseName: true,
+    schemaCheck: true,
+    createUnsupported:
+      'SAP creates SMBC only through its object generator, together with the service and data model; use SAPWrite(action="generate", generator="smbc") from the customizing table where available.',
   },
 } satisfies Record<(typeof SDO_TYPES)[number], SdoRegistryEntry>;
 
@@ -290,7 +323,8 @@ function sdoEntry(code: string): SdoRegistryEntry {
 /** ADT object URL for a server-driven object: collection href + url-encoded name. */
 export function serverDrivenObjectUrl(code: string, name: string): string {
   if (code === 'TABL/DTI') parseTableIndexName(name);
-  return `${sdoEntry(code).href}/${encodeURIComponent(code === 'TABL/DTI' ? name.toLowerCase() : name)}`;
+  const entry = sdoEntry(code);
+  return `${entry.href}/${encodeURIComponent(entry.lowercaseName ? name.toLowerCase() : name)}`;
 }
 
 /**
@@ -464,6 +498,7 @@ export async function createServerDrivenObject(
 ): Promise<string> {
   checkOperation(safety, OperationType.Create, 'CreateServerDrivenObject');
   const entry = sdoEntry(code);
+  if (entry.createUnsupported) throw new AdtSafetyError(`Cannot create ${code} ${name}: ${entry.createUnsupported}`);
   const body = buildServerDrivenMetadataXml(
     code,
     name,

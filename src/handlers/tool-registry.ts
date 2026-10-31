@@ -71,7 +71,6 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'BDEF', btp: true },
   { type: 'SRVD', btp: true },
   { type: 'SRVB', btp: true },
-  { type: 'SMBC', btp: true },
   { type: 'SKTD', btp: true },
   // Friendly alias for Knowledge Transfer Documents; normalized to canonical SKTD at dispatch.
   { type: 'KTD', btp: true },

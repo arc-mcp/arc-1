@@ -18,7 +18,6 @@
             "BDEF",
             "SRVD",
             "SRVB",
-            "SMBC",
             "SKTD",
             "KTD",
             "TABL",
@@ -53,7 +52,8 @@
             "APLO",
             "SAJC",
             "SAJT",
-            "TABL/DTI"
+            "TABL/DTI",
+            "SMBC"
           ],
           "description": "Repository or metadata type. TABL includes structures. KTD aliases SKTD; MESSAGES aliases MSAG. SYNTAX requires objectType+name. Server-driven: discovery-gated XML metadata, AFF JSON source; DTSC/DSFD/DTDC/DRTY use DDL text. ENQU: JSON. TABL/DTI: TABLE~INDEX, prefers pending JSON. DESD external schema; EVTB/EVTO event binding/object; CSNM CSN model; COTA communication target; DTSC/DTDC static/dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template."
         },
@@ -333,7 +333,8 @@
             "APLO",
             "SAJC",
             "SAJT",
-            "TABL/DTI"
+            "TABL/DTI",
+            "SMBC"
           ],
           "description": "Object type. Class-section surgery actions require type=CLAS. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only."
         },
@@ -408,7 +409,7 @@
         },
         "description": {
           "type": "string",
-          "description": "Object description for create action (defaults to name if omitted). Max 60 chars for most types."
+          "description": "Object description for create (default: name). Max 60 chars for most types."
         },
         "package": {
           "type": "string",
@@ -763,7 +764,8 @@
                   "APLO",
                   "SAJC",
                   "SAJT",
-                  "TABL/DTI"
+                  "TABL/DTI",
+                  "SMBC"
                 ],
                 "description": "Creatable object type; technical settings TABL/DTT are update-only"
               },

@@ -103,6 +103,7 @@ sequence.
 | [FEAT-70](#feat-70) | Additional table technical settings | P3 | S | Needs research | Object coverage |
 | [FEAT-72](#feat-72) | CDS index objects | P3 | M | Blocked | Object coverage |
 | [FEAT-73](#feat-73) | Additional server-driven object types | P3 | S | Needs research | Object coverage |
+| [FEAT-96](#feat-96) | Schema check for further JSON server-driven types | P3 | S | Needs research | Object coverage |
 | [FEAT-78](#feat-78) | Table type access type and keys | P2 | M | Needs research | Object coverage |
 | [FEAT-09](#feat-09) | Cross Trace result reader | P2 | M | Needs research | Diagnostics |
 | [FEAT-69](#feat-69) | Wider syntax-batch qualification | P3 | S | Needs research | Diagnostics |
@@ -864,6 +865,18 @@ is a reference for researching the remaining candidates, not a guarantee they sh
 **Resume with.** Discovery markers, metadata/source media types, create subtype, stateful CRUD,
 activation and read-back evidence for each remaining type. Measure schema cost and add candidates
 independently; do not infer their create subtype or source format from the family.
+
+<a id="feat-96"></a>
+### FEAT-96 — Schema check for further JSON server-driven types
+
+- **Priority / effort / status:** P3 / S / Needs research
+- **Category:** Object coverage
+
+**Idea.** Check `update` sources of further AFF-JSON server-driven types (for example DESD, EVTB, COTA, APLO, SAJC) against the schema SAP serves under `<object>/schema`, as SMBC does.
+
+**Why it remains.** On SAP_BASIS 816 SAP stored and activated an SMBC source with a value outside its schema and dropped the value without any message; ARC-1 now refuses such SMBC updates (`schemaCheck` in `SDO_REGISTRY`, `src/adt/object-schema.ts`). Whether the other JSON types serve the same schema resource and drop invalid values the same way has not been checked.
+
+**Resume with.** Per type: confirm the `objecttypeschema` link and media type in the metadata, capture one save with an invalid enum value and its read-back, then set `schemaCheck` on the registry entry with a test.
 
 <a id="feat-78"></a>
 ### FEAT-78 — Table type access type and keys
