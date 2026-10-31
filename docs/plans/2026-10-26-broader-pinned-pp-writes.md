@@ -7,6 +7,7 @@ PR 1 merged as [#1138](https://github.com/arc-mcp/arc-1/pull/1138), commit `ac83
 Implementation starts with [ADR-0011](../adr/0011-broader-pinned-pp-mutations.md), the
 [mutation inventory](../research/broader-pinned-pp-writes/inventory.md) and request-scoped package hierarchy checks.
 [Implementation checkpoint and incomplete review status](../research/2026-10-29-broader-pinned-pp-writes-progress.md).
+[Existing CLAS two-writer PP evidence and remaining qualification](../research/2026-11-01-broader-pinned-pp-writes-pp-qualification.md).
 Proposed title: `feat: expand pinned PP writes across built-in development operations`.
 [Research and owner decisions](../research/2026-10-26-multi-target-write-parity.md).
 

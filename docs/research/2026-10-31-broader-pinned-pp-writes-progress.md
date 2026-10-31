@@ -1,5 +1,9 @@
 # PR 2 implementation checkpoint — 31 October 2026
 
+Subsequent [two-writer live PP evidence and cleanup](2026-11-01-broader-pinned-pp-writes-pp-qualification.md)
+qualify the observed existing CLAS lifecycle only. The broader feature and closing harness review
+remain incomplete.
+
 PR [#1142](https://github.com/arc-mcp/arc-1/pull/1142) continues the full PR 2 plan. This checkpoint
 adds guarded infrastructure; it does not enable additional tools, actions or object types. The
 broader capability matrix, operation adapters and live PP qualification remain outstanding.

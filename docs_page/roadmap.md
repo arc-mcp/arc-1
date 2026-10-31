@@ -203,7 +203,9 @@ for the capability expansion. Existing opted-in writers may gain the documented 
 read-only applications/destinations must remain mutation-free.
 Author review and two Claude Code Opus 5.5 max reviews are recorded with findings and dispositions
 in the research record. The remaining implementation is PR 2's capability expansion; its live
-qualification remains outstanding. Implementation started with
+qualification remains outstanding. A [two-writer PP run](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-pp-qualification.md)
+verified the existing CLAS lifecycle and native authorship, with temporary access and configuration
+restored; it does not qualify the broader capabilities. Implementation started with
 [ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-broader-pinned-pp-mutations.md), an explicit
 [review inventory](https://github.com/arc-mcp/arc-1/blob/main/docs/research/broader-pinned-pp-writes/inventory.md)
 and request-scoped package hierarchy checks. Follow-up infrastructure binds native adapters to the
