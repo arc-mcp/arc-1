@@ -103,6 +103,7 @@ sequence.
 | [FEAT-70](#feat-70) | Additional table technical settings | P3 | S | Needs research | Object coverage |
 | [FEAT-72](#feat-72) | CDS index objects | P3 | M | Blocked | Object coverage |
 | [FEAT-73](#feat-73) | Additional server-driven object types | P3 | S | Needs research | Object coverage |
+| [FEAT-97](#feat-97) | Value helps and wider release coverage for API packages | P3 | S | Needs research | Object coverage |
 | [FEAT-78](#feat-78) | Table type access type and keys | P2 | M | Needs research | Object coverage |
 | [FEAT-09](#feat-09) | Cross Trace result reader | P2 | M | Needs research | Diagnostics |
 | [FEAT-69](#feat-69) | Wider syntax-batch qualification | P3 | S | Needs research | Diagnostics |
@@ -864,6 +865,18 @@ is a reference for researching the remaining candidates, not a guarantee they sh
 **Resume with.** Discovery markers, metadata/source media types, create subtype, stateful CRUD,
 activation and read-back evidence for each remaining type. Measure schema cost and add candidates
 independently; do not infer their create subtype or source format from the family.
+
+<a id="feat-97"></a>
+### FEAT-97 — Value helps and wider release coverage for API packages
+
+- **Priority / effort / status:** P3 / S / Needs research
+- **Category:** Object coverage
+
+**Idea.** Offer the value helps Eclipse uses when editing API packages (SOD1) and API package assignments (SOD2): the tag values per category (`/sap/bc/adt/aps/com/sod1/tagvaluehelp/values`), the package types, and the API object lookup of the assignment wizard (`apiobjecttype`, `tadir`, `odatav4groupservice`, `leadingbusinessobjecttype`, `$apidetails`).
+
+**Why it remains.** SAP refuses a tag value that is not in its value help and a manual documentation link outside internal ODA packages; ARC-1 reports SAP's check findings after the refused save, but an agent cannot look up valid values beforehand. SOD1/SOD2 were verified on SAP_BASIS 8.16 only; 7.58, BTP ABAP Environment and the resource definition of an OData V2 service from a service binding are unverified.
+
+**Resume with.** Capture the value-help responses from an Eclipse communication log, decide whether they belong in `SAPRead` (an `include`) or in the error hint, and repeat the SOD2 read cases on a 7.58 and a BTP system.
 
 <a id="feat-78"></a>
 ### FEAT-78 — Table type access type and keys

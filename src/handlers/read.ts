@@ -32,6 +32,7 @@ import { readLineRange } from '../context/line-range.js';
 import { extractMethod, formatMethodListing, listMethods } from '../context/method-surgery.js';
 import { isActionDenied } from '../server/deny-actions.js';
 import { logger } from '../server/logger.js';
+import { readApiPackage, readApiPackageAssignment } from './api-package-assignment-read.js';
 import { type CacheSecurityContext, inactiveListUserKey, invalidateInactiveList } from './cache-security.js';
 import { readEditableSource } from './editable-source.js';
 import { includeSearchHint, readExpandedSource } from './expanded-read.js';
@@ -207,7 +208,9 @@ export async function handleSAPRead(
     const end = Number(args.lineEnd);
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start)
       return errorResult('lineStart and lineEnd must be positive integers with lineStart <= lineEnd.');
-    if (!['PROG', 'CLAS', 'INTF', 'FUNC', 'INCL', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'DDLX', 'TABL'].includes(type))
+    if (
+      !['PROG', 'CLAS', 'INTF', 'FUNC', 'INCL', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'DDLX', 'TABL', 'SOD2'].includes(type)
+    )
       return errorResult(`Line ranges are not supported for ${type}; read a single source object instead.`);
     for (const option of ['grep', 'method', 'action'] as const) {
       if (args[option] !== undefined) return errorResult(`Do not combine lineStart/lineEnd with ${option}.`);
@@ -218,7 +221,11 @@ export async function handleSAPRead(
       args.expand_includes === true
     )
       return errorResult('Line ranges require a plain source read; omit format, includeSignature and expand_includes.');
-    if (args.include !== undefined && (type !== 'CLAS' || String(args.include).toLowerCase() === 'text_symbols'))
+    if (
+      args.include !== undefined &&
+      type !== 'SOD2' &&
+      (type !== 'CLAS' || String(args.include).toLowerCase() === 'text_symbols')
+    )
       return errorResult('Line ranges support include only for a CLAS source section.');
   }
 
@@ -229,6 +236,9 @@ export async function handleSAPRead(
   if (isBtpSystem() && BTP_HINTS[type]) {
     return errorResult(BTP_HINTS[type]);
   }
+
+  if (type === 'SOD1') return readApiPackage(client, args);
+  if (type === 'SOD2') return readApiPackageAssignment(client, args);
 
   if (args.format === 'editable') return readEditableSource(client, args, type, name);
 

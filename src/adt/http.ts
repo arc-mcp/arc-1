@@ -14,7 +14,7 @@ import { traceHeaders } from '../server/trace-context.js';
 import { acceptFallback } from './accept-fallback.js';
 import { connectivityProxyResponse, prepareBoundedResponse } from './bounded-response.js';
 import { resolveCookies } from './cookies.js';
-import { resolveAcceptType, resolveContentType } from './discovery.js';
+import { isCollectionListed, resolveAcceptType, resolveContentType } from './discovery.js';
 import { AdtApiError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
 import {
   type AdtRequestOptions,
@@ -231,6 +231,11 @@ export class AdtHttpClient {
   /** The Accept media type ADT discovery advertises for a collection path, or undefined. Used for capability gating. */
   discoveryAcceptFor(path: string): string | undefined {
     return resolveAcceptType(this.discoveryMap, path);
+  }
+
+  /** True when ADT discovery lists the collection, with or without media types (see isCollectionListed). */
+  discoveryListsCollection(path: string): boolean {
+    return isCollectionListed(this.discoveryMap, path);
   }
 
   /** Read-only access to the SAP-bound concurrency Semaphore (Layer 3).

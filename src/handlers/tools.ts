@@ -28,6 +28,7 @@ import {
 import { SAPWRITE_DESC_BTP, SAPWRITE_DESC_ONPREM } from './tool-descriptions.js';
 import {
   ATC_BATCH_TYPES_BTP,
+  isBatchCreatable,
   isGitToolVisible,
   SAPCONTEXT_TYPES_BTP,
   SAPCONTEXT_TYPES_ONPREM,
@@ -623,7 +624,7 @@ export function getToolDefinitions(
             enum: btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM,
             description: btp
               ? 'Object type. Class-section surgery actions require type=CLAS. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only.'
-              : 'Object type (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only.',
+              : 'Object type (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). KTD aliases SKTD. Class-section surgery actions require CLAS. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only. SOD1/SOD2: source is the SAPRead JSON or the fields to change; saved active.',
           },
           name: {
             type: 'string',
@@ -888,7 +889,7 @@ export function getToolDefinitions(
               properties: {
                 type: {
                   type: 'string',
-                  enum: (btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM).filter((type) => type !== 'TABL/DTT'),
+                  enum: (btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM).filter(isBatchCreatable),
                   description: 'Creatable object type; technical settings TABL/DTT are update-only',
                 },
                 name: { type: 'string', description: 'Object name' },
