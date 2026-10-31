@@ -37,6 +37,18 @@ function setup(sources: Record<string, string>, appends: Record<string, string[]
 }
 
 describe('bounded DDIC source graph', () => {
+  it('reports uncertain comment scans as incomplete in both extension sources and explicit context', async () => {
+    const source = 'define structure zroot {\n/* see /* note */\ninclude zghost;\n}';
+    const { client, session, getSource } = setup({ ZROOT: source, ZGHOST: 'define structure zghost {}' });
+    await ddicExtensionAdapter(client, source)(session, session.request);
+    expect(session.result.providers.find((p) => p.id === 'ddic_source_includes')!.status).toBe('incomplete');
+    expect(session.result.issues.some((issue) => issue.includes('unqualified_nested_block_comment'))).toBe(true);
+    expect(getSource).not.toHaveBeenCalled();
+    const hierarchy = await buildStructureHierarchy(client, 'ZROOT', { includeExtensions: false });
+    expect(hierarchy.warnings!.join()).toContain('unqualified_nested_block_comment');
+    expect(hierarchy.tree.error).toContain('Include scan incomplete');
+    expect(hierarchy.tree.children).toEqual([]);
+  });
   it('ignores block-commented includes in both sources discovery and structure context', async () => {
     const source = 'define structure zroot {\n/*\ninclude zghost;\n*/\n}';
     const { client, session, getSource } = setup({ ZROOT: source, ZGHOST: 'define structure zghost {}' });

@@ -97,7 +97,7 @@ Family evidence and reproduction commands are in the
 [BDEF report](2026-10-29-bdef-extension-implementation/README.md).
 
 The tested BDEF feature commit is `18ac603b`; the following evidence-only commit adds
-this report. The combined branch has identical tracked `src/` contents, checked with
+this report. At that checkpoint the combined branch had identical tracked `src/` contents, checked with
 `git diff codex/bdef-extension-discovery -- src`. All family implementation dependencies
 are integrated locally. Review/merge ordering still depends on the prerequisite branches
 and the existing PR #1124 work; no PR was merged or released. No unrelated roadmap entry

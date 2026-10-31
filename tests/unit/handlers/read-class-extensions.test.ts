@@ -63,6 +63,15 @@ describe('SAPRead class extensions', () => {
     });
   });
 
+  it.each([undefined, ''])('normalizes include=%j to the main hook scope', async (include) => {
+    const s = setup();
+    const result = await s.read({ include });
+    expect(result.isError).toBeUndefined();
+    expect(s.calls).toContain(`GET ${uri}/source/main/enhancements/elements`);
+    expect(summary(result).providers.find((p: { id: string }) => p.id === 'source_plugins').reason).toContain(
+      'class_section=main',
+    );
+  });
   it.each(['definitions,implementations', ' Definitions '])(
     'keeps the public schema rejection for include=%s',
     async (include) => {

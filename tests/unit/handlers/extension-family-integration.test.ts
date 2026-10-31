@@ -9,8 +9,12 @@ import { resetCachedFeatures, setCachedDiscovery, setCachedFeatures } from '../.
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 it.each(
-  ['CLAS', 'INTF', 'BDEF'].flatMap((type) => ['SAPNavigate', 'SAPNavigate.relations'].map((deny) => ({ type, deny }))),
-)('$type preserves the base and makes no native graph send when $deny is denied', async ({ type, deny }) => {
+  ['CLAS', 'INTF', 'BDEF'].flatMap((type) =>
+    ['SAPNavigate', 'SAPNavigate.relations', 'SAP.navigate'].flatMap((deny) =>
+      (type === 'BDEF' ? [true, false] : [true]).map((warm) => ({ type, deny, warm })),
+    ),
+  ),
+)('$type preserves independent reads when $deny is denied (warm=$warm)', async ({ type, deny, warm }) => {
   const uri = relationObjectUri(type, 'ZROOT');
   const source = type === 'BDEF' ? 'define behavior for ENTITY {}' : `${type} original source`;
   const paths: string[] = [];
@@ -20,8 +24,16 @@ it.each(
     if (path === `${uri}/source/main`) res.end(source);
     else if (path === uri) {
       const tag = type === 'CLAS' ? 'abapClass' : 'abapInterface';
-      res.end(`<${tag} name="ZROOT" type="${type === 'CLAS' ? 'CLAS/OC' : 'INTF/OI'}" version="active"/>`);
-    } else res.writeHead(404).end();
+      res.end(
+        `<${tag} name="ZROOT" type="${type === 'CLAS' ? 'CLAS/OC' : 'INTF/OI'}" version="active">${type === 'CLAS' ? '<include includeType="main"><link rel="http://www.sap.com/adt/relations/enhancements" href="source/main/enhancements/elements"/></include>' : ''}</${tag}>`,
+      );
+    } else if (path === `${uri}/source/main/enhancements/elements`)
+      res.end(
+        readFileSync(new URL('../../fixtures/extensions/source/class-758.xml', import.meta.url), 'utf8')
+          .replaceAll('cl_seef_adt_test_aunit_1', 'zroot')
+          .replaceAll('CL_SEEF_ADT_TEST_AUNIT_1', 'ZROOT'),
+      );
+    else res.writeHead(404).end();
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
@@ -33,18 +45,35 @@ it.each(
       [BDEF_COLLECTION, []],
       [RELATIONS_PATH, [RELATIONS_MIME]],
     ]);
-    setCachedDiscovery(discovery);
-    setCachedFeatures({ abapRelease: '758', discoveryMap: discovery });
+    if (warm) {
+      setCachedDiscovery(discovery);
+      setCachedFeatures({ abapRelease: '758', discoveryMap: discovery });
+    } else resetCachedFeatures();
     const read = (extensions: string) =>
-      handleToolCall(client, DEFAULT_CONFIG, 'SAPRead', { type, name: 'ZROOT', version: 'active', extensions });
+      handleToolCall(
+        client,
+        { ...DEFAULT_CONFIG, toolMode: deny === 'SAP.navigate' ? 'hyperfocused' : 'standard' },
+        deny === 'SAP.navigate' ? 'SAP' : 'SAPRead',
+        deny === 'SAP.navigate'
+          ? { action: 'read', type, name: 'ZROOT', version: 'active', params: { extensions } }
+          : { type, name: 'ZROOT', version: 'active', extensions },
+      );
     const legacy = await read('none');
     const result = await read('sources');
     expect(result.isError).toBeUndefined();
     expect(result.content[0]).toEqual(legacy.content[0]);
     const summary = JSON.parse(result.content[1]!.text.slice('[extensions] '.length));
     expect(summary.providers[0].status).toBe('denied');
-    expect(summary.identities).toEqual([]);
-    expect(summary.consumed.sends).toBe(0);
+    if (type === 'CLAS') {
+      expect(summary.providers.find((p: { id: string }) => p.id === 'source_plugins').status).toBe('returned');
+      expect(summary.identities.length).toBeGreaterThan(0);
+      expect(result.content.some((block) => block.text.includes('representation=rendered_plugin_source'))).toBe(true);
+      expect(paths).toContain(`${uri}/source/main/enhancements/elements`);
+      expect(summary.consumed.sends).toBe(2);
+    } else {
+      expect(summary.identities).toEqual([]);
+      expect(summary.consumed.sends).toBe(0);
+    }
     expect(paths).not.toContain(RELATIONS_PATH);
   } finally {
     resetCachedFeatures();

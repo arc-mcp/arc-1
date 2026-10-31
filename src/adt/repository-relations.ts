@@ -13,12 +13,18 @@ import {
   relationObjectUri,
   relationReferenceName,
 } from './relation-objects.js';
-import { checkOperation, OperationType } from './safety.js';
+import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { escapeXmlAttr, parseDiscoveryObject, parseXml } from './xml-parser.js';
 
 export const RELATIONS_PATH = '/sap/bc/adt/objectrelations/network';
 export const RELATION_XML_MAX_BYTES = 1024 * 1024;
 export const RELATIONS_MIME = 'application/vnd.sap.adt.objectrelations.request.v1+xml';
+export function nativeRelationActionDenied(safety: SafetyConfig): boolean {
+  return (
+    isActionDenied('SAPNavigate', 'relations', safety.denyActions ?? []) ||
+    isActionDenied('SAP', 'navigate', safety.denyActions ?? [])
+  );
+}
 export { RELATION_NAME, RelationProtocolError, relationObjectUri } from './relation-objects.js';
 export class RelationContextError extends RelationProtocolError {}
 export type RelationDirection = 'incoming' | 'outgoing';
@@ -184,7 +190,7 @@ export class NativeRelationProvider {
   ) {}
 
   private assertActionAllowed(): void {
-    if (isActionDenied('SAPNavigate', 'relations', this.client.safety.denyActions ?? []))
+    if (nativeRelationActionDenied(this.client.safety))
       throw new AdtSafetyError('SAPNavigate.relations denied for native relation discovery.');
   }
 

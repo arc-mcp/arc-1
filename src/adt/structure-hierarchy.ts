@@ -175,7 +175,13 @@ export async function buildStructureHierarchy(
       }
     }
     appendCache.set(upper, extensionRefs);
-    const childRefs = [...parseEmbeddedStructures(source), ...extensionRefs];
+    const scanIssues: string[] = [];
+    const embedded = parseEmbeddedStructures(source, scanIssues);
+    if (scanIssues.length) {
+      node.error = `Include scan incomplete: ${scanIssues.join(', ')}`;
+      warnings.push(`DDIC ${upper}: ${node.error}`);
+    }
+    const childRefs = [...embedded, ...extensionRefs];
     const nextPath = [...path, upper];
     for (const ref of childRefs) {
       if (totalNodes >= session!.limits.nodes) {

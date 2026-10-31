@@ -16,12 +16,12 @@ isolation and output-cap review found no actionable defects.
 | Finding | Verified result and repair |
 |---|---|
 | P2: missing source enhancement relation reported as a valid empty provider | Fixed. Summary exits now pass through provider finalization: missing relations report `not_advertised`, and qualified 750 summaries retain provenance. FUNC/CLAS absence and 750 summary regressions cover this. |
-| P2: SAPNavigate.relations denial did not cover hidden native lookups | Fixed by narrowing the native provider at both root validation and the POST sink. Whole-tool and action denials produce a denied optional provider while retaining the base. Six real-HTTP public CLAS/INTF/BDEF cases assert zero optional sends. Operator docs state the shared effect. |
+| P2: SAPNavigate.relations denial did not cover hidden native lookups | Fixed by narrowing the native provider at both root validation and the POST sink. The confirmation follow-up also handles the hyperfocused alias and preserves independent class hooks; see below. Operator docs state the shared effect. |
 | P3: raw class include selection | Uppercase section names reproduced and are normalized like the base reader. The claimed comma-list trigger is already rejected by the public schema; it was not implemented as a new scope. Regressions cover upper/lowercase routes and existing comma/whitespace rejection before HTTP. |
-| P3: block-commented DDIC includes became source evidence | Fixed with a linear comment/literal mask that preserves token spacing and supports nested/unfinished blocks. Regressions exclude phantom nodes, edges and source sends in both extension discovery and explicit structure context. |
+| P3: block-commented DDIC includes became source evidence | Fixed with a linear comment/literal mask that preserves token spacing. Nested or unfinished scans explicitly report incomplete coverage. Regressions exclude phantom nodes, edges and source sends in both extension discovery and explicit structure context. |
 | P3: published docs linked to a disposable feature branch | Fixed to the canonical main documentation path. |
 
-The follow-up passed 404 unit files / 10,896 tests and source/scripts/tests typecheck,
+The first repair checkpoint passed 404 unit files / 10,896 tests and source/scripts/tests typecheck,
 lint, policy, build and size/schema gates. Two existing lint informational suggestions
 remain. The final strengthened deny fixture also passed its seven public integration
 cases after the full run. No tool schema or published budget increased.
@@ -54,5 +54,42 @@ interfaces, candidate/request caps and the earlier qualification boundaries rema
 The comment and admin-denial repairs are additionally exercised by the regression fixtures;
 no SAP test objects were created or changed. Timing remains an observation, not an SLA.
 
-A focused confirmation review of the repairs follows these checks. Roadmap checked:
+## Confirmation review and final triage
+
+Claude Code completed a second review at `17f31634921dd57326800e48e5644433fe3ea6d0`.
+It confirmed the first repairs and identified further edge cases. Their dispositions are:
+
+- **Independent class hooks (P2): fixed.** A statically disabled native provider is now
+  excluded before entering the shared read boundary. It reports `denied` while hooks
+  keep their own authorized path. Runtime HTTP authorization failures remain terminal.
+- **Empty include (P2): not reproduced through public dispatch.**
+  `normalizeTypeArgsForValidation` removes blank includes before validation and method
+  inference. New public tests for omitted/empty includes both reach main hooks. The
+  suggested special main override would disagree with existing public normalization.
+- **Hyperfocused denial alias (P3): fixed.** The common native-action predicate honors
+  `SAP.navigate` as well as the standard action/whole-tool denials. Twelve real-HTTP
+  cases cover CLAS/INTF/BDEF, including cold BDEF capabilities. CLAS retains positive
+  rendered hook sources with no native POST; BDEF/INTF make zero optional sends.
+- **Comment nesting (conditional P3): qualification retained, silent completeness fixed.**
+  Nested and unfinished scans now propagate explicit issues into the extension provider
+  and structure context. They do not assert that hidden includes are absent.
+- **Legacy dash comments (conditional P3): defensive masking added.** An apostrophe in
+  a `--` line cannot consume following include evidence. This scanner behavior is not
+  a new claim that every DDIC release accepts that syntax.
+
+SAP documents the basic comment delimiters in its
+[DDIC append reference](https://help.sap.com/docs/abap-cloud/abap-keywords-standard-abap/ABENDDICDDL_EXTEND_TYPE.html)
+and distinguishes legacy CDS dash comments in the
+[CDS syntax rules](https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_GENERAL_SYNTAX_RULES.html).
+Those references do not establish DDIC nesting semantics. An attempted read-only inline
+[syntax comparison](2026-10-31-ddic-comment-syntax-check.json) processed the invalid
+control correctly but also rejected the slash-comment control. It is therefore not a
+reliable grammar qualification on this target. The stored source hash was unchanged;
+no object was created or edited.
+
+Final triage passed 404 files / 10,907 unit tests, typecheck, lint, policy, build and size
+gates. The focused regressions passed 49 tests. There is no claim that the final runtime
+patch has received a third independent review. Both requested Claude reviews completed;
+confirmed findings were repaired, unreachable triggers were reproduced against public
+normalization, and conditional grammar claims remain explicit. Roadmap checked:
 no roadmap impact.

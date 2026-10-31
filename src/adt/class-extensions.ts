@@ -13,6 +13,7 @@ import {
 } from './extension-discovery.js';
 import {
   NativeRelationProvider,
+  nativeRelationActionDenied,
   RELATION_NAME,
   RelationContextError,
   RelationProtocolError,
@@ -108,6 +109,12 @@ export async function discoverClassIdentities(
     if (rootType !== 'CLAS' && rootType !== 'INTF') {
       provider.status = 'unsupported';
       provider.reason = 'unsupported_provider';
+      return;
+    }
+    // A statically disabled independent provider is not an SAP authorization failure.
+    if (nativeRelationActionDenied(client.safety)) {
+      provider.status = 'denied';
+      provider.reason = 'native_relation_action_denied';
       return;
     }
     await session.read('ENHO', async () => undefined);

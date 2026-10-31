@@ -11,13 +11,20 @@ export function ddicExtensionAdapter(client: DdicExtensionClient, baseSource: st
     }
     const queue = [{ name: request.root.name.toUpperCase(), source: baseSource, depth: 0 }];
     const expanded = new Set<string>();
+    let scanIncomplete = false;
     const fetched = new Set<string>([extensionKey(request.root)]);
     for (let cursor = 0; cursor < queue.length && !session.stopped; cursor++) {
       const current = queue[cursor]!;
       if (expanded.has(current.name)) continue;
       expanded.add(current.name);
       const { references } = await discoverDdicAppends(client, session, current.name, current.depth + 1);
-      const includes: ExtensionNode[] = parseEmbeddedStructures(current.source).map((ref) => {
+      const scanIssues: string[] = [];
+      const embedded = parseEmbeddedStructures(current.source, scanIssues);
+      if (scanIssues.length) {
+        scanIncomplete = true;
+        session.result.issues.push(...scanIssues.map((issue) => `ddic_source_scan:${current.name}:${issue}`));
+      }
+      const includes: ExtensionNode[] = embedded.map((ref) => {
         const node: ExtensionNode = {
           type: 'TABL',
           name: ref.name,
@@ -86,7 +93,7 @@ export function ddicExtensionAdapter(client: DdicExtensionClient, baseSource: st
     session.result.providers.push({
       id: 'ddic_source_includes',
       family: 'ddic_include',
-      status: session.stopped ? 'incomplete' : 'returned',
+      status: session.stopped || scanIncomplete ? 'incomplete' : 'returned',
       coverage: 'bounded_traversal',
       nested: 'bounded',
       reason: 'Actual source includes and metadata-linked appends; bounded traversal, separate observations.',

@@ -11,7 +11,12 @@ import {
   extensionKey,
 } from './extension-discovery.js';
 import { parseReleaseNumber } from './release.js';
-import { NativeRelationProvider, parseRelationXml, RelationProtocolError } from './repository-relations.js';
+import {
+  NativeRelationProvider,
+  nativeRelationActionDenied,
+  parseRelationXml,
+  RelationProtocolError,
+} from './repository-relations.js';
 import { parseDiscoveryObject } from './xml-parser.js';
 
 export interface BdefExtensionCapabilities {
@@ -40,6 +45,11 @@ export async function discoverBdefExtensions(
     if (request.root.version !== 'active') {
       provider.status = 'unsupported';
       provider.reason = 'unsupported_version: active candidates cannot cover an inactive base.';
+      return;
+    }
+    if (nativeRelationActionDenied(client.safety)) {
+      provider.status = 'denied';
+      provider.reason = 'native_relation_action_denied';
       return;
     }
     const release = parseReleaseNumber(capabilities.abapRelease);

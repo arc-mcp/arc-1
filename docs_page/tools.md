@@ -169,9 +169,14 @@ base plus qualified partial coverage. Caller cancellation still propagates.
 | Additional output | 2 KiB | 16 KiB |
 
 All hidden reads use the caller's client and SAPRead deny rules. Native WUL/EXTED_OBJ lookups also
-honor `SAPNavigate.relations` and whole-`SAPNavigate` denials; a denied optional provider preserves
-the base read. Optional reads disable transient retries. Graph, source, request, byte, deadline and output omissions remain visible, and cut source
+honor `SAPNavigate.relations`, whole-`SAPNavigate` and hyperfocused `SAP.navigate` denials.
+A disabled native provider preserves the base and independent class hooks. SAP authorization
+failures still stop the optional phase. Optional reads disable transient retries. Graph, source,
+request, byte, deadline and output omissions remain visible, and cut source
 bodies have explicit markers. No source is spliced into editable base text.
+
+DDIC scans mask comments and literals. Nested comment syntax remains unqualified; nested or
+unfinished scans report incomplete coverage instead of asserting an empty include graph.
 
 Source plug-in summaries use an advertised HOOK_IMPL identity list on a root where available.
 That list covers outer/specific implementations and says nested expansion was not performed.
