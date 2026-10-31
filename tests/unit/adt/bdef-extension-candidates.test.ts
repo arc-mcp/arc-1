@@ -65,15 +65,15 @@ describe('BDEF candidate index', () => {
     ).toBe(false);
   });
 
-  it('requires the exact BDEF collection and native relation MIME even on 758', () => {
+  it.each(['758', '816', '920'])('requires the exact BDEF collection and native relation MIME on %s', (release) => {
     const discovery = new Map([
       [RELATIONS_PATH, [RELATIONS_MIME]],
       [BDEF_COLLECTION, []],
     ]);
-    expect(supportsBdefCandidates(discovery, '758')).toBe(true);
+    expect(supportsBdefCandidates(discovery, release)).toBe(true);
     discovery.delete(BDEF_COLLECTION);
     discovery.set('/sap/bc/adt/ddic/ddl/sources', []);
-    expect(supportsBdefCandidates(discovery, '758')).toBe(false);
+    expect(supportsBdefCandidates(discovery, release)).toBe(false);
   });
 
   it.each(['ENV', 'EXTED_OBJ'])('rejects a successful wrong-context response: %s', (context) => {

@@ -64,6 +64,7 @@
       "scripts/smoke-class-extensions.ts",
       "scripts/smoke-bdef-extensions.ts",
       "scripts/smoke-bdef-read.ts",
+      "scripts/smoke-btp-extensions.ts",
       "scripts/bench-context-parsing.ts",
       "scripts/spikes/pr677-target-authorization/**",
       "scripts/spikes/stxl/**",

@@ -24,7 +24,16 @@ afterEach(async () => {
   );
 });
 
-async function setup(opts: { status?: number; wrongContext?: boolean; release?: string; source?: string } = {}) {
+async function setup(
+  opts: {
+    status?: number;
+    wrongContext?: boolean;
+    release?: string;
+    source?: string;
+    candidateSource?: string;
+    deniedUser?: string;
+  } = {},
+) {
   const paths: string[] = [];
   const server = createServer((req, res) => {
     const url = new URL(req.url!, 'http://loopback.invalid');
@@ -38,14 +47,23 @@ async function setup(opts: { status?: number; wrongContext?: boolean; release?: 
     else if (path === RELATIONS_PATH) {
       if (opts.status) res.writeHead(opts.status).end('synthetic optional failure');
       else res.end(relationXml(root, [child], opts.wrongContext ? 'ENV' : 'WUL'));
-    } else if (path === `${child.uri}/source/main`) res.end(extensionSource);
-    else res.writeHead(404).end();
+    } else if (path === `${child.uri}/source/main`) {
+      const deniedAuth = `Basic ${Buffer.from(`${opts.deniedUser}:synthetic`).toString('base64')}`;
+      if (opts.deniedUser && req.headers.authorization === deniedAuth) res.writeHead(403).end('denied');
+      else res.end(opts.candidateSource ?? extensionSource);
+    } else res.writeHead(404).end();
   });
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Expected listener');
-  const client = new AdtClient({ baseUrl: `http://127.0.0.1:${address.port}` });
+  const createClient = (username?: string) =>
+    new AdtClient({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      retryUnauthorized: false,
+      ...(username ? { username, password: 'synthetic' } : {}),
+    });
+  const client = createClient();
   const discovery = new Map([
     [BDEF_COLLECTION, []],
     [RELATIONS_PATH, [RELATIONS_MIME]],
@@ -58,8 +76,9 @@ async function setup(opts: { status?: number; wrongContext?: boolean; release?: 
   setCachedDiscovery(discovery);
   return {
     paths,
-    read: (args: Record<string, unknown> = {}) =>
-      handleToolCall(client, DEFAULT_CONFIG, 'SAPRead', { type: 'BDEF', name: 'ZBASE', ...args }),
+    createClient,
+    read: (args: Record<string, unknown> = {}, selectedClient = client) =>
+      handleToolCall(selectedClient, DEFAULT_CONFIG, 'SAPRead', { type: 'BDEF', name: 'ZBASE', ...args }),
   };
 }
 
@@ -75,16 +94,19 @@ describe('BDEF extensions in SAPRead', () => {
     expect(s.paths).toEqual([`${root.uri}/source/main`]);
   });
 
-  it('full root reads default to summary while preserving the original first block exactly', async () => {
-    const s = await setup();
-    const legacy = await s.read({ extensions: 'none' });
-    const result = await s.read();
-    expect(result.isError).toBeUndefined();
-    expect(result.content[0]).toEqual(legacy.content[0]);
-    expect(summary(result).identities[0]).toMatchObject({ name: 'ZEXTENSION', type: 'BDEF', version: 'active' });
-    expect(summary(result).providers[0].coverage).toBe('candidate_index');
-    expect(result.content).toHaveLength(2);
-  });
+  it.each(['758', '816', '920'])(
+    'full root reads on %s default to summary and preserve the first block',
+    async (release) => {
+      const s = await setup({ release });
+      const legacy = await s.read({ extensions: 'none' });
+      const result = await s.read();
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]).toEqual(legacy.content[0]);
+      expect(summary(result).identities[0]).toMatchObject({ name: 'ZEXTENSION', type: 'BDEF', version: 'active' });
+      expect(summary(result).providers[0].coverage).toBe('candidate_index');
+      expect(result.content).toHaveLength(2);
+    },
+  );
 
   it('sources appends a separate labelled active authored source', async () => {
     const s = await setup();
@@ -95,6 +117,39 @@ describe('BDEF extensions in SAPRead', () => {
         (block) => block.text.includes('representation=authored_source') && block.text.endsWith(extensionSource),
       ),
     ).toBe(true);
+  });
+
+  it('revalidates active candidate bodies and uses a fresh allowance on the next public call', async () => {
+    const opts = { candidateSource: `${extensionSource}\n// first observation` };
+    const s = await setup(opts);
+    const first = await s.read({ extensions: 'sources' });
+    const firstSends = s.paths.length - 1;
+    opts.candidateSource = `${extensionSource}\n// second observation`;
+    const second = await s.read({ extensions: 'sources' });
+    expect(first.content.find((block) => block.text.startsWith('[extension source '))!.text).toContain(
+      'first observation',
+    );
+    expect(second.content.find((block) => block.text.startsWith('[extension source '))!.text).toContain(
+      'second observation',
+    );
+    expect(summary(first).consumed.sends).toBe(firstSends);
+    expect(summary(second).consumed.sends).toBe(s.paths.length - firstSends - 2);
+    expect(s.paths.filter((path) => path === `${child.uri}/source/main`)).toHaveLength(2);
+    expect(first.content[0]).toEqual(second.content[0]);
+  });
+
+  it('keeps a successful user observation out of another client whose candidate read is denied', async () => {
+    const s = await setup({ deniedUser: 'restricted' });
+    const first = await s.read({ extensions: 'sources' }, s.createClient('authorized'));
+    const second = await s.read({ extensions: 'sources' }, s.createClient('restricted'));
+    expect(summary(first).identities).toHaveLength(1);
+    expect(first.content.some((block) => block.text.startsWith('[extension source '))).toBe(true);
+    expect(second.isError).toBeUndefined();
+    expect(second.content[0]!.text).toBe(baseSource);
+    expect(summary(second).providers[0].status).toBe('denied');
+    expect(summary(second).identities).toEqual([]);
+    expect(second.content.some((block) => block.text.startsWith('[extension source '))).toBe(false);
+    expect(s.paths.filter((path) => path === `${child.uri}/source/main`)).toHaveLength(2);
   });
 
   it('partial reads default to none and explicit coverage verifies the whole owning source', async () => {

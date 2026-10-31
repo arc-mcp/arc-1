@@ -25,7 +25,7 @@ afterEach(async () => {
   );
 });
 
-async function setup(
+async function setupTransport(
   opts: {
     count?: number;
     mode?: 'summary' | 'sources';
@@ -44,6 +44,7 @@ async function setup(
     release?: string;
     coldDiscovery?: string;
   } = {},
+  proxy = false,
 ) {
   const candidates = Array.from({ length: opts.count ?? 2 }, (_, i) => relationObject(`EXT${i}`, 'BDEF/BDO'));
   const paths: string[] = [];
@@ -83,7 +84,20 @@ async function setup(
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Expected listener');
-  const client = new AdtClient({ baseUrl: `http://127.0.0.1:${address.port}` });
+  const client = new AdtClient({
+    baseUrl: proxy ? 'http://sap.invalid:8000' : `http://127.0.0.1:${address.port}`,
+    retryUnauthorized: false,
+    ...(proxy
+      ? {
+          btpProxy: {
+            protocol: 'http',
+            host: '127.0.0.1',
+            port: address.port,
+            getProxyToken: async () => 'synthetic',
+          },
+        }
+      : {}),
+  });
   if (opts.deny) client.safety.denyActions = ['SAPRead.BDEF'];
   const request = {
     root: { type: 'BDEF', name: 'BASE', version: opts.version ?? 'active' },
@@ -103,7 +117,8 @@ async function setup(
   return { session, paths, run };
 }
 
-describe('bounded BDEF candidate verification', () => {
+describe.each([false, true])('bounded BDEF candidate verification, Connectivity=%s', (proxy) => {
+  const setup = (opts: Parameters<typeof setupTransport>[0] = {}) => setupTransport(opts, proxy);
   it('checks at most two candidates in automatic summary and reports candidate omissions', async () => {
     const { run, paths } = await setup({ mode: 'summary', count: 4 });
     const result = await run();
