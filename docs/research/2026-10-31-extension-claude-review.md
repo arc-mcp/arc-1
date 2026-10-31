@@ -88,8 +88,21 @@ reliable grammar qualification on this target. The stored source hash was unchan
 no object was created or edited.
 
 Final triage passed 404 files / 10,907 unit tests, typecheck, lint, policy, build and size
-gates. The focused regressions passed 49 tests. There is no claim that the final runtime
-patch has received a third independent review. Both requested Claude reviews completed;
-confirmed findings were repaired, unreachable triggers were reproduced against public
-normalization, and conditional grammar claims remain explicit. Roadmap checked:
+gates. The focused regressions passed 49 tests. Both Claude reviews completed;
+confirmed findings were repaired and verified through regressions, reported triggers were
+checked against public normalization, and conditional grammar claims remain explicit. Roadmap checked:
 no roadmap impact.
+
+## Final live runtime checkpoint
+
+The final runtime commit `adf69977519707d1bf643bd93e955627b049d60e` passed the
+[final live checks](2026-10-31-extension-final-runtime.json). BTP 920 repeated all
+38 observations, including four source-verified BDEF extensions, after the confirmation
+repairs. Every successful mode preserved its base block.
+
+On A4H 758, each of `SAPNavigate.relations`, `SAPNavigate` and hyperfocused `SAP.navigate`
+was parsed and validated through the `SAP_DENY_ACTIONS` configuration path, intersected
+with read-only user safety, then tested through public dispatch. Native discovery was
+denied while seven hook identities and eight rendered source bodies remained available.
+Each optional phase used exactly two GETs. The evidence binds these checks to the final
+tracked source hash; it does not claim a deployed CF/PP/Cloud Connector qualification.
