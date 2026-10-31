@@ -103,4 +103,54 @@ describe.each([false, true])('class extension budgets, Connectivity=%s', (proxy)
       }
     },
   );
+  it('propagates cancellation during generated source streaming and releases its reservation', async () => {
+    const controller = new AbortController();
+    let sends = 0;
+    const server = createServer((req, res) => {
+      sends++;
+      if (req.method === 'HEAD') {
+        res.setHeader('x-csrf-token', 'TEST');
+        res.end();
+      } else if (req.method === 'POST') res.end(fixture('class-exted.xml'));
+      else if (req.url!.includes('/oo/classes/'))
+        res.end('<abapClass name="CL_OO_ADT_ENHANCED_CLASS" type="CLAS/OC" version="active"/>');
+      else if (req.url!.includes('/enhoxh/')) {
+        res.writeHead(404);
+        res.end();
+      } else if (req.url!.endsWith('/versions')) res.end(fixture('class-feed.xml'));
+      else {
+        res.write('partial generated source');
+        setImmediate(() => controller.abort());
+      }
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('No listener');
+    const client = new AdtClient({
+      baseUrl: proxy ? 'http://sap.invalid:8000' : `http://127.0.0.1:${address.port}`,
+      ...(proxy
+        ? {
+            btpProxy: {
+              protocol: 'http',
+              host: '127.0.0.1',
+              port: address.port,
+              getProxyToken: async () => 'synthetic',
+            },
+          }
+        : {}),
+    });
+    const request = {
+      root: { type: 'CLAS', name: 'CL_OO_ADT_ENHANCED_CLASS', version: 'active' },
+      scope: 'owning_object',
+    };
+    const session = new ExtensionDiscoverySession('sources', request, client.safety, { signal: controller.signal });
+    const nodes = await discoverClassIdentities(client, session, request);
+    await expect(discoverClassSources(client, session, nodes, '750')).rejects.toThrow();
+    expect(controller.signal.aborted).toBe(true);
+    expect(session.result.sources).toEqual([]);
+    expect(session.options.responseBudget!.reservedBytes).toBe(0);
+    expect(session.options.attemptBudget!.used).toBe(sends);
+    expect(sends).toBe(6);
+  });
 });

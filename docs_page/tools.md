@@ -120,12 +120,13 @@ The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02 and 758 
 plug-in XML is qualified on both releases. Live positive coverage includes PROG on 750 and
 INCL, FUNC and FUGR on 758; other family/release combinations remain unqualified.
 BDEF public integration remains a separate stage and explicit requests currently report `unsupported`.
-BTP and other releases are unqualified. CDS/DDLX extensions and BAdIs are outside this feature.
+BTP DDIC/source-family coverage and other releases are unqualified except for the class cases below.
+CDS/DDLX extensions and BAdIs are outside this feature.
 
 CLAS combines selected-source hook coverage with a separate native `EXTED_OBJ` graph for the owning
 class. Main and local sections stay distinct. A class can have structural enhancements despite an
 empty hook/source response. Native graph edges retain their direction and ENHO types; the type
-alone does not identify enhancement technology. The native provider is qualified on 758; 750's
+alone does not identify enhancement technology. The native provider is qualified on 758 and BTP 920; 750's
 unsupported response remains explicit. Hook wire formats are qualified on both releases.
 
 Class sources retain rendered plug-ins or authored ENHO bodies as separate blocks. A qualified
@@ -134,6 +135,10 @@ owner and content URI). Generated source may omit implementation names; only a m
 actually named by that returned source is followed. It remains a labelled representation, not an
 inferred edit target. INTF's tested 758 ENV fallback is `unsupported_context`; 750 is an unsupported
 provider. Neither is evidence of absent interface extensions. Positive interface coverage is unqualified.
+Read-only BTP 920 tests through direct service-key/browser OAuth find structural identities and
+return the main hook example's eight bodies and three replacement edges. Structural and selected
+local authored sources return 403 for the tested identity; these stay denied without generated
+fallback. INTF returns unsupported context. BTP principal propagation remains unqualified here.
 
 Method, grep, line-window and class-include reads default to none. An explicit mode on a partial
 read describes its **owning object/source**, without claiming the extension bodies match the

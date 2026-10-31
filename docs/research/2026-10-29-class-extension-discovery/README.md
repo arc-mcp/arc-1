@@ -45,3 +45,10 @@ budget and public-handler suites cover wrong roots/feeds/URIs, inactive separati
 terminal failures, raw source preservation, selected sections, depth and omission accounting.
 
 Roadmap checked: no roadmap impact. FEAT-03 concerns enhancement authoring and stays unchanged.
+
+## 2026-10-31 follow-up
+
+The test-gap audit, added transport/public-handler tests, BTP SAP_BASIS 920 public-flow
+qualification and remaining gaps are recorded in [test-gap-audit.md](test-gap-audit.md).
+Its live evidence is [btp-public.json](btp-public.json). These qualify the BTP cases described
+there; the 2026-10-29 observations above retain their original build and scope.

@@ -11,7 +11,18 @@ const fixture = (name: string) =>
 const name = 'CL_OO_ADT_ENHANCED_CLASS';
 const uri = `/sap/bc/adt/oo/classes/${name.toLowerCase()}`;
 const source = `CLASS ${name} DEFINITION PUBLIC. PUBLIC SECTION. METHODS demo. ENDCLASS.\nCLASS ${name} IMPLEMENTATION. METHOD demo. WRITE 'unchanged'. ENDMETHOD. ENDCLASS.`;
-const metadata = `<abapClass name="${name}" type="CLAS/OC" version="active"><include includeType="main" sourceUri="source/main"><link rel="http://www.sap.com/adt/relations/enhancements" href="source/main/enhancements/elements"/></include><include includeType="definitions" sourceUri="includes/definitions"><link rel="http://www.sap.com/adt/relations/enhancements" href="includes/definitions/enhancements/elements"/></include></abapClass>`;
+const metadata = `<abapClass name="${name}" type="CLAS/OC" version="active">${[
+  'main',
+  'definitions',
+  'implementations',
+  'macros',
+  'testclasses',
+]
+  .map((section) => {
+    const uri = section === 'main' ? 'source/main' : `includes/${section}`;
+    return `<include includeType="${section}" sourceUri="${uri}"><link rel="http://www.sap.com/adt/relations/enhancements" href="${uri}/enhancements/elements"/></include>`;
+  })
+  .join('')}</abapClass>`;
 const summary = (result: Awaited<ReturnType<typeof handleToolCall>>) =>
   JSON.parse(result.content[1]!.text.slice('[extensions] '.length));
 
@@ -25,7 +36,8 @@ function setup(nativeStatus = 200) {
     if (init.method === 'POST')
       return mockResponse(nativeStatus, nativeStatus === 200 ? fixture('class-exted.xml') : 'terminal');
     if (path === `${uri}/source/main`) return mockResponse(200, source);
-    if (path === `${uri}/includes/definitions`) return mockResponse(200, '" unchanged definitions\n');
+    if (/\/includes\/(definitions|implementations|macros|testclasses)$/.test(path))
+      return mockResponse(200, `" unchanged ${path.split('/').at(-1)}\n`);
     if (path === uri) return mockResponse(200, metadata);
     if (path.endsWith('/enhancements/elements')) return mockResponse(200, '<enhancements/>');
     if (path.includes('/enhoxh/'))
@@ -94,6 +106,54 @@ describe('SAPRead class extensions', () => {
       'class_section=definitions',
     );
     expect(s.calls.some((path) => path.includes('/source/main/enhancements'))).toBe(false);
+  });
+  it.each(['implementations', 'macros', 'testclasses'])(
+    'keeps %s opt-in and reads hooks only for that local section',
+    async (include) => {
+      const s = setup();
+      const base = await s.read({ include });
+      expect(base.content).toHaveLength(1);
+      expect(s.calls).toEqual([`GET ${uri}/includes/${include}`]);
+      const result = await s.read({ include, extensions: 'sources' });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]).toEqual(base.content[0]);
+      expect(summary(result).scope).toContain(`section=${include}`);
+      expect(s.calls).toContain(`GET ${uri}/includes/${include}/enhancements/elements`);
+      expect(s.calls.some((path) => path.includes('/source/main/enhancements'))).toBe(false);
+    },
+  );
+  it('keeps structured reads unchanged and refuses to label their unversioned payload as active', async () => {
+    const s = setup();
+    const structured = {
+      metadata: { name, description: '', language: 'EN', category: '', fixPointArithmetic: true, package: '$TMP' },
+      main: source,
+      definitions: null,
+      implementations: null,
+      macros: null,
+      testclasses: null,
+    };
+    vi.spyOn(s.client, 'getClassStructured').mockResolvedValue(structured);
+    const base = await s.read({ format: 'structured' });
+    expect(base.content).toHaveLength(1);
+    const result = await s.read({ format: 'structured', extensions: 'sources' });
+    expect(result.content[0]).toEqual(base.content[0]);
+    expect(summary(result).root.version).toBe('provider_current');
+    expect(
+      summary(result).providers.every(
+        (p: { status: string; reason: string }) =>
+          p.status === 'unsupported' && p.reason.includes('unsupported_version'),
+      ),
+    ).toBe(true);
+    expect(s.calls).toEqual([]);
+  });
+  it('defaults a line range to none and retains the exact filtered base when opted in', async () => {
+    const s = setup();
+    const base = await s.read({ lineStart: 1, lineEnd: 1 });
+    expect(base.content).toHaveLength(1);
+    expect(s.calls).toEqual([`GET ${uri}/source/main`]);
+    const result = await s.read({ lineStart: 1, lineEnd: 1, extensions: 'summary' });
+    expect(result.content[0]).toEqual(base.content[0]);
+    expect(summary(result).scope).toContain('owning object/source (base filtered)');
   });
   it.each([401, 403, 429])(
     'retains the base after terminal optional HTTP %s and stops source fallback',
