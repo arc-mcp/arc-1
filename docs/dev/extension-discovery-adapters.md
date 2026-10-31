@@ -40,3 +40,16 @@ CSRF fallback bodies keep that allowance; other data consumers retain success-on
 `extension_discovery` audit events carry provider statuses/counts/consumption only, without sources.
 The compact renderer groups repeated provider observations and caps identities independently from
 source/graph expansion. No other family is enabled automatically by the DDIC stage.
+
+Graph edges use `extensionKey` of the exact discovered owner identity, including for nested
+append traversal. `observationVersion` qualifies the edge's separate metadata/source observation:
+DDIC append relations are `provider_current`, include edges parsed from active source are `active`.
+Explicit structure context exposes its occurrence `tree`; its `extensionDiscovery` metadata omits
+the provider's append-only `edges` projection, which cannot represent that complete tree.
+An active source body does not relabel its unversioned discovery identity. Canonical node
+deduplication remains type/name/version; distinct version observations are not collapsed.
+A completed data read or final non-auth HTTP error from the data request clears intermediate
+auth/CSRF retry evidence. A failed CSRF bootstrap or blocked redirect is not such a response.
+Final 401/403/429, unresolved transport failures with auth evidence, unsafe protocol,
+cancellation and budget failures retain their terminal behavior. Empty/malformed index responses
+are protocol failures, not valid empty provider lists.

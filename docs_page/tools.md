@@ -115,6 +115,9 @@ lists append identities, including value-help/foreign-key-only appends. `extensi
 returns the legacy result without discovery requests. `extensions="sources"` adds a bounded
 include/append graph and separate bodies labelled `representation=authored_source`. Include
 occurrences, attributes and suffixes remain distinct; bodies are fetched once per request.
+CLI `source` and `read --flat` select `extensions="none"` so redirected source exports retain
+their original contents. Use `arc1-cli call SAPRead --json '{"type":"TABL","name":"DSH_MEAL","extensions":"sources"}'`
+for extension context through the CLI.
 
 The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02, 758 SP02, and BTP ABAP
 Environment 920 SP05 with a developer's browser OAuth identity. Source plug-in XML is qualified
@@ -150,6 +153,8 @@ base plus qualified partial coverage. Caller cancellation still propagates.
 All hidden reads use the caller's client and SAPRead deny rules. Optional reads disable transient
 retries. Graph, source, request, byte, deadline and output omissions remain visible, and cut source
 bodies have explicit markers. No source is spliced into editable base text.
+These are simultaneous upper bounds: metadata, fallback and CSRF sends can exhaust the request
+budget before traversal reaches the node limit.
 
 Source plug-in summaries use an advertised HOOK_IMPL identity list on a root where available.
 That list covers outer/specific implementations and says nested expansion was not performed.

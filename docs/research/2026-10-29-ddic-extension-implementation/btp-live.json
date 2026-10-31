@@ -1,7 +1,7 @@
 {
   "target": "BTP ABAP Environment",
-  "timestamp": "2026-10-31T20:37:46.065Z",
-  "sourceTreeSha256": "04823747ee10b6fd7523baaae8497bc3ee9b2ac183c71a2f1a2aafcd84320fad",
+  "timestamp": "2026-10-31T21:07:05.977Z",
+  "sourceTreeSha256": "c9a5f320c79a1c81562bb3802e64c4f7df00ad73191613be555054e40bcc9ab1",
   "authRoute": "browser OAuth developer identity; MCP SDK in-memory transport",
   "rows": [
     {
@@ -100,7 +100,7 @@
         "consumed": {
           "sends": 2,
           "responseBytes": 3732,
-          "elapsedMs": 484
+          "elapsedMs": 519
         }
       },
       "sourceLabels": []
@@ -199,7 +199,7 @@
         "consumed": {
           "sends": 9,
           "responseBytes": 12137,
-          "elapsedMs": 1936
+          "elapsedMs": 1986
         }
       },
       "sourceLabels": [
@@ -248,7 +248,7 @@
         "consumed": {
           "sends": 2,
           "responseBytes": 3318,
-          "elapsedMs": 517
+          "elapsedMs": 477
         }
       },
       "sourceLabels": []
@@ -370,7 +370,7 @@
         "consumed": {
           "sends": 11,
           "responseBytes": 12890,
-          "elapsedMs": 2480
+          "elapsedMs": 2303
         }
       },
       "sourceLabels": [
@@ -419,7 +419,7 @@
         "consumed": {
           "sends": 2,
           "responseBytes": 3521,
-          "elapsedMs": 544
+          "elapsedMs": 484
         }
       },
       "sourceLabels": []
@@ -499,7 +499,7 @@
         "consumed": {
           "sends": 6,
           "responseBytes": 9305,
-          "elapsedMs": 1365
+          "elapsedMs": 1391
         }
       },
       "sourceLabels": [
@@ -539,7 +539,7 @@
         "consumed": {
           "sends": 1,
           "responseBytes": 2316,
-          "elapsedMs": 231
+          "elapsedMs": 253
         }
       },
       "sourceLabels": []
@@ -587,7 +587,7 @@
         "consumed": {
           "sends": 1,
           "responseBytes": 2316,
-          "elapsedMs": 234
+          "elapsedMs": 250
         }
       },
       "sourceLabels": []
@@ -625,7 +625,7 @@
         "consumed": {
           "sends": 1,
           "responseBytes": 2676,
-          "elapsedMs": 248
+          "elapsedMs": 244
         }
       },
       "sourceLabels": []
@@ -673,7 +673,7 @@
         "consumed": {
           "sends": 1,
           "responseBytes": 2676,
-          "elapsedMs": 244
+          "elapsedMs": 246
         }
       },
       "sourceLabels": []
