@@ -88,6 +88,8 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. With `method=`, an explicit include selects that exact source (including `main`) before method extraction. For DDLS: `elements` (extract CDS view elements). For TEXT_ELEMENTS: `symbols`, `selections`, or `headings` — one part of the text pool; omit for the whole PROG/FUGR pool or CLAS symbols. |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. For FUGR, `grep` implies `expand_includes` and searches each include on its own: matches are grouped under `=== <include> ===` with line numbers counted within that include. For PROG and INCL, `grep` searches the object itself unless `expand_includes=true`; the response then names the includes that the expansion would also search. Falls back to a literal search when the pattern is not valid regex. |
+| `extensions` | string | No | `none`, `summary`, or `sources`. Full TABL source reads default to a bounded append summary; partial reads default to none. Sources adds separate labelled append/include bodies. Other listed families currently return explicit unsupported coverage. See [Extension discovery](#extension-discovery). |
+| `enhancementContext` | object | No | Standalone INCL only: `{type: "PROG"\|"FUGR"\|"CLAS", name: "..."}` identifies the owning main object. The current stage reports unsupported for source plug-in families; this reserves their shared request contract. |
 | `lineStart` | integer | No | First source line (1-based, inclusive); requires `lineEnd`. Supports PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, DDLX and TABL. CLAS `include` selects one source section. Plain text only: do not combine with grep, method, diff, structured/editable output, signature or element extraction. Draft/version notices precede the numbered source. |
 | `lineEnd` | integer | No | Last source line (inclusive); requires `lineStart`. Clamped to the source end; a start beyond the source is an error. |
 | `expand_includes` | boolean | No | For FUGR: expand include source inline, up to 80 source blocks (including main) and five include levels. `grep` implies this expansion; see [Function-group source search](#function-group-source-search). For PROG and INCL: read the program with every include it names, recursively, in one bounded call, or search them all with `grep`; see [Program include expansion](#program-include-expansion). |
@@ -104,6 +106,60 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except SMBC and [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view (TABL/DTI explicitly prefers pending source) and explicit `active`/`inactive` must be confirmed by metadata. [TABL/DTT settings](#technical-table-settings) also prefer pending state and verify explicit versions. ENHO uses the developer view and refuses explicit version selection. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
 | `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, description?, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
+
+### Extension discovery
+
+A full `SAPRead(type="TABL", name="DSH_MEAL")` retains the original source block and appends a
+separate `[extensions]` block. It follows the owner's advertised DDIC enhancement relation and
+lists append identities, including value-help/foreign-key-only appends. `extensions="none"`
+returns the legacy result without discovery requests. `extensions="sources"` adds a bounded
+include/append graph and separate bodies labelled `representation=authored_source`. Include
+occurrences, attributes and suffixes remain distinct; bodies are fetched once per request.
+CLI `source` and `read --flat` select `extensions="none"` so redirected source exports retain
+their original contents. Use `arc1-cli call SAPRead --json '{"type":"TABL","name":"DSH_MEAL","extensions":"sources"}'`
+for extension context through the CLI.
+
+The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02, 758 SP02, and BTP ABAP
+Environment 920 SP05 with a developer's browser OAuth identity. The public
+contract also accepts PROG, INCL, FUNC, FUGR, CLAS, INTF and BDEF, but explicit requests for those
+families currently report `unsupported`; their adapters are separate implementation stages.
+Other releases and live principal propagation remain unqualified. CDS/DDLX extensions and BAdIs
+are outside this feature.
+
+Method, grep, line-window and class-include reads default to none. An explicit mode on a partial
+TABL read describes its **owning object/source**, without claiming the extension bodies match the
+base filter. Inactive base reads report `unsupported_version` and do not substitute active
+extension sources. An unversioned list is labelled `provider_current`; source bodies explicitly
+read active are labelled active. These are separate SAP observations, not an atomic snapshot.
+
+Each provider reports its checked scope and coverage. `not_advertised` means metadata had no
+relation; `returned` with no identities means that provider returned a valid empty list for that
+scope. Neither proves global absence. Switch applicability remains unknown, including identities
+whose names mention ON/OFF. Denials, unsafe responses, throttles and limits retain the successful
+base plus qualified partial coverage. Caller cancellation still propagates.
+
+| Discovery budget after base read | Summary | Sources |
+|---|---:|---:|
+| Time | 2 seconds | 12 seconds |
+| Actual SAP sends, including CSRF/retries | 6 | 20 |
+| Aggregate decoded response bytes, streamed | 128 KiB | 256 KiB |
+| Graph/source expansion | 8 rendered identities, no nested reads | 20 nodes, depth 5, 80 edges |
+| Additional output | 2 KiB | 16 KiB |
+
+All hidden reads use the caller's client and SAPRead deny rules. Optional reads disable transient
+retries. Graph, source, request, byte, deadline and output omissions remain visible, and cut source
+bodies have explicit markers. No source is spliced into editable base text.
+These are simultaneous upper bounds: metadata, fallback and CSRF sends can exhaust the request
+budget before traversal reaches the node limit.
+
+`SAPContext(action="structure", type="TABL", name="...")` uses the same dedicated append
+provider. It retains the include tree, key includes and repeated suffixes, adds discovery
+provenance, and bounds expansion to 20 occurrences/depth 5 with the sources budget. Only this
+explicit workflow may fall back to a source-verified where-used candidate index when the dedicated
+provider is unavailable/unadvertised. That compatibility fallback checks at most 12 candidates
+and reports index-based coverage; it never runs after auth, throttle, unsafe-response or budget
+failure. Automatic summaries never use where-used. Known children remain labelled truncated when
+source expansion stops.
 
 ### Read-only syntax checks
 
@@ -2064,7 +2120,18 @@ shortcut is no longer used. See
 
 ### action="structure" — DDIC includes + append structures (TABL only)
 
-Returns a JSON tree for a DDIC structure or transparent table. ARC-1 parses embedded includes from the TABL source (`include <name>;`, named includes, and classic `.INCLUDE`) and resolves append/extension structures through ADT where-used. Append candidates are only returned after ARC-1 reads the candidate source and confirms it contains `extend type <base> with`; `.APPEND` is not parsed from the base source because ADT does not emit append structures there. A missing where-used endpoint or more than 50 structure candidates leaves the include tree intact and adds an incomplete-discovery warning. Large where-used searches can add latency even when the candidate cap stops source inspection. Results reflect SAP’s current index; an empty result does not prove that no append exists.
+Returns a JSON tree for a DDIC structure or transparent table. ARC-1 parses embedded includes from
+the TABL source, preserving key includes, named occurrences and suffixes, and discovers appends
+through the owner's advertised ADT enhancement relation. `.APPEND` is not parsed from the base
+source because ADT does not emit append structures there.
+
+When the dedicated provider is unavailable or unadvertised, this explicit workflow may inspect
+at most 12 where-used candidates and verify `extend type <base> with` in each candidate's source.
+It labels that fallback as index-based coverage; it never follows auth, throttle, unsafe-response
+or budget failures. An empty index does not prove absence. The tree keeps unresolved or truncated
+children and adds `extensionDiscovery` provenance. Expansion shares the 12-second, 20-send,
+256-KiB discovery budget and is limited to 20 occurrences and depth 5. See
+[Extension discovery](#extension-discovery) for coverage states and version qualifications.
 
 **Example:**
 ```json

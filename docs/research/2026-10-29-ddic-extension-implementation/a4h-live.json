@@ -1,0 +1,528 @@
+{
+  "target": "a4h",
+  "sourceTreeSha256": "04823747ee10b6fd7523baaae8497bc3ee9b2ac183c71a2f1a2aafcd84320fad",
+  "timestamp": "2026-10-29T18:07:12.425Z",
+  "client": "001",
+  "authRoute": "local Basic HTTPS",
+  "rows": [
+    {
+      "name": "DSH_MEAL",
+      "mode": "summary",
+      "basePreserved": true,
+      "sourceHash": "37d4d6a956b26d8ad85e4958826adbde4e2a82802db14e6f85e946467f0807e5",
+      "summary": {
+        "root": {
+          "type": "TABL",
+          "name": "DSH_MEAL",
+          "version": "active"
+        },
+        "scope": "TABL DSH_MEAL full root source",
+        "providers": [
+          {
+            "id": "ddic_appends",
+            "family": "ddic_append",
+            "status": "returned",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "Direct appends; switch applicability unknown; separate provider observation.",
+            "observations": 1,
+            "scopes": [
+              "DSH_MEAL"
+            ]
+          }
+        ],
+        "identities": [
+          {
+            "type": "TABL",
+            "name": "DSH_S_MEAL_APPEND",
+            "version": "provider_current",
+            "provider": "ddic_appends",
+            "family": "ddic_append"
+          }
+        ],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {},
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 3732,
+          "elapsedMs": 298
+        }
+      }
+    },
+    {
+      "name": "DDTEST_STRU_INCLUDE",
+      "mode": "summary",
+      "basePreserved": true,
+      "sourceHash": "4f302e88484df2127855176e78f6c2fa882ba7ed208daf54fa0ee6c56e56f8f7",
+      "summary": {
+        "root": {
+          "type": "TABL",
+          "name": "DDTEST_STRU_INCLUDE",
+          "version": "active"
+        },
+        "scope": "TABL DDTEST_STRU_INCLUDE full root source",
+        "providers": [
+          {
+            "id": "ddic_appends",
+            "family": "ddic_append",
+            "status": "returned",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "Direct appends; switch applicability unknown; separate provider observation.",
+            "observations": 1,
+            "scopes": [
+              "DDTEST_STRU_INCLUDE"
+            ]
+          }
+        ],
+        "identities": [
+          {
+            "type": "TABL",
+            "name": "DDTEST_APPEND_ACTIVE",
+            "version": "provider_current",
+            "provider": "ddic_appends",
+            "family": "ddic_append"
+          }
+        ],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {},
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 3318,
+          "elapsedMs": 389
+        }
+      }
+    },
+    {
+      "name": "TEST_SBD_TWO_FIELDS_CLASS_INTF",
+      "mode": "summary",
+      "basePreserved": true,
+      "sourceHash": "44ba610b493bb085f4e7d3a29f2b339d22fc30ae496b136ec25d770409f4dd41",
+      "summary": {
+        "root": {
+          "type": "TABL",
+          "name": "TEST_SBD_TWO_FIELDS_CLASS_INTF",
+          "version": "active"
+        },
+        "scope": "TABL TEST_SBD_TWO_FIELDS_CLASS_INTF full root source",
+        "providers": [
+          {
+            "id": "ddic_appends",
+            "family": "ddic_append",
+            "status": "returned",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "Direct appends; switch applicability unknown; separate provider observation.",
+            "observations": 1,
+            "scopes": [
+              "TEST_SBD_TWO_FIELDS_CLASS_INTF"
+            ]
+          }
+        ],
+        "identities": [
+          {
+            "type": "TABL",
+            "name": "TEST_SBD_APPEND_ADD_VH",
+            "version": "provider_current",
+            "provider": "ddic_appends",
+            "family": "ddic_append"
+          }
+        ],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {},
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 3521,
+          "elapsedMs": 280
+        }
+      }
+    },
+    {
+      "name": "FDT_S_TEST_SFW",
+      "mode": "summary",
+      "basePreserved": true,
+      "sourceHash": "e23c3f2c9c8aa2c8a1881e17f4b359213211d6a33544f9bb3154a5206dfdcc14",
+      "summary": {
+        "root": {
+          "type": "TABL",
+          "name": "FDT_S_TEST_SFW",
+          "version": "active"
+        },
+        "scope": "TABL FDT_S_TEST_SFW full root source",
+        "providers": [
+          {
+            "id": "ddic_appends",
+            "family": "ddic_append",
+            "status": "returned",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "Direct appends; switch applicability unknown; separate provider observation.",
+            "observations": 1,
+            "scopes": [
+              "FDT_S_TEST_SFW"
+            ]
+          }
+        ],
+        "identities": [
+          {
+            "type": "TABL",
+            "name": "FDT_S_TEST_SFW_APPEND1_OFF",
+            "version": "provider_current",
+            "provider": "ddic_appends",
+            "family": "ddic_append"
+          },
+          {
+            "type": "TABL",
+            "name": "FDT_S_TEST_SFW_APPEND1_ON",
+            "version": "provider_current",
+            "provider": "ddic_appends",
+            "family": "ddic_append"
+          }
+        ],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {},
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 3766,
+          "elapsedMs": 189
+        }
+      }
+    },
+    {
+      "name": "SFLIGHT",
+      "mode": "summary",
+      "basePreserved": true,
+      "sourceHash": "296cac87e23d3f731fbe68183cefcf0e9577a37311541525b9f9ce08aa66614b",
+      "summary": {
+        "root": {
+          "type": "TABL",
+          "name": "SFLIGHT",
+          "version": "active"
+        },
+        "scope": "TABL SFLIGHT full root source",
+        "providers": [
+          {
+            "id": "ddic_appends",
+            "family": "ddic_append",
+            "status": "not_advertised",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "No enhancement relation advertised by this owner.",
+            "observations": 1,
+            "scopes": [
+              "SFLIGHT"
+            ]
+          }
+        ],
+        "identities": [],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {},
+        "consumed": {
+          "sends": 1,
+          "responseBytes": 2676,
+          "elapsedMs": 130
+        }
+      }
+    },
+    {
+      "name": "DSH_MEAL",
+      "mode": "sources",
+      "summary": {
+        "root": {
+          "type": "TABL",
+          "name": "DSH_MEAL",
+          "version": "active"
+        },
+        "scope": "TABL DSH_MEAL full root source",
+        "providers": [
+          {
+            "id": "ddic_appends",
+            "family": "ddic_append",
+            "status": "returned",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "Direct appends; switch applicability unknown; separate provider observation.",
+            "observations": 1,
+            "scopes": [
+              "DSH_MEAL"
+            ]
+          },
+          {
+            "id": "ddic_appends",
+            "family": "ddic_append",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "version": "active",
+            "observations": 1,
+            "scopes": [
+              "DSH_S_MEAL_APPEND"
+            ]
+          },
+          {
+            "id": "ddic_source_includes",
+            "family": "ddic_include",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "version": "active",
+            "observations": 1,
+            "scopes": [
+              "SDSH_S_HONGER"
+            ]
+          },
+          {
+            "id": "ddic_appends",
+            "family": "ddic_append",
+            "status": "not_advertised",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "No enhancement relation advertised by this owner.",
+            "observations": 2,
+            "scopes": [
+              "DSH_S_MEAL_APPEND",
+              "SDSH_S_HONGER"
+            ]
+          },
+          {
+            "id": "ddic_source_includes",
+            "family": "ddic_include",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "nested": "bounded",
+            "reason": "Actual source includes and metadata-linked appends; bounded traversal, separate observations.",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "TABL",
+            "name": "DSH_S_MEAL_APPEND",
+            "version": "provider_current",
+            "provider": "ddic_appends",
+            "family": "ddic_append"
+          },
+          {
+            "type": "TABL",
+            "name": "SDSH_S_HONGER",
+            "version": "active",
+            "provider": "ddic_source_includes",
+            "family": "ddic_include"
+          }
+        ],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {},
+        "consumed": {
+          "sends": 9,
+          "responseBytes": 12113,
+          "elapsedMs": 1224
+        }
+      },
+      "labelledSources": [
+        "[extension source TABL DSH_S_MEAL_APPEND version=active representation=authored_source provider=ddic_appends]",
+        "[extension source TABL SDSH_S_HONGER version=active representation=authored_source provider=ddic_source_includes]"
+      ],
+      "extensionOutputBytes": 2432
+    },
+    {
+      "name": "DDTEST_STRU_INCLUDE",
+      "mode": "structure",
+      "tree": {
+        "structure": "DDTEST_STRU_INCLUDE",
+        "attribute": null,
+        "kind": "root",
+        "children": [
+          {
+            "structure": "DDTEST_STRU_CHAR",
+            "attribute": null,
+            "kind": "include",
+            "children": [],
+            "suffix": "a"
+          },
+          {
+            "structure": "DDTEST_STRU_CHAR",
+            "attribute": null,
+            "kind": "include",
+            "children": [],
+            "suffix": "b"
+          },
+          {
+            "structure": "DDTEST_STRU_CHAR",
+            "attribute": null,
+            "kind": "include",
+            "children": []
+          },
+          {
+            "structure": "DDTEST_VIEW",
+            "attribute": null,
+            "kind": "include",
+            "children": [],
+            "suffix": "c",
+            "error": "Could not read source for DDTEST_VIEW"
+          },
+          {
+            "structure": "DDTEST_APPEND_ACTIVE",
+            "attribute": null,
+            "kind": "append",
+            "children": []
+          }
+        ]
+      },
+      "summary": {
+        "totalNodes": 6,
+        "includes": 4,
+        "appends": 1,
+        "cyclic": 0,
+        "unresolved": 1,
+        "truncated": 0
+      },
+      "discovery": {
+        "root": {
+          "type": "TABL",
+          "name": "DDTEST_STRU_INCLUDE",
+          "version": "active"
+        },
+        "scope": "explicit structure hierarchy",
+        "mode": "sources",
+        "providers": [
+          {
+            "id": "structure_source",
+            "family": "ddic_include",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "scope": "DDTEST_STRU_INCLUDE"
+          },
+          {
+            "id": "ddic_appends",
+            "family": "ddic_append",
+            "status": "returned",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "scope": "DDTEST_STRU_INCLUDE",
+            "reason": "Direct appends; switch applicability unknown; separate provider observation."
+          },
+          {
+            "id": "structure_source",
+            "family": "ddic_include",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "scope": "DDTEST_STRU_CHAR"
+          },
+          {
+            "id": "ddic_appends",
+            "family": "ddic_append",
+            "status": "not_advertised",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "scope": "DDTEST_STRU_CHAR",
+            "reason": "No enhancement relation advertised by this owner."
+          },
+          {
+            "id": "ddic_where_used",
+            "family": "ddic_append",
+            "status": "returned",
+            "coverage": "candidate_index",
+            "scope": "DDTEST_STRU_CHAR"
+          },
+          {
+            "id": "structure_source",
+            "family": "ddic_include",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "scope": "DDTEST_STRU_CHAR"
+          },
+          {
+            "id": "structure_source",
+            "family": "ddic_include",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "scope": "DDTEST_STRU_CHAR"
+          },
+          {
+            "id": "structure_source",
+            "family": "ddic_include",
+            "status": "incomplete",
+            "coverage": "bounded_traversal",
+            "scope": "DDTEST_VIEW",
+            "reason": "source_unavailable"
+          },
+          {
+            "id": "structure_source",
+            "family": "ddic_include",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "scope": "DDTEST_APPEND_ACTIVE"
+          },
+          {
+            "id": "ddic_appends",
+            "family": "ddic_append",
+            "status": "not_advertised",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "scope": "DDTEST_APPEND_ACTIVE",
+            "reason": "No enhancement relation advertised by this owner."
+          },
+          {
+            "id": "ddic_where_used",
+            "family": "ddic_append",
+            "status": "returned",
+            "coverage": "candidate_index",
+            "scope": "DDTEST_APPEND_ACTIVE"
+          }
+        ],
+        "nodes": [
+          {
+            "type": "TABL",
+            "name": "DDTEST_APPEND_ACTIVE",
+            "version": "provider_current",
+            "uri": "/sap/bc/adt/ddic/structures/ddtest_append_active/source/main",
+            "family": "ddic_append",
+            "provider": "ddic_appends",
+            "applicability": "unknown"
+          }
+        ],
+        "edges": [
+          {
+            "from": "TABL:DDTEST_STRU_INCLUDE:active",
+            "to": "TABL:DDTEST_APPEND_ACTIVE:provider_current",
+            "kind": "append"
+          }
+        ],
+        "sources": [],
+        "issues": [],
+        "omissions": {
+          "sources": 1
+        },
+        "consumed": {
+          "sends": 14,
+          "responseBytes": 16141,
+          "elapsedMs": 2127
+        }
+      },
+      "warnings": [
+        "Append coverage for DDTEST_STRU_CHAR uses a source-verified where-used candidate index; completeness is unknown.",
+        "Append coverage for DDTEST_APPEND_ACTIVE uses a source-verified where-used candidate index; completeness is unknown."
+      ]
+    },
+    {
+      "name": "SFLIGHT",
+      "mode": "direct empty-format qualification",
+      "anonymousEmptyAccepted": true
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "target": "npl",
+  "sourceTreeSha256": "9704b547a70127b8efa038068d15b6afb77187c1e02cbf9d504fb27610f5a2d8",
+  "timestamp": "2026-10-29T17:58:46.282Z",
+  "client": "001",
+  "authRoute": "local Basic HTTPS",
+  "rows": [
+    {
+      "name": "DSH_MEAL",
+      "mode": "summary",
+      "basePreserved": true,
+      "sourceHash": "158e9a1b284a6074f270f4afca4e3757aafc26ef5dcbd9ed0ecd78b7fcafca72",
+      "summary": {
+        "root": {
+          "type": "TABL",
+          "name": "DSH_MEAL",
+          "version": "active"
+        },
+        "scope": "TABL DSH_MEAL full root source",
+        "providers": [
+          {
+            "id": "ddic_appends",
+            "family": "ddic_append",
+            "status": "incomplete",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "deadline",
+            "observations": 1,
+            "scopes": [
+              "DSH_MEAL"
+            ]
+          }
+        ],
+        "identities": [],
+        "applicability": "unknown",
+        "issues": [
+          "deadline"
+        ],
+        "omissions": {
+          "deadline": 1
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 2403,
+          "elapsedMs": 2003
+        }
+      }
+    },
+    {
+      "failed": true,
+      "error": "AssertionError"
+    }
+  ]
+}
