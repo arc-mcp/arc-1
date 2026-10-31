@@ -307,6 +307,7 @@ export async function handleSAPActivate(
         // Mirror the single-object call: SDO metadata (and its packageRef) is negotiated with
         // the type's own content type rather than relying on discovery-driven negotiation.
         isServerDrivenObjectType(o.type) ? serverDrivenMetadataContentType(o.type) : undefined,
+        { includeGroupHint: true },
       );
     }
 
@@ -416,6 +417,7 @@ export async function handleSAPActivate(
     type === 'TABL/DTT' ? tableSettingsParentUrl(name) : objectUrl,
     `Activation of ${type} '${name}'`,
     isServerDrivenObjectType(type) ? serverDrivenMetadataContentType(type) : undefined,
+    { includeGroupHint: true },
   );
 
   // Capture the inactive draft before activation flips it to active (see captureDraftForPromotion).

@@ -225,7 +225,9 @@ export async function handleSAPWrite(
   // Fail-closed: if the package cannot be determined from ADT metadata, refuse the write
   // rather than silently passing through the allowlist gate.
   async function enforcePackageForExistingObject(): Promise<string | undefined> {
-    return enforceAllowedPackageForObjectUrl(client, objectUrl, `Operations on ${type} '${name}'`);
+    return enforceAllowedPackageForObjectUrl(client, objectUrl, `Operations on ${type} '${name}'`, undefined, {
+      includeGroupHint: true,
+    });
   }
 
   const ctx: SapWriteContext = {
