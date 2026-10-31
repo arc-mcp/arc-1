@@ -85,3 +85,23 @@ tests pass; the BTP integration suite passes 2 tests; the 758 MCP suite passes 6
 covers src, scripts and tests. Biome lint, ACTION_POLICY validation, build, file-size and tool-schema
 ratchets pass. npm ci reports zero dependency vulnerabilities with the prerequisite's lockfile.
 The branch remains read-only with no SAP objects created or changed.
+
+
+## Review fixes and refreshed validation
+
+[Claude Code's report](claude-review.md) and the [finding-by-finding disposition](review-resolution.md)
+record the completed independent review. All ten actionable findings were addressed, along with
+the local malformed-query finding. Post-review validation passes 393 unit files / 10,737 tests,
+two live BTP tests and seven public MCP tests on 758, including a structural U01 include under
+FUGR context in default summary, explicit summary and sources modes. All baseline blocks remain
+identical. Refreshed live evidence files above supersede their pre-review versions.
+
+The 106 focused source/foundation/handler tests pass. `post-review-coverage.json` includes the
+shared renderer now exercised by source diagnostic floods and reports 96.32% lines, 86.58%
+branches and 100% functions across it and the three source modules. Source discovery itself
+has 97.95% lines / 91.66% branches. Coverage is a guide, not a qualification guarantee.
+
+The renderer change retains the stable result/export shapes while bounding diagnostic details
+and maintaining valid JSON, required report fields, omission counts and consumed budgets when
+metadata exceeds the compact summary allowance. Source/graph output remains under the same
+existing byte cap. The review fixes do not broaden authorization, routes or BTP public types.

@@ -86,27 +86,33 @@ describe('SAPRead source plug-in integration', () => {
     expect(summaryOf(result).providers[0]).toMatchObject({ status: 'unsupported', reason: 'unsupported_version' });
     expect(mockFetch.mock.calls.some((c) => pathOf(c[0]).includes('/enhancements'))).toBe(false);
   });
-  it('carries the function group already resolved by the ordinary base read', async () => {
-    const client = createClient();
-    const resolve = vi.spyOn(client, 'resolveFunctionGroup').mockResolvedValue('SAPBC_GLOBAL_FIS');
-    mockFetch.mockImplementation(async (raw) => {
-      const path = pathOf(raw);
-      if (path.endsWith('/source/main/enhancements/elements')) return mockResponse(200, fixture('function-758.xml'));
-      if (path.endsWith('/source/main')) return mockResponse(200, fixture('function.abap'));
-      if (path.endsWith('/fmodules/sapbc_global_cancel_update'))
-        return mockResponse(200, fixture('func-metadata-a4h.xml'));
-      throw new Error('Unexpected function test path');
-    });
-    const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPRead', {
-      type: 'FUNC',
-      name: 'SAPBC_GLOBAL_CANCEL_UPDATE',
-      version: 'active',
-      extensions: 'sources',
-    });
-    expect(result.isError).toBeUndefined();
-    expect(resolve).toHaveBeenCalledTimes(1);
-    expect(result.content[0]?.text).toBe(fixture('function.abap'));
-    expect(summaryOf(result).identities[0].name).toBe('/SMFND/DEMO_DEL_BOOKING');
-    expect(result.content.find((b) => b.text.startsWith('[extension source'))?.text).toContain('syclo');
-  });
+  it.each([false, true])(
+    'carries the function group and filter scope from the ordinary base read: %s',
+    async (partial) => {
+      const client = createClient();
+      const resolve = vi.spyOn(client, 'resolveFunctionGroup').mockResolvedValue('SAPBC_GLOBAL_FIS');
+      mockFetch.mockImplementation(async (raw) => {
+        const path = pathOf(raw);
+        if (path.endsWith('/source/main/enhancements/elements')) return mockResponse(200, fixture('function-758.xml'));
+        if (path.endsWith('/source/main')) return mockResponse(200, fixture('function.abap'));
+        if (path.endsWith('/fmodules/sapbc_global_cancel_update'))
+          return mockResponse(200, fixture('func-metadata-a4h.xml'));
+        throw new Error('Unexpected function test path');
+      });
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPRead', {
+        type: 'FUNC',
+        name: 'SAPBC_GLOBAL_CANCEL_UPDATE',
+        ...(partial ? { lineStart: 1, lineEnd: 2 } : {}),
+        version: 'active',
+        extensions: 'sources',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(resolve).toHaveBeenCalledTimes(1);
+      if (partial) expect(summaryOf(result).scope).toContain('owning object/source (base filtered)');
+      else expect(result.content[0]?.text).toBe(fixture('function.abap'));
+      expect(summaryOf(result).scope).toContain('selected function');
+      expect(summaryOf(result).identities[0].name).toBe('/SMFND/DEMO_DEL_BOOKING');
+      expect(result.content.find((b) => b.text.startsWith('[extension source'))?.text).toContain('syclo');
+    },
+  );
 });

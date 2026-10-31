@@ -183,6 +183,13 @@ describe('source plug-in wire parser', () => {
       s.replace('/source/main#start=25,0', '/source/main?context=%2Fsap%2Fbc%2Fadt%2Foo%2Fclasses%2Fother#start=25,0'),
     (s: string) => s.replace('adtcore:version="active"', 'adtcore:version=""'),
     (s: string) => s.replace('/source/main#start=25,0', '/source/main#start=25,0#unexpected'),
+    (s: string) =>
+      s.replace(
+        '/source/main#start=25,0',
+        `/source/main?context=${encodeURIComponent(classUri)}?unexpected#start=25,0`,
+      ),
+    (s: string) => s.replace('/source/main#start=25,0', '/source/main??context=wrong#start=25,0'),
+    (s: string) => s.replace(/<enh:enhancedObject\b[^>]*\/>/, ''),
     () => '<enh:enhancements>',
     () => '<enhancements>not a valid empty list</enhancements>',
     () => '<enhancements><unknown/></enhancements>',

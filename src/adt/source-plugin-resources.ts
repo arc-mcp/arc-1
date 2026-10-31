@@ -17,6 +17,20 @@ function invalid(): never {
   throw new AdtError('Invalid source enhancement metadata relation.');
 }
 
+/** Inspect leading blank/comment lines once; never backtrack over the entire source per line. */
+export function sourcePluginFunctionName(source: string): string | undefined {
+  let offset = 0;
+  while (offset < source.length) {
+    const end = source.indexOf('\n', offset);
+    const line = source.slice(offset, end < 0 ? undefined : end);
+    const first = line.trimStart();
+    if (first && !line.startsWith('*') && !first.startsWith('"'))
+      return /^FUNCTION\s+((?:\/[A-Z0-9_]+\/)?[A-Z0-9_]+)(?=[\s.])/i.exec(source.slice(offset).trimStart())?.[1];
+    offset = end < 0 ? source.length : end + 1;
+  }
+  return undefined;
+}
+
 /** Construct only known object routes; names remain encoded as a single segment, including namespaces. */
 export function sourcePluginObjectUri(unit: SourcePluginUnit): string {
   const segment = (n: string) => {

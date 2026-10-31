@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { sourcePluginResources } from '../../../src/adt/source-plugin-resources.js';
+import { sourcePluginFunctionName, sourcePluginResources } from '../../../src/adt/source-plugin-resources.js';
 
 const fixture = (name: string) =>
   readFileSync(new URL(`../../fixtures/extensions/source/${name}`, import.meta.url), 'utf8');
@@ -28,5 +28,18 @@ describe('class source plug-in metadata resources for stage 3', () => {
       'adtcore:name="OTHER"',
     );
     expect(() => sourcePluginResources(xml, { ...root, section: 'definitions' })).toThrow();
+  });
+});
+
+describe('bounded first FUNCTION header scan', () => {
+  it('scans 256 KiB of blank lines in linear time', () => {
+    const source = '\n'.repeat(256 * 1024);
+    const started = performance.now();
+    expect(sourcePluginFunctionName(source)).toBeUndefined();
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+  it('accepts leading blank/comments and rejects a header inside a string', () => {
+    expect(sourcePluginFunctionName('* comment\r\n\n  " comment\nFUNCTION\n /NS/FM.')).toBe('/NS/FM');
+    expect(sourcePluginFunctionName('DATA(text) = |\nFUNCTION fm.\n|.')).toBeUndefined();
   });
 });

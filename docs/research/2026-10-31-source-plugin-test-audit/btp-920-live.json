@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-31T20:49:44.735Z",
+  "checkedAt": "2026-10-31T21:09:18.373Z",
   "environment": {
     "abapRelease": "920",
     "cloudComponent": true
@@ -32,15 +32,15 @@
         ],
         "identities": [],
         "applicability": "unknown",
-        "issues": [
-          "enhancement_relation_not_advertised:FUNC:RFC_SYSTEM_INFO"
-        ],
         "omissions": {},
         "consumed": {
           "sends": 1,
           "responseBytes": 2622,
-          "elapsedMs": 264
-        }
+          "elapsedMs": 266
+        },
+        "issues": [
+          "enhancement_relation_not_advertised:FUNC:RFC_SYSTEM_INFO"
+        ]
       },
       "sourceBlockHashes": []
     },
@@ -71,15 +71,15 @@
         ],
         "identities": [],
         "applicability": "unknown",
-        "issues": [
-          "enhancement_relation_not_advertised:FUNC:RFC_SYSTEM_INFO"
-        ],
         "omissions": {},
         "consumed": {
           "sends": 1,
           "responseBytes": 2622,
-          "elapsedMs": 230
-        }
+          "elapsedMs": 260
+        },
+        "issues": [
+          "enhancement_relation_not_advertised:FUNC:RFC_SYSTEM_INFO"
+        ]
       },
       "sourceBlockHashes": []
     },
@@ -110,13 +110,13 @@
         ],
         "identities": [],
         "applicability": "unknown",
-        "issues": [],
         "omissions": {},
         "consumed": {
           "sends": 2,
           "responseBytes": 3507,
-          "elapsedMs": 366
-        }
+          "elapsedMs": 370
+        },
+        "issues": []
       },
       "sourceBlockHashes": []
     },
@@ -147,22 +147,6 @@
         ],
         "identities": [],
         "applicability": "unknown",
-        "issues": [
-          "enhancement_relation_not_advertised:FUGR:SRFC",
-          "enhancement_relation_not_advertised:INCL:LSRFCTOP",
-          "enhancement_relation_not_advertised:INCL:LSRFCUXX",
-          "enhancement_relation_not_advertised:INCL:LSRFCO01",
-          "enhancement_relation_not_advertised:INCL:LSRFCI01",
-          "enhancement_relation_not_advertised:INCL:LSRFCU06",
-          "enhancement_relation_not_advertised:INCL:LSRFCU07",
-          "enhancement_relation_not_advertised:INCL:LSRFCU16",
-          "enhancement_relation_not_advertised:INCL:LSRFCU17",
-          "enhancement_relation_not_advertised:INCL:LSRFCU01",
-          "source_unit_unreadable:INCL:LSRFCU02:read_failed",
-          "source_unit_not_checked:INCL:LSRFCU03",
-          "source_unit_not_checked:INCL:LSRFCU04",
-          "request_limit"
-        ],
         "omissions": {
           "sources": 3,
           "requests": 1
@@ -170,8 +154,15 @@
         "consumed": {
           "sends": 20,
           "responseBytes": 50702,
-          "elapsedMs": 3906
-        }
+          "elapsedMs": 3948
+        },
+        "issues": [
+          "enhancement_relation_not_advertised:FUGR:SRFC",
+          "enhancement_relation_not_advertised:INCL:LSRFCTOP",
+          "enhancement_relation_not_advertised:INCL:LSRFCUXX",
+          "enhancement_relation_not_advertised:INCL:LSRFCO01",
+          "issues_omitted:10"
+        ]
       },
       "sourceBlockHashes": []
     }

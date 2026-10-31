@@ -18,6 +18,11 @@ const cases =
           name: 'ENH_PROG_INCL_IMPLICIT_OPT',
           enhancementContext: { type: 'PROG', name: 'PROG_ENH_SUBOBJ_CHECK' },
         },
+        {
+          type: 'INCL',
+          name: 'LSEEF_ADT_TEST_AUNIT_FUGR1U01',
+          enhancementContext: { type: 'FUGR', name: 'SEEF_ADT_TEST_AUNIT_FUGR1' },
+        },
         { type: 'FUNC', name: 'SAPBC_GLOBAL_CANCEL_UPDATE', group: 'SAPBC_GLOBAL_FIS' },
         { type: 'FUNC', name: 'BDS_CONNECTION_CREATE', group: 'BDS_CONNECTIONS' },
         { type: 'FUGR', name: 'SEEF_ADT_TEST_AUNIT_FUGR1' },
@@ -65,6 +70,8 @@ describeIf('source plug-ins through MCP', () => {
       expect(result.content[0]).toEqual(base.content[0]);
       const report = summary(result);
       expect(report.identities.length).toBeGreaterThan(0);
+      if ('enhancementContext' in unit)
+        expect(report.scope).toContain(`context=${unit.enhancementContext!.type} ${unit.enhancementContext!.name}`);
       expect(report.consumed.sends).toBeLessThanOrEqual(mode === 'sources' ? 20 : 6);
       expect(report.consumed.responseBytes).toBeLessThanOrEqual((mode === 'sources' ? 256 : 128) * 1024);
       expect(result.content.slice(1).reduce((n, b) => n + Buffer.byteLength(b.text), 0)).toBeLessThanOrEqual(

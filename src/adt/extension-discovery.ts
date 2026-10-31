@@ -244,10 +244,19 @@ export function renderExtensionDiscovery(result: ExtensionDiscoveryResult): Arra
   result = structuredClone(result);
   const cap = EXTENSION_LIMITS[result.mode].outputBytes;
   const shown = result.nodes.slice(0, 8);
+  const distinctIssues = [...new Set(result.issues)];
+  let shownIssues = Math.min(4, distinctIssues.length);
+  const issues = () => [
+    ...distinctIssues
+      .slice(0, shownIssues)
+      .map((issue) => (Buffer.byteLength(issue) > 160 ? truncateUtf8(issue, 160, '…') : issue)),
+    ...(distinctIssues.length > shownIssues ? [`issues_omitted:${distinctIssues.length - shownIssues}`] : []),
+  ];
   if (result.nodes.length > shown.length) result.omissions.output = result.nodes.length - shown.length;
   const summary = () =>
     `[extensions] ${JSON.stringify({
       root: result.root,
+      ...(result.context ? { context: result.context } : {}),
       scope: result.scope,
       providers: compactProviders(result.providers),
       identities: shown.map(({ type, name, version, provider, family, switch: sw }) => ({
@@ -259,9 +268,9 @@ export function renderExtensionDiscovery(result: ExtensionDiscoveryResult): Arra
         ...(sw ? { switch: sw } : {}),
       })),
       applicability: 'unknown',
-      issues: result.issues,
       omissions: result.omissions,
       consumed: result.consumed,
+      issues: issues(),
     })}`;
   const blocks: Array<{ type: 'text'; text: string }> = [];
   // Reserve a full summary allowance so later omission counts cannot overrun the cap.
@@ -290,12 +299,41 @@ export function renderExtensionDiscovery(result: ExtensionDiscoveryResult): Arra
     }
   }
   let text = summary();
+  while (Buffer.byteLength(text) > 2048 && shownIssues) {
+    shownIssues--;
+    text = summary();
+  }
   while (Buffer.byteLength(text) > 2048 && shown.length) {
     shown.pop();
     result.omissions.output = (result.omissions.output ?? 0) + 1;
     text = summary();
   }
-  if (Buffer.byteLength(text) > 2048) text = truncateUtf8(text, 2048, '\n[extension summary truncated]');
+  if (Buffer.byteLength(text) > 2048) {
+    result.omissions.output = (result.omissions.output ?? 0) + 1;
+    const essential = {
+      root: result.root,
+      ...(result.context ? { context: result.context } : {}),
+      scope: 'summary_metadata_output_limit',
+      providers: compactProviders(result.providers).map(({ id, family, status, coverage }) => ({
+        id,
+        family,
+        status,
+        coverage,
+      })),
+      identities: [],
+      applicability: 'unknown',
+      omissions: result.omissions,
+      consumed: result.consumed,
+      issues: ['summary_metadata_omitted'],
+    };
+    const serialize = () => `[extensions] ${JSON.stringify(essential)}`;
+    text = serialize();
+    while (Buffer.byteLength(text) > 2048 && essential.providers.length) {
+      essential.providers.pop();
+      result.omissions.output++;
+      text = serialize();
+    }
+  }
   return [{ type: 'text', text }, ...blocks];
 }
 
