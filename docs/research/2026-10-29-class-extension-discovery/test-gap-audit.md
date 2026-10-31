@@ -118,3 +118,18 @@ checks pass. Read-only final A4H/NPL public replays and all five BTP cases pass 
 `final-*-public.json`. The two P3 reachability cases use explicit mocked metadata/source fixtures;
 they are not claimed as positive live generated-INCL coverage. Earlier live legacy evidence is
 retained separately. Source/credential bodies remain absent from these JSON artifacts.
+
+## Review closure and scanner bound
+
+[Claude review 3](claude-review-3.md) confirms both P3 corrections and finds no actionable
+regression. Its optional scanner-hardening suggestion is applied: a token-start boundary prevents
+restarting the padded-name regex at every character of a long nonmatching word. A 150,000-byte
+comment regression retains both namespaced and own references. In a bounded subprocess comparison,
+the prior pattern exceeded one second and was terminated; the bounded pattern took 0.590ms.
+Fresh A4H/NPL replays preserve every recorded base and extra source-block hash; see
+`scanner-hardening-replay.json`. The BTP replay precedes only this regex-only boundary change;
+BTP generated-source coverage remains explicitly unqualified after its 403 responses.
+
+Final bounded-scanner candidate: **10,816 tests pass**, 397 files, four workers, 53.84s.
+All required gates pass. This turn adds 28 regression cases in total; the five real BTP cases
+are separate from that unit count. All confirmed review findings are resolved.

@@ -114,7 +114,7 @@ export function enhancementIncludeReferences(source: string): string[] {
   const names = new Map<string, string>();
   const upperSource = source.toUpperCase();
   let index = 0;
-  const scanned = source.replace(/(?:\/[A-Z0-9_]+\/)?[A-Z0-9_]+=+[A-Z0-9_]*/gi, (name) => {
+  const scanned = source.replace(/(?<![A-Z0-9_])(?:\/[A-Z0-9_]+\/)?[A-Z0-9_]+=+[A-Z0-9_]*/gi, (name) => {
     let token: string;
     do {
       token = `ZARC1_GENERATED_CHILD_${index++}`;
