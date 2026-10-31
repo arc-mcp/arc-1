@@ -10,7 +10,10 @@ connected to that root through validated ENHO ownership. Native nested edges ret
 hook replacement semantics come from the separate source element response. It retains enhancement-to-base edges and native ENHO types. An ENHO/XH identity
 is not proof of its enhancement technology or runtime switch applicability. ENV/WUL consumers retain
 their original behavior. INTF ENV fallback is unsupported_context; 750's unsupported provider is
-reported explicitly. Positive interface coverage and other SAP releases/BTP remain unqualified.
+reported explicitly. Positive interface coverage and other SAP releases remain unqualified.
+The [BTP 920 follow-up](../research/2026-10-31-extension-test-gaps.md) verifies native
+class identities and rendered hooks. Its structural class source returned 403, so generated
+structural-class source access on BTP remains unqualified.
 
 Sources remain separate labelled representations. The active known-subtype ENHO reader may use a
 generated include revision only for a qualified source-unavailable failure: 404/resource-read failure,

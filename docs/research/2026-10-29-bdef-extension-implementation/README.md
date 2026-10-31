@@ -22,9 +22,14 @@ discovery can therefore correctly end with partial coverage.
 
 `npl.json` records the release-750 exclusion: no BDEF base was read and no optional
 BDEF sends occurred. This is unsupported-release qualification, not positive BDEF
-coverage on 750. Generic RAP/CDS availability is insufficient. BTP, other releases,
+coverage on 750. Generic RAP/CDS availability is insufficient. At this initial checkpoint, BTP and other releases,
 complete WUL indexing, inactive extension snapshots and runtime applicability remain
 unqualified. An empty index never proves global absence. CDS/DDLX and BAdIs are excluded.
+
+The [2026-10-31 BTP follow-up](../2026-10-31-extension-test-gaps.md) qualifies public
+SAPRead on SAP_BASIS 920 with four source-verified extensions. Its summary verifies two
+and explicitly omits the other two candidates. Direct and Connectivity transport tests
+and request/client isolation regressions were added at that checkpoint.
 
 Reproduce with `BDEF_SMOKE_TARGET=a4h|npl` and the corresponding existing SAP_USER /
 SAP_PASSWORD environment, using `node --import tsx scripts/smoke-bdef-extensions.ts`.

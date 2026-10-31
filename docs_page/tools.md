@@ -119,8 +119,12 @@ occurrences, attributes and suffixes remain distinct; bodies are fetched once pe
 The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02 and 758 SP02. Source
 plug-in XML is qualified on both releases. Live positive coverage includes PROG on 750 and
 INCL, FUNC and FUGR on 758; other family/release combinations remain unqualified.
-BDEF extensions are source-verified on 758; release 750 is explicitly unqualified.
-BTP and other releases are unqualified. CDS/DDLX extensions and BAdIs are outside this feature.
+BDEF extensions are source-verified on 758 and BTP SAP_BASIS 920; release 750 is explicitly
+unqualified. BTP 920 also qualifies DDIC appends, FUGR/class hooks and native class identities.
+Its PROG/INCL public read types remain excluded by the existing schema; structural class source
+access returned 403, and interfaces reported unsupported context. Other release/family combinations
+remain unqualified. See the [BTP qualification](https://github.com/arc-mcp/arc-1/blob/codex/automatic-extension-bdef/docs/research/2026-10-31-extension-test-gaps.md).
+CDS/DDLX extensions and BAdIs are outside this feature.
 
 CLAS combines selected-source hook coverage with a separate native `EXTED_OBJ` graph for the owning
 class. Main and local sections stay distinct. A class can have structural enhancements despite an

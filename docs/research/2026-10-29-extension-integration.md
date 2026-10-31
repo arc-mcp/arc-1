@@ -29,7 +29,10 @@ SQL, RFC, installed ABAP helpers, merges to main, or releases were performed.
 | Interfaces | Tested 758 ENV fallback is unsupported_context; tested 750 native provider is unsupported. No positive interface-source claim. |
 | BDEF extensions | 758 DEMO_RAP_EXTEND1 and DEMO_RAP_EVENT_EXT verified against active declarations of DEMO_RAP_EXTENSIBLE. At most two summary candidates. 750 is unqualified and makes no optional BDEF reads. WUL remains a candidate index even when all returned candidates are checked. |
 
-BTP, other release/family combinations, runtime switch applicability, an atomic snapshot,
+The [2026-10-31 follow-up](2026-10-31-extension-test-gaps.md) adds BTP SAP_BASIS 920
+qualification for DDIC, FUGR/class hooks, native class identities and four authored BDEF
+extensions. It also records BTP schema exclusions, denials and unsupported contexts.
+Other release/family combinations, runtime switch applicability, an atomic snapshot,
 and exhaustive index coverage are unqualified. CDS/DDLX extensions and BAdIs are excluded.
 An empty provider or candidate index never proves global absence.
 
