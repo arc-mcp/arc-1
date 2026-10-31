@@ -7,7 +7,7 @@ Three related changes keep successful implementation-body reads unchanged:
 1. `CLAS` + `method` + `format="structured"` now fails before SAP access, including draft
    discovery. Previously structured format silently won and returned the whole class.
 2. Method-not-found errors use the existing selected-source inventory to suggest at most five
-   nearby names. Ranking examines at most 2,000 candidates, caps names/query work at 128 characters,
+   nearby implemented-method names. Declared methods without a body are identified separately. Ranking examines at most 2,000 candidates, caps names/query work at 128 characters,
    and retains local/interface qualification. The error directs callers to an explicit inventory
    or grep; it is not a complete inherited API listing.
 3. `methodView="signature"` returns the named global class's own MAIN declaration. It is opt-in,
@@ -101,16 +101,20 @@ or principal-propagation qualification. The HTTP tests use the existing `ZCL_ARC
 fixture synchronization was not run.
 
 The [BTP measurements](btp-results.json) record source hashes and serialized ToolResult counts:
-full class 3,943 tokens, body 98, inventory 844, own declaration 86, typo error 96, conflict error 99.
+full class 3,943 tokens, body 98, inventory 844, own declaration 86, typo error 102, conflict error 99.
 Each ordinary case performs one GET; the conflict performs zero. The declaration is 97.8% smaller
 than the full class. For a parameter question, body → inventory costs 942 tokens versus 86 for the
-explicit declaration (90.9% less). These are response-size proxies, not billable-token savings.
+explicit declaration (90.9% less). Against a single inventory read (844 tokens), the declaration is 89.8% smaller. The original
+758/750 inventory-only comparisons are 82.3%/87.2%. These are response-size proxies, not
+billable-token savings.
 
-The [model results](model-evals.json) retain all three local `qwen3.6:35b-mlx` runs. Two runs of the
-final wording each passed 3/4 strict completed trajectories: signature selection, inventory, and
+The [model results](model-evals.json) retain all local `qwen3.6:35b-mlx` runs. Two runs of the
+pre-review wording each passed 3/4 strict completed trajectories: signature selection, inventory, and
 typo recovery. Both selected the correct implementation read first, then made unnecessary calls
 and exhausted the three-call budget before a final answer. A small wording experiment passed 2/4
-and was reverted. It does not establish a model-level improvement. The new eval remains strict;
+and was reverted. It does not establish a model-level improvement. There is no pre-feature schema control, so these runs cannot establish a causal model improvement.
+After the review fixes, a five-scenario run passed 4/5, including the new qualified-local-method
+case. The implementation-only task still made extra reads. The eval remains strict;
 failures are not hidden by weakening its expected trace. The harness reports the 83 unselected scenarios as skipped; they are not coverage from this run.
 
 Recommendation: ship the bounded, opt-in read changes with this regression coverage. Next measure
@@ -121,5 +125,14 @@ for general success-rate or billed-cost claims.
 
 Local full-suite runs initially hit two existing subprocess timing limits while other jobs
 were active (`cli/runtime` and `server/shutdown`). Both files passed serially (56 tests), then the final
-full suite passed with two workers: 386 files, 10,677 tests. Typecheck, lint, build, policy coverage,
+full suite passed with two workers: 386 files, 10,682 tests. Typecheck, lint, build, policy coverage,
 schema snapshots and size budgets also passed; lint retains two existing informational diagnostics.
+
+## Claude Code review
+
+The [independent review and dispositions](claude-review.md) cover the initial three findings.
+All were addressed: explicit SAPRead follow-ups for read and write-surgery failures, exclusion
+of unreadable declaration-only suggestions, and restored qualified-name examples. The legacy
+listing parser is not broadened; unknown ownership is not asserted. The refreshed [per-test
+qualification record](qualification-results.json) retains the live BTP/HTTP results and source
+fingerprints, alongside the full unit-suite summary.

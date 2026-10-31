@@ -569,7 +569,7 @@ export function extractMethod(
       startLine: 0,
       endLine: 0,
       success: false,
-      error: methodNotFoundMessage(className, methodName, listing.methods),
+      error: methodNotFoundMessage(className, methodName, listing.methods, method),
     };
   }
 

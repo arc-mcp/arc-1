@@ -11,13 +11,24 @@ METHOD execute.
 ENDMETHOD.
 ENDCLASS.`;
 
+const LOCAL_SOURCE = `CLASS lcl_worker DEFINITION.
+PUBLIC SECTION.
+METHODS execute RETURNING VALUE(result) TYPE i.
+ENDCLASS.
+CLASS lcl_worker IMPLEMENTATION.
+METHOD execute.
+  result = 42.
+ENDMETHOD.
+ENDCLASS.`;
+
 export async function readMethodFixtureExecutor(tool: string, args: Record<string, unknown>): Promise<string> {
-  const allowed = new Set(['type', 'name', 'method', 'methodView', 'format', 'version']);
+  const allowed = new Set(['type', 'name', 'method', 'methodView', 'format', 'version', 'include']);
   if (
     tool !== 'SAPRead' ||
     args.type !== 'CLAS' ||
     String(args.name).toUpperCase() !== 'ZCL_TOKEN_EVAL' ||
     Object.keys(args).some((key) => !allowed.has(key)) ||
+    (args.include !== undefined && args.include !== 'main' && args.include !== 'implementations') ||
     (args.format === 'structured' && !args.method)
   ) {
     return 'Error: This isolated fixture supports only CLAS source and method reads for ZCL_TOKEN_EVAL.';
@@ -27,6 +38,7 @@ export async function readMethodFixtureExecutor(tool: string, args: Record<strin
   const { DEFAULT_CONFIG } = await import('../../../src/server/types.js');
   const client = new AdtClient({ baseUrl: 'https://fixture.invalid' });
   client.getClass = async () => ({ source: SOURCE, notModified: false, statusCode: 200 });
+  client.getClassInclude = async () => ({ source: LOCAL_SOURCE, notModified: false, statusCode: 200 });
   client.getInactiveObjects = async () => [];
   const result = await handleToolCall(client, DEFAULT_CONFIG, tool, args);
   return `${result.isError ? 'Error: ' : ''}${result.content.map((part) => part.text ?? '').join('\n')}`;
@@ -69,6 +81,16 @@ export const SCENARIOS: EvalScenario[] = [
     optimal: [read('*')],
     expectedTrace: [[read('*')]],
     finalAnswer: { required: [/execute/i], requireNonEmpty: true },
+  },
+  {
+    id: 'read-method-local-qualified',
+    category: 'read',
+    description: 'Select the local implementation with an explicit owner, not the same-named global method.',
+    prompt:
+      'Show the implementation of execute in local class lcl_worker inside global class ZCL_TOKEN_EVAL. What value does it return?',
+    optimal: [read('lcl_worker~execute')],
+    expectedTrace: [[read('lcl_worker~execute')]],
+    finalAnswer: { required: [/42/], forbidden: [/strlen/], requireNonEmpty: true },
   },
   {
     id: 'read-method-typo-recovery',

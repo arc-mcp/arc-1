@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-31T20:46:47.648Z",
+  "timestamp": "2026-10-31T21:07:07.212Z",
   "runtime": "v22.21.1",
   "target": "BTP ABAP Environment",
   "object": "CL_ABAP_RANDOM",
@@ -9,9 +9,11 @@
   "sourceHashes": {
     "src/handlers/read.ts": "940e329d0615f1c0d037feecadbc2954b3148be04ba37a5ba94520230a1ed24d",
     "src/context/method-signature.ts": "8c5000a3d8f16e39a6c66b9bf5ddc88fce3f06c9d9ebf946e26e84673bd7ad00",
-    "src/context/method-suggestions.ts": "a294c26484bde26b75554a6a243dd07ca6a51023c3bea2bbc1e6c0955a7cad14",
+    "src/context/method-suggestions.ts": "2df37afe4bcacd253cc7f1d306300e3e66e3f6dd72ae6d2877c2c832658c8f67",
     "src/handlers/read-method-options.ts": "9453b195b2ed969a9b9a1bca095f9daddfe8d7c2a5c1d9b1fc844b33db0cec08",
-    "src/handlers/tools.ts": "b3cb54f4e5165427fa55efd99772715c24061bd783455dc793e673f7d820288e"
+    "src/handlers/tools.ts": "3fb22eb53c7955d46e35e3030d740cdbb324fd8d3bfafc032e16fd7fa6822b63",
+    "src/context/method-surgery.ts": "baf6015efaf3a7ee6c8c31e36bb5eb19696f7f1b37384c71f65898e2b4e01988",
+    "src/handlers/schemas.ts": "e3dede285d084ed36818bcaca19bbe98719ba0484f02b6374c56087c4390d5a3"
   },
   "results": [
     {
@@ -49,9 +51,9 @@
     {
       "scenario": "typo",
       "isError": true,
-      "responseTokens": 96,
-      "contentTokens": 78,
-      "responseBytes": 379,
+      "responseTokens": 102,
+      "contentTokens": 84,
+      "responseBytes": 405,
       "getCalls": 1
     },
     {

@@ -13,6 +13,9 @@ it('executes declaration, body and typo-recovery fixtures through the real handl
   expect(signature.signature).toContain('RETURNING VALUE(rv_length) TYPE i');
   const body = await readMethodFixtureExecutor('SAPRead', { ...object, method: 'execute' });
   expect(body).toContain('rv_length = strlen( iv_text ).');
+  expect(await readMethodFixtureExecutor('SAPRead', { ...object, method: 'lcl_worker~execute' })).toContain(
+    'result = 42.',
+  );
   const typo = await readMethodFixtureExecutor('SAPRead', { ...object, method: 'excute' });
   expect(typo).toContain('Error: Method');
   expect(typo).toContain('Suggestions in selected source: execute.');

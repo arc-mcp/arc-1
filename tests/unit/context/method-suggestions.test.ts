@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { methodNotFoundMessage } from '../../../src/context/method-suggestions.js';
-import { extractMethod, type MethodInfo } from '../../../src/context/method-surgery.js';
+import { extractMethod, type MethodInfo, spliceMethod } from '../../../src/context/method-surgery.js';
 
 const method = (name: string, containingClass = 'zcl_demo'): MethodInfo => ({
   name,
@@ -19,7 +19,7 @@ describe('bounded method-not-found suggestions', () => {
     methods.push(method('refresh_table_display'));
     const message = methodNotFoundMessage('ZCL_DEMO', 'refresh_table_displa', methods);
     expect(message).toContain('Suggestions in selected source: refresh_table_display');
-    expect(message).toContain('method="*" with the same include');
+    expect(message).toContain('SAPRead with method="*" and the same class/include');
     expect(message).not.toContain('helper_0');
     expect(message.length).toBeLessThan(400);
   });
@@ -56,6 +56,48 @@ describe('bounded method-not-found suggestions', () => {
     const message = methodNotFoundMessage('ZCL_DEMO', 'execut', methods);
     expect(message).toContain('Suggestions in selected source: execute.');
     expect(message).not.toContain('execute, execute');
+  });
+
+  it('never suggests declaration-only or incomplete implementation entries', () => {
+    const methods = [
+      { ...method('execute'), startLine: 0, endLine: 0 },
+      { ...method('executing'), endLine: 0 },
+      method('executor'),
+    ];
+    const message = methodNotFoundMessage('ZCL_DEMO', 'execut', methods);
+    expect(message).toContain('Suggestions in selected source: executor.');
+    expect(message).not.toContain('execute,');
+    expect(message).not.toContain('executing');
+    expect(message).toContain('Use SAPRead');
+  });
+
+  it.each(['ABSTRACT', ''])('explains a declaration without a body (%s) and offers its own signature', (addition) => {
+    const source = `CLASS zcl_demo DEFINITION PUBLIC ABSTRACT.
+PUBLIC SECTION.
+METHODS execute ${addition} IMPORTING value TYPE string.
+ENDCLASS.
+CLASS zcl_demo IMPLEMENTATION.
+ENDCLASS.`;
+    const result = extractMethod(source, 'ZCL_DEMO', 'execute');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('declared without an implementation');
+    expect(result.error).toContain('SAPRead with method="execute" and methodView="signature"');
+    expect(result.error).not.toContain('Suggestions');
+    expect(extractMethod(source, 'ZCL_DEMO', 'execut').error).not.toContain('Suggestions');
+    expect(spliceMethod(source, 'ZCL_DEMO', 'execute', 'RETURN.').error).toBe(result.error);
+  });
+
+  it('does not offer the global signature selector for a local declaration-only include', () => {
+    const source = `CLASS lcl_demo DEFINITION.
+PUBLIC SECTION.
+METHODS execute.
+ENDCLASS.`;
+    const declaration = { ...method('execute', 'lcl_demo'), startLine: 0, endLine: 0 };
+    const message = methodNotFoundMessage('ZCL_DEMO', 'lcl_demo~execute', [declaration], declaration);
+    expect(message).toContain('declared without an implementation');
+    expect(message).toContain('Use SAPRead');
+    expect(message).not.toContain('methodView');
+    expect(extractMethod(source, 'ZCL_DEMO', 'execut').error).not.toContain('Suggestions');
   });
 
   it('reports no guesses for unrelated or empty inventories', () => {

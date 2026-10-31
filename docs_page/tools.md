@@ -84,8 +84,11 @@ The server still reads/parses MAIN internally; the saving is in returned model c
 
 Do not combine `method` with `format="structured"`: this now errors before contacting SAP.
 Explicit structured reads without `method` still return the whole structured class. A misspelled
-method returns at most five nearby suggestions from the selected source, with a `method="*"`
-or grep follow-up. The list is not the complete inherited API.
+body-read method returns at most five nearby implemented-method suggestions from the selected
+source, with an explicit `SAPRead` inventory or grep follow-up (also used by failed method edits).
+When the inventory identifies a declaration with no body, it is reported separately, with a
+conditional `methodView="signature"` hint for an own global MAIN declaration. Signature-read misses do not offer typo suggestions. The list is not
+the complete inherited API.
 
 **Parameters:**
 

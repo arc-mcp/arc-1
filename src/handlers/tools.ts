@@ -442,7 +442,7 @@ export function getToolDefinitions(
           method: {
             type: 'string',
             description:
-              'CLAS: method body; "*" lists methods. Without include, lhc_*/lcl_* use implementations, ltc_* testclasses, others MAIN. Explicit include wins. ' +
+              'CLAS: method body; "*" lists methods. Without include, lhc_x~m/lcl_x~m use implementations, ltc_x~m testclasses, others MAIN. Explicit include wins. ' +
               (btp ? '' : 'SOBJ: method implementation; omit for catalog.'),
           },
           methodView: {

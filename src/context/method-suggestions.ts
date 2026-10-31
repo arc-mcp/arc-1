@@ -22,10 +22,31 @@ function distance(a: string, b: string): number {
 }
 
 /** Reuses the selected source's inventory; never fetches or reparses source. */
-export function methodNotFoundMessage(className: string, methodName: string, methods: MethodInfo[]): string {
+export function methodNotFoundMessage(
+  className: string,
+  methodName: string,
+  methods: MethodInfo[],
+  declaration?: MethodInfo,
+): string {
+  const followUp =
+    'Use SAPRead with method="*" and the same class/include to list methods, or SAPRead grep to search source.';
+  if (declaration && (!declaration.startLine || !declaration.endLine)) {
+    const unqualified =
+      !methodName.includes('~') &&
+      (!declaration.containingClass || declaration.containingClass.toUpperCase() === className.toUpperCase()) &&
+      !declaration.isInterfaceMethod &&
+      !declaration.isRedefinition;
+    return (
+      `Method "${bounded(methodName)}" is declared without an implementation in this source of ${bounded(className)}. ` +
+      (unqualified
+        ? `Only for an own global MAIN declaration, use SAPRead with method=${JSON.stringify(bounded(declaration.name))} and methodView="signature".`
+        : followUp)
+    );
+  }
   const query = methodName.slice(0, MAX_NAME).toUpperCase();
   const ranked: { name: string; score: number }[] = [];
   for (const method of methods.slice(0, MAX_CANDIDATES)) {
+    if (!method.startLine || !method.endLine) continue;
     const owner = method.containingClass;
     const qualified =
       owner && owner.toUpperCase() !== className.toUpperCase() ? `${owner}~${method.name}` : method.name;
@@ -41,6 +62,6 @@ export function methodNotFoundMessage(className: string, methodName: string, met
   return (
     `Method "${bounded(methodName)}" not found in ${bounded(className)}. ` +
     (suggestions.length ? `Suggestions in selected source: ${suggestions.join(', ')}. ` : '') +
-    'Use method="*" with the same include to list methods, or grep to search source.'
+    followUp
   );
 }

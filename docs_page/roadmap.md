@@ -1134,7 +1134,8 @@ signature reads cover focused requests; they do not establish a complete inherit
 **Evidence.** [Focused-read implementation and live measurements](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-29-read-token-quick-wins/README.md)
 separate returned model context from SAP transfer. The October 31 BTP/HTTP qualification and
 strict model traces also expose unnecessary follow-up reads after a sufficient method body; a
-wording-only experiment did not improve that sample. Metadata first adds a call when the member
+wording-only experiment did not improve that sample, and the post-review five-case run still
+failed the implementation-only call budget. Metadata first adds a call when the member
 is already known, and caching alone does not shrink returned source.
 
 **Resume with.** Compare equal completed unknown-member tasks across representative classes and
