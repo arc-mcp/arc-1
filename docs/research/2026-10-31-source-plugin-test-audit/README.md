@@ -14,6 +14,9 @@ is `not_advertised`; mixed positive/unknown traversal remains `incomplete`. Loca
 validated fragment only. The resulting family/handler suite has 71 tests; the full suite passes
 10,709 tests before the updated DDIC prerequisite is integrated.
 
+The final focused audit has 94.48% lines, 87.22% branches and 100% functions;
+`coverage.json` retains the per-module totals.
+
 ## BTP ABAP 920 live coverage
 
 `tests/integration/btp-source-plugin.integration.test.ts` is read-only. It authenticates through the
@@ -50,3 +53,35 @@ function is an explicit fixture skip, never a fabricated successful test.
 
 No roadmap impact: FEAT-03 remains about enhancement authoring; COMPAT-19 remains about IDE
 navigation. Neither is completed by these read-only source discovery checks.
+
+## Public MCP coverage
+
+Six read-only tests in `tests/e2e/source-plugin-extensions.e2e.test.ts` passed against a fresh
+local HTTP MCP server backed by a4h (758), with TLS verification enabled, all mutation gates
+disabled, and cache disabled. No fixture synchronization or SAP writes ran. The tests exercise
+listTools, none/automatic/summary/sources, positive contextual INCL, two FUNC examples, FUGR,
+partial-read defaults, explicit owning-source scope, preserved base blocks and output/request caps.
+`mcp-758-live.json` contains summaries and hashes, with no raw source bodies. The optional 750
+PROG case is provided for E2E_SOURCE_PLUGIN_TARGET=npl; this follow-up did not replay it over MCP.
+
+Run against an already-started server for the selected qualified SAP target (without invoking
+the mutation-producing general E2E fixture setup):
+
+```sh
+E2E_SOURCE_PLUGIN_TARGET=a4h E2E_MCP_URL=http://127.0.0.1:<port>/mcp \
+  npx vitest run --config tests/e2e/vitest.e2e.config.ts \
+  tests/e2e/source-plugin-extensions.e2e.test.ts
+```
+
+The prerequisite is stacked on DDIC PR #1143 at c16ab455a, including its MCP helper tests and
+follow-redirects patch. Its original imported commits have identical patch IDs; dependency
+ancestry is aligned without rewriting the stage-2 commits already consumed by later stages.
+The merge retained both adapters' docs, smoke-script lint entries, and BTP qualification limits.
+
+## Final validation before Claude Code review
+
+After integrating the prerequisite and adding the public MCP suite: all 392 unit files / 10,714
+tests pass; the BTP integration suite passes 2 tests; the 758 MCP suite passes 6 tests. Typecheck
+covers src, scripts and tests. Biome lint, ACTION_POLICY validation, build, file-size and tool-schema
+ratchets pass. npm ci reports zero dependency vulnerabilities with the prerequisite's lockfile.
+The branch remains read-only with no SAP objects created or changed.
