@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { createServer, type RequestListener, type Server } from 'node:http';
+import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AdtClient } from '../../../src/adt/client.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
@@ -104,6 +105,31 @@ describe.each([false, true])('SHLP real HTTP proxy=%s', (proxy) => {
     expect(result.isError).toBe(true);
     expect(text(result)).toMatch(/limit|large/i);
   });
+  it('rejects oversized gzip through the decoded cap or proxy encoding guard', async () => {
+    const compressed = gzipSync('x'.repeat(2 * 1024 * 1024 + 1));
+    const client = await setup((req, res) => {
+      if (proxy) expect(req.headers['accept-encoding']).toBe('identity');
+      res.writeHead(200, { 'Content-Encoding': 'gzip', 'Content-Length': compressed.length });
+      res.end(compressed);
+    }, proxy);
+    const result = await invoke(client);
+    expect(result.isError).toBe(true);
+    expect(text(result)).toMatch(proxy ? /Unexpected Content-Encoding 'gzip'/ : /limit|large/i);
+  });
+  it('encodes a namespaced name exactly once on the wire', async () => {
+    const namespaced = readFileSync(new URL('../../fixtures/shlp/758-namespace.xml', import.meta.url), 'utf8');
+    const requests: string[] = [];
+    const client = await setup((req, res) => {
+      requests.push(req.url!);
+      res.end(namespaced);
+    }, proxy);
+    const result = await invoke(client, 'SAPRead', { name: '/aif/address_fields' });
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(text(result)).name).toBe('/AIF/ADDRESS_FIELDS');
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toContain('path=%2FAIF%2FADDRESS_FIELDS');
+    expect(new URL(requests[0]!, 'http://local').searchParams.get('path')).toBe('/AIF/ADDRESS_FIELDS');
+  });
   it('propagates MCP cancellation into a stalled response', async () => {
     const controller = new AbortController();
     const client = await setup((_req, res) => {
@@ -167,6 +193,38 @@ it('does not cache metadata across requests or callers and reports the actual tr
   expect((await invoke(first)).isError).toBe(true);
   expect(JSON.parse(text(await invoke(second, 'SAPContext'))).language).toEqual({ requested: 'FR', effective: null });
   expect([firstCalls, secondCalls]).toEqual([2, 1]);
+});
+it('keeps concurrent callers and their cookies isolated on the same SAP endpoint', async () => {
+  const requests: Array<{ identity: string; cookie: string | undefined }> = [];
+  await setup((req, res) => {
+    const identity = req.headers.authorization === 'Bearer caller-a' ? 'a' : 'b';
+    requests.push({ identity, cookie: req.headers.cookie });
+    res.setHeader('Set-Cookie', `SAP_SESSION=${identity}; Path=/`);
+    res.end(identity === 'a' ? body : empty);
+  });
+  const address = servers.at(-1)!.address();
+  if (!address || typeof address === 'string') throw new Error('Expected loopback listener');
+  const caller = (identity: string) =>
+    new AdtClient({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      client: '001',
+      safety: defaultSafetyConfig(),
+      bearerTokenProvider: async () => `caller-${identity}`,
+    });
+  const a = caller('a');
+  const b = caller('b');
+  for (const tool of ['SAPRead', 'SAPContext']) {
+    const [first, second] = await Promise.all([invoke(a, tool), invoke(b, tool)]);
+    expect(first.isError).toBeUndefined();
+    expect(second.isError).toBe(true);
+    expect(JSON.parse(text(second)).availability).toBe('not_available');
+  }
+  for (const identity of ['a', 'b']) {
+    expect(requests.filter((r) => r.identity === identity)).toEqual([
+      { identity, cookie: undefined },
+      { identity, cookie: `SAP_SESSION=${identity}` },
+    ]);
+  }
 });
 it('refuses known absence and source/draft options before HTTP, but unknown discovery reads', async () => {
   let calls = 0;

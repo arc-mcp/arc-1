@@ -73,3 +73,10 @@ npx vitest run --config vitest.integration.config.ts tests/integration/shlp.inte
 
 - The strict documentation CI build found two new roadmap links outside the published docs tree.
   Replaced them with repository URLs; `mkdocs build --strict` passes. This follow-up changes docs only.
+
+## Follow-up validation
+
+[2026-10-31 coverage audit](../research/shlp-native-metadata/validation-2026-10-31.md):
+added MCP E2E, same-endpoint caller isolation, compressed-response, namespace encoding and BTP
+compatibility/exclusion tests. Full unit suite: 10,626 passed; MCP E2E: 7/7 on each on-prem system;
+BTP smoke: 7/7. Failed attempts and remaining qualification are recorded in the audit.

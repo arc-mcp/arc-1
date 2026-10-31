@@ -2,8 +2,8 @@
  * BTP ABAP Smoke Integration Tests (BROWSER OAUTH)
  *
  * Read-only smoke tests using a service key from TEST_BTP_SERVICE_KEY (inline JSON)
- * or TEST_BTP_SERVICE_KEY_FILE. The first request requires browser OAuth login;
- * this suite does not currently use TEST_BTP_ACCESS_TOKEN.
+ * or TEST_BTP_SERVICE_KEY_FILE. The first request requires browser OAuth login,
+ * unless TEST_BTP_ACCESS_TOKEN supplies an already-acquired named-user token.
  *
  * These tests verify core BTP ABAP contracts:
  * - Connectivity and auth chain
@@ -16,7 +16,7 @@
  */
 
 import { config } from 'dotenv';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { AdtClient } from '../../src/adt/client.js';
 import {
   type BTPServiceKey,
@@ -25,6 +25,9 @@ import {
   parseServiceKey,
 } from '../../src/adt/oauth.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
+import { handleToolCall } from '../../src/handlers/dispatch.js';
+import { getToolDefinitions } from '../../src/handlers/tools.js';
+import { DEFAULT_CONFIG } from '../../src/server/types.js';
 import { hasBtpCredentials } from './helpers.js';
 
 // Load .env before anything else
@@ -42,7 +45,8 @@ function getBtpSmokeClient(): AdtClient {
     serviceKey = loadServiceKeyFile(keyFile);
   }
 
-  const bearerTokenProvider = createBearerTokenProvider(serviceKey);
+  const presetToken = process.env.TEST_BTP_ACCESS_TOKEN;
+  const bearerTokenProvider = presetToken ? async () => presetToken : createBearerTokenProvider(serviceKey);
 
   return new AdtClient({
     baseUrl: serviceKey.url,
@@ -110,5 +114,29 @@ describeIf('BTP ABAP smoke', { timeout: 30_000 }, () => {
     const { source } = await client.getProgram('RSHOWTIM');
     expect(typeof source).toBe('string');
     expect(source).toMatch(/\bREPORT\b|\bMESSAGE\b/i);
+  });
+
+  it('keeps SHLP out of the BTP read/context tool schemas', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, systemType: 'btp' });
+    for (const name of ['SAPRead', 'SAPContext']) {
+      const schema = tools.find((tool) => tool.name === name)?.inputSchema;
+      expect(schema).toMatchObject({ properties: { type: { enum: expect.any(Array) } } });
+      expect(schema).not.toMatchObject({ properties: { type: { enum: expect.arrayContaining(['SHLP']) } } });
+    }
+  });
+  it('refuses SHLP on the BTP client before any metadata request', async () => {
+    const get = vi.spyOn(client.http, 'get');
+    try {
+      for (const tool of ['SAPRead', 'SAPContext']) {
+        const result = await handleToolCall(client, { ...DEFAULT_CONFIG, systemType: 'btp' }, tool, {
+          type: 'SHLP/DH',
+          name: 'SCUSTOM',
+        });
+        expect(result.isError).toBe(true);
+      }
+      expect(get).not.toHaveBeenCalled();
+    } finally {
+      get.mockRestore();
+    }
   });
 });
