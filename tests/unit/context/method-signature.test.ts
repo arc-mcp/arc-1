@@ -33,6 +33,24 @@ describe('own MAIN method declarations', () => {
     ).toMatchObject({ success: true, signature: 'METHODS execute IMPORTING redefinition TYPE i.' });
   });
 
+  it('preserves escaped parameter names, pragmas, Unicode and literal punctuation', () => {
+    const signature = `METHODS execute IMPORTING !iv_text TYPE string DEFAULT 'Grüße, 世界.'
+      RETURNING VALUE(!rv_text) TYPE string ##NEEDED.`;
+    expect(extractOwnMethodSignature(definition(signature), 'ZCL_DEMO', 'execute')).toMatchObject({
+      success: true,
+      signature,
+    });
+  });
+
+  it('matches a namespaced class independently of case', () => {
+    const source = definition('METHODS execute.').replace('zcl_demo', '/demo/cl_test');
+    expect(extractOwnMethodSignature(source, '/DEMO/CL_TEST', 'EXECUTE')).toMatchObject({
+      success: true,
+      methodName: 'execute',
+      signature: 'METHODS execute.',
+    });
+  });
+
   it('reads an abstract declaration without an implementation', () => {
     expect(
       extractOwnMethodSignature(

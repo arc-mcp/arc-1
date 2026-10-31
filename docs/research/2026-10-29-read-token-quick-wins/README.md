@@ -74,7 +74,52 @@ output bounds, local/interface qualification, and the unchanged body/list/full/g
 Existing structured-without-method tests and the full unit suite cover ordinary structured reads.
 The old test requiring structured format to silently override method was intentionally replaced.
 
-Live checks use active standard classes. Draft/version behavior and BTP schema behavior are covered
-by tests, not fresh BTP/PP live reads. No new caching, inherited resolution, default truncation,
-paging or automatic metadata-first policy is introduced. Those require their own evidence and
-compatibility decisions; see FEAT-96 in the roadmap.
+The original October 29 checks used active standard classes. The October 31 follow-up below adds
+live BTP and HTTP MCP coverage. A real edited BTP draft and a deployed PP route remain untested.
+No new caching, inherited resolution, default truncation, paging or automatic metadata-first policy
+is introduced. Those require their own evidence and compatibility decisions; see FEAT-96 in the roadmap.
+
+## October 31: missing-test audit and qualification
+
+The audit found feature-specific gaps beyond the original parser and selector tests. Added coverage:
+
+| Gap | Verification |
+|---|---|
+| Source cache vs. derived signature | Signature → body → full source across real mocked HTTP 304 replies; full source remains cached |
+| Freshness and draft selection | `force_refresh`, separate active/inactive declarations, and `auto` selecting a known draft |
+| Authorization and unavailable source | Per-user SAP revalidation, read-scope denial, and 403/404/410 without a cached-signature fallback |
+| ABAP/resource boundaries | Namespaced class, escaped parameters, Unicode/literal punctuation, pragmas; 2,000-candidate ranking cap and duplicate hints |
+| BTP runtime and MCP dispatch | 10 passing read-only cases in `btp-read-methods.integration.test.ts`, standard and hyperfocused SDK MCP requests over linked in-memory transports, real developer OAuth/ADT HTTPS |
+| HTTP MCP wire path | 3 passing `sapread-methods.e2e.test.ts` cases against this checkout's local loopback HTTP server and the existing A4H fixture, direct Basic/ADT HTTPS |
+| Model behavior | Four fixture-backed scenarios use the real read handler; full tool trajectories and final-answer assertions, not first-call scoring alone |
+
+BTP reports SAP_BASIS 920 SP0005 and SAP_CLOUD 920 SP0005 via installed components. The tests read
+`CL_ABAP_RANDOM`: declaration content/ownership, subsequent full/body reads with a
+source cache, inactive fallback/refresh JSON, typo hints, and conflicting selectors. No SAP object
+was created or changed. This is developer OAuth access to BTP ABAP, not a Cloud Foundry deployment
+or principal-propagation qualification. The HTTP tests use the existing `ZCL_ARC1_TEST` fixture;
+fixture synchronization was not run.
+
+The [BTP measurements](btp-results.json) record source hashes and serialized ToolResult counts:
+full class 3,943 tokens, body 98, inventory 844, own declaration 86, typo error 96, conflict error 99.
+Each ordinary case performs one GET; the conflict performs zero. The declaration is 97.8% smaller
+than the full class. For a parameter question, body → inventory costs 942 tokens versus 86 for the
+explicit declaration (90.9% less). These are response-size proxies, not billable-token savings.
+
+The [model results](model-evals.json) retain all three local `qwen3.6:35b-mlx` runs. Two runs of the
+final wording each passed 3/4 strict completed trajectories: signature selection, inventory, and
+typo recovery. Both selected the correct implementation read first, then made unnecessary calls
+and exhausted the three-call budget before a final answer. A small wording experiment passed 2/4
+and was reverted. It does not establish a model-level improvement. The new eval remains strict;
+failures are not hidden by weakening its expected trace. The harness reports the 83 unselected scenarios as skipped; they are not coverage from this run.
+
+Recommendation: ship the bounded, opt-in read changes with this regression coverage. Next measure
+why agents continue after a sufficient body read, across models and tool profiles, before changing
+server defaults or adding automatic summaries. Returned source is only one cost: these full-tool
+model runs also repeatedly supplied the entire schema/context. The present sample is too small
+for general success-rate or billed-cost claims.
+
+Local full-suite runs initially hit two existing subprocess timing limits while other jobs
+were active (`cli/runtime` and `server/shutdown`). Both files passed serially (56 tests), then the final
+full suite passed with two workers: 386 files, 10,677 tests. Typecheck, lint, build, policy coverage,
+schema snapshots and size budgets also passed; lint retains two existing informational diagnostics.

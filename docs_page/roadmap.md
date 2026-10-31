@@ -1132,8 +1132,10 @@ also needs explicit ownership and ambiguity rules. Existing named-method, grep, 
 signature reads cover focused requests; they do not establish a complete inherited API.
 
 **Evidence.** [Focused-read implementation and live measurements](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-29-read-token-quick-wins/README.md)
-separate returned model context from SAP transfer. Metadata first adds a call when the member is
-already known, and caching alone does not shrink returned source.
+separate returned model context from SAP transfer. The October 31 BTP/HTTP qualification and
+strict model traces also expose unnecessary follow-up reads after a sufficient method body; a
+wording-only experiment did not improve that sample. Metadata first adds a call when the member
+is already known, and caching alone does not shrink returned source.
 
 **Resume with.** Compare equal completed unknown-member tasks across representative classes and
 clients, including retries and discovery calls. Demonstrate a useful improvement before adding a

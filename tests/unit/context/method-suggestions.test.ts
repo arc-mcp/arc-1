@@ -44,6 +44,20 @@ describe('bounded method-not-found suggestions', () => {
     expect(message).not.toContain('Suggestions');
   });
 
+  it('bounds candidate inspection and keeps duplicate hints unique', () => {
+    const methods = Array.from({ length: 2000 }, () => method('execute'));
+    methods.push(
+      Object.defineProperty(method('ignored'), 'containingClass', {
+        get: () => {
+          throw new Error('Ranking exceeded its candidate budget');
+        },
+      }),
+    );
+    const message = methodNotFoundMessage('ZCL_DEMO', 'execut', methods);
+    expect(message).toContain('Suggestions in selected source: execute.');
+    expect(message).not.toContain('execute, execute');
+  });
+
   it('reports no guesses for unrelated or empty inventories', () => {
     for (const methods of [[], [method('get_name')]]) {
       expect(methodNotFoundMessage('ZCL_DEMO', 'refresh_table_display', methods)).not.toContain('Suggestions');
