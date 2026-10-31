@@ -123,9 +123,15 @@ Only `type`, `objectType`, `name`, `version` and `source` apply. `name` and `obj
 `version="auto"`, include/method selection, diff, and non-default output formats are refused.
 Harmless strict-client filler (false flags, empty arrays, `format="text"`, `maxResults=0`) is ignored.
 Empty or whitespace-only `source` is normalized as omitted, matching the legacy route; use
-non-empty text for an unsaved-source check. The alias inherits the legacy type limitations:
-FUNC syntax routing is unsupported, and inline JSON server-driven objects may return not-processed
-instead of findings; this route adds no new backend type support.
+non-empty text for an unsaved-source check. Inline JSON server-driven objects may return
+not-processed instead of findings.
+
+`FUNC` checks resolve the parent function group through search. If that bounded lookup cannot
+resolve it, the result is `checked:false`. Use `version="inactive"` after creating or editing a
+function; the default checks its active version, which can still be an empty shell. SAP may report
+errors in another module of the same group; use each message's URI to locate the problem. For supplied FUNC source, use the ADT-style
+signature returned by `SAPRead`; `*"` comment lines from SAP GUI are refused because SAP can
+silently check stored code instead of the supplied text.
 
 The standard `SAPRead` tool advertises `readOnlyHint:true`; clients decide whether that affects
 approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated. Existing `SAP_DENY_ACTIONS` rules for `SAPDiagnose` or
