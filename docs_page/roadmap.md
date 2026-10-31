@@ -209,8 +209,9 @@ qualification remains outstanding. Implementation started with
 and request-scoped package hierarchy checks. Follow-up infrastructure binds native adapters to the
 mutation budget and verifies CTS parent/task scopes. The follow-up Claude review loop is accepted,
 with fresh hierarchy early-exit and complete nested-schema drift tests; these do not enable
-additional operations.
-Broader type/action adapters, the capability matrix and PP qualification remain outstanding.
+additional operations. A reviewed capability table now centralizes only the four existing admitted
+combinations and preserves the current catalogs. Broader type/action adapters, mixed-tool capability
+projection and PP qualification remain outstanding.
 
 **Resume when.** The PR 1 acceptance and owner request prerequisites are met. Continue the guarded
 adapters and native qualification against the reviewed PR 2 plan. Preserve the shared foundation's

@@ -7,13 +7,7 @@ import type { ToolDefinition } from '../handlers/tools.js';
 import type { TargetDescriptor } from './destination-registry.js';
 import { TARGET_CATALOG_MAX_OFFSET, TARGET_CATALOG_MAX_QUERY_LENGTH } from './multi-target-catalog.js';
 import { TARGET_ID_PATTERN } from './multi-target-identity.js';
-import {
-  PINNED_ACTIVATE_FIELDS,
-  PINNED_WRITE_ACTIONS,
-  PINNED_WRITE_FIELDS,
-  pinnedMutationAllowed,
-  pinnedWriteEnabled,
-} from './multi-target-write-surface.js';
+import { pinnedMutationAllowed, pinnedMutationSurface } from './multi-target-write-surface.js';
 import type { ServerConfig } from './types.js';
 
 export const MULTI_TARGET_TOOLS = new Set([
@@ -127,9 +121,10 @@ export function multiTargetInvocationDecision(
 
 function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefinition | undefined {
   if (tool.name === 'SAPWrite' || tool.name === 'SAPActivate') {
-    if (!pinnedWriteEnabled(config)) return undefined;
+    const surface = pinnedMutationSurface(tool.name, config);
+    if (!surface) return undefined;
     const write = tool.name === 'SAPWrite';
-    const fields = write ? PINNED_WRITE_FIELDS : PINNED_ACTIVATE_FIELDS;
+    const fields = surface.fields;
     const properties = Object.fromEntries(
       Object.entries(tool.inputSchema.properties as Record<string, unknown>).filter(([key]) => fields.has(key)),
     );
@@ -177,8 +172,8 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                 },
               }
             : {}),
-          type: { type: 'string', enum: ['CLAS', 'INTF'] },
-          action: { type: 'string', enum: write ? [...PINNED_WRITE_ACTIONS] : ['activate'] },
+          type: { type: 'string', enum: surface.types },
+          action: { type: 'string', enum: surface.actions },
         },
         required: write ? ['action', 'type', 'name', 'source'] : ['type', 'name'],
         additionalProperties: false,

@@ -2,7 +2,7 @@
 
 PR [#1142](https://github.com/arc-mcp/arc-1/pull/1142) continues the full PR 2 plan. This checkpoint
 adds guarded infrastructure; it does not enable additional tools, actions or object types. The
-capability matrix, broader operation adapters and live PP qualification remain outstanding.
+broader capability matrix, operation adapters and live PP qualification remain outstanding.
 
 ## Resumed prerequisite/design review
 
@@ -71,6 +71,36 @@ or PP acceptance. Review manifests identify exact source snapshots; subsequent c
 changes require their own review.
 
 ## Verification and remaining work
+
+### Existing-capability table checkpoint
+
+The four already-admitted combinations now have immutable rows shared by the raw invocation gate
+and catalog action/type/field projection: CLAS/INTF create and main-source update, CLAS main-method
+edit, and CLAS/INTF whole-owner activation. No additional operation or type is admitted. The resource
+column labels the representation; native owner enforcement remains in the existing pinned handlers.
+Catalog wording and required fields are still tailored to these existing combinations.
+
+An equivalence check compared 32 catalogs (eight security profiles, on-premise/BTP, nullable optionals
+on/off) against the frozen prerequisite implementation: all were byte-identical. The actual Claude
+Opus 5.5 max [review](broader-pinned-pp-writes/claude-capability-table-review.md) accepted this refactor.
+Its follow-ups added exact row contracts, full-field positive calls, a complete mutation sweep through
+the public router, and required-field checks. These test the admission contract before any future
+row can expand it. Mixed-tool capabilities, broader adapters and their catalog/protocol projections
+remain part of P2-B and later implementation work.
+
+The actual Claude [closure review](broader-pinned-pp-writes/claude-capability-table-closure-review.md)
+accepted all three follow-ups. Its nonblocking regex-coverage note was also addressed with all three
+local-class prefixes in both cases. The author checked the operation classification and included
+the three mutating bare-tool policy entries in the router sweep, preserving activation's explicit
+default. These final additions change tests only; neither review is approval of the broader adapters.
+
+The combined prerequisite/table checkpoint passed **386 files / 10,667 tests**, typecheck, lint,
+policy validation, build, file/schema budgets, strict docs and dependency audit. The review follow-up
+added two test cases; the focused table/router run passed **21 tests in two files**, with typecheck
+and lint repeated. The [gate record](broader-pinned-pp-writes/capability-table-gates.json) distinguishes
+the full run from those subsequent assertions.
+
+### Native verification
 
 The direct-auth A4H client-001 source lifecycle passed: source save, stale-hash refusal, reacquired
 lock, pinned activation, delete and independent GET 404. A new CTS lifecycle also created a disposable
