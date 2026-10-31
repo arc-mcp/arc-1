@@ -116,15 +116,16 @@ returns the legacy result without discovery requests. `extensions="sources"` add
 include/append graph and separate bodies labelled `representation=authored_source`. Include
 occurrences, attributes and suffixes remain distinct; bodies are fetched once per request.
 
-The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02 and 758 SP02. Source
-plug-in XML is qualified on both releases. Live positive coverage includes PROG on 750 and
-INCL, FUNC and FUGR on 758; other family/release combinations remain unqualified.
-CLAS, INTF and BDEF public integration remains in later stages and explicit requests currently
-report `unsupported`.
+The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02, 758 SP02, and BTP ABAP
+Environment 920 SP05 with a developer's browser OAuth identity. Source plug-in XML is qualified
+on 750 and 758. Live positive coverage includes PROG on 750 and INCL, FUNC and FUGR on 758;
+other family/release combinations remain unqualified. CLAS, INTF and BDEF public integration
+remains in later stages and explicit requests currently report `unsupported`.
 Read-only BTP ABAP 920 checks cover FUNC `RFC_SYSTEM_INFO` (provider not advertised) and FUGR
 `SRFC` (empty root identities and bounded source traversal). These establish contract behavior,
 not positive BTP plug-in source coverage. PROG/INCL remain excluded from the BTP public schema;
-other BTP objects and releases remain unqualified. CDS/DDLX extensions and BAdIs are outside this feature.
+other BTP objects, releases and live principal propagation remain unqualified. CDS/DDLX extensions
+and BAdIs are outside this feature.
 
 Method, grep, line-window and class-include reads default to none. An explicit mode on a partial
 read describes its **owning object/source**, without claiming the extension bodies match the
@@ -2135,7 +2136,18 @@ shortcut is no longer used. See
 
 ### action="structure" — DDIC includes + append structures (TABL only)
 
-Returns a JSON tree for a DDIC structure or transparent table. ARC-1 parses embedded includes from the TABL source (`include <name>;`, named includes, and classic `.INCLUDE`) and resolves append/extension structures through ADT where-used. Append candidates are only returned after ARC-1 reads the candidate source and confirms it contains `extend type <base> with`; `.APPEND` is not parsed from the base source because ADT does not emit append structures there. A missing where-used endpoint or more than 50 structure candidates leaves the include tree intact and adds an incomplete-discovery warning. Large where-used searches can add latency even when the candidate cap stops source inspection. Results reflect SAP’s current index; an empty result does not prove that no append exists.
+Returns a JSON tree for a DDIC structure or transparent table. ARC-1 parses embedded includes from
+the TABL source, preserving key includes, named occurrences and suffixes, and discovers appends
+through the owner's advertised ADT enhancement relation. `.APPEND` is not parsed from the base
+source because ADT does not emit append structures there.
+
+When the dedicated provider is unavailable or unadvertised, this explicit workflow may inspect
+at most 12 where-used candidates and verify `extend type <base> with` in each candidate's source.
+It labels that fallback as index-based coverage; it never follows auth, throttle, unsafe-response
+or budget failures. An empty index does not prove absence. The tree keeps unresolved or truncated
+children and adds `extensionDiscovery` provenance. Expansion shares the 12-second, 20-send,
+256-KiB discovery budget and is limited to 20 occurrences and depth 5. See
+[Extension discovery](#extension-discovery) for coverage states and version qualifications.
 
 **Example:**
 ```json

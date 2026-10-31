@@ -12,7 +12,7 @@ Stable exports and adapter obligations are documented in
 [the adapter contract](../../dev/extension-discovery-adapters.md). Public behavior, limits and
 qualification are in [the tool reference](../../../docs_page/tools.md#extension-discovery).
 
-## Final validation
+## Initial validation (2026-10-29)
 
 - `npm test`: **386 files, 10,638 tests passed**, no skipped tests.
 - `npm run typecheck`, `lint`, `validate:policy`, `build`, `check:sizes`: passed. Lint reports
@@ -78,8 +78,39 @@ phase; they do not measure TLS/network framing.
 No SAP mutations, SQL/table previews, RFCs, installed helpers, cross-user credentials, merge or
 release were used. PROG/INCL/FUNC/FUGR plug-ins, CLAS/INTF enhancements and BDEF extensions remain
 separate stages; explicit requests currently report unsupported. CDS/DDLX and BAdIs are excluded.
-BTP, other releases, positive interface coverage, runtime switch activation, atomic snapshots and
-PP live authorization are unqualified.
+Other releases, positive interface coverage, runtime switch activation, atomic snapshots and
+PP live authorization are unqualified. BTP developer OAuth was subsequently qualified below.
+
+## Merge-readiness follow-up (2026-10-31)
+
+- All **10,643 unit tests** passed (387 files). Typecheck, lint, policy, build, schema/file size
+  checks and strict MkDocs build passed. The production source tree is unchanged from the hash above.
+- [HTTP MCP evidence](mcp-live.json): seven selected read-only tests passed on each of A4H 758 SP02
+  and NPL 750 SP02 through a freshly built loopback HTTP Streamable server. Four new E2E cases
+  exercise advertised input schema, none/default/summary, unchanged fresh base source, separate
+  authored bodies, partial-read defaults/scope and DDTEST hierarchy occurrences. Three existing
+  TABL smoke cases also pass. The other 25 smoke-file cases were intentionally unselected; this
+  was not a full E2E-suite run. Writes/data/SQL stayed disabled and fixtures were not synchronized.
+- Fixed the E2E helper's one-content-block assumption, responsible for all five failures in the
+  initial PR E2E job. It still rejects errors, empty content and non-text/empty blocks and returns
+  only the first block for existing base-source assertions. Five unit cases guard that behavior.
+- Corrected the stale structure documentation: dedicated provider first, 12-candidate source-
+  verified index fallback, shared bounds and qualified coverage.
+- [BTP evidence](btp-live.json): SAP_BASIS **920 SP05**, existing developer identity through browser
+  OAuth, real SAP HTTPS and MCP SDK in-memory transport. All 15 none/summary/sources calls across
+  the five standard DDIC examples succeeded and preserved the base. DSH_MEAL, DDTEST and the
+  metadata-only value-help append were positively observed; DSH sources returned both the append
+  and included structure. FDT_S_TEST_SFW and SFLIGHT had no advertised relation. DDTEST_VIEW's
+  unavailable source remains explicitly incomplete with a source omission. This does not qualify
+  Cloud Foundry HTTP authentication or principal propagation. Reproduce with
+  `TEST_BTP_SERVICE_KEY_FILE=... node --import tsx scripts/smoke-ddic-extensions-btp.ts`.
+- The initial general BTP smoke spent three operation timeouts waiting for browser authentication.
+  The suite now completes authentication in its setup hook before starting operation timers;
+  its final run passed all **five tests**, with no skips.
+- The initial CI integration failure was the existing `where-used-details` test. Its saved native
+  responses returned HTTP 200 with empty referencedObjects for both ordinary and package-filtered
+  calls immediately after fixture activation. This is not evidence that the DDIC fallback dropped
+  a returned candidate; the unrelated where-used integration gate still needs a successful run.
 
 Roadmap checked: **No roadmap impact** in the current-main roadmap. FEAT-03 concerns enhancement
 authoring, which this read-only stage does not change. The primary checkout's separate uncommitted
