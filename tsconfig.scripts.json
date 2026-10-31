@@ -4,5 +4,5 @@
     "rootDir": ".",
     "noEmit": true
   },
-  "include": ["scripts/**/*"]
+  "include": ["scripts/**/*", "src/types/**/*.d.ts"]
 }

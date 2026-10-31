@@ -1266,6 +1266,7 @@ describe('SAPRead handler', () => {
       );
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'TABL',
+        extensions: 'none',
         name: 'T000',
       });
       expect(result.isError).toBeUndefined();

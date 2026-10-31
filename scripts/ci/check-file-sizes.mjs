@@ -43,8 +43,8 @@ const BUDGETS = {
   // +4: parent function group for SAPTransport check/history.
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
   // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
-  'src/handlers/tools.ts': 1781, // +5: explicit own-method signature selector.
-  'src/handlers/schemas.ts': 1578, // +5: signature selector and shared method-option preflight.
+  'src/handlers/tools.ts': 1783, // +2: extension schema projection; +5: own-method signature selector.
+  'src/handlers/schemas.ts': 1582, // +4: extension validation; +5: method-option validation.
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
@@ -85,7 +85,7 @@ const BUDGETS = {
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
   // +3: classify caller cancellation before generic network wrapping (#1045).
-  'src/adt/http.ts': 1554, // Exact-resource negotiated header lookup (#1126).
+  'src/adt/http.ts': 1556, // +2: account optional-analysis CSRF response bodies. // Exact-resource negotiated header lookup (#1126).
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1477, // Exhaustive lock-holder parsing extracted to transport-locks.ts (#1080).
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed
