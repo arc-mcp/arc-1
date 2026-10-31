@@ -33,6 +33,26 @@ added. Cold discovery, positive interfaces, inactive snapshots, runtime applicab
 exhaustive indexing and the other documented deployment/release boundaries remain
 explicit. See the [test gap audit](2026-10-31-extension-test-gaps.md).
 
-The repaired source is followed by fresh live checks and a focused confirmation review;
-their exact commits and results are recorded below when complete. Roadmap checked:
+## Verification after repairs
+
+The repaired source commit is `863f5dbf72c0d5cbc34f1d5cc3d2633c171fc436`.
+Fresh read-only checks preserve the base in all successful modes:
+
+- [A4H 758](2026-10-31-extension-a4h-after-review.json): both BDEF extensions still
+  verify through public none/summary/sources reads.
+- [NPL 750](2026-10-31-extension-npl-after-review.json): all four nested program
+  implementation identities remain; summary and sources both retain the qualified
+  unadvertised-provider provenance note.
+- [BTP 920](2026-10-31-extension-btp-after-review.json): 38 observations again cover
+  the qualified families and negative states. FUNC summary now reports `not_advertised`.
+  All four BDEF sources remain verified in five sends / 10,003 decoded bytes / 1,352 ms.
+
+Each capture records the same tracked source SHA-256
+`9c7f26d4963290e08b5845dc6f46f2b1771bf333f88a96cd511311a4c8d2b901`;
+the exact path/bytes hash format is stored with the evidence. Denied sources, unavailable
+interfaces, candidate/request caps and the earlier qualification boundaries remain explicit.
+The comment and admin-denial repairs are additionally exercised by the regression fixtures;
+no SAP test objects were created or changed. Timing remains an observation, not an SLA.
+
+A focused confirmation review of the repairs follows these checks. Roadmap checked:
 no roadmap impact.

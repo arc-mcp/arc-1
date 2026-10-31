@@ -1,0 +1,137 @@
+{
+  "target": "a4h",
+  "checkedAt": "2026-10-31T21:02:53.303Z",
+  "rows": [
+    {
+      "mode": "none",
+      "isError": false,
+      "basePreserved": true,
+      "baseSha256": "d16c4495c62db7c52f8ce2aa5f4486d7efa02fb0125f53622e4f2218eebc986d",
+      "contentBlocks": 1,
+      "additionalOutputBytes": 0,
+      "extensionSources": []
+    },
+    {
+      "mode": "summary",
+      "isError": false,
+      "basePreserved": true,
+      "baseSha256": "d16c4495c62db7c52f8ce2aa5f4486d7efa02fb0125f53622e4f2218eebc986d",
+      "contentBlocks": 2,
+      "summary": {
+        "root": {
+          "type": "BDEF",
+          "name": "DEMO_RAP_EXTENSIBLE",
+          "version": "active"
+        },
+        "scope": "BDEF DEMO_RAP_EXTENSIBLE full root source",
+        "providers": [
+          {
+            "id": "bdef_wul_verified",
+            "family": "behavior_extension",
+            "status": "returned",
+            "coverage": "candidate_index",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "WUL candidates verified against active statements; index completeness and runtime applicability unknown.",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "BDEF",
+            "name": "DEMO_RAP_EVENT_EXT",
+            "version": "active",
+            "provider": "bdef_wul_verified",
+            "family": "behavior_extension"
+          },
+          {
+            "type": "BDEF",
+            "name": "DEMO_RAP_EXTEND1",
+            "version": "active",
+            "provider": "bdef_wul_verified",
+            "family": "behavior_extension"
+          }
+        ],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {},
+        "consumed": {
+          "sends": 5,
+          "responseBytes": 4026,
+          "elapsedMs": 1008
+        }
+      },
+      "additionalOutputBytes": 830,
+      "extensionSources": []
+    },
+    {
+      "mode": "sources",
+      "isError": false,
+      "basePreserved": true,
+      "baseSha256": "d16c4495c62db7c52f8ce2aa5f4486d7efa02fb0125f53622e4f2218eebc986d",
+      "contentBlocks": 5,
+      "summary": {
+        "root": {
+          "type": "BDEF",
+          "name": "DEMO_RAP_EXTENSIBLE",
+          "version": "active"
+        },
+        "scope": "BDEF DEMO_RAP_EXTENSIBLE full root source",
+        "providers": [
+          {
+            "id": "bdef_wul_verified",
+            "family": "behavior_extension",
+            "status": "returned",
+            "coverage": "candidate_index",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "WUL candidates verified against active statements; index completeness and runtime applicability unknown.",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "BDEF",
+            "name": "DEMO_RAP_EVENT_EXT",
+            "version": "active",
+            "provider": "bdef_wul_verified",
+            "family": "behavior_extension"
+          },
+          {
+            "type": "BDEF",
+            "name": "DEMO_RAP_EXTEND1",
+            "version": "active",
+            "provider": "bdef_wul_verified",
+            "family": "behavior_extension"
+          }
+        ],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {},
+        "consumed": {
+          "sends": 3,
+          "responseBytes": 3894,
+          "elapsedMs": 591
+        }
+      },
+      "additionalOutputBytes": 1723,
+      "extensionSources": [
+        {
+          "label": "[extension source BDEF DEMO_RAP_EVENT_EXT version=active representation=authored_source provider=bdef_wul_verified]",
+          "bytes": 262,
+          "sha256": "195343fc47ea71f7dc45e42aa5c22fa85df6821e6410a92974552e3a04c1d4d4"
+        },
+        {
+          "label": "[extension source BDEF DEMO_RAP_EXTEND1 version=active representation=authored_source provider=bdef_wul_verified]",
+          "bytes": 333,
+          "sha256": "1c1d69fb5a877509b102454657be73d6c9082029811421016c53c3d3094d3979"
+        }
+      ]
+    }
+  ],
+  "testedCommit": "863f5dbf72c0d5cbc34f1d5cc3d2633c171fc436",
+  "trackedSourceSha256": "9c7f26d4963290e08b5845dc6f46f2b1771bf333f88a96cd511311a4c8d2b901",
+  "sourceHashFormat": "git ls-files -z src order; UTF-8 path + NUL + raw file bytes + NUL"
+}
