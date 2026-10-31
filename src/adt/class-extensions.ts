@@ -316,7 +316,7 @@ export async function discoverClassSources(
       pendingSources = 0;
       if (!generated) return;
       provider.reason = `generated_include=${generated.name}; active_revision=00000; generated_method_includes_only; implementation names may be absent`;
-      const references = enhancementIncludeReferences(source.source, generated.name);
+      const references = enhancementIncludeReferences(source.source);
       const children = references.filter(
         (name) => name.startsWith(generated.name.toUpperCase()) && /^M\d{3}$/.test(name.slice(generated.name.length)),
       );

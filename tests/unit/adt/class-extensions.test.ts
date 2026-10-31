@@ -135,10 +135,12 @@ describe('class-bound enhancements', () => {
     expect(s.getRevisions).toHaveBeenCalledTimes(1);
   });
   it('counts an actual EIMP reference as unqualified without fetching it', async () => {
-    const s = setup({ source: `* INCLUDE ${parent}M002.\nINCLUDE ${parent}IMP.\nINCLUDE ZOTHER.` });
+    const s = setup({
+      source: `* INCLUDE ${parent}M002.\nINCLUDE ${parent}IMP.\nINCLUDE ZOTHER.\nINCLUDE OTHER=========================EM001.`,
+    });
     const result = await s.run();
     expect(result.sources).toHaveLength(1);
-    expect(result.omissions.sources).toBe(2);
+    expect(result.omissions.sources).toBe(3);
     expect(result.providers.at(-1)).toMatchObject({ status: 'incomplete' });
     expect(result.providers.at(-1)?.reason).toContain('unqualified_generated_include_references');
     expect(s.getRevisions).toHaveBeenCalledTimes(1);

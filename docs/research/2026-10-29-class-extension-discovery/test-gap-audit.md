@@ -102,3 +102,19 @@ live routes, other releases, runtime switch applicability and atomic snapshots r
 This work does not bypass any of those boundaries to manufacture positive coverage.
 
 Roadmap checked: **No roadmap impact**. FEAT-03 concerns enhancement authoring and stays unchanged.
+
+## Final omission corrections
+
+[Claude review 2](claude-review-2.md) confirms the original five fixes and accepts separate
+active/current observations. Its two further P3 findings are corrected: the scanner tokenizes
+padded references to every owner, and standalone generated-INCL source discovery counts all
+unqualified references without fetching children. The dependency grammar check returns `[]`
+for two padded INCLUDE statements; the qualified scanner returns both actual names. The new
+context-bound fallback regression asserts incomplete status, one missing source and no child read.
+
+Final validation: **10,815 tests pass** in 397 files (four workers, 40.95s); the five focused suites
+pass 102 tests. Typecheck, lint, policy validation, build, file/schema budgets and diff whitespace
+checks pass. Read-only final A4H/NPL public replays and all five BTP cases pass again; evidence is
+`final-*-public.json`. The two P3 reachability cases use explicit mocked metadata/source fixtures;
+they are not claimed as positive live generated-INCL coverage. Earlier live legacy evidence is
+retained separately. Source/credential bodies remain absent from these JSON artifacts.

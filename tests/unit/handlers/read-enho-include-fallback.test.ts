@@ -177,7 +177,9 @@ describe('SAPRead INCL on an enhancement include', () => {
     resetCachedFeatures();
   });
 
-  function setup(opts: { directStatus?: number; directBody?: string; name?: string; context?: boolean } = {}) {
+  function setup(
+    opts: { directStatus?: number; directBody?: string; name?: string; context?: boolean; contentBody?: string } = {},
+  ) {
     const calls: string[] = [];
     const target = opts.name ?? include;
     const base = `/sap/bc/adt/programs/includes/${encodeURIComponent(target)}`;
@@ -191,7 +193,7 @@ describe('SAPRead INCL on an enhancement include', () => {
           opts.directBody ?? '<exception><type id="ExceptionResourceReadFailure"/></exception>',
         );
       if (path === `${base}/source/main/versions`) return mockResponse(200, feed);
-      if (path === contentPath('00000')) return mockResponse(200, source);
+      if (path === contentPath('00000')) return mockResponse(200, opts.contentBody ?? source);
       if (opts.context && path.toUpperCase() === base.toUpperCase())
         return mockResponse(
           200,
@@ -233,6 +235,22 @@ describe('SAPRead INCL on an enhancement include', () => {
     expect(result.isError).toBeUndefined();
     expect(calls.filter((path) => path === `${includeBase}/source/main`)).toHaveLength(1);
     expect(result.content[1]?.text).not.toContain('provider_read_failed');
+  });
+  it('reports generated references in a context-bound fallback as unqualified without child reads', async () => {
+    const calls = setup({ context: true, contentBody: `INCLUDE ${include}M001.` });
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+      type: 'INCL',
+      name: include,
+      extensions: 'sources',
+      enhancementContext: { type: 'PROG', name: 'ZROOT' },
+    });
+    expect(result.isError).toBeUndefined();
+    const summary = JSON.parse(result.content[1]!.text.slice('[extensions] '.length));
+    expect(summary.providers[0].status).toBe('incomplete');
+    expect(summary.omissions.sources).toBe(1);
+    expect(summary.issues).toContain('generated_include_references_unqualified');
+    expect(calls.filter((path) => path === `${includeBase}/source/main`)).toHaveLength(1);
+    expect(calls.some((path) => path.includes(`${encodedInclude}M001`))).toBe(false);
   });
   it('uses a matching probed release for a qualified direct include failure', async () => {
     const calls = setup({ directBody: '<span id="msgText">Dereferencing of the NULL reference </span>' });
