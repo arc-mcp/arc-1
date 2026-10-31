@@ -91,7 +91,7 @@ The audit found feature-specific gaps beyond the original parser and selector te
 | ABAP/resource boundaries | Namespaced class, escaped parameters, Unicode/literal punctuation, pragmas; 2,000-candidate ranking cap and duplicate hints |
 | BTP runtime and MCP dispatch | 10 passing read-only cases in `btp-read-methods.integration.test.ts`, standard and hyperfocused SDK MCP requests over linked in-memory transports, real developer OAuth/ADT HTTPS |
 | HTTP MCP wire path | 3 passing `sapread-methods.e2e.test.ts` cases against this checkout's local loopback HTTP server and the existing A4H fixture, direct Basic/ADT HTTPS |
-| Model behavior | Four fixture-backed scenarios use the real read handler; full tool trajectories and final-answer assertions, not first-call scoring alone |
+| Model behavior | Five fixture-backed scenarios use the real read handler; full tool trajectories and final-answer assertions, not first-call scoring alone |
 
 BTP reports SAP_BASIS 920 SP0005 and SAP_CLOUD 920 SP0005 via installed components. The tests read
 `CL_ABAP_RANDOM`: declaration content/ownership, subsequent full/body reads with a
@@ -112,7 +112,7 @@ The [model results](model-evals.json) retain all local `qwen3.6:35b-mlx` runs. T
 pre-review wording each passed 3/4 strict completed trajectories: signature selection, inventory, and
 typo recovery. Both selected the correct implementation read first, then made unnecessary calls
 and exhausted the three-call budget before a final answer. A small wording experiment passed 2/4
-and was reverted. It does not establish a model-level improvement. There is no pre-feature schema control, so these runs cannot establish a causal model improvement.
+and was reverted. There is no pre-feature schema control, so these runs cannot establish a causal model improvement.
 After the review fixes, a five-scenario run passed 4/5, including the new qualified-local-method
 case. The implementation-only task still made extra reads. The eval remains strict;
 failures are not hidden by weakening its expected trace. The harness reports the 83 unselected scenarios as skipped; they are not coverage from this run.
@@ -136,3 +136,7 @@ of unreadable declaration-only suggestions, and restored qualified-name examples
 listing parser is not broadened; unknown ownership is not asserted. The refreshed [per-test
 qualification record](qualification-results.json) retains the live BTP/HTTP results and source
 fingerprints, alongside the full unit-suite summary.
+
+The follow-up Claude Code review confirmed all three fixes and independently passed 271 tests.
+It found no remaining code issue; its sole documentation finding (the stale four-scenario count
+in the table above) is corrected. Both review responses and dispositions are retained.

@@ -116,3 +116,70 @@ The structured-read rejection and the signature reader held up in everything I t
 - `shasum` and a Python evidence check were denied. I recalculated the percentages by hand, but **did not verify the SHA-256 fingerprints against HEAD**.
 - What I could confirm: the five files `btp-results.json` lists have the same hashes in `live-results.json`, and the second commit changed nothing in `src`, `scripts` or `tests/fixtures`.
 - The same restriction ruled out ad hoc adversarial parser runs, so parser edge cases not covered by existing tests were checked by reading the code and abaplint's grammar.
+
+
+## Follow-up review — 2026-10-31
+
+Claude Code 2.1.308, actual model `claude-opus-5-5`, reviewed the immutable delta `e29d3afc279e499cae50ca372ab447133e9fa056..598740f6d78e68dd55cf66f85be0bfdeafab4c4e` after the fixes and refreshed qualification. It independently passed 271 tests and verified all seven runtime fingerprints plus both lockfile fingerprints. The review used the same read-only restrictions and disabled MCP configuration.
+
+**Disposition:** no code findings remain. The sole P3 finding was a stale “Four” scenario count in the README table. The reviewer inspected the prepared correction to “Five”; this documentation follow-up commits that correction. Runtime files, measurements and their fingerprints are unchanged. No further code change was requested.
+
+### Reviewer response (verbatim)
+
+# Recheck of PR #1144 fixes: `e29d3afc2..598740f6d`
+
+**One docs-only finding remains, and none in code.** All three original fixes are confirmed, with no regressions. The finding doesn't affect behaviour or block the merge.
+
+## Remaining finding
+
+**P3: the committed README still says four scenarios**
+- **Where:** `docs/research/2026-10-29-read-token-quick-wins/README.md:94`, at `598740f6d`.
+- **Impact:** the Model behavior row says "Four fixture-backed scenarios", but the same README later reports the five-scenario run, and `tests/evals/scenarios/read-methods.ts` defines five.
+- **Fix:** commit the edit now sitting uncommitted in this worktree, which changes the row to "Five". I didn't make that edit; it appeared during this review. It also removes a redundant sentence about model improvement, and the no-control caveat stays.
+- **Effect on evidence:** none, because the README isn't one of the fingerprinted files.
+
+## Original findings
+
+| Original finding | Status | What confirms it |
+|---|---|---|
+| **P2: write-error follow-up** | Fixed | The follow-up text names `SAPRead` for both the inventory and grep. Both the legacy test (`write-surgery-rap.test.ts:379-380`) and the pinned test assert it. In the pinned path the failed splice throws at `pinned.ts:153`, before any PUT, and the test confirms no PUT was sent. |
+| **P2: unreadable suggestions** | Fixed | Ranking skips entries with no implementation range (`method-suggestions.ts:49`). A matched declaration gets the no-implementation message, and the signature pointer is worded conditionally. Qualified, known-local, interface and redefinition cases get the `SAPRead` follow-up instead. `method-signature.test.ts:57-61` shows the pointed-to read works for an abstract method. |
+| **P3: qualified selectors** | Fixed | The `tools.ts:445` text is restored, with exactly one changed line in each of the seven snapshots. The old wording is gone from `src`, the fixtures and `docs_page`. The hyperfocused and live-relations fixtures never had this text and are unchanged. |
+
+**Regressions checked, none found:**
+- **Declaration matching:** the new branch only runs for an entry already matched by name and lacking a range, so successful extraction and the ambiguity errors are unchanged.
+- **Appended read hints:** the include hint at `read.ts:534-538` still reads correctly after the new message.
+- **Local-method eval:** it runs through the real handler, routes to the include and returns `result = 42.` The scenario's final-answer check also forbids `strlen`.
+
+**Known limitation, not a finding:** a wrong-source read of the signature pointer costs one call and ends in an explicit refusal. That matches the conditional wording you described.
+
+## Dependency patch
+- **Lockfiles:** each changes only `follow-redirects` from 1.16.1 to 1.16.2, in the version, resolved and integrity lines. The integrity value is identical in both.
+- **Parents:** the `^1.16.0` ranges are unchanged and still satisfied.
+- **Installed copy:** the root `node_modules` lock records the same integrity value.
+- **Config:** I found no `follow-redirects` exception in the root or AppRouter package files, `.github`, `.npmrc` or audit-named files.
+
+## What I tested and inspected
+
+**Ran (no `-u`, all passing):**
+- Your six focused files: 240 tests.
+- `check-tool-schema-budget` and `method-signature`: 31 tests.
+- SHA-256 of seven source files and both lockfiles: all match `qualification-results.json`. The source hashes also match the new `btp-results.json` and final `model-evals.json` entries.
+
+**Inspected only:**
+- The delta and adjacent code in `method-surgery.ts`, `read.ts`, `class-surgery.ts` and `pinned.ts`.
+- The retained BTP and A4H results, which are all marked passing.
+- The final model run, which is 4/5 strict; the implementation-only scenario made 4 calls and never produced a final answer.
+
+**Taken from your report, not rerun:**
+- The full unit suite and the live BTP and A4H tests.
+- Both `npm audit` runs and the advisory's applicability. I made no registry or network calls.
+- The AppRouter's installed `node_modules`.
+
+**Not measured:**
+- I didn't run the new tests against the old code. The original abstract-method bug comes from the first review's code trace, plus the new tests passing.
+- The 758/750 typo figures in the README are from the older wording and weren't re-measured. Only the BTP figures are fresh.
+
+**Blocked or side effects:**
+- The permission layer denied two compound shell commands: a snapshot loop and a Python summary of the evals. I got the same facts from `git diff`, Grep and Read.
+- Vitest rewrote `test-results/unit.json`, which doesn't appear in `git status`. I edited nothing else.
