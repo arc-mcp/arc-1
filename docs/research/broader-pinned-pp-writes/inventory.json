@@ -848,5 +848,95 @@
       "source",
       "style"
     ]
+  },
+  "actionLists": {
+    "SAPWrite": [
+      "add_method",
+      "add_unit",
+      "batch_create",
+      "change_method_visibility",
+      "create",
+      "delete",
+      "delete_method",
+      "edit_class_definition",
+      "edit_method",
+      "edit_method_signature",
+      "edit_text_symbols",
+      "edit_unit",
+      "generate_behavior_implementation",
+      "scaffold_rap_handlers",
+      "update"
+    ],
+    "SAPActivate": [
+      "activate",
+      "publish_srvb",
+      "unpublish_srvb"
+    ],
+    "SAPManage": [
+      "cache_stats",
+      "change_package",
+      "create_package",
+      "delete_package",
+      "features",
+      "flp_add_tile_to_group",
+      "flp_create_catalog",
+      "flp_create_group",
+      "flp_create_tile",
+      "flp_delete_catalog",
+      "flp_list_catalogs",
+      "flp_list_groups",
+      "flp_list_tiles",
+      "probe",
+      "set_api_state"
+    ],
+    "SAPTransport": [
+      "check",
+      "create",
+      "delete",
+      "diff",
+      "get",
+      "history",
+      "layers",
+      "list",
+      "reassign",
+      "release",
+      "release_recursive",
+      "remove_object",
+      "targets"
+    ],
+    "SAPDiagnose": [
+      "apply_quickfix",
+      "atc",
+      "atc_ci",
+      "atc_variants",
+      "authorization_trace",
+      "cds_sql",
+      "cds_testcases",
+      "dumps",
+      "feed_schema",
+      "gateway_errors",
+      "object_state",
+      "odata_perf",
+      "quickfix",
+      "set_sql_trace_state",
+      "sql_trace_directory",
+      "sql_trace_state",
+      "syntax",
+      "system_messages",
+      "trace_cancel",
+      "trace_requests",
+      "trace_start",
+      "traces",
+      "unittest",
+      "unittest_ci"
+    ],
+    "SAPLint": [
+      "format",
+      "get_formatter_settings",
+      "lint",
+      "lint_and_fix",
+      "list_rules",
+      "set_formatter_settings"
+    ]
   }
 }

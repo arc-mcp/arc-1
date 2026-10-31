@@ -4,8 +4,8 @@ import { withLockedMutation } from '../../adt/crud.js';
 import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
 import { throwIfRequestCancelled } from '../../adt/http-deadline.js';
+import { mutationClient } from '../../adt/mutation-client.js';
 import { type MutationCleanupState, pinnedMutationContext } from '../../adt/mutation-context.js';
-import { mutationHttp } from '../../adt/mutation-http.js';
 import { assertPinnedOwner, pinnedRecording, validatePinnedLock } from '../../adt/pinned-write-policy.js';
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
 import { assertSourceHash, sourceHash } from '../../adt/source-precondition.js';
@@ -63,8 +63,9 @@ export async function handlePinnedWrite(
       },
       cleanup,
     );
+    client = mutationClient(client, context);
     const options = context.requestPolicy;
-    const scopedHttp = mutationHttp(client.http, client.safety, context);
+    const scopedHttp = client.http;
     const requested = args.transport === undefined ? undefined : String(args.transport).trim().toUpperCase();
     let source = args.source;
     const lint = (value: string) => {
@@ -124,7 +125,7 @@ export async function handlePinnedWrite(
         validateLock: async (http, lock) => {
           phase = 'locked-policy';
           const actualPackage = await enforceAllowedPackageForObjectUrl(
-            client,
+            mutationClient(client, context, http),
             owner,
             'Pinned write under lock',
             undefined,

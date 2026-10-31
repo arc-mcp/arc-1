@@ -66,3 +66,7 @@ change and the new design still need the requested independent review. No substi
 Resume those reviews first, address findings and rerun affected checks, then continue the reviewed
 P2-A through P2-H work packages. Keep the full scope in this draft PR; do not mistake this
 prerequisite checkpoint for completion of the two-PR plan.
+
+## Subsequent work
+
+The interrupted review was completed on 31 October. See the [next checkpoint](2026-10-31-broader-pinned-pp-writes-progress.md) for its dispositions, continued implementation and subsequent review status.

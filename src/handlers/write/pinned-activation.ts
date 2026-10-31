@@ -2,8 +2,8 @@
 import type { AdtClient } from '../../adt/client.js';
 import { activate } from '../../adt/devtools.js';
 import { AdtSafetyError } from '../../adt/errors.js';
+import { mutationClient } from '../../adt/mutation-client.js';
 import { pinnedMutationContext } from '../../adt/mutation-context.js';
-import { mutationHttp } from '../../adt/mutation-http.js';
 import { assertPinnedOwner, pinnedRecording } from '../../adt/pinned-write-policy.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
 import { getCurrentContext } from '../../server/context.js';
@@ -46,10 +46,11 @@ export async function handlePinnedActivation(client: AdtClient, args: Record<str
       },
       { unlockFailed: false },
     );
+    client = mutationClient(client, context);
     const requestOptions = context.requestPolicy;
     // The activation engine can create a child budget, but its HTTP/CSRF calls
     // must never extend the outer preflight-to-confirmation deadline.
-    const http = mutationHttp(client.http, client.safety, context);
+    const http = client.http;
     const pkg = await enforceAllowedPackageForObjectUrl(client, owner, 'Pinned activation', undefined, requestOptions);
     if (!pkg) throw new AdtSafetyError('Owner package is unresolved.');
     await pinnedRecording(http, client.safety, owner, pkg, '', undefined, requestOptions);
@@ -72,7 +73,7 @@ export async function handlePinnedActivation(client: AdtClient, args: Record<str
       },
     });
     const payload = toolJson({
-      target: client.safety.multiTargetWrite.target,
+      target: context.recordingPolicy.target,
       type,
       name,
       action: 'activate',

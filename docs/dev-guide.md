@@ -211,8 +211,14 @@ Opening `withStatefulSession` through the facade creates an independent SAP cont
 the parent's lock handle there. Its close callback is independent. Only the coordinator's
 owning session updates the mutation result's `sessionClosed` field.
 
+Use `mutation-client.ts::mutationClient` to bind existing native readers to that transport, including
+inside the owning session. Cloning preserves the existing own-enumerable field contract; it does not
+change the original client or its ordinary read retry policy. `mutationResponsible` omits optional
+responsibility for an unverified PP mapping and preserves the legacy identity fallback.
+
 Pinned package subtree checks require the mutation request policy too. Pass it into
-`getPackageHierarchyResolver(options)` via the existing-object helper or create preflight. Each
+`getPackageHierarchyResolver(options)` or derive it from a factory-registered mutation facade.
+Recording/lock-policy helpers likewise refuse missing, replayable or unbounded options. Each
 pinned check obtains fresh hierarchy evidence; the legacy cached resolver never captures a pinned
 deadline or signal. Carry options through nodestructure POSTs, including CSRF and queue waits.
 
@@ -221,7 +227,15 @@ precedence. Pinned cleanup instead retains the primary outcome and reports clean
 result serializer lives in `write/pinned-result.ts`; activation still uses its existing independent
 validator and state machine. Existing schemas, capabilities and ADR-0010 constraints are unchanged.
 
-Focused tests: `tests/unit/adt/mutation-{compatibility,lifecycle,isolation}.test.ts` and
+`pinned-transport-scope.ts` prepares an internal CTS safety/HTTP pair from native parent/task
+evidence and both request lists. Low-level writes reject copied scopes, raw clients and action/ID
+widening. Recursive delete/reassign validate the whole second-read set before the first submission;
+unknown/omitted tasks refuse. Create requires unrestricted request policies. This is membership and
+budget infrastructure, not type/state qualification or runtime admission. Source-recording policy
+remains separate. Pure allowlist/MIME modules avoid a safety→transport import cycle.
+
+Focused tests: `tests/unit/adt/mutation-{client,compatibility,lifecycle,isolation}.test.ts`,
+`tests/unit/adt/pinned-transport-scope.test.ts` and
 `tests/unit/handlers/pinned-writes.test.ts`. The optional destructive integration test
 `tests/integration/mutation-lifecycle.integration.test.ts` creates and deletes one unique `$TMP`
 class using the configured direct test identity. It exercises both adapters, not real PP routing.

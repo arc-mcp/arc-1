@@ -53,6 +53,8 @@ let activationRefs: string[] | undefined;
 let activationResponse: string;
 const requests: Array<{ path: string; method: string; body: string }> = [];
 beforeEach(() => {
+  // Prototype spies follow the request/session client clones; restore them between cases.
+  vi.restoreAllMocks();
   vi.resetAllMocks();
   source = initial;
   normalizeLineEndings = false;
@@ -164,7 +166,11 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
         return fallback(url, options);
       });
       const adt = client();
-      const result = resolvePinnedRequest(adt.http, adt.safety, 'A4HK900002');
+      const result = resolvePinnedRequest(adt.http, adt.safety, 'A4HK900002', {
+        deadline: Date.now() + 300_000,
+        noReplay: true,
+        retryTransientErrors: false,
+      });
       if (parent === 'A4HK900001') await expect(result).resolves.toBe(parent);
       else await expect(result).rejects.toThrow();
     },
@@ -193,7 +199,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
   });
   it('refuses an owner package change under lock even if both packages are allowed', async () => {
     const c = client();
-    vi.spyOn(c, 'resolveObjectPackage').mockResolvedValueOnce('$TMP').mockResolvedValueOnce('ZTEAM');
+    vi.spyOn(AdtClient.prototype, 'resolveObjectPackage').mockResolvedValueOnce('$TMP').mockResolvedValueOnce('ZTEAM');
     const result = await handlePinnedWrite(c, update(), config);
     expect(payload(result).message).toContain('package changed');
     expect(saves()).toHaveLength(0);
@@ -203,7 +209,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     const c = client();
     const resolve = c.resolveObjectPackage.bind(c);
     let calls = 0;
-    vi.spyOn(c, 'resolveObjectPackage').mockImplementation(async (...args) => {
+    vi.spyOn(AdtClient.prototype, 'resolveObjectPackage').mockImplementation(async (...args) => {
       const value = await resolve(...args);
       if (++calls === 2) controller.abort();
       return value;
@@ -227,7 +233,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
   });
   it('reports that no save was sent when ordinary preflight fails', async () => {
     const c = client();
-    vi.spyOn(c, 'resolveObjectPackage').mockRejectedValue(new Error('Metadata unavailable'));
+    vi.spyOn(AdtClient.prototype, 'resolveObjectPackage').mockRejectedValue(new Error('Metadata unavailable'));
     const result = await handlePinnedWrite(c, update(), config);
     expect(payload(result)).toMatchObject({
       error: 'PINNED_WRITE_REFUSED',
@@ -240,7 +246,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
   it('rechecks subtree membership under the lock and refuses a package moved out of scope', async () => {
     const c = client();
     c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
-    const hierarchy = vi.spyOn(c, 'getSubpackages');
+    const hierarchy = vi.spyOn(AdtClient.prototype, 'getSubpackages');
     let checks = 0;
     hierarchy.mockImplementation(async (root) => (root === 'ZROOT' && ++checks === 1 ? ['$TMP'] : []));
     const result = await handlePinnedWrite(c, update(), config);
@@ -271,7 +277,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
           : '',
       );
     });
-    const hierarchy = vi.spyOn(c, 'getSubpackages');
+    const hierarchy = vi.spyOn(AdtClient.prototype, 'getSubpackages');
     const result = await requestContext.run({ requestId: 'hierarchy-cancel', signal: controller.signal }, () =>
       handlePinnedWrite(c, update(), config),
     );
@@ -290,7 +296,9 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     const c = client();
     c.safety.allowedPackages = ['ZGLOBAL/**'];
     c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZDEST/**'] };
-    vi.spyOn(c, 'getSubpackages').mockImplementation(async (root) => (root === 'ZDEST' ? ['$TMP'] : []));
+    vi.spyOn(AdtClient.prototype, 'getSubpackages').mockImplementation(async (root) =>
+      root === 'ZDEST' ? ['$TMP'] : [],
+    );
     expect((await handlePinnedWrite(c, update(), config)).isError).toBe(true);
     expect(requests.some((r) => r.path.includes('_action=LOCK'))).toBe(false);
     expect(saves()).toHaveLength(0);
@@ -300,7 +308,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     c.safety.allowedPackages = ['ZROOT/**'];
     c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
     const hierarchy = vi
-      .spyOn(c, 'getSubpackages')
+      .spyOn(AdtClient.prototype, 'getSubpackages')
       .mockImplementation(async (root) => (root === 'ZROOT' ? ['$TMP'] : []));
     const result = await handlePinnedWrite(
       c,
@@ -315,7 +323,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     const c = client();
     c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
     let roots = 0;
-    vi.spyOn(c, 'getSubpackages').mockImplementation(async (root) =>
+    vi.spyOn(AdtClient.prototype, 'getSubpackages').mockImplementation(async (root) =>
       root === 'ZROOT' && ++roots === 1 ? ['$TMP'] : [],
     );
     const result = await handlePinnedActivation(c, { type: 'CLAS', name: 'ZCL_TEST' });
@@ -323,16 +331,69 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect(roots).toBe(2);
     expect(requests.some((r) => r.path.includes('/activation?'))).toBe(false);
   });
+  it('refuses subtree drift after the preaudit prompt and keeps hierarchy reads inside the original policy', async () => {
+    const c = client();
+    const controller = new AbortController();
+    c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
+    activationRefs = [owner];
+    let roots = 0;
+    const hierarchy = vi
+      .spyOn(AdtClient.prototype, 'getSubpackages')
+      .mockImplementation(async (root) => (root === 'ZROOT' && ++roots < 3 ? ['$TMP'] : []));
+    const result = await requestContext.run({ requestId: 'post-prompt-drift', signal: controller.signal }, () =>
+      handlePinnedActivation(c, { type: 'CLAS', name: 'ZCL_TEST' }),
+    );
+    expect(result.isError).toBe(true);
+    expect(roots).toBe(3);
+    const submissions = requests.filter((r) => r.path.includes('/activation?'));
+    expect(submissions).toHaveLength(1);
+    expect(submissions[0].path).toContain('preauditRequested=true');
+    const deadline = hierarchy.mock.calls[0][2]?.deadline;
+    expect(Number.isFinite(deadline)).toBe(true);
+    for (const call of hierarchy.mock.calls)
+      expect(call[2]).toMatchObject({
+        deadline,
+        signal: controller.signal,
+        noReplay: true,
+        retryTransientErrors: false,
+      });
+  });
+  it('actually aborts a hanging activation at the remaining outer deadline', async () => {
+    const c = client();
+    const started = Date.now();
+    let now = started;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const fallback = mockFetch.getMockImplementation()!;
+    let pending = 0;
+    mockFetch.mockImplementation(async (url: unknown, options: any) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith('/activation')) {
+        pending++;
+        return new Promise((_, reject) => {
+          const abort = () => reject(new DOMException('Aborted', 'AbortError'));
+          if (options.signal.aborted) abort();
+          else options.signal.addEventListener('abort', abort, { once: true });
+        });
+      }
+      const result = await fallback(url, options);
+      if (path === owner && options?.method === 'GET') now = started + 299_950;
+      return result;
+    });
+    const result = await handlePinnedActivation(c, { type: 'CLAS', name: 'ZCL_TEST' });
+    expect(result.isError).toBe(true);
+    expect(pending).toBe(1);
+    expect(payload(result)).toMatchObject({ retryable: false, state: 'activation-not-confirmed' });
+  });
   it('keeps activation HTTP inside the original deadline after a slow preflight', async () => {
     const c = client();
     const started = Date.now();
     let now = started;
     const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
     try {
-      const resolvePackage = c.resolveObjectPackage.bind(c);
-      vi.spyOn(c, 'resolveObjectPackage').mockImplementation(async (...args) => {
-        const result = await resolvePackage(...args);
-        now += 10_000;
+      const fallback = mockFetch.getMockImplementation()!;
+      mockFetch.mockImplementation(async (url: unknown, options: any) => {
+        const result = await fallback(url, options);
+        if (new URL(String(url)).pathname === owner && options?.method === 'GET') now += 10_000;
         return result;
       });
       const post = vi.spyOn(c.http, 'post');
@@ -501,9 +562,13 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
       return fallback(url, options);
     });
     const c = client();
-    await expect(resolvePinnedRequest(c.http, c.safety, 'A4HK900002')).rejects.toThrow(
-      'The selected task must be modifiable',
-    );
+    await expect(
+      resolvePinnedRequest(c.http, c.safety, 'A4HK900002', {
+        deadline: Date.now() + 300_000,
+        noReplay: true,
+        retryTransientErrors: false,
+      }),
+    ).rejects.toThrow('The selected task must be modifiable');
   });
   it.each([{ serverAllowedTransports: [] }, { serverAllowedTransports: ['A4HK999999'] }])(
     'independently enforces the server CTS write ceiling: %j',

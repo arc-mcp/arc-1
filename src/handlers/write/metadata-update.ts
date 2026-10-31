@@ -1,4 +1,5 @@
 /** Full XML replacements must merge the current metadata under the SAP lock. */
+
 import type { AdtClient } from '../../adt/client.js';
 import { lockObject, unlockObject, updateObject } from '../../adt/crud.js';
 import {
@@ -7,6 +8,7 @@ import {
   type KtdWriteReport,
   rewriteKtdDocument,
 } from '../../adt/ddic-xml.js';
+import { mutationResponsible } from '../../adt/mutation-client.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
 import { logger } from '../../server/logger.js';
 import { getCachedFeatures } from '../feature-cache.js';
@@ -51,7 +53,7 @@ export async function writeMetadataUpdate(ctx: SapWriteContext, existingPackage?
       String(args.description ?? merged._description ?? name),
       merged,
       config.language,
-      config.username || (await current.getEffectiveUser()),
+      await mutationResponsible(current, config.username),
       resolveWriteSystemType(config, current) === 'btp',
     );
     return { body, result: textResult(`Successfully updated ${type} ${name}.`) };

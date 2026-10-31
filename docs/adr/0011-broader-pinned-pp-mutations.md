@@ -44,7 +44,7 @@ current catalog. No Git/Custom hidden-call exception.
 | Activation | Check initial owners before preaudit, then every expanded native reference before confirmation. One guarded adapter for single/batch/nested activation; never clear multi-target policy to enter a legacy fallback. Bounded partial results, no atomic rollback promise. |
 | Text pools | A typed internal exact-text-pool exception may activate only its validated pool. No caller arbitrary URI or `preaudit=false`. Verify active metadata and active-version bytes; otherwise report saved/activation-unconfirmed. Qualify separately from whole-owner activation. |
 | CTS management | Existing global transport switch and `transports` scope plus all common write gates and independent request lists. Freeze native parent/task membership once, carry an internal verified scope to every low-level write and recursive release. Exact allowed parents cover proven native children. |
-| Trace/settings/FLP | Target/client-level resources; no invented DEVCLASS ownership. Require common write gates, per-action validation and native authorization. Establish native recording requirements before API-state/move/publication/FLP mutations; unknown recording shapes refuse. |
+| Trace/settings/FLP | Resources reached through the selected target, with native client/server scope; no invented DEVCLASS ownership. Require common write gates, per-action validation and native authorization. Establish native recording requirements before API-state/move/publication/FLP mutations; unknown recording shapes refuse. |
 
 CTS creation requires unrestricted global request policy (legacy empty or `*`) and explicit
 destination `*`, because the generated request ID is unknown before POST. Exact/prefix request
@@ -53,6 +53,12 @@ an ARC-1 route selector. Preserve complete object keys, native request/task stat
 release checks and terminal-state evidence. The pinned release deadline is capped by the remaining
 five-minute call budget; single-target limits remain unchanged.
 
+An absent or empty destination request list denies all CTS management. It must never inherit the
+read surface's empty/unrestricted whitelist. The explicit `*` needed for creation also broadens
+source-recording eligibility and management to all requests on that target, including requests
+owned by other users, subject to SAP authorization. Recording and management share this request
+ceiling; source recording does not itself require the transport-management switch/scope.
+
 An optional `MCPTargetTransportDeveloper` role may combine read/write/transports scopes with the
 same exact target attributes. **Functional scopes are application-wide:** transport role A plus
 write role B can permit CTS management on both A and B when their destination policies allow it.
@@ -60,6 +66,44 @@ There is no per-target transport-specific grant in this design. Document this co
 destination request restrictions or separate applications where that distinction is required.
 Existing roles are not silently assigned or expanded. Advertise the transport scope only for the
 qualified pinned OAuth surface, not aggregate endpoints.
+
+### Effects beyond the selected resource
+
+The proposed policy accepts native downstream effects within the selected single-target-parity
+scope. Package and target checks authorize the resources ARC-1 submits; they do not bound every
+consumer or later native side effect:
+
+- CTS policy is not an import-route sandbox. Release can place a request in other systems' import
+  queues; subsequent imports follow TMS routes and operational approvals, independently of ARC-1
+  target grants. Recorded deletions can travel too. TMS routing, QA/import approvals and SAP
+  authorization control that progression. Administrators can deny `SAPTransport.release` and
+  `SAPTransport.release_recursive` through `SAP_DENY_ACTIONS`. SAP documents
+  [target groups and delivery routes](https://learning.sap.com/courses/technical-implementation-and-operation-ii-of-sap-s-4hana-and-sap-business-suite/configuring-extended-transport-control-1).
+- DDIC activation can adjust active dependent objects outside the edited package, including
+  database structures. SAP's preaudit references do not enumerate all such effects. Interface
+  changes can also break callers elsewhere. The chosen policy accepts these native dependency
+  effects; it does not introduce a mandatory where-used closure as an authorization boundary.
+  Every explicitly submitted/expanded activation reference still requires the independent package
+  checks. See SAP's [direct and indirect table adjustments](https://learning.sap.com/courses/building-data-models-with-the-abap-dictionary-and-abap-core-data-services/handling-changes-to-database-tables_d6d6d97a-979e-4efe-b5c3-f3e3d85332fb).
+- Existing ABAP Unit reads can execute authored test code under the requesting SAP principal,
+  including a reader or CI identity. Treat [author-declared test properties](https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABAPCLASS_FOR_TESTING.html) as test selection controls, not an authorization sandbox. Keep the
+  existing reader surface, document this interaction, and offer `SAP_DENY_ACTIONS=SAPDiagnose.unittest`
+  where executing writers' tests is inappropriate. A writes-off destination blocks ARC-1 mutation
+  calls; it does not isolate shared repository code from execution through other allowed workflows.
+- Explicit trace subjects may identify another SAP user when SAP authorizes it. Existing trace
+  reads retain their read scope and native authorization; they may expose results produced by a
+  writer. This is an explicit native-authorization tradeoff, without a new self-only/data gate.
+  ST05 state may cover an application-server instance beyond the route's client. Qualify and report
+  the actual filter/client/instance scope before admitting each control; never claim client isolation
+  from the ARC-1 route alone. Unqualified native filter semantics remain blocked.
+- Publication/unpublication changes service availability for other consumers; SAP service/data
+  authorization controls their access. Whole-owner activation may include preexisting drafts by
+  other developers. The owner/package/reference checks remain mandatory, with truthful scope and
+  outcome reporting instead of an assertion that only the caller's edits are activated.
+
+Classic FLP recording may require a preexisting customizing request. Such requests may appear in
+the request allowlist, subject to the qualified operation-specific native policy; Workbench-only
+CTS creation does not provide a customizing-request fallback.
 
 ## Identity, lifetime and outcomes
 

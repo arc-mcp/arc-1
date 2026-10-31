@@ -21,6 +21,7 @@ import { activate, activateBatch } from '../../adt/devtools.js';
 import { badiContainerXml, hasBadiImplementations } from '../../adt/enhancement-impl.js';
 import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
 import { type FmParameter, findFmHeader, spliceFmSignature } from '../../adt/fm-signature.js';
+import { mutationResponsible } from '../../adt/mutation-client.js';
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
 import { isServerDrivenObjectType } from '../../adt/server-driven.js';
 import { getTransport } from '../../adt/transport.js';
@@ -698,7 +699,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   // BTP/Steampunk needs cloud-correct create XML (G-3) and a real responsible user (G-5).
   const systemType = resolveWriteSystemType(config, client);
   const cloud = systemType === 'btp';
-  const responsible = config.username || (await client.getEffectiveUser());
+  const responsible = await mutationResponsible(client, config.username);
   if (type === 'ENHO') await prepareEnhoCreateProperties(client, metadataProperties, name);
   const body = buildCreateXml(type, name, pkg, description, metadataProperties, config.language, responsible, cloud);
 
@@ -1029,7 +1030,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
 
   const systemType = resolveWriteSystemType(config, client);
   const cloud = systemType === 'btp';
-  const responsible = config.username || (await client.getEffectiveUser());
+  const responsible = await mutationResponsible(client, config.username);
   const transportLookupCache = new Map<string, Awaited<ReturnType<typeof getTransport>>>();
   for (const plan of batchPlan) {
     try {

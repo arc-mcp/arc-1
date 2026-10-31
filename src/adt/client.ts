@@ -27,13 +27,10 @@ import { readEnhancementImplementation } from './enhancements.js';
 import { AdtApiError, AdtError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
+import { mutationPackageHierarchy } from './mutation-client.js';
 import { getDirectPackageContents } from './package-browser.js';
 import { requirePackageFilteredSearch } from './package-contents.js';
-import {
-  AdtPackageHierarchyResolver,
-  createPinnedPackageHierarchyResolver,
-  type PackageHierarchyResolver,
-} from './package-hierarchy.js';
+import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
 import { canonicalRevisionSourcePath } from './path-safety.js';
 import { clampUrlLimit } from './result-limits.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
@@ -332,8 +329,7 @@ export class AdtClient {
 
   /** Legacy clones share their resolver; pinned checks fetch fresh, request-bounded evidence. */
   getPackageHierarchyResolver(options?: AdtRequestOptions): PackageHierarchyResolver {
-    if (this.safety.multiTargetWrite)
-      return createPinnedPackageHierarchyResolver((root, policy) => this.getSubpackages(root, 1000, policy), options);
+    if (this.safety.multiTargetWrite) return mutationPackageHierarchy(this, options);
     if (!this.packageHierarchyResolverHolder.resolver) {
       this.packageHierarchyResolverHolder.resolver = new AdtPackageHierarchyResolver((root) =>
         this.getSubpackages(root),

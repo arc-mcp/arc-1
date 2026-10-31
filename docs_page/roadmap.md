@@ -206,7 +206,9 @@ in the research record. The remaining implementation is PR 2's capability expans
 qualification remains outstanding. Implementation started with
 [ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-broader-pinned-pp-mutations.md), an explicit
 [review inventory](https://github.com/arc-mcp/arc-1/blob/main/docs/research/broader-pinned-pp-writes/inventory.md)
-and request-scoped package hierarchy checks; these do not enable additional operations.
+and request-scoped package hierarchy checks. Follow-up infrastructure binds native adapters to the
+mutation budget and verifies CTS parent/task scopes; these do not enable additional operations.
+Broader type/action adapters, the capability matrix and PP qualification remain outstanding.
 
 **Resume when.** The PR 1 acceptance and owner request prerequisites are met. Continue the guarded
 adapters and native qualification against the reviewed PR 2 plan. Preserve the shared foundation's

@@ -1,12 +1,38 @@
 /** Fail-closed local/CTS recording policy for the reviewed pinned PP write surface. */
 
+import { checkPinnedRequest } from './allowlist-policy.js';
 import type { LockResult } from './crud.js';
 import { AdtSafetyError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
-import { isTransportInWhitelist, type SafetyConfig } from './safety.js';
+import { throwIfRequestCancelled } from './http-deadline.js';
+import { getMutationContext } from './mutation-http.js';
+import type { SafetyConfig } from './safety.js';
+
+export { checkPinnedRequest } from './allowlist-policy.js';
+
 import { CTS_CONTENT_TYPE_ORGANIZER, getTransportInfo, parseTransportList } from './transport.js';
 import type { TransportRequest } from './types.js';
 import { parseXml } from './xml-parser.js';
+
+function requireRequestPolicy(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  options?: AdtRequestOptions,
+): AdtRequestOptions {
+  const policy = options ?? getMutationContext(http, safety)?.requestPolicy;
+  if (
+    !safety.multiTargetWrite?.enabled ||
+    !policy ||
+    !Number.isFinite(policy.deadline) ||
+    policy.noReplay !== true ||
+    policy.retryTransientErrors !== false
+  )
+    throw new AdtSafetyError(
+      'Pinned recording requires an enabled policy and bounded, non-replayable request options.',
+    );
+  throwIfRequestCancelled(policy);
+  return policy;
+}
 
 export function assertPinnedOwner(type: unknown, name: unknown): asserts type is 'CLAS' | 'INTF' {
   if (
@@ -19,17 +45,6 @@ export function assertPinnedOwner(type: unknown, name: unknown): asserts type is
   }
 }
 
-export function checkPinnedRequest(safety: SafetyConfig, request: string): void {
-  if (
-    !safety.multiTargetWrite?.enabled ||
-    !safety.multiTargetWrite.allowedTransports.length ||
-    !isTransportInWhitelist({ allowedTransports: [...safety.multiTargetWrite.allowedTransports] }, request) ||
-    !isTransportInWhitelist({ allowedTransports: [...safety.multiTargetWrite.serverAllowedTransports] }, request)
-  ) {
-    throw new AdtSafetyError('CTS request is not allowed by both server and destination transport policies.');
-  }
-}
-
 /** Caller-selected tasks must be modifiable; lock evidence only proves parent membership. */
 export async function resolvePinnedRequest(
   http: AdtHttpClient,
@@ -37,14 +52,14 @@ export async function resolvePinnedRequest(
   id: string,
   options?: AdtRequestOptions,
 ): Promise<string> {
-  return (await inspectPinnedRequest(http, safety, id, options, true)).id;
+  return (await inspectPinnedRequest(http, safety, id, requireRequestPolicy(http, safety, options), true)).id;
 }
 
 async function inspectPinnedRequest(
   http: AdtHttpClient,
   safety: SafetyConfig,
   id: string,
-  options: AdtRequestOptions | undefined,
+  options: AdtRequestOptions,
   requireModifiableTask: boolean,
 ): Promise<TransportRequest> {
   if (!/^[A-Z0-9]{1,20}$/.test(id)) throw new AdtSafetyError('Invalid CTS request/task ID.');
@@ -111,6 +126,7 @@ export async function pinnedRecording(
   requested?: string,
   options?: AdtRequestOptions,
 ): Promise<PinnedRecording> {
+  options = requireRequestPolicy(http, safety, options);
   const info = await getTransportInfo(http, safety, owner, pkg, operation, options);
   if (info.lockedTransportAmbiguous || (info.lockedTasks.length && !info.lockedTransport))
     throw new AdtSafetyError('Ambiguous CTS lock holders.');
@@ -151,6 +167,7 @@ export async function validatePinnedLock(
   recording: PinnedRecording,
   options?: AdtRequestOptions,
 ): Promise<void> {
+  options = requireRequestPolicy(http, safety, options);
   if (!lock.lockHandle || lock.localityKnown !== true || lock.isLocal !== recording.local)
     throw new AdtSafetyError('SAP lock does not affirm the preflight recording context.');
   if (recording.local) {

@@ -20,8 +20,14 @@
  * flags and `SAP_DENY_ACTIONS`.
  */
 
+import { DENY_ALL_LIST_ENTRY, isTransportInWhitelist, listDeniesAll } from './allowlist-policy.js';
+
+export { isTransportInWhitelist } from './allowlist-policy.js';
+
 import { AdtSafetyError } from './errors.js';
+import type { AdtHttpClient } from './http.js';
 import { type PackageHierarchyResolver, packageHierarchyDecision } from './package-hierarchy.js';
+import { assertPinnedTransportWrite } from './pinned-transport-scope.js';
 
 /** Suffix that marks an `allowedPackages` entry as "this package + DEVCLASS subtree". */
 export const SUBTREE_SUFFIX = '/**';
@@ -50,11 +56,6 @@ export type OperationTypeCode = (typeof OperationType)[keyof typeof OperationTyp
 
 /** Mutating operation types — blocked when `allowWrites=false`. */
 const MUTATING_OPS = 'CDUAWX';
-const DENY_ALL_LIST_ENTRY = '__ARC1_DENY_ALL__';
-
-function listDeniesAll(list: string[]): boolean {
-  return list.includes(DENY_ALL_LIST_ENTRY);
-}
 
 function displayAllowList(list: string[]): string {
   return listDeniesAll(list) ? '[]' : `[${list.join(',')}]`;
@@ -311,29 +312,18 @@ export async function checkPackage(
 }
 
 /** Check if a transport is in the whitelist. */
-export function isTransportInWhitelist(config: Pick<SafetyConfig, 'allowedTransports'>, transport: string): boolean {
-  if (listDeniesAll(config.allowedTransports)) return false;
-  if (config.allowedTransports.length === 0) return true;
-
-  const upperTransport = transport.toUpperCase();
-
-  for (const allowed of config.allowedTransports) {
-    const upperAllowed = allowed.toUpperCase();
-    if (upperAllowed === upperTransport) return true;
-    if (upperAllowed.endsWith('*')) {
-      const prefix = upperAllowed.slice(0, -1);
-      if (upperTransport.startsWith(prefix)) return true;
-    }
-  }
-
-  return false;
-}
 
 /**
  * Check transport operation. Writes require `allowWrites && allowTransportWrites`.
  * Reads are always allowed at this layer (scope check enforces user gating upstream).
  */
-export function checkTransport(config: SafetyConfig, transport: string, opName: string, isWrite: boolean): void {
+export function checkTransport(
+  config: SafetyConfig,
+  transport: string,
+  opName: string,
+  isWrite: boolean,
+  http?: AdtHttpClient,
+): void {
   if (isWrite) {
     if (!config.allowWrites) {
       throw new AdtSafetyError(
@@ -344,6 +334,10 @@ export function checkTransport(config: SafetyConfig, transport: string, opName: 
       throw new AdtSafetyError(
         `Transport write '${opName}' is blocked: allowTransportWrites=false. Set SAP_ALLOW_TRANSPORT_WRITES=true to enable transport mutations.`,
       );
+    }
+    if (config.multiTargetWrite) {
+      assertPinnedTransportWrite(config, transport, opName, http);
+      return;
     }
   }
 
