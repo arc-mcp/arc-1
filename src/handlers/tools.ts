@@ -1306,7 +1306,7 @@ export function getToolDefinitions(
             description:
               'unittest only: collect statement/branch/procedure coverage and methodsBelowFull. Unavailable measurements do not discard test results. Default false.',
           },
-          includeSubpackages: { type: 'boolean', default: false },
+          includeSubpackages: { type: 'boolean' },
           resultFormat: {
             type: 'string',
             enum: ['legacy', 'structured', 'junit'],

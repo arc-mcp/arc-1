@@ -1214,7 +1214,7 @@ export const SAPDiagnoseSchema = z
         ...(input.action === 'atc_ci' ? ['variant', 'configuration', 'failOnSeverity'] : []),
       ]);
       for (const [key, value] of Object.entries(input))
-        if (value !== undefined && !allowed.has(key))
+        if (value !== undefined && !allowed.has(key) && !(key === 'includeSubpackages' && value === false))
           ctx.addIssue({ code: 'custom', path: [key], message: `${key} is not supported for ${input.action}.` });
       if (input.variant !== undefined && (input.variant.length === 0 || input.variant.length > 128))
         ctx.addIssue({ code: 'custom', path: ['variant'], message: 'CI variant must contain 1..128 characters.' });
@@ -1245,7 +1245,7 @@ export const SAPDiagnoseSchema = z
       }
     }
     if (
-      input.includeSubpackages !== undefined &&
+      input.includeSubpackages === true &&
       (input.action !== 'unittest' || input.type?.toUpperCase().split('/')[0] !== 'DEVC')
     ) {
       ctx.addIssue({

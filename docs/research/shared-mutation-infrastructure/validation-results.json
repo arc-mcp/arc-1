@@ -1,0 +1,52 @@
+{
+  "runtimeRevision": "80532d05",
+  "checks": [
+    {
+      "check": "test",
+      "exit": 0,
+      "seconds": 14.8
+    },
+    {
+      "check": "typecheck",
+      "exit": 0,
+      "seconds": 1.4
+    },
+    {
+      "check": "lint",
+      "exit": 0,
+      "seconds": 0.3
+    },
+    {
+      "check": "policy",
+      "exit": 0,
+      "seconds": 0.2
+    },
+    {
+      "check": "build",
+      "exit": 0,
+      "seconds": 0.5
+    },
+    {
+      "check": "sizes",
+      "exit": 0,
+      "seconds": 0.3
+    }
+  ],
+  "unit": {
+    "success": true,
+    "numTotalTestSuites": 1432,
+    "numPassedTestSuites": 1432,
+    "numTotalTests": 10329,
+    "numPassedTests": 10329,
+    "numFailedTests": 0,
+    "numPendingTests": 0
+  },
+  "liveIntegration": {
+    "success": true,
+    "numTotalTests": 1,
+    "numPassedTests": 1,
+    "numFailedTests": 0,
+    "numPendingTests": 0
+  },
+  "unchangedToolFixtureFiles": 11
+}

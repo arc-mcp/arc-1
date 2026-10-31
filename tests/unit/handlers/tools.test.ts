@@ -326,7 +326,7 @@ describe('Tool Definitions', () => {
 
     expect(diagnose.description).toContain('CLAS/PROG/FUGR or DEVC');
     expect(schema.properties.type.description).toContain('DEVC');
-    expect(schema.properties.includeSubpackages).toEqual({ type: 'boolean', default: false });
+    expect(schema.properties.includeSubpackages).toEqual({ type: 'boolean' });
   });
 
   it('describes SAPRead sqlFilter as condition-only expression', () => {

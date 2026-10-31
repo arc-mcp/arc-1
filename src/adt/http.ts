@@ -864,7 +864,7 @@ export class AdtHttpClient {
           if (retryContentType !== currentContentType) {
             negotiated.contentType = retryContentType;
           }
-          // Never cache into the source subtree; costs one extra round trip per matching legacy call.
+          // Keep the #907 legacy fallback uncached; only successful 406/415 results are reusable.
           if (!legacyFallback && (negotiated.accept || negotiated.contentType)) {
             this.negotiatedHeaders.set(negotiationKey, negotiated);
           }
@@ -950,21 +950,12 @@ export class AdtHttpClient {
     return withoutQuery.endsWith('/') && withoutQuery.length > 1 ? withoutQuery.slice(0, -1) : withoutQuery;
   }
 
+  /**
+   * Negotiated headers apply only to the exact normalized resource. Metadata media types must not
+   * override source, structure or version resources, which use their own negotiation or discovery.
+   */
   private resolveNegotiatedHeaders(path: string): { accept?: string; contentType?: string } | undefined {
-    let matched: { accept?: string; contentType?: string } | undefined;
-    let matchedPathLength = -1;
-
-    for (const [prefix, headers] of this.negotiatedHeaders.entries()) {
-      const isExact = path === prefix;
-      const isChild = path.startsWith(`${prefix}/`);
-      if (!isExact && !isChild) continue;
-      if (prefix.length > matchedPathLength) {
-        matched = headers;
-        matchedPathLength = prefix.length;
-      }
-    }
-
-    return matched;
+    return this.negotiatedHeaders.get(path);
   }
 
   private notifyUnauthorized(path: string): void {
