@@ -7,6 +7,8 @@ Foundation commit: **67e5703449c133e575d893d3184b531f3725bf2d**. Consume the sub
 integration commit too: it completes transport accounting, public schema/routing, occurrence
 limits and mandatory hidden-root denial. No other family adapter or revision-source fallback
 is a dependency of this stage.
+Later family branches should consume this PR's reviewed head as well: the follow-up fixes shared
+session recovery and graph ownership while preserving the adapter entry point.
 
 Stable exports and adapter obligations are documented in
 [the adapter contract](../../dev/extension-discovery-adapters.md). Public behavior, limits and
@@ -83,8 +85,9 @@ PP live authorization are unqualified. BTP developer OAuth was subsequently qual
 
 ## Merge-readiness follow-up (2026-10-31)
 
-- All **10,643 unit tests** passed (387 files). Typecheck, lint, policy, build, schema/file size
-  checks and strict MkDocs build passed. The production source tree is unchanged from the hash above.
+- Before the Opus review, all **10,643 unit tests** passed (387 files). Typecheck, lint, policy,
+  build, schema/file size checks and strict MkDocs build passed. The subsequent fixes and latest
+  production source hash are recorded below; MCP/BTP evidence links contain the latest reruns.
 - [HTTP MCP evidence](mcp-live.json): seven selected read-only tests passed on each of A4H 758 SP02
   and NPL 750 SP02 through a freshly built loopback HTTP Streamable server. Four new E2E cases
   exercise advertised input schema, none/default/summary, unchanged fresh base source, separate
@@ -110,7 +113,47 @@ PP live authorization are unqualified. BTP developer OAuth was subsequently qual
 - The initial CI integration failure was the existing `where-used-details` test. Its saved native
   responses returned HTTP 200 with empty referencedObjects for both ordinary and package-filtered
   calls immediately after fixture activation. This is not evidence that the DDIC fallback dropped
-  a returned candidate; the unrelated where-used integration gate still needs a successful run.
+  a returned candidate. Final CI results belong to the PR's current head; skipped SAP jobs must
+  not be counted as passing execution.
+
+## Opus review fixes and final local verification (2026-10-31)
+
+- CLI `source` and `read --flat` suppress extension context, including TABL aliases, while
+  ordinary reads and explicit generic tool calls retain their documented behavior.
+- Disabling the candidate-index fallback no longer suppresses a later include's dedicated
+  append provider. Tests cover both unavailable indexes and the 13-candidate overflow case.
+- Successful data operations clear recovered auth/CSRF retry evidence. Real HTTP tests cover
+  default 401 retry, HEAD 403 → CSRF GET recovery, a later ordinary 404, and continued reads.
+  A final non-auth error from the data request also settles recovery within the same operation.
+  Typed CSRF bootstrap failures, redirects and network loss retain unresolved auth evidence;
+  a failed bootstrap is not misreported as an unavailable where-used endpoint.
+  Unrecovered auth, unsafe protocol, throttle and budget failures remain terminal.
+- Graph edges join the discovered parent identity and separately qualify their observation
+  version. Active source bodies do not relabel unversioned discovery identities. Explicit structure
+  context keeps its occurrence tree and omits the incomplete secondary metadata-edge projection.
+- Real HTTP structure tests exhaust the 20-send cap with CSRF and index fallback included,
+  and verify that an empty native index body stops further reads while preserving the root.
+  Mock source/metadata reads now charge the session actually passed by their caller.
+- Live E2E cases explicitly verify qualified deadline partial results instead of requiring a
+  positive fixture after the optional phase expires. The recorded final 750/758 runs each passed
+  all seven selected tests with **positive fixture coverage and no deadline-only passes**.
+- **10,666 tests in 387 files passed on both Node 22.21.1 and 24.11.1.** Typecheck, lint, policy,
+  build, schema/file-size budgets, audit and strict documentation build passed. An earlier full
+  run timed out in the unrelated real-child shutdown test under concurrent load; the focused
+  rerun and both full reruns passed without changing its timeout or implementation.
+- The [MCP](mcp-live.json) and [BTP](btp-live.json) evidence was regenerated after the production
+  fixes. All 15 BTP mode calls over five standard examples passed again, with positive append
+  identities and separately labelled DSH source bodies.
+
+The final tested `src/**/*.ts` tree hash is
+**c9a5f320c79a1c81562bb3802e64c4f7df00ad73191613be555054e40bcc9ab1**.
+Limits are simultaneous ceilings, not guaranteed traversal capacity. Node identity remains
+canonical type/name/version, so distinct version observations are deliberately not collapsed.
+CF HTTP authentication and live principal propagation remain unqualified.
+
+[Claude Code Opus review and dispositions](opus-review.md) record the initial findings, follow-up
+corrections and final focused verification with no actionable defects. The reviews were static;
+the test and live-run evidence above was executed independently.
 
 Roadmap checked: **No roadmap impact** in the current-main roadmap. FEAT-03 concerns enhancement
 authoring, which this read-only stage does not change. The primary checkout's separate uncommitted

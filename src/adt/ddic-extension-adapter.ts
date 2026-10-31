@@ -9,14 +9,20 @@ export function ddicExtensionAdapter(client: DdicExtensionClient, baseSource: st
       await discoverDdicAppends(client, session, request.root.name);
       return;
     }
-    const queue = [{ name: request.root.name.toUpperCase(), source: baseSource, depth: 0 }];
+    const queue = [{ name: request.root.name.toUpperCase(), identity: request.root, source: baseSource, depth: 0 }];
     const expanded = new Set<string>();
     const fetched = new Set<string>([extensionKey(request.root)]);
     for (let cursor = 0; cursor < queue.length && !session.stopped; cursor++) {
       const current = queue[cursor]!;
       if (expanded.has(current.name)) continue;
       expanded.add(current.name);
-      const { references } = await discoverDdicAppends(client, session, current.name, current.depth + 1);
+      const { references } = await discoverDdicAppends(
+        client,
+        session,
+        current.name,
+        current.depth + 1,
+        current.identity,
+      );
       const includes: ExtensionNode[] = parseEmbeddedStructures(current.source).map((ref) => {
         const node: ExtensionNode = {
           type: 'TABL',
@@ -27,9 +33,10 @@ export function ddicExtensionAdapter(client: DdicExtensionClient, baseSource: st
         };
         if (session.addNode(node, current.depth + 1))
           session.addEdge({
-            from: `TABL:${current.name}:active`,
+            from: extensionKey(current.identity),
             to: extensionKey(node),
             kind: 'include',
+            observationVersion: 'active',
             attribute: ref.attribute,
             ...(ref.suffix ? { suffix: ref.suffix } : {}),
           });
@@ -77,7 +84,8 @@ export function ddicExtensionAdapter(client: DdicExtensionClient, baseSource: st
             source,
             provider: node.provider,
           });
-          if (current.depth < session.limits.depth) queue.push({ name: node.name, source, depth: current.depth + 1 });
+          if (current.depth < session.limits.depth)
+            queue.push({ name: node.name, identity: node, source, depth: current.depth + 1 });
           else session.omit('depth');
         });
         if (provider.status !== 'returned') session.omit('sources');

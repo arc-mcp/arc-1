@@ -1064,6 +1064,11 @@ function extractInlineLineNumber(text: string): number | undefined {
   return match?.[1] ? parseOptionalInt(match[1]) : undefined;
 }
 
+/** A control request failed before the intended data operation could receive a response. */
+export class AdtCsrfBootstrapError extends AdtApiError {
+  override name = 'AdtCsrfBootstrapError';
+}
+
 /** Network-level error (DNS, connection refused, timeout) */
 export class AdtNetworkError extends AdtError {
   constructor(

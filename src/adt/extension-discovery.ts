@@ -2,7 +2,7 @@
 import { isActionDenied } from '../server/deny-actions.js';
 import { logger } from '../server/logger.js';
 import { DataResponseBudget } from './data-result-context.js';
-import { AdtApiError, AdtResponseLimitError, AdtSafetyError } from './errors.js';
+import { AdtApiError, AdtCsrfBootstrapError, AdtResponseLimitError, AdtSafetyError } from './errors.js';
 import { type AdtRequestOptions, type RequestDeadlineOptions, throwIfRequestCancelled } from './http-deadline.js';
 import { AdtRequestBudgetError, RequestAttemptBudget } from './request-attempt-budget.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
@@ -44,6 +44,8 @@ export interface ExtensionEdge {
   attribute?: string | null;
   suffix?: string;
   location?: string;
+  /** Version of the relation/source observation, distinct from the referenced node's identity. */
+  observationVersion?: string;
 }
 export interface ExtensionSource {
   identity: ExtensionIdentity;
@@ -139,16 +141,30 @@ export class ExtensionDiscoverySession {
     try {
       throwIfRequestCancelled(this.options);
       assertExtensionReadAllowed(this.safety, type);
-      return await operation(this.options);
+      const result = await operation(this.options);
+      // A completed data operation proves that its auth/CSRF retries recovered.
+      // Malformed provider data is still rejected by the adapter's protocol boundary.
+      this.options.attemptBudget!.authorizationFailureObserved = false;
+      return result;
     } catch (error) {
       if (this.options.signal?.aborted) throw error;
+      // A final non-auth HTTP response settles an intermediate auth/CSRF retry even
+      // when the provider is unavailable. Network failures retain unresolved evidence.
+      if (
+        error instanceof AdtApiError &&
+        !(error instanceof AdtCsrfBootstrapError) &&
+        error.statusCode >= 400 &&
+        ![401, 403].includes(error.statusCode)
+      )
+        this.options.attemptBudget!.authorizationFailureObserved = false;
       // A failed provider cannot turn into alternate-route evidence after these failures.
       if (
         error instanceof AdtSafetyError ||
         error instanceof AdtResponseLimitError ||
         error instanceof AdtRequestBudgetError ||
         error instanceof ExtensionProtocolError ||
-        (error instanceof AdtApiError && [401, 403, 429].includes(error.statusCode)) ||
+        (error instanceof AdtApiError &&
+          ([401, 403, 429].includes(error.statusCode) || (error.statusCode >= 300 && error.statusCode < 400))) ||
         Date.now() >= this.options.deadline! ||
         this.options.attemptBudget?.authorizationFailureObserved
       ) {
@@ -232,6 +248,7 @@ export class ExtensionDiscoverySession {
       return 'deadline';
     }
     if (error instanceof ExtensionProtocolError) return 'invalid_provider_response';
+    if (error instanceof AdtCsrfBootstrapError) return 'csrf_bootstrap_failed';
     if (error instanceof AdtSafetyError) return 'hidden_read_denied';
     if (error instanceof AdtApiError) return `http_${error.statusCode}`;
     if (error instanceof ExtensionStoppedError) return 'optional_phase_stopped';

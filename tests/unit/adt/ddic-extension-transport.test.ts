@@ -20,12 +20,12 @@ afterEach(async () => {
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
-async function setup(listener?: RequestListener) {
+async function setup(listener?: RequestListener, options: { retryUnauthorized?: boolean; source?: string } = {}) {
   const sends: string[] = [];
   const server = createServer((req, res) => {
     sends.push(`${req.method} ${req.url}`);
     if (new URL(req.url!, 'http://local').pathname.toLowerCase() === `${base}/source/main`) {
-      res.end(source);
+      res.end(options.source ?? source);
       return;
     }
     if (listener) {
@@ -44,7 +44,7 @@ async function setup(listener?: RequestListener) {
     client: new AdtClient({
       baseUrl: `http://127.0.0.1:${address.port}`,
       safety: defaultSafetyConfig(),
-      retryUnauthorized: false,
+      retryUnauthorized: options.retryUnauthorized ?? false,
     }),
   };
 }
@@ -53,6 +53,273 @@ const read = (client: AdtClient, args: Record<string, unknown> = {}) =>
 const summary = (text: string) => JSON.parse(text.replace(/^\[extensions\] /, ''));
 
 describe('optional DDIC phase through real HTTP transport', () => {
+  it('does not mislabel failed CSRF bootstrap as an unavailable where-used endpoint', async () => {
+    const { client, sends } = await setup(
+      (req, res) => {
+        if (new URL(req.url!, 'http://local').pathname.toLowerCase() === base) {
+          res.end('<blueSource name="zbase" type="TABL/DT" version="active"/>');
+          return;
+        }
+        res.statusCode = req.method === 'HEAD' ? 403 : 404;
+        res.end('unavailable');
+      },
+      { source: 'define table zbase {\n include zinc;\n}' },
+    );
+    const result = await buildStructureHierarchy(client, 'zbase');
+    expect(result.extensionDiscovery?.providers).toContainEqual(
+      expect.objectContaining({ id: 'ddic_where_used', status: 'incomplete', reason: 'csrf_bootstrap_failed' }),
+    );
+    expect(result.tree.children).toEqual([expect.objectContaining({ structure: 'ZINC', truncated: true })]);
+    expect(sends).toHaveLength(5);
+    expect(sends.some((send) => send.startsWith('POST'))).toBe(false);
+  });
+  it('retains auth evidence when token refetch fails after a forbidden data response', async () => {
+    let heads = 0;
+    const { client, sends } = await setup(
+      (req, res) => {
+        if (req.method === 'HEAD' && heads++ === 0) {
+          res.setHeader('x-csrf-token', 'LOCAL');
+          res.end();
+          return;
+        }
+        res.statusCode = req.method === 'GET' ? 404 : 403;
+        res.end('unavailable');
+      },
+      { retryUnauthorized: true },
+    );
+    const session = new ExtensionDiscoverySession(
+      'sources',
+      { root: { type: 'TABL', name: 'ZBASE', version: 'active' }, scope: 'structure' },
+      client.safety,
+    );
+    await expect(
+      session.read('TABL', (options) => client.http.post('/sap/bc/adt/test', 'read', 'text/plain', undefined, options)),
+    ).rejects.toMatchObject({ name: 'AdtCsrfBootstrapError', statusCode: 404 });
+    expect(session.stopped).toBe(true);
+    expect(sends).toHaveLength(5);
+  });
+  it.each([false, true])('stops on a blocked redirect (preceded by 401: %s)', async (authFirst) => {
+    let first = true;
+    const { client, sends } = await setup(
+      (_req, res) => {
+        if (authFirst && first) {
+          first = false;
+          res.statusCode = 401;
+          res.end('expired');
+          return;
+        }
+        res.statusCode = 302;
+        res.setHeader('Location', '/login');
+        res.end('login');
+      },
+      { retryUnauthorized: true },
+    );
+    const session = new ExtensionDiscoverySession(
+      'sources',
+      { root: { type: 'TABL', name: 'ZBASE', version: 'active' }, scope: 'structure' },
+      client.safety,
+    );
+    await expect(
+      session.read('TABL', (options) => client.http.get('/sap/bc/adt/test', undefined, options)),
+    ).rejects.toMatchObject({ statusCode: 302 });
+    expect(session.stopped).toBe(true);
+    expect(sends).toHaveLength(authFirst ? 2 : 1);
+  });
+  it('keeps auth evidence terminal when its retry loses the network connection', async () => {
+    let first = true;
+    const { client, sends } = await setup(
+      (req, res) => {
+        if (first) {
+          first = false;
+          res.statusCode = 401;
+          res.end('expired');
+          return;
+        }
+        req.socket.destroy();
+      },
+      { retryUnauthorized: true },
+    );
+    const session = new ExtensionDiscoverySession(
+      'sources',
+      { root: { type: 'TABL', name: 'ZBASE', version: 'active' }, scope: 'structure' },
+      client.safety,
+    );
+    await expect(
+      session.read('TABL', (options) => client.http.get('/sap/bc/adt/test', undefined, options)),
+    ).rejects.toThrow();
+    expect(session.stopped).toBe(true);
+    expect(sends).toHaveLength(2);
+  });
+  it.each([400, 404, 405, 415, 501])(
+    'keeps child reads available after CSRF recovery and final HTTP %s in one operation',
+    async (status) => {
+      const { client, sends } = await setup(
+        (req, res) => {
+          if (req.method === 'HEAD') {
+            res.statusCode = 403;
+            res.end();
+            return;
+          }
+          if (req.url?.includes('/core/discovery')) {
+            res.setHeader('x-csrf-token', 'LOCAL');
+            res.end('discovery');
+            return;
+          }
+          if (req.method === 'POST') {
+            res.statusCode = status;
+            res.end('unavailable');
+            return;
+          }
+          res.end('child source');
+        },
+        { retryUnauthorized: true },
+      );
+      const session = new ExtensionDiscoverySession(
+        'sources',
+        { root: { type: 'TABL', name: 'ZBASE', version: 'active' }, scope: 'structure' },
+        client.safety,
+      );
+      await expect(
+        session.read('TABL', (options) =>
+          client.http.post('/sap/bc/adt/test', 'read', 'text/plain', undefined, options),
+        ),
+      ).rejects.toMatchObject({ statusCode: status });
+      expect(session.stopped).toBe(false);
+      expect(
+        (await session.read('TABL', (options) => client.http.get('/sap/bc/adt/child', undefined, options))).body,
+      ).toBe('child source');
+      const expectedSends = status === 415 ? 5 : 4; // Media negotiation also consumes the shared allowance.
+      expect(sends).toHaveLength(expectedSends);
+      expect(session.options.attemptBudget!.used).toBe(expectedSends);
+    },
+  );
+  it('keeps final auth failures terminal after the default retry', async () => {
+    const { client, sends } = await setup(
+      (_req, res) => {
+        res.statusCode = 401;
+        res.end('denied');
+      },
+      { retryUnauthorized: true },
+    );
+    const session = new ExtensionDiscoverySession(
+      'sources',
+      { root: { type: 'TABL', name: 'ZBASE', version: 'active' }, scope: 'structure' },
+      client.safety,
+    );
+    await expect(
+      session.read('TABL', (options) => client.http.get('/sap/bc/adt/test', undefined, options)),
+    ).rejects.toMatchObject({ statusCode: 401 });
+    expect(session.stopped).toBe(true);
+    await expect(
+      session.read('TABL', (options) => client.http.get('/sap/bc/adt/child', undefined, options)),
+    ).rejects.toThrow();
+    expect(sends).toHaveLength(2);
+  });
+  it.each(['401', 'csrf'])(
+    'recovers %s before an ordinary unavailable provider without poisoning later reads',
+    async (recovery) => {
+      let first = true;
+      const { client, sends } = await setup(
+        (req, res) => {
+          if (req.method === 'HEAD') {
+            res.statusCode = 403;
+            res.end();
+            return;
+          }
+          if (req.url?.includes('/core/discovery')) {
+            res.setHeader('x-csrf-token', 'LOCAL');
+            res.end('discovery');
+            return;
+          }
+          if (req.url?.includes('/missing')) {
+            res.statusCode = 404;
+            res.end('absent');
+            return;
+          }
+          if (recovery === '401' && first) {
+            first = false;
+            res.statusCode = 401;
+            res.end('expired');
+            return;
+          }
+          res.end('validated data');
+        },
+        { retryUnauthorized: true },
+      );
+      const s = new ExtensionDiscoverySession(
+        'sources',
+        { root: { type: 'TABL', name: 'ZBASE', version: 'active' }, scope: 'object' },
+        client.safety,
+      );
+      const recovered = await s.read('TABL', (options) =>
+        recovery === '401'
+          ? client.http.get('/sap/bc/adt/test', undefined, options)
+          : client.http.post('/sap/bc/adt/test', 'read', 'text/plain', undefined, options),
+      );
+      expect(recovered.body).toBe('validated data');
+      await expect(
+        s.read('TABL', (options) => client.http.get('/sap/bc/adt/missing', undefined, options)),
+      ).rejects.toMatchObject({ statusCode: 404 });
+      expect(s.stopped).toBe(false);
+      expect((await s.read('TABL', (options) => client.http.get('/sap/bc/adt/next', undefined, options))).body).toBe(
+        'validated data',
+      );
+      expect(s.options.attemptBudget!.used).toBe(sends.length);
+      expect(sends).toHaveLength(recovery === '401' ? 4 : 5);
+      expect(s.options.responseBudget!.consumedBytes).toBe(
+        Buffer.byteLength(`${recovery === '401' ? 'expired' : 'discovery'}validated dataabsentvalidated data`),
+      );
+    },
+  );
+  it('caps all real sends including CSRF and candidate-index fallback during structure traversal', async () => {
+    const { client, sends } = await setup(
+      (req, res) => {
+        if (req.method === 'HEAD') {
+          res.setHeader('x-csrf-token', 'LOCAL');
+          res.end();
+          return;
+        }
+        if (req.method === 'POST') {
+          res.end('<usageReferenceResult><referencedObjects/></usageReferenceResult>');
+          return;
+        }
+        const path = new URL(req.url!, 'http://local').pathname;
+        const name = path.split('/')[6]!;
+        res.end(
+          path.endsWith('/source/main')
+            ? `define structure ${name} {}`
+            : `<blueSource name="${name}" type="TABL/DT" version="active"/>`,
+        );
+      },
+      {
+        source: `define structure zbase {\n${Array.from({ length: 8 }, (_, i) => ` include zinc${i};`).join('\n')}\n}`,
+      },
+    );
+    const result = await buildStructureHierarchy(client, 'zbase');
+    expect(result.tree.structure).toBe('ZBASE');
+    expect(result.extensionDiscovery?.consumed.sends).toBe(20);
+    expect(sends).toHaveLength(21); // Mandatory base read is outside the optional phase.
+    expect(sends.some((send) => send.startsWith('HEAD'))).toBe(true);
+    expect(sends.some((send) => send.startsWith('POST'))).toBe(true);
+    expect(result.extensionDiscovery?.omissions.requests).toBeGreaterThan(0);
+  });
+  it('stops on an empty native index body while retaining the mandatory root', async () => {
+    const { client, sends } = await setup(
+      (req, res) => {
+        if (req.method === 'HEAD') res.setHeader('x-csrf-token', 'LOCAL');
+        res.end(req.method === 'GET' ? '<blueSource name="zbase" type="TABL/DT" version="active"/>' : '');
+      },
+      { source: 'define table zbase {\n include zinc;\n}' },
+    );
+    const result = await buildStructureHierarchy(client, 'zbase');
+    expect(result.tree).toMatchObject({
+      structure: 'ZBASE',
+      kind: 'root',
+      children: [{ structure: 'ZINC', truncated: true }],
+    });
+    expect(result.extensionDiscovery?.issues).toContain('invalid_provider_response');
+    expect(sends).toHaveLength(4);
+  });
   it.each([403, 429, 200])(
     'explicit structure preserves the root and cannot index-fallback after unsafe/status %s',
     async (status) => {
@@ -87,7 +354,7 @@ describe('optional DDIC phase through real HTTP transport', () => {
     );
     expect(sends).toHaveLength(1);
     expect(sends[0]).toContain('HEAD');
-    expect(s.result.providers[0]?.reason).toBe('http_503');
+    expect(s.result.providers[0]?.reason).toBe('csrf_bootstrap_failed');
   });
   it('charges multiple error bodies against one aggregate response allowance', async () => {
     const { client, sends } = await setup((_req, res) => {
