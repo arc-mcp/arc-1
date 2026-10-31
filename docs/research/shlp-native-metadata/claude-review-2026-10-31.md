@@ -23,7 +23,8 @@ The review was static; validation claims came from the recorded test evidence.
   description-order, filler-tolerance and extra routing cases remain follow-ups; they were not
   identified as merge blockers and do not alter this feature's contract.
 
-Follow-up Claude review pending after the fixes and final validation.
+**Follow-up outcome:** [Claude found no remaining merge blockers](claude-followup-2026-10-31.md)
+and recommends merging after final CI is green.
 
 ## Initial review (verbatim)
 

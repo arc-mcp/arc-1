@@ -19,9 +19,10 @@ version-selection evidence. We traced the live native backend on **750 SP02 (NPL
    (parameters), then passes it to `DD_SHLP_GET`. There is no request to select the caller's
    inactive draft in this path.
 
-The active selection is therefore made by SAP's native provider. ARC-1 does not need an extra
-version query parameter or another production request. `sourceVersion: 'active'` is justified for
-these qualified backends by their explicit Dictionary read contract.
+SAP's native provider requests the active SHLP header and parameters through that Dictionary
+contract. ARC-1 does not need an extra version query parameter or another production request.
+`sourceVersion: 'active'` describes this SHLP selection on the qualified backends. The independent
+version behavior of referenced-data-element enrichment helpers was not traced.
 
 ## Evidence and regression check
 

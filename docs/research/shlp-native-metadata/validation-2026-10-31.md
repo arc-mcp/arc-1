@@ -62,7 +62,8 @@ Both P2 recommendations were implemented: accurate size-limit guidance and pinne
 retry, attempt, deadline and cancellation behavior. The focused handler suite passed **44/44**.
 Final local validation after these fixes: **383 files / 10,643 unit tests**, **7/7 MCP E2E on each
 of 750 and 758**, plus typecheck, lint, build, policy validation, schema/file budgets and strict docs
-build all passed. See the [review and disposition](claude-review-2026-10-31.md).
+build all passed. The [Claude follow-up](claude-followup-2026-10-31.md) found no remaining merge
+blockers and recommends merging after final CI is green.
 
 ## Scope and remaining qualification
 
