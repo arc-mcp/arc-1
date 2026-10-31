@@ -1,0 +1,179 @@
+{
+  "checkedAt": "2026-10-31T20:44:05.904Z",
+  "environment": {
+    "abapRelease": "920",
+    "cloudComponent": true
+  },
+  "observations": [
+    {
+      "type": "FUNC",
+      "mode": "summary",
+      "baseSha256": "68e0cd5e07e6052e3dff6d82c8aa81f479e65affd34f76096dd19d3ab9395d09",
+      "basePreserved": true,
+      "summary": {
+        "root": {
+          "type": "FUNC",
+          "name": "RFC_SYSTEM_INFO",
+          "version": "active"
+        },
+        "scope": "FUNC RFC_SYSTEM_INFO selected function (group=SRFC)",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "not_advertised",
+            "coverage": "selected_source",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "enhancement_provider_not_advertised",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [],
+        "applicability": "unknown",
+        "issues": [
+          "enhancement_relation_not_advertised:FUNC:RFC_SYSTEM_INFO"
+        ],
+        "omissions": {},
+        "consumed": {
+          "sends": 1,
+          "responseBytes": 2622,
+          "elapsedMs": 265
+        }
+      },
+      "sourceBlockHashes": []
+    },
+    {
+      "type": "FUNC",
+      "mode": "sources",
+      "baseSha256": "68e0cd5e07e6052e3dff6d82c8aa81f479e65affd34f76096dd19d3ab9395d09",
+      "basePreserved": true,
+      "summary": {
+        "root": {
+          "type": "FUNC",
+          "name": "RFC_SYSTEM_INFO",
+          "version": "active"
+        },
+        "scope": "FUNC RFC_SYSTEM_INFO selected function (group=SRFC)",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "not_advertised",
+            "coverage": "selected_source",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "enhancement_provider_not_advertised",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [],
+        "applicability": "unknown",
+        "issues": [
+          "enhancement_relation_not_advertised:FUNC:RFC_SYSTEM_INFO"
+        ],
+        "omissions": {},
+        "consumed": {
+          "sends": 1,
+          "responseBytes": 2622,
+          "elapsedMs": 256
+        }
+      },
+      "sourceBlockHashes": []
+    },
+    {
+      "type": "FUGR",
+      "mode": "summary",
+      "baseSha256": "26c8e643c0d1132808351b92076f304f4647b8ab3205520599f3a40a3f09ffe4",
+      "basePreserved": true,
+      "summary": {
+        "root": {
+          "type": "FUGR",
+          "name": "SRFC",
+          "version": "active"
+        },
+        "scope": "FUGR SRFC full root source",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "HOOK_IMPL outer/specific identities; nested expansion not performed",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {},
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 3507,
+          "elapsedMs": 370
+        }
+      },
+      "sourceBlockHashes": []
+    },
+    {
+      "type": "FUGR",
+      "mode": "sources",
+      "baseSha256": "26c8e643c0d1132808351b92076f304f4647b8ab3205520599f3a40a3f09ffe4",
+      "basePreserved": true,
+      "summary": {
+        "root": {
+          "type": "FUGR",
+          "name": "SRFC",
+          "version": "active"
+        },
+        "scope": "FUGR SRFC full root source",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "incomplete",
+            "coverage": "bounded_traversal",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "request_limit",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [],
+        "applicability": "unknown",
+        "issues": [
+          "enhancement_relation_not_advertised:FUGR:SRFC",
+          "enhancement_relation_not_advertised:INCL:LSRFCTOP",
+          "enhancement_relation_not_advertised:INCL:LSRFCUXX",
+          "enhancement_relation_not_advertised:INCL:LSRFCO01",
+          "enhancement_relation_not_advertised:INCL:LSRFCI01",
+          "enhancement_relation_not_advertised:INCL:LSRFCU06",
+          "enhancement_relation_not_advertised:INCL:LSRFCU07",
+          "enhancement_relation_not_advertised:INCL:LSRFCU16",
+          "enhancement_relation_not_advertised:INCL:LSRFCU17",
+          "enhancement_relation_not_advertised:INCL:LSRFCU01",
+          "source_unit_unreadable:INCL:LSRFCU02:read_failed",
+          "source_unit_not_checked:INCL:LSRFCU03",
+          "source_unit_not_checked:INCL:LSRFCU04",
+          "request_limit"
+        ],
+        "omissions": {
+          "sources": 3,
+          "requests": 1
+        },
+        "consumed": {
+          "sends": 20,
+          "responseBytes": 50702,
+          "elapsedMs": 3964
+        }
+      },
+      "sourceBlockHashes": []
+    }
+  ]
+}

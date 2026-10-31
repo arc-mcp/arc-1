@@ -40,6 +40,24 @@ const rootRoutes = {
   [`${base}/source/main/enhancements/elements`]: empty,
 };
 describe('source plugin discovery', () => {
+  it.each(['summary', 'sources'] as const)(
+    'distinguishes unadvertised providers from returned-empty lists in %s',
+    async (mode) => {
+      const unit = { type: 'PROG' as const, name: 'ZROOT' };
+      const uri = '/sap/bc/adt/programs/programs/zroot';
+      const request = { root: { ...unit, version: 'active' }, scope: 'program ZROOT' };
+      const s = setup(
+        mode,
+        { [`${uri}?version=active`]: '<object name="ZROOT" type="PROG/P" version="active"/>' },
+        [],
+        request,
+      );
+      await discoverSourcePlugins(s.client, s.session, request, { unit, source: '' });
+      expect(s.session.result.providers[0]).toMatchObject({ status: 'not_advertised', coverage: 'selected_source' });
+      expect(s.session.result.nodes).toEqual([]);
+      expect(s.get).toHaveBeenCalledTimes(1);
+    },
+  );
   it.each(['750', '758'])('exposes the complete class fixture graph to the stage 3 caller on %s', async (version) => {
     const unit = { type: 'CLAS' as const, name: 'CL_SEEF_ADT_TEST_AUNIT_1' };
     const uri = '/sap/bc/adt/oo/classes/cl_seef_adt_test_aunit_1';
@@ -126,6 +144,23 @@ describe('source plugin discovery', () => {
     expect(s.session.result.edges.filter((e) => e.kind === 'replacement')).toHaveLength(2);
     expect(s.get).toHaveBeenCalledTimes(6);
     expect(JSON.stringify(s.get.mock.calls)).not.toContain('include_nested');
+  });
+  it('keeps mixed missing-provider/positive-child traversal incomplete rather than reporting absence', async () => {
+    const include = 'LSEEF_ADT_TEST_AUNIT_FUGR1F01';
+    const uri = `/sap/bc/adt/programs/includes/${include.toLowerCase()}`;
+    const s = setup('sources', {
+      [`${base}?version=active`]: `<object name="${group}" type="FUGR/F" version="active"/>`,
+      [`${uri}?version=active`]: metadata(include, 'PROG/I', uri),
+      [`${uri}/source/main?version=active`]: '',
+      [`${uri}/source/main/enhancements/elements?context=${encodeURIComponent(base)}`]: fixture('fugr-f01-758.xml'),
+    });
+    await discoverSourcePlugins(s.client, s.session, req, {
+      unit: { type: 'FUGR', name: group },
+      source: `INCLUDE ${include}.`,
+    });
+    expect(s.session.result.nodes).toHaveLength(3);
+    expect(s.session.result.providers[0]?.status).toBe('incomplete');
+    expect(s.session.result.issues).toContain(`enhancement_relation_not_advertised:FUGR:${group}`);
   });
   it.each([true, false])(
     'binds structural include function locations to the actual first FUNCTION header: %s',

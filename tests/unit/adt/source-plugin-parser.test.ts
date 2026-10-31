@@ -99,6 +99,43 @@ describe('source plug-in wire parser', () => {
         ?.source,
     ).toBeUndefined();
   });
+  it('limits each decoded body independently while preserving other bodies and identities', () => {
+    const graph = parseSourcePluginElements(fixture('class-758.xml'), {
+      mainObjectUri: classUri,
+      sources: true,
+      maxSourceBytes: 180,
+      maxDecodedBytes: 65536,
+    });
+    const plugins = graph.implementations.flatMap((i) => i.plugins);
+    expect(graph.implementations).toHaveLength(7);
+    expect(plugins.some((p) => p.sourceOmitted === 'decoded_byte_limit')).toBe(true);
+    expect(plugins.some((p) => p.source !== undefined)).toBe(true);
+    expect(plugins.filter((p) => p.source !== undefined).every((p) => Buffer.byteLength(p.source!) <= 180)).toBe(true);
+  });
+  it('limits the cumulative decoded bytes independently of the per-body allowance', () => {
+    const graph = parseSourcePluginElements(fixture('class-758.xml'), {
+      mainObjectUri: classUri,
+      sources: true,
+      maxSourceBytes: 16384,
+      maxDecodedBytes: 600,
+    });
+    const plugins = graph.implementations.flatMap((i) => i.plugins);
+    expect(plugins.reduce((n, p) => n + Buffer.byteLength(p.source ?? ''), 0)).toBeLessThanOrEqual(600);
+    expect(plugins.some((p) => p.source !== undefined)).toBe(true);
+    expect(graph.omittedSources).toBeGreaterThan(0);
+  });
+  it.each(['orphan', 'cycle'])('rejects %s parent graphs before decoding', (kind) => {
+    const xml = fixture('class-758.xml')
+      .replace(
+        /(<enh:enhancedObject[^>]*adtcore:name=")SEEF_ADT_TEST_ENHO_CLASS_1("[^>]*\/?>)/,
+        `$1${kind === 'cycle' ? 'SEEF_ADT_TEST_ENHO_CLASS_11' : 'UNKNOWN_PARENT'}$2`,
+      )
+      .replace(
+        /(adtcore:uri="\/sap\/bc\/adt\/enhancements\/enhoxhh\/)seef_adt_test_enho_class_1(\/source\/main" adtcore:type="ENHO\/XHH" adtcore:name=")/,
+        `$1${kind === 'cycle' ? 'seef_adt_test_enho_class_11' : 'unknown_parent'}$2`,
+      );
+    expect(() => parseSourcePluginElements(xml, { mainObjectUri: classUri, sources: true })).toThrow();
+  });
   it('records malformed base64 and invalid UTF-8 without using permissive decoding', () => {
     for (const [encoded, reason] of [
       ['!!!=', 'invalid_base64'],
@@ -145,6 +182,7 @@ describe('source plug-in wire parser', () => {
     (s: string) =>
       s.replace('/source/main#start=25,0', '/source/main?context=%2Fsap%2Fbc%2Fadt%2Foo%2Fclasses%2Fother#start=25,0'),
     (s: string) => s.replace('adtcore:version="active"', 'adtcore:version=""'),
+    (s: string) => s.replace('/source/main#start=25,0', '/source/main#start=25,0#unexpected'),
     () => '<enh:enhancements>',
     () => '<enhancements>not a valid empty list</enhancements>',
     () => '<enhancements><unknown/></enhancements>',

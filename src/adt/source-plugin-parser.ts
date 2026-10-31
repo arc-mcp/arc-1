@@ -142,6 +142,7 @@ export function parseSourcePluginElements(xml: string, options: PluginParseOptio
       const option = row(row(p.option).sourceCodePluginOption);
       if (option.position) {
         const position = attr(row(option.position), 'uri');
+        if (position.split('#').length !== 2) invalid();
         const [pathAndQuery, fragment] = position.split('#');
         if (!fragment || !/^start=\d+,\d+$/.test(fragment)) invalid();
         const [path, query] = pathAndQuery!.split('?');

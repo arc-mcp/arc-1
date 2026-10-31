@@ -121,7 +121,10 @@ plug-in XML is qualified on both releases. Live positive coverage includes PROG 
 INCL, FUNC and FUGR on 758; other family/release combinations remain unqualified.
 CLAS, INTF and BDEF public integration remains in later stages and explicit requests currently
 report `unsupported`.
-BTP and other releases are unqualified. CDS/DDLX extensions and BAdIs are outside this feature.
+Read-only BTP ABAP 920 checks cover FUNC `RFC_SYSTEM_INFO` (provider not advertised) and FUGR
+`SRFC` (empty root identities and bounded source traversal). These establish contract behavior,
+not positive BTP plug-in source coverage. PROG/INCL remain excluded from the BTP public schema;
+other BTP objects and releases remain unqualified. CDS/DDLX extensions and BAdIs are outside this feature.
 
 Method, grep, line-window and class-include reads default to none. An explicit mode on a partial
 read describes its **owning object/source**, without claiming the extension bodies match the

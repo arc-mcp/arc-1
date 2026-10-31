@@ -6,6 +6,7 @@ import { AdtApiError } from './errors.js';
 import {
   type ExtensionDiscoverySession,
   ExtensionProtocolError,
+  type ExtensionProvider,
   type ExtensionRequest,
   extensionKey,
 } from './extension-discovery.js';
@@ -33,7 +34,7 @@ export async function discoverSourcePlugins(
   request: ExtensionRequest,
   selection: SourcePluginSelection,
 ): Promise<void> {
-  const provider = {
+  const provider: ExtensionProvider = {
     id: 'source_plugins',
     family: 'source_plugin',
     status: 'returned' as const,
@@ -64,6 +65,8 @@ export async function discoverSourcePlugins(
     let occurrences = 0;
     let unavailable = false;
     let legacy = false;
+    let checkedProviders = 0;
+    let missingOnly = true;
     while (pending.length && !session.stopped) {
       const current = pending.shift()!;
       const { unit, depth } = current;
@@ -152,16 +155,18 @@ export async function discoverSourcePlugins(
             );
           });
           recordGraph(session, graph, key, emittedSources, provider.id, depth);
+          checkedProviders++;
         } else {
           unavailable = true;
           session.result.issues.push(`enhancement_relation_not_advertised:${unit.type}:${unit.name}`);
         }
-        if (session.mode !== 'sources') return;
+        if (session.mode !== 'sources') break;
         source ??= await readSource();
         session.sourceCache.set(key, source);
         if (Buffer.byteLength(source) > 256 * 1024) {
           session.omit('sources');
           unavailable = true;
+          missingOnly = false;
           session.result.issues.push(`source_scan_byte_limit:${unit.type}:${unit.name}`);
           continue;
         }
@@ -182,11 +187,13 @@ export async function discoverSourcePlugins(
           if (!expandsInclude(include.name, mainUnit.name)) {
             session.result.issues.push(`include_ownership_skipped:${include.name}`);
             unavailable = true;
+            missingOnly = false;
             continue;
           }
           pending.push({ unit: child, depth: depth + 1 });
         }
       } catch (error) {
+        missingOnly = false;
         if (error instanceof ExtensionProtocolError)
           session.result.issues.push(`invalid_source_unit:${unit.type}:${unit.name}`);
         session.result.issues.push(
@@ -203,11 +210,19 @@ export async function discoverSourcePlugins(
       }
     }
     if (unavailable)
-      Object.assign(provider, { status: 'incomplete', reason: 'source_units_unavailable_or_not_advertised' });
-    else if (session.mode === 'sources')
+      Object.assign(
+        provider,
+        checkedProviders === 0 && missingOnly
+          ? {
+              status: 'not_advertised',
+              coverage: seen.size === 1 ? 'selected_source' : 'bounded_traversal',
+              reason: 'enhancement_provider_not_advertised',
+            }
+          : { status: 'incomplete', reason: 'source_units_unavailable_or_not_advertised' },
+      );
+    else if (session.mode === 'sources' && provider.status === 'returned')
       provider.reason = 'bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown';
     if (legacy) provider.reason += '; qualified 750 unadvertised source provider';
-    if (session.mode === 'summary' && unavailable) Object.assign(provider, { status: 'unsupported' });
   });
 }
 
