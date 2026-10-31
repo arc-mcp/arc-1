@@ -16,8 +16,10 @@
  */
 
 import { config } from 'dotenv';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AdtClient } from '../../src/adt/client.js';
+import { defaultFeatureConfig } from '../../src/adt/config.js';
+import { probeFeatures } from '../../src/adt/features.js';
 import {
   type BTPServiceKey,
   createBearerTokenProvider,
@@ -26,6 +28,7 @@ import {
 } from '../../src/adt/oauth.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
 import { handleToolCall } from '../../src/handlers/dispatch.js';
+import { resetCachedFeatures, setCachedFeatures } from '../../src/handlers/feature-cache.js';
 import { getToolDefinitions } from '../../src/handlers/tools.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
 import { hasBtpCredentials } from './helpers.js';
@@ -67,6 +70,8 @@ describeIf('BTP ABAP smoke', { timeout: 30_000 }, () => {
   beforeAll(() => {
     client = getBtpSmokeClient();
   });
+
+  afterAll(() => resetCachedFeatures());
 
   // ─── Connectivity ───────────────────────────────────────────────
 
@@ -124,19 +129,28 @@ describeIf('BTP ABAP smoke', { timeout: 30_000 }, () => {
       expect(schema).not.toMatchObject({ properties: { type: { enum: expect.arrayContaining(['SHLP']) } } });
     }
   });
-  it('refuses SHLP on the BTP client before any metadata request', async () => {
-    const get = vi.spyOn(client.http, 'get');
-    try {
-      for (const tool of ['SAPRead', 'SAPContext']) {
-        const result = await handleToolCall(client, { ...DEFAULT_CONFIG, systemType: 'btp' }, tool, {
-          type: 'SHLP/DH',
-          name: 'SCUSTOM',
-        });
-        expect(result.isError).toBe(true);
+  it.each(['btp', 'auto'] as const)(
+    'refuses SHLP on the BTP client in %s mode before any metadata request',
+    async (systemType) => {
+      if (systemType === 'auto') {
+        const features = await probeFeatures(client.http, defaultFeatureConfig(), 'auto');
+        expect(features.systemType).toBe('btp');
+        expect(features.systemTypeSource).toBe('probe');
+        setCachedFeatures(features);
       }
-      expect(get).not.toHaveBeenCalled();
-    } finally {
-      get.mockRestore();
-    }
-  });
+      const get = vi.spyOn(client.http, 'get');
+      try {
+        for (const tool of ['SAPRead', 'SAPContext']) {
+          const result = await handleToolCall(client, { ...DEFAULT_CONFIG, systemType }, tool, {
+            type: 'SHLP/DH',
+            name: 'SCUSTOM',
+          });
+          expect(result.isError).toBe(true);
+        }
+        expect(get).not.toHaveBeenCalled();
+      } finally {
+        get.mockRestore();
+      }
+    },
+  );
 });

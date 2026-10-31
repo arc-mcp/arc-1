@@ -1966,6 +1966,7 @@ For on-prem search helps, `SAPContext(type="SHLP", name="SCUSTOM")` (or `action=
 returns the same active partial interface metadata as `SAPRead`. It performs no KTD lookup,
 source compression or dependency traversal. Other actions and supplied source are unsupported.
 The response declares missing definition fields and leaves effective translation language unknown.
+To disable both entry points, deny both `SAPRead.SHLP` and `SAPContext.SHLP`.
 
 Get dependency API contracts, CDS impact, DDIC structure, or live where-used evidence.
 

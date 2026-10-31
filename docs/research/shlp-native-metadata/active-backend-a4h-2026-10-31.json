@@ -1,0 +1,48 @@
+{
+  "capturedAt": "2026-10-31T21:17:02.004Z",
+  "target": "A4H",
+  "client": "001",
+  "sapBasis": {
+    "name": "SAP_BASIS",
+    "release": "758",
+    "spName": "SAPK-75802INSAPBASIS",
+    "spLevel": "0002",
+    "description": "SAP Basis Component"
+  },
+  "method": "read-only inspection of active native backend source; no draft mutation control",
+  "stateDefault": "'A'",
+  "providerOmitsState": true,
+  "activeStatePreserved": true,
+  "headerUsesReadState": true,
+  "parametersUseReadState": true,
+  "sources": [
+    {
+      "object": "CL_SBD_ADT_RES_ELEMENT_INFO",
+      "sha256": "25c2a5a1c0c7bf8fcba2fe08b7942334918a0a30bad5de1d1ad99aed2ad1bb9a"
+    },
+    {
+      "object": "CL_DADT_SHLP_INFO_PROVIDER",
+      "sha256": "8d296b254e3098e2cab02c5e20ec0a5343e39b402dcfc3bebb6121f5adaedada"
+    },
+    {
+      "object": "CL_SBD_ADT_RES_ELEMENT_INFO/implementations",
+      "sha256": "2bd8a0d1d13b6171a2c3563819399cbd324e9acc147c435ee2d8bb242536191b"
+    },
+    {
+      "object": "CL_DDIC_ELEM_INFO_PROVIDER",
+      "sha256": "a0a7681cc04b678b07ac9870e93c37c90ae9a890ac9c5e510f69e69822f492a2"
+    },
+    {
+      "object": "CL_DDIC_ELEM_INFO_PROVIDER/implementations",
+      "sha256": "49bd3a9df6ff7c0a564c5d565ddb5ed327dafcb94d643b866d4587f0e4b58d71"
+    },
+    {
+      "object": "DDIF_SHLP_GET",
+      "sha256": "8055e9f1f3ec0da60aa536a392ced5482265a14b29cdf955638d57dbb09e2b3f"
+    },
+    {
+      "object": "LSDIFF00",
+      "sha256": "0a4a69c38e8ec5b4216858cffd87eed21ce892fcf340d3ce0f43321b9aeca113"
+    }
+  ]
+}

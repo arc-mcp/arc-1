@@ -80,3 +80,5 @@ npx vitest run --config vitest.integration.config.ts tests/integration/shlp.inte
 added MCP E2E, same-endpoint caller isolation, compressed-response, namespace encoding and BTP
 compatibility/exclusion tests. Full unit suite: 10,626 passed; MCP E2E: 7/7 on each on-prem system;
 BTP smoke: 7/7. Failed attempts and remaining qualification are recorded in the audit.
+
+Claude review follow-up: [findings and disposition](../research/shlp-native-metadata/claude-review-2026-10-31.md), including [active-version qualification](../research/shlp-native-metadata/active-version-2026-10-31.md).

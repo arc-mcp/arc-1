@@ -1,6 +1,7 @@
 /** Native SHLP contract on live on-prem SAP; read-only, no fixture creation. */
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AdtClient } from '../../src/adt/client.js';
+import { parseFmSignature } from '../../src/adt/fm-signature.js';
 import { defaultSafetyConfig } from '../../src/adt/safety.js';
 import { SEARCH_HELP_COLLECTION } from '../../src/adt/search-help.js';
 import { parseDiscoveryDocument } from '../../src/adt/xml-parser.js';
@@ -51,6 +52,23 @@ describe('Native partial SHLP integration', () => {
       expect(result.isError).toBe(true);
       expect(payload(result)).toMatchObject({ availability: 'not_available', type: 'SHLP' });
     });
+  });
+  it('qualifies active selection from the native SHLP provider and Dictionary read contract', async () => {
+    const [{ source: provider }, { source: dictionary }, { source: common }] = await Promise.all([
+      client.getClass('CL_DADT_SHLP_INFO_PROVIDER', undefined, { version: 'active' }),
+      client.getFunction('SDIF', 'DDIF_SHLP_GET', { version: 'active' }),
+      client.getInclude('LSDIFF00', { version: 'active' }),
+    ]);
+    const method = provider.match(/\bMETHOD\s+get_search_help_data\.[\s\S]*?\bENDMETHOD\./i)?.[0];
+    expect(method).toBeDefined();
+    const call = method?.match(/CALL FUNCTION 'DDIF_SHLP_GET'[\s\S]*?EXCEPTIONS/i)?.[0];
+    expect(call).toBeDefined();
+    expect(call).not.toMatch(/\bstate\s*=/i);
+    expect(parseFmSignature(dictionary).params.find((p) => p.name === 'STATE')?.default).toBe("'A'");
+    const stateMapping = common.match(/\bform get_readstate\b[\s\S]*?endform\./i)?.[0];
+    expect(stateMapping).toMatch(/if state ca 'AM'\.\s*readstate = state\./i);
+    expect(dictionary).toMatch(/get_state-SHHD = readstate/i);
+    expect(dictionary).toMatch(/get_state-SHFD = readstate/i);
   });
   it('rejects unsupported inactive reads before any HTTP request', async () => {
     const get = vi.spyOn(client.http, 'get');

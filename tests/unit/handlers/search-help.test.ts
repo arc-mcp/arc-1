@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { createServer, type RequestListener, type Server } from 'node:http';
 import { gzipSync } from 'node:zlib';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AdtClient } from '../../../src/adt/client.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { readSearchHelpMetadata } from '../../../src/adt/search-help.js';
 import { handleToolCall } from '../../../src/handlers/dispatch.js';
-import { resetCachedFeatures } from '../../../src/handlers/feature-cache.js';
+import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/feature-cache.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 const body = readFileSync(new URL('../../fixtures/shlp/758-scustom.xml', import.meta.url), 'utf8');
@@ -22,7 +22,7 @@ afterEach(async () => {
     }),
   );
 });
-async function setup(listener: RequestListener, proxy = false, language = 'DE') {
+async function setup(listener: RequestListener, proxy = false, language = 'DE', retryUnauthorized = false) {
   const server = createServer(listener);
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -33,7 +33,7 @@ async function setup(listener: RequestListener, proxy = false, language = 'DE') 
     baseUrl: proxy ? 'http://sap.invalid:8000' : `http://127.0.0.1:${address.port}`,
     client: '001',
     language,
-    retryUnauthorized: false,
+    retryUnauthorized,
     ...(proxy
       ? {
           btpProxy: {
@@ -88,6 +88,56 @@ describe.each([false, true])('SHLP real HTTP proxy=%s', (proxy) => {
     expect((await invoke(client)).isError).toBe(true);
     expect(calls).toBe(1);
   });
+  it.each([
+    [429, 'Too many requests'],
+    [503, 'Service unavailable'],
+    [500, 'database connection is not open'],
+    [302, 'Redirect'],
+  ])('does not retry or follow HTTP %s with default auth recovery enabled', async (status, response) => {
+    let calls = 0;
+    const client = await setup(
+      (_req, res) => {
+        calls++;
+        res.writeHead(status, { Location: '/redirect-must-not-run', 'Retry-After': '0' });
+        res.end(response);
+      },
+      proxy,
+      'DE',
+      true,
+    );
+    expect((await invoke(client)).isError).toBe(true);
+    expect(calls).toBe(1);
+  });
+  it.each([{ statuses: [401, 401] }, { statuses: [401, 406, 200] }])(
+    'bounds default auth and MIME recovery: $statuses',
+    async ({ statuses }) => {
+      let calls = 0;
+      const client = await setup(
+        (_req, res) => {
+          const status = statuses[calls++] ?? 500;
+          res.writeHead(status);
+          res.end(status === 200 ? body : 'Synthetic recovery');
+        },
+        proxy,
+        'DE',
+        true,
+      );
+      const result = await invoke(client);
+      expect(Boolean(result.isError)).toBe(statuses.at(-1) !== 200);
+      expect(calls).toBe(statuses.length);
+    },
+  );
+  it('passes the four-send ceiling and default 15-second deadline to the transport', async () => {
+    const client = await setup((_req, res) => res.end(body), proxy);
+    const get = vi.spyOn(client.http, 'get');
+    const started = Date.now();
+    expect((await invoke(client)).isError).toBeUndefined();
+    const options = get.mock.calls[0]?.[2];
+    expect(options).toMatchObject({ attemptBudget: { limit: 4 }, retryTransientErrors: false });
+    expect(options?.deadline).toBeGreaterThanOrEqual(started + 15_000);
+    expect(options?.deadline).toBeLessThanOrEqual(Date.now() + 15_000);
+    get.mockRestore();
+  });
   it('reports unnamed 200 as unavailable, not a successful empty help', async () => {
     const client = await setup((_req, res) => res.end(empty), proxy);
     for (const tool of ['SAPRead', 'SAPContext']) {
@@ -103,7 +153,8 @@ describe.each([false, true])('SHLP real HTTP proxy=%s', (proxy) => {
     }, proxy);
     const result = await invoke(client);
     expect(result.isError).toBe(true);
-    expect(text(result)).toMatch(/limit|large/i);
+    expect(text(result)).toMatch(/SHLP metadata cannot be narrowed/);
+    expect(text(result)).not.toMatch(/data-preview|maxRows|WHERE/);
   });
   it('rejects oversized gzip through the decoded cap or proxy encoding guard', async () => {
     const compressed = gzipSync('x'.repeat(2 * 1024 * 1024 + 1));
@@ -114,7 +165,8 @@ describe.each([false, true])('SHLP real HTTP proxy=%s', (proxy) => {
     }, proxy);
     const result = await invoke(client);
     expect(result.isError).toBe(true);
-    expect(text(result)).toMatch(proxy ? /Unexpected Content-Encoding 'gzip'/ : /limit|large/i);
+    expect(text(result)).toMatch(proxy ? /Unexpected Content-Encoding 'gzip'/ : /SHLP metadata cannot be narrowed/);
+    expect(text(result)).not.toMatch(/data-preview|maxRows|WHERE/);
   });
   it('encodes a namespaced name exactly once on the wire', async () => {
     const namespaced = readFileSync(new URL('../../fixtures/shlp/758-namespace.xml', import.meta.url), 'utf8');
@@ -151,24 +203,28 @@ describe.each([false, true])('SHLP real HTTP proxy=%s', (proxy) => {
       controller.signal,
     );
     expect(result.isError).toBe(true);
+    expect(text(result)).toMatch(/cancelled/i);
   });
 });
 
-it('caller deadlines expire before a send and interrupt a stalled native body', async () => {
-  let calls = 0;
-  const client = await setup((_req, res) => {
-    calls++;
-    res.write('<elementInfo>');
-  });
-  await expect(
-    readSearchHelpMetadata(client.http, client.safety, 'SCUSTOM', { deadline: Date.now() - 1 }),
-  ).rejects.toThrow();
-  expect(calls).toBe(0);
-  await expect(
-    readSearchHelpMetadata(client.http, client.safety, 'SCUSTOM', { deadline: Date.now() + 100 }),
-  ).rejects.toThrow();
-  expect(calls).toBe(1);
-});
+it.each([false, true])(
+  'caller deadlines expire before a send and interrupt a stalled native body (proxy=%s)',
+  async (proxy) => {
+    let calls = 0;
+    const client = await setup((_req, res) => {
+      calls++;
+      res.write('<elementInfo>');
+    }, proxy);
+    await expect(
+      readSearchHelpMetadata(client.http, client.safety, 'SCUSTOM', { deadline: Date.now() - 1 }),
+    ).rejects.toThrow();
+    expect(calls).toBe(0);
+    await expect(
+      readSearchHelpMetadata(client.http, client.safety, 'SCUSTOM', { deadline: Date.now() + 100 }),
+    ).rejects.toThrow();
+    expect(calls).toBe(1);
+  },
+);
 
 it('does not cache metadata across requests or callers and reports the actual transport language', async () => {
   let firstCalls = 0,
@@ -281,4 +337,20 @@ it('BTP and denied scopes/actions cannot reach the native read', async () => {
     ).toBeUndefined();
   }
   expect(calls).toBe(2);
+});
+
+it.each(['SAPRead', 'SAPContext'])('refuses auto-detected BTP through %s before HTTP', async (tool) => {
+  let calls = 0;
+  const client = await setup((_req, res) => {
+    calls++;
+    res.end(body);
+  });
+  setCachedFeatures({ systemType: 'btp' });
+  const result = await handleToolCall(client, { ...DEFAULT_CONFIG, systemType: 'auto' }, tool, {
+    type: 'SHLP/DH',
+    name: 'SCUSTOM',
+  });
+  expect(result.isError).toBe(true);
+  expect(text(result)).toMatch(/not qualified for BTP ABAP/);
+  expect(calls).toBe(0);
 });

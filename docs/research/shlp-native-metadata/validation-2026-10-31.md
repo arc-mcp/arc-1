@@ -1,6 +1,7 @@
 # SHLP coverage follow-up — 2026-10-31
 
-PR #1141, based on `90abdfc3`. Production implementation remains unchanged in this follow-up.
+PR #1141, based on `90abdfc3`. The initial coverage extension left production code unchanged;
+the subsequent Claude review led to two small handler fixes recorded below.
 All checks on the previous PR head `580d6e07` passed in GitHub, including Node 22/24,
 integration, E2E, docs, CodeQL and dependency checks.
 
@@ -21,7 +22,7 @@ No credentials, tokens or private service keys are included in the evidence.
 
 ## Validation and failed attempts
 
-- Final full unit run: **383 files, 10,626 tests passed** (`npm test -- --reporter=dot --maxWorkers=4`).
+- Full unit run before Claude review: **383 files, 10,626 tests passed** (`npm test -- --reporter=dot --maxWorkers=4`).
 - Focused handler suite: 27/27 passed, including five new cases.
 - Typecheck, lint, build, policy validation, existing size/schema budgets and strict docs build passed.
 - Initial BTP attempts timed out while the system was starting and browser authentication was pending.
@@ -31,6 +32,37 @@ No credentials, tokens or private service keys are included in the evidence.
   in different signal variants, while the host's one-minute load exceeded 230. An unchanged-base
   checkout passed 12/12, then the PR checkout passed 12/12 in 2.18 seconds. Resource contention is
   the likely explanation; no shutdown timeout or production code was changed to hide the failures.
+
+## Dependency audit follow-up
+
+The first CI run on coverage commit `e5fcfdcd` stopped before tests because the newly published
+[GHSA-mrwp-f3q8-3g9p advisory](https://github.com/advisories/GHSA-mrwp-f3q8-3g9p) affected
+`follow-redirects@1.16.1`. This is an inherited dependency issue, not evidence of an SHLP failure.
+
+The exact focused patch from [PR #1155](https://github.com/arc-mcp/arc-1/pull/1155), source commit
+`46a8afbd`, was cherry-picked as `ef732bab`: both root and AppRouter lockfiles resolve
+`follow-redirects@1.16.2`. Only the version, registry URL and integrity fields changed. There are no
+new dependencies, audit exceptions or application-source changes.
+
+After fresh installs, both security audits passed, the AppRouter suite passed 5/5, the build passed,
+and the full unit suite again passed **383 files / 10,626 tests**. The newly built MCP server also
+passed the seven live SHLP E2E cases again on each of 750 and 758. BTP's seven successful live
+compatibility/exclusion cases were run before this dependency-only patch.
+
+## Claude review follow-up
+
+The initial review found an auto-detected BTP bypass and missing evidence for the active label.
+The shared handler now refuses detected BTP before HTTP, with unit and live auto-mode coverage.
+Live BTP smoke passed **8/8** after the fix. The provider/default-state chain was inspected on both
+750 and 758; the updated native integration suite passed **8/8 on each**, including a read-only
+backend-contract check. [Version evidence](active-version-2026-10-31.md) records the exact method
+and limits. No draft mutations or second-user control are claimed.
+
+Both P2 recommendations were implemented: accurate size-limit guidance and pinned direct/proxy
+retry, attempt, deadline and cancellation behavior. The focused handler suite passed **44/44**.
+Final local validation after these fixes: **383 files / 10,643 unit tests**, **7/7 MCP E2E on each
+of 750 and 758**, plus typecheck, lint, build, policy validation, schema/file budgets and strict docs
+build all passed. See the [review and disposition](claude-review-2026-10-31.md).
 
 ## Scope and remaining qualification
 
