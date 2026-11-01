@@ -100,7 +100,8 @@ use SAP's separate **Multi-Target Application** packaging terminology.
    record. These qualify only enforced mode; standard behavior must remain unchanged.
    For scoped writes, read [ADR-0010](adr/0010-pinned-pp-multi-target-writes.md), its
    [implementation contract](plans/2026-10-22-multi-target-pinned-writes.md), and the
-   [operator guide](../docs_page/multi-target-writes.md).
+   [operator guide](../docs_page/multi-target-writes.md). Broader adapters also follow
+   [ADR-0011](adr/0011-broader-pinned-pp-mutations.md) and its explicit capability/qualification matrix.
 2. At startup, `src/server/destination-discovery.ts` projects subaccount destinations into a
    secret-safe shape, `destination-registry.ts` validates them, and `server.ts`/`http.ts` create the
    pinned and aggregate HTTP factories.
@@ -118,9 +119,10 @@ use SAP's separate **Multi-Target Application** packaging terminology.
 ### Invariants
 
 - Default off; BTP CF only; XSUAA-only route auth; `ARC1_CACHE=none`; standard tool mode; UI,
-  plugins and shared cookies remain unavailable. ADR-0010 permits only scoped CLAS/INTF writes and
-  whole-owner activation on explicitly enabled pinned PP targets with exact write grants; aggregate,
-  Copilot and Basic routes remain mutation-free. Transport/Git management remains unavailable. PP
+  plugins and shared cookies remain unavailable. ADR-0010 establishes scoped writes and ADR-0011
+  defines broader native adapters on explicitly enabled pinned PP targets with exact write grants.
+  Only combinations in `pinned-mutation-capabilities.ts` are admitted; the operator guide records
+  qualification limits. Aggregate, Copilot and Basic remain mutation-free; Git stays excluded. PP
   targets are strict per-user. Basic is a separate default-off shared identity, never fallback, and
   requires exactly one CF instance. ATC and ABAP Unit are available as workload-producing reads;
   operators can disable them with `SAP_DENY_ACTIONS`.
@@ -217,9 +219,29 @@ Program deletion uses `withPinnedActiveTextPoolForDelete`: its additional pool l
 it never opens another session or exposes the owning transport. Both locks use independent bounded
 cleanup even after cancellation; failures preserve the primary outcome. The legacy text-pool delete
 profile keeps its historical cleanup behavior. An inactive or unverified pool refuses pinned DELETE.
-Program activation permits only the selected native pool expansion and verifies its final active
-state. Include activation never expands to its users. These procedural paths still need live PP
+After successful DELETE and typed owner-absence readback, a native adapter can identify its resource
+as deleted through the lock policy. A typed not-found UNLOCK is then resolved only by that exact
+owning session's confirmed close; generic 404 and other failures still report the affected URI/status.
+Never set deletion proof from DELETE status alone or clear unrelated cleanup failures.
+Program activation permits only the selected native pool expansion. Every native result is followed
+by a pool-state read, and results distinguish owner-only from expanded scope and preserve uncertainty.
+Include activation never expands to its users; native context counts/packages are usage information,
+not another ownership grant or a complete where-used inventory. These procedural paths still need live PP
 qualification; the latest successful deployed evidence remains scoped to `77e41fdcd`.
+
+Text-part replacement shares `text-elements.ts::writeTextElementPartWithPolicy` with an explicit
+registered profile. The pool lock differs from the repository owner; pinned validation binds both.
+Its post-unlock hook stays on the same owning session and runs only after a successful operation,
+confirmed unlock and a valid request budget. `pinned-text-pool-activation.ts` issues a one-use exact-URI
+grant only during that hook; ordinary caller options cannot disable native preaudit. Active metadata
+and an explicit active part equal to saved readback are both required. The save preserves other text
+parts, but whole-pool activation also activates their pending drafts. Submitted text PUT errors remain
+uncertain because native error status does not establish an atomic rejection.
+
+`native-xml-evidence.ts` retains namespace bindings, rejects ambiguous identity attributes, malformed
+or DOCTYPE-bearing documents, and bounds metadata. `native-activation-evidence.ts` preserves preaudit
+name/type/deleted evidence. Normalize only namespace-separator hex case when matching admitted URIs;
+do not decode arbitrary percent escapes or follow native refs outside the selected owner policy.
 
 `mutation-http.ts` gives nested helpers a scoped transport with the pinned deadline, cancellation
 and no-replay options. Child options cannot relax those limits; nested stateful sessions inherit
