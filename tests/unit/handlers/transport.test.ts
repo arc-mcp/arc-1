@@ -1082,6 +1082,11 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
     describe.each(['check', 'history'])('%s group routing', (action) => {
       it.each(groupCases)('$label reaches the correct SAP URI', async ({ label: _label, uri, ...object }) => {
         mockFetch.mockImplementation(async (url: string) => {
+          if (String(url).includes('/informationsystem/search') && object.type === 'INCL' && !('group' in object))
+            return mockResponse(
+              200,
+              `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:name="${object.name}" adtcore:type="PROG/I" adtcore:uri="${uri}"/></adtcore:objectReferences>`,
+            );
           if (String(url).includes('/informationsystem/search'))
             return mockResponse(
               200,

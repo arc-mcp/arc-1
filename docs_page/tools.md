@@ -1848,7 +1848,7 @@ SAPQuery(sql="SELECT * FROM mara WHERE matnr LIKE 'Z%'", maxRows=50)
 
 ## SAPTransport
 
-Manage CTS transport requests (SE09/SE10 equivalent): list, get details, **diff (review what a transport changed)**, create, release, delete, reassign owner, recursive release, check transport requirements, and inspect an object's current lock/assignment status. The legacy action name for that status lookup is `history`, but it is not complete transport history. `create` uses the ADT `CreateCorrectionRequest` endpoint, which works on both NetWeaver 7.50+ and S/4HANA.
+Manage CTS transport requests (SE09/SE10 equivalent): list, get details, **diff (review what a transport changed)**, create, release, delete, reassign owner, recursive release, check transport requirements, and inspect an object's current lock/assignment status. The legacy action name for that status lookup is `history`, but it is not complete transport history. An include without `group` needs an exact repository identity; a search miss does not prove it is standalone. If the fallback cannot verify its package or CTS holders, `history` returns `lockStatusUnknown: true` and asks for a CTS check. `check` refuses ambiguous/task-only holders. These results do not establish that an object is free to edit. `create` uses the ADT `CreateCorrectionRequest` endpoint, which works on both NetWeaver 7.50+ and S/4HANA.
 
 In multi-target v1, `list`, `get`, `diff`, `check`, and `history` are available under the
 selected target's identity and read policy. Transport mutations remain unavailable.
