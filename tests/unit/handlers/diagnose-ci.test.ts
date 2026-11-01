@@ -146,7 +146,7 @@ describe('CI action inputs and adapters', () => {
         packageTrees: ['ZPKG'],
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('not started on on-premise systems');
+      expect(result.content[0].text).toContain('supported only for BTP ABAP Environment');
       expect(result.content[0].text).toContain('type="DEVC"');
       expect(mockFetch).not.toHaveBeenCalled();
     } finally {

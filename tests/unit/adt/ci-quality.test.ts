@@ -246,7 +246,9 @@ describe('ATC CI orchestration', () => {
       runPath,
     });
     expect(result).toMatchObject({
-      incompleteReason: expect.stringMatching(/did not start the ATC CI run within 60 s.*action="atc", type="DEVC"/),
+      incompleteReason: expect.stringMatching(
+        /Not Yet Started.*60 s.*Inspect the existing SAP run.*action="atc", type="DEVC"/,
+      ),
     });
     expect(post).toHaveBeenCalledTimes(1);
   });
@@ -278,10 +280,53 @@ describe('ATC CI orchestration', () => {
     const result = await runAtcCiCheck(http, safety, { ...options(), timeoutSeconds: 600, clock });
     expect(result).toMatchObject({ status: 'completed', runPath, resultPath });
   });
+  it.each([
+    ['known BTP', 'btp' as const, false],
+    ['a run that already progressed', undefined, true],
+  ])('retains the caller deadline for %s', async (_label, systemType, progressed) => {
+    let now = 0;
+    const { http, get, post } = httpFor({ status: '<run status="Not Yet Started"/>' });
+    const original = get.getMockImplementation()!;
+    get.mockImplementation(async (path) =>
+      path === runPath && progressed && now < 5000
+        ? { body: '<run status="In Process"/>', headers: {} }
+        : original(path),
+    );
+    const result = await runAtcCiCheck(http, safety, {
+      ...options(),
+      systemType,
+      timeoutSeconds: 90,
+      clock: {
+        now: () => now,
+        sleep: async (ms) => {
+          now += ms;
+        },
+      },
+    });
+    expect(result).toMatchObject({ status: 'incomplete', durationMs: 90_000, runPath });
+    expect(result).toMatchObject({ incompleteReason: expect.stringContaining('deadline expired') });
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+  it('keeps the shorter overall deadline while waiting for an unknown system', async () => {
+    let now = 0;
+    const { http } = httpFor({ status: '<run status="Not Yet Started"/>' });
+    const result = await runAtcCiCheck(http, safety, {
+      ...options(),
+      timeoutSeconds: 10,
+      clock: {
+        now: () => now,
+        sleep: async (ms) => {
+          now += ms;
+        },
+      },
+    });
+    expect(result).toMatchObject({ status: 'incomplete', durationMs: 10_000, runPath });
+    expect(result).toMatchObject({ incompleteReason: expect.stringContaining('deadline expired') });
+  });
   it('refuses on-premise systems before any request', async () => {
     const { http, get, post } = httpFor();
     await expect(runAtcCiCheck(http, safety, { ...options(), systemType: 'onprem' })).rejects.toThrow(
-      /not started on on-premise systems.*No run was started.*action="atc", type="DEVC"/,
+      /supported only for BTP ABAP Environment.*No run was started.*action="atc", type="DEVC"/,
     );
     expect(get).not.toHaveBeenCalled();
     expect(post).not.toHaveBeenCalled();

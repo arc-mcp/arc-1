@@ -112,7 +112,7 @@ Checkstyle output. The strict MCP schemas own selection and timeout input bounds
 normalization runs once during package verification. XML escaping and canonical
 returned-path validation remain at their sinks.
 
-### On-premise ATC CI runs never start, 29 October 2026
+### ATC CI runs did not start on the tested on-premise systems, 29 October 2026
 
 S/4HANA 2025 FPS01 private cloud, SAP_BASIS 816, principal propagation, read-scoped
 calls through MCP. Every `atc_ci` call ended at its deadline with `Not Yet Started` /
@@ -134,7 +134,12 @@ flow with the package URI and completed in under a minute for the package tree.
 Its worklist matched the Eclipse package run (virtual-folder object reference) object
 for object: 51 objects from five subpackages and 168 findings.
 
-Consequences in ARC-1: `atc_ci` is refused before any request when the probed or
-configured system type is `onprem`, and a run that stays `Not Yet Started` for 60 s
-returns `incomplete` with a pointer to `atc` with `type="DEVC"` instead of waiting
-for the full budget. BTP ABAP Environment remains unverified.
+ARC-1 supports `atc_ci` on BTP ABAP Environment, the platform documented for the
+[SAP pipeline ATC step](https://www.project-piper.io/steps/abapEnvironmentRunATCCheck/).
+A known `onprem` target is refused before any request; use classic `atc`, `type="DEVC"`.
+An empty component response leaves the type unknown. `SAP_SYSTEM_TYPE=btp` explicitly selects
+BTP behavior; it does not establish that the backend service can schedule runs.
+Only an unknown target that remains `Not Yet Started` for 60 s returns early as `incomplete`.
+Known BTP queues and runs that have progressed keep the caller's deadline. Inspect the retained
+SAP run before starting another: returning early does not cancel it. Actual BTP completion remains
+unverified. These limits avoid treating the observed on-premise behavior as a universal SAP rule.
