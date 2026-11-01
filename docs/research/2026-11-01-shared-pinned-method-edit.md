@@ -88,11 +88,14 @@ unchanged source, unlock), complete AMDP blocks with matching and renamed method
 space before a local-class selector. The pinned factory now refuses that selector before SAP.
 
 One review claim was disproved by its suggested test: a body without its final period does **not**
-fail the shared boundary parser. The splicer preserves the selected boundaries and leaves body
-syntax to lint and activation. A pure test records this limit, and a separate real-lint handler test
-proves the default quality gate blocks that input before saving. No additional syntax guarantee is
-claimed for a server whose administrator disables lint. The guard still checks method boundaries
-and names, not full statement or class structure.
+fail the shared boundary parser. The splicer preserves the boundary text, but ABAP's statement
+terminator rules may consume that text into the unfinished statement; this is not proof of valid
+ABAP boundaries. A pure test records this limit. Real-lint handler tests block the input with the
+tested default v702 parser configuration and save a valid paired control. This is not a general
+syntax guarantee: releases above SAP_BASIS 758 downgrade parser errors to warnings, custom lint
+configuration can override rules, lint exceptions fail open, and an administrator can disable lint.
+The guard checks selected names and replacement shape, not complete ABAP syntax. Activation remains
+separate; no SAP activation result is claimed for this malformed input.
 
 Phase labels also became more precise at `b06ffdee6`: package failures report `package-preflight`
 instead of `validation`; source reads and edit preparation report their own phases instead of
@@ -116,3 +119,19 @@ Author validation of this follow-up passed **428 files / 11,572 tests**, all thr
 projects, build, lint, strict docs, file/schema budgets and all **59 offline qualification
 simulations**. It adds 15 regressions without a new admitted action. Follow-up Opus review and a
 fresh artifact-bound PP run remain required.
+
+
+## Opus review at `771aff1c6`
+
+The [verbatim Opus 5.5 max review](broader-pinned-pp-writes/claude-method-quality-review-20261101.md)
+retained this checkpoint with no High/Medium finding and five Low findings. All 11,572 tests,
+59 simulations, typechecks and size checks passed independently. Its 2,605-file snapshot was
+unchanged before/after review and on the author's subsequent verification. The launcher used
+`--model claude-opus-5-5 --effort max` and the initialization confirmed the model.
+
+The follow-up qualifies the missing-period claim above, adds an unstubbed lint success case and
+`parser_error` assertions, replaces the syntax fixture with the processed native `/checkruns`
+shape, and corrects cloud evidence timestamps and retrospective script-hash wording. Transport
+reporting on incomplete saves remains part of the already identified cleanup-result alignment.
+GitHub checks at this revision, including SAP integration and end-to-end tests, passed; these are
+not the pending two-identity pinned PP qualification. No new capability is admitted by this follow-up.

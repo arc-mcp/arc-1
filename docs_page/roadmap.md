@@ -237,7 +237,9 @@ pinned lifecycle policy. Common replacement guards refuse renamed/multiple metho
 statement boundaries. This is implementation convergence, not additional capability qualification;
 Opus retained that checkpoint with no High/Medium finding. Its follow-up adds direct quality/CTS
 and cleanup-warning tests and documents remaining shared-line metadata and cleanup-result gaps.
-The follow-up review and new artifact-bound live verification remain pending. The original
+Opus retained the follow-up with no High/Medium finding; paired real-lint success, native syntax
+fixture and evidence-wording corrections address its small follow-ups. New artifact-bound live
+verification remains pending. The original
 IAM/XSUAA configuration is now restored and freshly verified; this does not qualify the failed run.
 The formatter and local CLAS/INTF deletion adapters now have a
 [combined two-writer PP qualification](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)

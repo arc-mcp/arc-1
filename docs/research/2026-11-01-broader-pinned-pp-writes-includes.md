@@ -267,14 +267,15 @@ run remains pending. IAM/XSUAA restoration is recorded below.
 
 ## Original cloud configuration restored
 
-At **2026-11-01 13:44:21 UTC**, the operator's BTP session was renewed and the remaining temporary
-role collection and role were removed. XSUAA security was restored using the saved original
-configuration. Fresh read-only checks then matched the app environment, droplet, routes and seven
+The operator renewed the BTP session, removed the remaining temporary role collection and role,
+and restored XSUAA using the saved original configuration. At **2026-11-01 13:44:21 UTC**, fresh
+read-only verification completed and matched the app environment, droplet, routes and seven
 XSUAA security fields against the original baseline and verified exact absence of both temporary
 IAM objects. The app is started with `SAP_ALLOW_WRITES=false`.
 
 The private `cloud-restoration-verified.json` receipt includes comparison hashes, the fields checked,
-run identity and the restoration/verification script hashes. Its sanitized observation is included
+run identity and retrospective restoration/verification script hashes computed by the verifier,
+not contemporaneous execution attestations. Its sanitized observation is included
 in the attempt JSON. The rollback ledger is `fully-restored`, with `awaitingBtpLogin=false` and
 `activeConfigurationChanged=false`. SAP role/profile, destination and fixture restoration retain
 their earlier evidence timestamps; these cloud checks do not claim to re-exercise SAP authorization.

@@ -94,7 +94,7 @@ function backend(options: Options = {}) {
     if (parsed.pathname === '/sap/bc/adt/checkruns')
       return mockResponse(
         200,
-        '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><chkl:properties checkExecuted="true"/><msg type="W" line="8" shortText="Native syntax warning"/></chkl:messages>',
+        '<chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:status="processed"><chkrun:checkMessage chkrun:type="W" chkrun:shortText="Native syntax warning" chkrun:uri="/sap/bc/adt/oo/classes/zcl_test/source/main#start=8,1"/></chkrun:checkReport></chkrun:checkRunReports>',
       );
     if (parsed.pathname.includes('/http/sessions')) {
       state.closes++;
@@ -289,6 +289,7 @@ it.each(['METHOD value.\n result = .\nENDMETHOD.', 'result = 2'])(
     expect(result.isError).toBe(true);
     expect(payload(result)).toMatchObject({ state: 'unchanged', phase: 'edit-preparation' });
     expect(payload(result).message).toContain('Pre-write lint check failed');
+    expect(payload(result).message).toContain('parser_error');
     expect(state.puts).toBe(0);
     expect(state.source).toBe(initial);
     expect(state.unlocks).toBe(1);
@@ -324,3 +325,15 @@ it.each([{}, { unlockFailure: true }, { closeFailure: true }])(
     expect(state.closes).toBe(1);
   },
 );
+
+it('saves a valid spliced class with real lint enabled', async () => {
+  const state = backend();
+  const result = await call({}, { lintBeforeWrite: true });
+  expect(result.isError).toBeUndefined();
+  expect(payload(result)).toMatchObject({ state: 'saved-inactive', sourceHash: sourceHash(state.source) });
+  expect(state.source).toContain('result = 2.');
+  expect(state.source).toContain('result = 99.');
+  expect(state.puts).toBe(1);
+  expect(state.unlocks).toBe(1);
+  expect(state.closes).toBe(1);
+});
