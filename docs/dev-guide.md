@@ -194,6 +194,34 @@ npx vitest run \
 npm run btp:validate
 ```
 
+### Shared mutation lifecycle
+
+`src/adt/crud.ts::withLockedMutation` is shared by single-target `safeUpdateSource`,
+`safeUpdateClassInclude`, and the pinned CLAS/INTF adapter in `handlers/write/pinned.ts`.
+`mutation-context.ts` requires a factory-created legacy or pinned context; a multi-target client
+cannot enter the legacy wrapper. The required callbacks keep package/recording revalidation in
+the pinned adapter. This is not a generic metadata, deletion, transport or activation engine.
+
+`mutation-http.ts` gives nested helpers a scoped transport with the pinned deadline, cancellation
+and no-replay options. Child options cannot relax those limits; nested stateful sessions inherit
+them. The lifecycle retains the owning transport for unlock/close with independent bounded cleanup,
+including when the operation was cancelled. Facade bookkeeping is weakly keyed by the transport
+object; it is not a target or user cache. Do not unwrap this facade in an operation callback.
+Opening `withStatefulSession` through the facade creates an independent SAP context; never use
+the parent's lock handle there. Its close callback is independent. Only the coordinator's
+owning session updates the mutation result's `sessionClosed` field.
+
+Preserve the legacy absence of request options, `localityKnown`, session identity and unlock-error
+precedence. Pinned cleanup instead retains the primary outcome and reports cleanup status. Its
+result serializer lives in `write/pinned-result.ts`; activation still uses its existing independent
+validator and state machine. Existing schemas, capabilities and ADR-0010 constraints are unchanged.
+
+Focused tests: `tests/unit/adt/mutation-{compatibility,lifecycle,isolation}.test.ts` and
+`tests/unit/handlers/pinned-writes.test.ts`. The optional destructive integration test
+`tests/integration/mutation-lifecycle.integration.test.ts` creates and deletes one unique `$TMP`
+class using the configured direct test identity. It exercises both adapters, not real PP routing.
+See the [implementation evidence](research/2026-10-29-shared-mutation-infrastructure.md).
+
 ## Key Files for Common Tasks — full reference
 
 | Task | Files |
@@ -202,6 +230,7 @@ npm run btp:validate
 | Add new ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/object-types.ts` (`SLASH_TYPE_MAP` + `SLASH_TYPE_EVIDENCE` + `KNOWN_BASE_TYPES`), `tests/unit/handlers/slash-type-map.test.ts`. Citation guard needs a matching `docs/research/abap-types/types/<short>.md` evidence file; verify against live `<adtcore:type>` first (#218). |
 | Add SAPWrite TABL subtype (TABL/DT vs TABL/DS create routing, #285) | `src/handlers/object-types.ts` + `src/handlers/write-helpers.ts` + `src/handlers/write/create.ts` (`normalizeWriteObjectType`, `canonicalTablType`, `objectBasePath` + `buildCreateXml` per subtype; update/delete/activate route through `resolveTablObjectUrlForWrite()`), `src/handlers/{schemas,tools}.ts`. Reads collapse slash forms to bare `TABL` via SLASH_TYPE_MAP. Without `/ddic/tables` (7.50/7.51), mutations need a search hit of `TABL/DS`: a failed or empty search is refused, because `/structures/` answers for tables too there. Without discovery data, only a fresh `/tables/` hit is trusted. Legitimate structures are therefore refused on 7.50/7.51 when the user lacks repository-search access. |
 | Add AUTH/FEATURE_TOGGLE/ENHO read (read-only DDIC metadata; deprecated alias `FTG2` accepted with warning) | `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/adt/types.ts`, `src/handlers/read.ts`, `src/handlers/schemas.ts`, `src/handlers/tools.ts` |
+| Automatic source plug-ins (PROG/INCL/FUNC/FUGR; reusable CLAS hooks) | `src/adt/source-plugin-{parser,resources,discovery}.ts`, `src/handlers/extension-read.ts` — preserve main-object context and replacement graph; all optional reads use the shared session. [Evidence/API](research/2026-10-29-source-plugin-discovery/README.md). |
 | ENHO subtype reads | `src/adt/enhancements.ts`, `src/adt/client.ts`, `src/handlers/read.ts` — XHB first, then one exact repository subtype fallback; legacy XH also serves BAdIs. [Wire evidence and limits](research/abap-types/types/enho.md). |
 | Read message classes via `MSAG` (canonical short type added in audit Plan B; `MESSAGES` deprecated alias) | `src/handlers/read.ts` (case 'MSAG'/'MESSAGES'), `src/handlers/schemas.ts`, `src/handlers/tools.ts`, `src/adt/client.ts` (`getMessageClassInfo`) |
 | Add source revision history read (VERSIONS / VERSION_SOURCE) | `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/adt/types.ts`, `src/handlers/read.ts`, `src/handlers/schemas.ts`, `src/handlers/tools.ts` |

@@ -1632,12 +1632,12 @@ describe('SAPDiagnoseSchema', () => {
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', type }).success).toBe(false);
   });
 
-  it('accepts loose includeSubpackages only for DEVC unittest scope', () => {
+  it('accepts false includeSubpackages outside DEVC unittest scope but restricts true', () => {
     expect(
       SAPDiagnoseSchema.safeParse({ action: 'unittest', type: 'DEVC', includeSubpackages: 'false' }).data,
     ).toMatchObject({ includeSubpackages: false });
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', type: 'CLAS', includeSubpackages: false }).success).toBe(
-      false,
+      true,
     );
     expect(SAPDiagnoseSchema.safeParse({ action: 'atc', type: 'DEVC', includeSubpackages: true }).success).toBe(false);
   });

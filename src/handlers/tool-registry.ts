@@ -80,6 +80,7 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'VIEW', btp: false },
   { type: 'DOMA', btp: true },
   { type: 'DTEL', btp: true },
+  { type: 'SHLP', btp: false },
   { type: 'TRAN', btp: false },
   { type: 'TTYP', btp: true },
   // DDIC lock objects: one XML metadata document, returned as JSON. Live-verified on-prem 8.16 + BTP trial.
@@ -171,6 +172,7 @@ export const SAPWRITE_TYPES_BTP = sapWriteTypes.btp;
 // ─── SAPContext ─────────────────────────────────────────────────────
 
 const SAPCONTEXT_TYPE_TABLE = [
+  { type: 'SHLP', btp: false },
   { type: 'CLAS', btp: true },
   { type: 'INTF', btp: true },
   { type: 'PROG', btp: false },
