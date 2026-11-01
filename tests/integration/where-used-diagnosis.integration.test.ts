@@ -50,7 +50,23 @@ ENDCLASS.`,
       await checkTarget(client);
       pair.phase = 'preflight';
       await preparePair(client, state, pair);
-      for (const [name, source] of sources) await createOwned(client, state, pair, name, source);
+      for (const [name, source] of sources) {
+        pair.phase = 'pre-create-search';
+        writeJson(MANIFEST, state);
+        const matches = await client.searchObject(name, 5);
+        // Match the original test setup; publish only owned names and fixed-shape evidence.
+        writeJson(`${PUBLIC_DIR}/${name}-pre-create-search.json`, {
+          requestedName: name,
+          count: matches.length,
+          entries: matches.slice(0, 5).map((match) => ({
+            name: [root, consumer].includes(match.objectName) ? match.objectName : '[outside-owned-pair]',
+            isClass: ['CLAS', 'CLAS/OC'].includes(match.objectType),
+            uriMatchesRequestedClass: match.uri === `/sap/bc/adt/oo/classes/${name.toLowerCase()}`,
+          })),
+        });
+        expect(matches).toEqual([]);
+        await createOwned(client, state, pair, name, source);
+      }
       pair.activatedAt = Date.now();
       writeJson(MANIFEST, state);
     })().catch((error) => {
