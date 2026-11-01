@@ -55,6 +55,32 @@ describe('pre-write lint uses the supplied object type', () => {
     expect(lint.blocked).toBe(true);
     expect(lint.result?.content[0]?.text).toContain(finding);
     expect(lint.result?.content[0]?.text).toContain('"v758"');
+    expect(lint.result?.content[0]?.text).toContain('grammar abaplint does not support');
+    expect(lint.result?.content[0]?.text).toContain(`SAPRead(type="SYNTAX", objectType="${type}"`);
+    expect(lint.result?.content[0]?.text).not.toContain('Fix these errors');
+    expect(lint.result?.content[0]?.text).not.toContain('lint_and_fix');
+  });
+
+  it('keeps fixable non-parser errors blocking with autofix guidance', () => {
+    const lint = runPreWriteLint('DATA: BEGIN OF stru, field TYPE i, END OF other.', 'PROG', 'Z_TEST', config);
+    expect(lint.blocked).toBe(true);
+    expect(lint.result?.content[0]?.text).toContain('[begin_end_names]');
+    expect(lint.result?.content[0]?.text).toContain('lint_and_fix');
+    expect(lint.result?.content[0]?.text).not.toContain('grammar abaplint does not support');
+  });
+
+  it('limits autofix advice to non-parser findings in a mixed block', () => {
+    const lint = runPreWriteLint(
+      'REPORT z_test.\nSTART-OF-SELECTION.\nRETURN.\nWRITE / 1.\nINVALID SYNTAX HERE.',
+      'PROG',
+      'Z_TEST',
+      config,
+    );
+    expect(lint.blocked).toBe(true);
+    expect(lint.result?.content[0]?.text).toContain('[parser_error]');
+    expect(lint.result?.content[0]?.text).toContain('[unreachable_code]');
+    expect(lint.result?.content[0]?.text).toContain('fixable non-parser findings');
+    expect(lint.result?.content[0]?.text).toContain('grammar abaplint does not support');
   });
 
   it.each(['TABL', 'BDEF', 'DDLX', 'SRVD', 'FUNC', 'UNKNOWN', '', 'constructor', 'toString', '__proto__'])(

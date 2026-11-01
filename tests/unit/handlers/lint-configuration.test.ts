@@ -171,4 +171,18 @@ describe('SAPLint configuration diagnostics', () => {
       warnings: [],
     });
   });
+
+  it('lets an administrator make parser_error advisory through a config file', () => {
+    const abaplintConfig = join(directory, 'parser-warning.json');
+    writeFileSync(abaplintConfig, JSON.stringify({ rules: { parser_error: { severity: 'Warning' } } }));
+    const result = runPreWriteLint('REPORT zbad.\nnot_an_abap_statement.', 'PROG', 'ZBAD', {
+      ...DEFAULT_CONFIG,
+      systemType: 'onprem',
+      abapRelease: '757',
+      abaplintConfig,
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.warnings).toContain('[parser_error]');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
 });
