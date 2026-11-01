@@ -24,6 +24,7 @@ import { logger } from '../server/logger.js';
 import { type CacheSecurityContext, contextCacheForDependencyPayloads } from './cache-security.js';
 import { getCachedFeatures } from './feature-cache.js';
 import { normalizeObjectType, objectUrlForType } from './object-types.js';
+import { handleSearchHelp } from './search-help.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { lookupLiveUsages, resolveWhereUsedUri } from './where-used.js';
 
@@ -88,6 +89,7 @@ export async function handleSAPContext(
   const rawType = String(args.type ?? '');
   const type = normalizeObjectType(rawType || (action === 'impact' ? 'DDLS' : ''));
   const name = String(args.name ?? '');
+  if (type === 'SHLP') return handleSearchHelp(client, args, true);
   // Bound dependency fan-out: a huge maxDeps would fan out unbounded SAP fetches per level
   // (depth is already capped at 3). Clamp to [1, 100]; non-finite/<1 falls back to the default 20.
   const rawMaxDeps = Number(args.maxDeps ?? 20);

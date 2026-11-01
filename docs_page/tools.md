@@ -73,6 +73,23 @@ Read the supported SAP ABAP object types listed below.
 
 Use `SAPRead` for exact implementation behavior, an exact reference, one method body, grep output, inactive drafts, revision history, or metadata. For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)` for available KTD and dependency contracts, then verify source. Compare documented requirements with actual behavior and report mismatches; do not treat existing code as the specification. If KTD is missing, requirements supplied by the user or other documentation still count; without requirements, intent is unverified.
 
+For a method's parameters, use `SAPRead(type="CLAS", name="CL_HTTP_CLIENT", method="CREATE_BY_URL", methodView="signature")`.
+The response contains `className`, `scope="own-declaration"`, `methodName`, `visibility`,
+`signature`, and 1-based `startLine`/`endLine` for the selected declaration clause. Chained
+`METHODS:` declarations are returned as one standalone statement, preserving multiline parameter
+text. Abstract/declaration-only methods are supported. Unknown syntax, duplicate declarations,
+redefinitions and interface aliases are refused; use the named interface or superclass reader
+when indicated. Version selection and inactive-source warnings follow ordinary source reads.
+The server still reads/parses MAIN internally; the saving is in returned model context.
+
+Do not combine `method` with `format="structured"`: this now errors before contacting SAP.
+Explicit structured reads without `method` still return the whole structured class. A misspelled
+body-read method returns at most five nearby implemented-method suggestions from the selected
+source, with an explicit `SAPRead` inventory or grep follow-up (also used by failed method edits).
+When the inventory identifies a declaration with no body, it is reported separately, with a
+conditional `methodView="signature"` hint for an own global MAIN declaration. Signature-read misses do not offer typo suggestions. The list is not
+the complete inherited API.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
@@ -87,7 +104,10 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `format` | string | No | Output format: `"text"` (default), `"structured"`, or `"editable"` (fresh source + SHA-256 for guarded writes; see [Source preconditions](#source-preconditions)). For `action="diff"`, structured returns a machine-readable diff envelope; for ordinary reads, structured supports CLAS metadata and DEVC package listings (see below). |
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. With `method=`, an explicit include selects that exact source (including `main`) before method extraction. For DDLS: `elements` (extract CDS view elements). For TEXT_ELEMENTS: `symbols`, `selections`, or `headings` — one part of the text pool; omit for the whole PROG/FUGR pool or CLAS symbols. |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
+| `methodView` | string | No | `"signature"`: return one method declaration owned by the global CLAS MAIN source, including parameter and exception clauses. Requires a bare `method` name; omit for the existing implementation-body read. No `method="*"`, locals, interface-qualified or inherited signatures; only omitted/`main` include and plain text format. Incompatible with grep, ranges, diff and editable reads. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. For FUGR, `grep` implies `expand_includes` and searches each include on its own: matches are grouped under `=== <include> ===` with line numbers counted within that include. For PROG and INCL, `grep` searches the object itself unless `expand_includes=true`; the response then names the includes that the expansion would also search. Falls back to a literal search when the pattern is not valid regex. |
+| `extensions` | string | No | `none`, `summary`, or `sources`. Full TABL, PROG, INCL, FUNC and FUGR reads default to a bounded summary; partial reads default to none. Sources adds separate labelled extension bodies and a bounded graph. See [Extension discovery](#extension-discovery). |
+| `enhancementContext` | object | No | Standalone INCL only: `{type: "PROG"\|"FUGR"\|"CLAS", name: "..."}` identifies the owning main object. Required for standalone include plug-in discovery; actual child includes inherit their root context. |
 | `lineStart` | integer | No | First source line (1-based, inclusive); requires `lineEnd`. Supports PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, DDLX and TABL. CLAS `include` selects one source section. Plain text only: do not combine with grep, method, diff, structured/editable output, signature or element extraction. Draft/version notices precede the numbered source. |
 | `lineEnd` | integer | No | Last source line (inclusive); requires `lineStart`. Clamped to the source end; a start beyond the source is an error. |
 | `expand_includes` | boolean | No | For FUGR: expand include source inline, up to 80 source blocks (including main) and five include levels. `grep` implies this expansion; see [Function-group source search](#function-group-source-search). For PROG and INCL: read the program with every include it names, recursively, in one bounded call, or search them all with `grep`; see [Program include expansion](#program-include-expansion). |
@@ -104,6 +124,81 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except SMBC and [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view (TABL/DTI explicitly prefers pending source) and explicit `active`/`inactive` must be confirmed by metadata. [TABL/DTT settings](#technical-table-settings) also prefer pending state and verify explicit versions. ENHO uses the developer view and refuses explicit version selection. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
 | `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, description?, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
+
+### Extension discovery
+
+A full `SAPRead(type="TABL", name="DSH_MEAL")` retains the original source block and appends a
+separate `[extensions]` block. It follows the owner's advertised DDIC enhancement relation and
+lists append identities, including value-help/foreign-key-only appends. `extensions="none"`
+returns the legacy result without discovery requests. `extensions="sources"` adds a bounded
+include/append graph and separate bodies labelled `representation=authored_source`. Include
+occurrences, attributes and suffixes remain distinct; bodies are fetched once per request.
+CLI `source` and `read --flat` select `extensions="none"` so redirected source exports retain
+their original contents. Use `arc1-cli call SAPRead --json '{"type":"TABL","name":"DSH_MEAL","extensions":"sources"}'`
+for extension context through the CLI.
+
+The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02, 758 SP02, and BTP ABAP
+Environment 920 SP05 with a developer's browser OAuth identity. Source plug-in XML is qualified
+on 750 and 758. Live positive coverage includes PROG on 750 and INCL, FUNC and FUGR on 758;
+other family/release combinations remain unqualified. CLAS, INTF and BDEF public integration
+remains in later stages and explicit requests currently report `unsupported`.
+Read-only BTP ABAP 920 checks cover FUNC `RFC_SYSTEM_INFO` (provider not advertised) and FUGR
+`SRFC` (empty root identities and bounded source traversal). These establish contract behavior,
+not positive BTP plug-in source coverage. PROG/INCL remain excluded from the BTP public schema;
+other BTP objects, releases and live principal propagation remain unqualified. CDS/DDLX extensions
+and BAdIs are outside this feature.
+
+Method, grep, line-window and class-include reads default to none. An explicit mode on a partial
+read describes its **owning object/source**, without claiming the extension bodies match the
+base filter. Inactive base reads report `unsupported_version` and do not substitute active
+extension sources. An unversioned list is labelled `provider_current`; source bodies explicitly
+read active are labelled active. These are separate SAP observations, not an atomic snapshot.
+
+Each provider reports its checked scope and coverage. `not_advertised` means metadata had no
+relation; `returned` with no identities means that provider returned a valid empty list for that
+scope. Neither proves global absence. Switch applicability remains unknown, including identities
+whose names mention ON/OFF. Denials, unsafe responses, throttles and limits retain the successful
+base plus qualified partial coverage. Caller cancellation still propagates.
+
+| Discovery budget after base read | Summary | Sources |
+|---|---:|---:|
+| Time | 2 seconds | 12 seconds |
+| Actual SAP sends, including CSRF/retries | 6 | 20 |
+| Aggregate decoded response bytes, streamed | 128 KiB | 256 KiB |
+| Graph/source expansion | 8 rendered identities, no nested reads | 20 nodes, depth 5, 80 edges |
+| Additional output | 2 KiB | 16 KiB |
+
+All hidden reads use the caller's client and SAPRead deny rules. Optional reads disable transient
+retries. Graph, source, request, byte, deadline and output omissions remain visible, and cut source
+bodies have explicit markers. No source is spliced into editable base text.
+These are simultaneous upper bounds: metadata, fallback and CSRF sends can exhaust the request
+budget before traversal reaches the node limit.
+
+Source plug-in summaries use an advertised HOOK_IMPL identity list on a root where available.
+That list covers outer/specific implementations and says nested expansion was not performed.
+Other qualified selected sources use bounded enhancement elements without decoding bodies.
+Sources mode follows actual INCLUDE statements with inherited main-object context, retaining
+individual attachments, nesting, replacement chains and observed implementation versions. It
+labels decoded bodies `representation=rendered_plugin_source` and keeps them separate from the
+base. The 750 program provider may be unadvertised; only an exact 750 grammar marker plus an
+advertised source enables the qualified legacy route, labelled in coverage.
+
+For example, read `SAPRead(type="PROG", name="ENH_NESTED_DEMO", extensions="sources")` on 750,
+or `SAPRead(type="INCL", name="ENH_PROG_INCL_IMPLICIT_OPT", enhancementContext={type:"PROG",
+name:"PROG_ENH_SUBOBJ_CHECK"}, extensions="sources")` on 758. Without context, standalone INCL
+reports `context_required`. An empty function-group main is only that source's observation;
+F01 and other includes can have plug-ins. FUNC examples are SAPBC_GLOBAL_CANCEL_UPDATE in
+SAPBC_GLOBAL_FIS and BDS_CONNECTION_CREATE in BDS_CONNECTIONS: discovery covers the selected
+function and its actual includes, not the whole group. The ordinary FUNC body omits injected code.
+
+`SAPContext(action="structure", type="TABL", name="...")` uses the same dedicated append
+provider. It retains the include tree, key includes and repeated suffixes, adds discovery
+provenance, and bounds expansion to 20 occurrences/depth 5 with the sources budget. Only this
+explicit workflow may fall back to a source-verified where-used candidate index when the dedicated
+provider is unavailable/unadvertised. That compatibility fallback checks at most 12 candidates
+and reports index-based coverage; it never runs after auth, throttle, unsafe-response or budget
+failure. Automatic summaries never use where-used. Known children remain labelled truncated when
+source expansion stops.
 
 ### Read-only syntax checks
 
@@ -123,9 +218,15 @@ Only `type`, `objectType`, `name`, `version` and `source` apply. `name` and `obj
 `version="auto"`, include/method selection, diff, and non-default output formats are refused.
 Harmless strict-client filler (false flags, empty arrays, `format="text"`, `maxResults=0`) is ignored.
 Empty or whitespace-only `source` is normalized as omitted, matching the legacy route; use
-non-empty text for an unsaved-source check. The alias inherits the legacy type limitations:
-FUNC syntax routing is unsupported, and inline JSON server-driven objects may return not-processed
-instead of findings; this route adds no new backend type support.
+non-empty text for an unsaved-source check. Inline JSON server-driven objects may return
+not-processed instead of findings.
+
+`FUNC` checks resolve the parent function group through search. If that bounded lookup cannot
+resolve it, the result is `checked:false`. Use `version="inactive"` after creating or editing a
+function; the default checks its active version, which can still be an empty shell. SAP may report
+errors in another module of the same group; use each message's URI to locate the problem. For supplied FUNC source, use the ADT-style
+signature returned by `SAPRead`; `*"` comment lines from SAP GUI are refused because SAP can
+silently check stored code instead of the supplied text.
 
 The standard `SAPRead` tool advertises `readOnlyHint:true`; clients decide whether that affects
 approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated. Existing `SAP_DENY_ACTIONS` rules for `SAPDiagnose` or
@@ -156,6 +257,7 @@ approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated
 | `VIEW` | DDIC view |
 | `DOMA` | Domain metadata (structured JSON: data type, length, fixed values, value table) |
 | `DTEL` | Data element metadata (structured JSON: type, labels and their reserved lengths, search help and its parameter, SET/GET parameter, change-document and bidi flags, and `deactivateInputHistory`). Omitted `version` and `auto` return SAP's developer view so pending drafts remain visible; explicit `active` or `inactive` is passed to SAP. |
+| `SHLP` | On-prem search-help interface metadata (`SHLP/DH` accepted): active only, partial coverage, description, optional package and parameters with types/import/export flags. Selection-method/exit headers, collective assignments, positions/defaults and appends are explicitly missing. Unnamed SAP responses are errors, not empty definitions. Omit format/version or use `text`/`active`; inactive/auto and source options are refused. |
 | `AUTH` | Authorization field metadata (structured JSON: role name, check table, domain, conversion exit, org-level info) |
 | `FEATURE_TOGGLE` | Feature toggle states (structured JSON: toggle state per system from SAP switch framework). Renamed from `FTG2` in audit Plan B (docs/research/abap-types/types/ftg2.md) — `FTG2` remains a deprecated alias with a stderr warning; use `FEATURE_TOGGLE`. |
 | `ENHO` | Enhancement metadata; BAdI implementation classes or hook locations plus ABAP source. See [enhancement reads](#enhancement-reads). |
@@ -754,9 +856,11 @@ errors first, plus the total `messageCount`; `minimalErrors` hides SAP details.
 
 **Function module (`FUNC`) create / update / delete (issue [#250](https://github.com/arc-mcp/arc-1/issues/250)):** The parent FUGR must already exist — pass `group` explicitly on create (or auto-resolve via search on update/delete). Create POSTs `<fmodule:abapFunctionModule … adtcore:type="FUGR/FF">` with `<adtcore:containerRef>` to `/sap/bc/adt/functions/groups/{group}/fmodules`. The FM inherits its package from the parent FUGR: omit `package`, or supply the exact inherited package as an assertion. ARC-1 resolves and safety-checks the real FUGR package before creating the contained module, and rejects an explicit mismatch. SAPGUI-style `*"…IMPORTING…"*` parameter comment blocks in source are auto-stripped before PUT as defense-in-depth (SAP rejects them with `FUNC_ADT028`) and a warning is appended in that case.
 
-Execution semantics are function-module metadata, not ABAP source. Set `processingType="rfc"` for a Remote-Enabled module. For update modules, set `processingType="update"` plus an explicit `updateTaskKind`; V1 "Start immediately" is `startImmediate`. ARC-1 rejects processing fields on updates and non-FUNC objects instead of silently ignoring them.
+Execution semantics are function-module metadata, not ABAP source. Set `processingType="rfc"` for a Remote-Enabled module. For update modules, set `processingType="update"` plus an explicit `updateTaskKind`; V1 "Start immediately" is `startImmediate`. These fields apply only to FUNC create; source updates do not change processing attributes.
 
-SAP's collection POST creates a normal function-module shell even when it accepts processing attributes. For an explicit processing type, ARC-1 therefore reads the new inactive root, preserves the server-provided representation, applies a locked metadata PUT with the release-negotiated media type, and reads the root back before reporting success. If that post-create step fails, the error warns that a normal shell may remain and must be reviewed or deleted before retrying. When `processingType` is omitted, ARC-1 keeps the pre-existing create behavior without the extra metadata round trips.
+ARC-1 applies an explicit processing type after creating the function and reads it back before reporting success. Omitting `processingType` preserves SAP's default.
+
+If a later metadata or source step fails, the function already exists. Read it with `SAPRead(type="FUNC", name=..., group=..., version="inactive", includeSignature=true)` before continuing; do not repeat create. Use `SAPWrite(action="update", ...)` to repair source. Incorrect processing attributes require repair in SAP GUI or an explicit delete and recreate after inspection.
 
 #### Lock object writes (ENQU)
 
@@ -838,7 +942,7 @@ Each parameter:
 |-------|------|-------------|
 | `kind` | string | One of `importing`, `exporting`, `changing`, `tables`, `exceptions`, `raising`. |
 | `name` | string | Parameter / exception name. Always uppercased on emit. |
-| `type` | string | ABAP type expression (`STRING`, `I`, `BAPIRET2`, `TYPE STANDARD TABLE OF X`, `LIKE DOKHL-OBJECT`, …). Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. For TABLES, include the leading `TYPE` or `LIKE` keyword. |
+| `type` | string | Bare type (`STRING`, `REF TO ZCL_X`) or an explicit `TYPE …` / `LIKE …` clause (`LIKE` is obsolete). Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. Readback preserves `LIKE`; ordinary `TYPE` reads as a bare type. TABLES retains its leading keyword. |
 | `description` | string | Optional short text for importing/exporting/changing/tables: 1–60 printable characters, not blank. Write it in the function group’s original language. |
 | `byValue` | boolean | Emit `VALUE(name)` wrapper. Default `false` (pass-by-reference). |
 | `default` | string | Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim (no escaping). Examples: `'X'`, `0`, `space`. |
@@ -1970,6 +2074,12 @@ SAPGit(action="push", backend="abapgit", repoId="000000000001", message="Add ord
 
 ## SAPContext
 
+For on-prem search helps, `SAPContext(type="SHLP", name="SCUSTOM")` (or `action="deps"`)
+returns the same active partial interface metadata as `SAPRead`. It performs no KTD lookup,
+source compression or dependency traversal. Other actions and supplied source are unsupported.
+The response declares missing definition fields and leaves effective translation language unknown.
+To disable both entry points, deny both `SAPRead.SHLP` and `SAPContext.SHLP`.
+
 Get dependency API contracts, CDS impact, DDIC structure, or live where-used evidence.
 
 `action="deps"` prepends the object's Knowledge Transfer Document (`SKTD`/`KTD`) when one exists, then returns compressed, source-derived dependency contracts. For business purpose, reviews or test design, start here, then verify implementation with `SAPRead`. Base specification-test expectations on requirements: a boundary test should fail on a mismatch, not preserve a bug as intended behavior. Requirements may also come from the user or other documentation; without them, intent is unverified. For exact behavior or a known reference, targeted `SAPRead` alone may suffice; contracts are not implementation.
@@ -2073,7 +2183,18 @@ shortcut is no longer used. See
 
 ### action="structure" — DDIC includes + append structures (TABL only)
 
-Returns a JSON tree for a DDIC structure or transparent table. ARC-1 parses embedded includes from the TABL source (`include <name>;`, named includes, and classic `.INCLUDE`) and resolves append/extension structures through ADT where-used. Append candidates are only returned after ARC-1 reads the candidate source and confirms it contains `extend type <base> with`; `.APPEND` is not parsed from the base source because ADT does not emit append structures there. A missing where-used endpoint or more than 50 structure candidates leaves the include tree intact and adds an incomplete-discovery warning. Large where-used searches can add latency even when the candidate cap stops source inspection. Results reflect SAP’s current index; an empty result does not prove that no append exists.
+Returns a JSON tree for a DDIC structure or transparent table. ARC-1 parses embedded includes from
+the TABL source, preserving key includes, named occurrences and suffixes, and discovers appends
+through the owner's advertised ADT enhancement relation. `.APPEND` is not parsed from the base
+source because ADT does not emit append structures there.
+
+When the dedicated provider is unavailable or unadvertised, this explicit workflow may inspect
+at most 12 where-used candidates and verify `extend type <base> with` in each candidate's source.
+It labels that fallback as index-based coverage; it never follows auth, throttle, unsafe-response
+or budget failures. An empty index does not prove absence. The tree keeps unresolved or truncated
+children and adds `extensionDiscovery` provenance. Expansion shares the 12-second, 20-send,
+256-KiB discovery budget and is limited to 20 occurrences and depth 5. See
+[Extension discovery](#extension-discovery) for coverage states and version qualifications.
 
 **Example:**
 ```json
@@ -2341,7 +2462,7 @@ administrators can disable them with `SAP_DENY_ACTIONS`.
 | `sourceUri` | string | No | Exact ADT source URI for quickfix/apply_quickfix; defaults to the type/name main source. Use it for class-local includes. |
 | `version` | string | No | For syntax: `active` (default) or `inactive`. |
 | `coverage` | boolean | No | For `unittest`: also return statement/branch/procedure coverage for the object, plus `methodsBelowFull` (methods under 100% statement coverage, worst first), in one extra round-trip. Default false. |
-| `includeSubpackages` | boolean | No | For `unittest` with `type="DEVC"`: include the package subtree. Default false selects only objects whose actual package is `name`. Rejected for other types/actions. |
+| `includeSubpackages` | boolean | No | For `unittest` with `type="DEVC"`: `true` includes the package subtree; omitted or `false` selects only objects whose actual package is `name`. Other types/actions accept omitted or `false` (including client-supplied `"false"`), but reject `true`. |
 | `resultFormat` | string | No | For `unittest`: `legacy` (default), `structured`, or `junit`; JUnit uses SAP's public asynchronous AUnit endpoint when available and otherwise generates JUnit from the legacy result. For `atc`: `legacy` or `structured`; `junit` is rejected because ATC JUnit output is not implemented. Other actions reject this parameter. Dedicated CLI checks choose their required format automatically. |
 | `timeoutSeconds` | number | No | For `unittest` or `atc`: execution and verification budget; default `300`, range `1..3600`. Timeout is incomplete evidence, never a pass. For `atc_ci` / `unittest_ci`: overall budget, default `600`, range `1..3600`. |
 | `source` | string | No | Current source code (required for `quickfix` and `apply_quickfix`) |

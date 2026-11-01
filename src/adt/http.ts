@@ -15,7 +15,7 @@ import { acceptFallback } from './accept-fallback.js';
 import { connectivityProxyResponse, prepareBoundedResponse } from './bounded-response.js';
 import { resolveCookies } from './cookies.js';
 import { resolveAcceptType, resolveContentType } from './discovery.js';
-import { AdtApiError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
+import { AdtApiError, AdtCsrfBootstrapError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
 import {
   type AdtRequestOptions,
   awaitWithinRequestBudget,
@@ -226,6 +226,16 @@ export class AdtHttpClient {
   /** True once ADT discovery has been loaded — lets callers distinguish "capability absent" from "unknown". */
   hasDiscoveryData(): boolean {
     return this.discoveryMap.size > 0;
+  }
+
+  /** Exact collection presence; no Accept entries still means present. Undefined means discovery is unknown. */
+  hasDiscoveryCollection(path: string): boolean | undefined {
+    return this.hasDiscoveryData() ? this.discoveryMap.has(path) : undefined;
+  }
+
+  /** Requested SAP language; the response may still contain fallback translations. */
+  get language(): string | undefined {
+    return this.config.language;
   }
 
   /** The Accept media type ADT discovery advertises for a collection path, or undefined. Used for capability gating. */
@@ -859,7 +869,7 @@ export class AdtHttpClient {
           if (retryContentType !== currentContentType) {
             negotiated.contentType = retryContentType;
           }
-          // Never cache into the source subtree; costs one extra round trip per matching legacy call.
+          // Keep the #907 legacy fallback uncached; only successful 406/415 results are reusable.
           if (!legacyFallback && (negotiated.accept || negotiated.contentType)) {
             this.negotiatedHeaders.set(negotiationKey, negotiated);
           }
@@ -945,21 +955,12 @@ export class AdtHttpClient {
     return withoutQuery.endsWith('/') && withoutQuery.length > 1 ? withoutQuery.slice(0, -1) : withoutQuery;
   }
 
+  /**
+   * Negotiated headers apply only to the exact normalized resource. Metadata media types must not
+   * override source, structure or version resources, which use their own negotiation or discovery.
+   */
   private resolveNegotiatedHeaders(path: string): { accept?: string; contentType?: string } | undefined {
-    let matched: { accept?: string; contentType?: string } | undefined;
-    let matchedPathLength = -1;
-
-    for (const [prefix, headers] of this.negotiatedHeaders.entries()) {
-      const isExact = path === prefix;
-      const isChild = path.startsWith(`${prefix}/`);
-      if (!isExact && !isChild) continue;
-      if (prefix.length > matchedPathLength) {
-        matched = headers;
-        matchedPathLength = prefix.length;
-      }
-    }
-
-    return matched;
+    return this.negotiatedHeaders.get(path);
   }
 
   private notifyUnauthorized(path: string): void {
@@ -1084,7 +1085,9 @@ export class AdtHttpClient {
         // Check login pages, but preserve the header-only legacy discovery fallback.
         this.handleResponse(response.status, response.headers, await response.text(), path, false);
       }
-      // Only headers are needed; release GET bodies before a fallback or return.
+      // Optional analyses account for control bodies in the same streamed allowance.
+      if (options?.responseBudget?.countAllResponses && !response.bodyUsed) await response.arrayBuffer();
+      // Other callers need headers only; release GET bodies before a fallback or return.
       if (!response.bodyUsed) await response.body?.cancel();
       return response;
     };
@@ -1094,7 +1097,7 @@ export class AdtHttpClient {
       let response = await probe('HEAD');
 
       // Retry once on 503 — ICM may be temporarily overloaded (thread/MPI exhaustion).
-      if (response.status === 503) {
+      if (response.status === 503 && options?.retryTransientErrors !== false) {
         const jitterMs = 1000 + Math.random() * 1000;
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -1150,7 +1153,7 @@ export class AdtHttpClient {
             path,
           );
         }
-        throw new AdtApiError(`No CSRF token in response (HTTP ${response.status})`, response.status, path);
+        throw new AdtCsrfBootstrapError(`No CSRF token in response (HTTP ${response.status})`, response.status, path);
       }
 
       return path;

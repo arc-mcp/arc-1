@@ -1,0 +1,12 @@
+{
+  "src/adt/crud.ts": "364f8b3bf9fc08b7baa2636960ad06660b7d7d5ca4573aa57765ee0c07335550",
+  "src/adt/mutation-context.ts": "87eb68626786728fa110bc9a52d18c650328f388e01eb5b9e506246f16e17122",
+  "src/adt/mutation-http.ts": "fa84c6cc091c2755d79985f6a2c280d65c4594521bb8553e1ec3ee0081dff4a7",
+  "src/handlers/write/pinned.ts": "c093cd60b1bebf864ff3e850218091b577dc9c892bcc5db33864819d0f3be701",
+  "src/handlers/write/pinned-result.ts": "29f2948a8579cedd2afd10e76dcf5891b4a6bb4f3acd5a8880b441115f289835",
+  "src/handlers/write/pinned-activation.ts": "9bc5b2c3375b09f9b242931427ba20c439ca24bb0a0e46a7cfedbc1fa12a0c78",
+  "tests/unit/adt/mutation-compatibility.test.ts": "35586fa0063fec0640f3352e8bcc7d02ffa60ea5afa3e68f1d715e2e978b7206",
+  "tests/unit/adt/mutation-lifecycle.test.ts": "c6a014d57f89b173e2cacc5595ea2341062759698e5eceb179d68bbf67d63836",
+  "tests/unit/adt/mutation-isolation.test.ts": "be9ef3e5fa5d66d4dcc46a03ca66e1842d494c2e6a304f61d1750ae531fc9d02",
+  "tests/integration/mutation-lifecycle.integration.test.ts": "5a8d7e41a7fa462bb0f37ffa18bad05578ab7b8dd186163892a4b9047bcbcf30"
+}

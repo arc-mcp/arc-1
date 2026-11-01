@@ -57,7 +57,7 @@ import type { ResolvedFeatures, SystemType } from '../adt/types.js';
 import { escapeXmlAttr } from '../adt/xml-parser.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { LintConfigOptions, RuleOverrides } from '../lint/config-builder.js';
-import { detectFilename, validateBeforeWrite } from '../lint/lint.js';
+import { validateBeforeWrite } from '../lint/lint.js';
 import type { ServerConfig } from '../server/types.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import { getCachedFeatures } from './feature-cache.js';
@@ -936,14 +936,19 @@ export async function enforceAllowedPackageForObjectUrl(
   objectUrl: string,
   label: string,
   accept?: string,
-  options?: import('../adt/http.js').AdtRequestOptions,
+  options?: import('../adt/http.js').AdtRequestOptions & { includeGroupHint?: boolean },
 ): Promise<string | undefined> {
   if (client.safety.allowedPackages.length === 0 && !client.safety.multiTargetWrite) return undefined;
-  const pkg = await client.resolveObjectPackage(objectUrl, accept, options);
+  const { includeGroupHint, ...requestOptions } = options ?? {};
+  const pkg = await client.resolveObjectPackage(objectUrl, accept, options ? requestOptions : undefined);
   if (!pkg) {
+    const hint =
+      includeGroupHint && objectUrl.startsWith('/sap/bc/adt/programs/includes/')
+        ? ' For a function-group include, pass group=<FUGR> to SAPWrite or SAPActivate.'
+        : '';
     throw new AdtSafetyError(
       `${label} blocked: ARC-1 could not determine the object's package from ADT metadata ` +
-        `(no adtcore:packageRef/containerRef). Fail-closed because allowedPackages is restricted.`,
+        `(no adtcore:packageRef/containerRef). Fail-closed: cannot authorize this operation without a verified package.${hint}`,
     );
   }
   await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
@@ -1222,18 +1227,22 @@ export function runPreWriteLint(
   // signature-less FUNCTION/ENDFUNCTION stubs passed). Validation falls back to
   // SAP's server-side syntax check (opt-in via `SAP_CHECK_BEFORE_WRITE`) and the
   // activate step.
-  const LINTABLE_TYPES = new Set(['PROG', 'CLAS', 'INTF', 'INCL', 'DDLS']);
-  if (!LINTABLE_TYPES.has(type)) {
+  const lintExtensions = new Map([
+    ['PROG', 'prog.abap'],
+    ['CLAS', 'clas.abap'],
+    ['INTF', 'intf.abap'],
+    ['INCL', 'prog.abap'],
+    ['DDLS', 'ddls.asddls'],
+  ]);
+  const extension = lintExtensions.get(type);
+  if (!extension) {
     return { blocked: false };
   }
 
   try {
-    let filename = detectFilename(source, name);
-    if (type === 'INCL' && filename.endsWith('.clas.abap')) {
-      // ABAP includes are often source fragments (FORM/MODULE/DATA...) without a REPORT/CLASS header.
-      // Lint them as program-style source; treating the fallback as a class rejects valid include fragments.
-      filename = `${name.toLowerCase()}.prog.abap`;
-    }
+    // The known object type selects the parser, even for comment headers, INCLUDE-led programs,
+    // and source fragments. Content detection is only needed by callers without an object type.
+    const filename = `${name.toLowerCase()}.${extension}`;
     // Reuse the single systemType/abapRelease/configFile resolution (avoids drift with SAPLint's
     // own config — a release-ceiling fix applied to one copy only would split lint behavior).
     const configOptions = buildLintConfigOptions(config);
