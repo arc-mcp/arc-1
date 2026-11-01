@@ -215,7 +215,7 @@ finding dispositions are linked from the evidence; this is not whole-PR acceptan
 
 Main updates now share the existing update handler; standalone on-prem PROG/INCL update and unit-edit
 adapters have offline tests and native standalone-owner metadata checks; the latest independent
-review still requires its follow-up fixes to be reviewed. Their create/delete/activation and function-group ownership paths remain pending.
+review still requires its follow-up fixes to be reviewed. Their create/delete/activation paths now also have offline tests, including the program text-pool guard and owning-session cleanup; fresh PP qualification and function-group ownership remain pending.
 CLAS/INTF creation and deletion also enter through the shared actions with explicit native profiles.
 Remaining work includes the additional object-specific mutation adapters,
 all refactored transportable-object paths, other object types and qualification of class/procedural surgery,

@@ -126,21 +126,21 @@ only the aggregate compatibility connection cannot write through that connection
 
 | Action | Requirements |
 |---|---|
-| `SAPWrite.create` | One CLAS or INTF; explicit package and complete source; required allowed request/task for a transportable package |
+| `SAPWrite.create` | One CLAS/INTF or on-prem standalone PROG/INCL; explicit package and complete source; required allowed request/task for a transportable package |
 | `SAPWrite.update` | CLAS/INTF main source, on-prem standalone PROG/INCL source, or CLAS `definitions`, `implementations`, `macros`, `testclasses`; exact editable-source hash for existing source |
 | `SAPWrite.edit_unit` / `add_unit` | On-prem standalone PROG/INCL; complete named FORM or MODULE block and hash of the complete owner source; add appends at physical EOF |
 | `SAPWrite.edit_method` | Existing CLAS main-source or local-include method; hash of the complete selected editable source |
 | `SAPWrite.edit_class_definition` | CLAS main definition block with complete main-source hash, or whole selected include replacement; main edits preserve the implementation, compare declared bodies and existing direct interface declarations, and refuse explicit method/interface ABSTRACT changes that need a complete source update |
-| `SAPWrite.edit_method_signature` | CLAS main source; existing method name, new METHODS clause and main hash; body preserved, intermediate signature changes skip lint |
+| `SAPWrite.edit_method_signature` | CLAS main source; existing method name, new METHODS clause and main hash; body preserved, ABSTRACT transitions refuse, other intermediate signature changes skip lint |
 | `SAPWrite.add_method` | CLAS main source; METHODS clause, optional visibility/abstract flag and main hash; abstractness comes from the clause, an explicit flag must agree, and a body stub is added only for a concrete method |
 | `SAPWrite.delete_method` / `change_method_visibility` | CLAS main source; existing method name and main hash; visibility moves additionally require the target section |
-| `SAPWrite.delete` | One CLAS/INTF owner; actual package and native recording checks before/under lock, followed by verified owner absence; omit source and source hash |
-| `SAPActivate` | One CLAS/INTF owner; activates all of that owner's existing inactive drafts and includes |
+| `SAPWrite.delete` | One CLAS/INTF or on-prem standalone PROG/INCL owner; PROG also holds the text-pool lock and refuses inactive pool drafts; actual package and native recording checks before/under lock, followed by verified owner absence; omit source and source hash |
+| `SAPActivate` | One CLAS/INTF or on-prem standalone PROG/INCL owner; includes its existing inactive class includes or native-reported program text pool, whose active state is checked afterward; INCL does not select its users or their pools |
 | `SAPLint.set_formatter_settings` | Partial indentation/style patch of the mapped SAP user's formatter preferences on this target; native read/merge/write/read-back, not a package-owned object |
 
-Program/include creation, deletion, activation and function-group structural includes are still pending
-in this draft. Existing PROG/INCL saves stay inactive. Do not treat this checkpoint as complete
-program-write support. Every procedural edit uses the owner lock, fresh source hash and exact
+Program/include creation, deletion and activation have offline tests in this draft; fresh PP
+qualification remains pending. Function-group structural includes still require their own adapter.
+Source saves stay inactive until explicit activation. Existing-source updates and unit edits use the owner lock, fresh source hash and exact
 read-back. Shared-line neighbors refuse; put FORM/MODULE boundaries on separate lines first.
 
 
@@ -162,8 +162,8 @@ performs SAP's syntax checks. This new include-method adapter has offline tests 
 its own reviewed, artifact-bound PP qualification.
 
 Standalone procedural edits require fresh native PROG/P or PROG/I metadata with the exact name and
-its own package, checked before locking and again under the lock. Generated `L*` (also namespaced)
-and `SAPL*` names, container/group aliases, mismatched metadata and unresolved ownership refuse.
+its own package, checked before locking and again under the lock. Generated `L*` include names and `SAPL*` program/include names (also namespaced),
+container/group aliases, mismatched metadata and unresolved ownership refuse.
 Executable programs, subroutine pools and module pools are recognized; this does not qualify their
 live writes. Include usage contexts do not authorize edits to the programs that use the include.
 

@@ -2,7 +2,7 @@
 import type { AdtClient } from '../../adt/client.js';
 import { AdtSafetyError } from '../../adt/errors.js';
 import type { PinnedMutationContext } from '../../adt/mutation-context.js';
-import { assertPinnedOwner, assertPinnedSourceOwner } from '../../adt/pinned-write-policy.js';
+import { assertPinnedSourceOwner } from '../../adt/pinned-write-policy.js';
 import type { ServerConfig } from '../../server/types.js';
 import { createPinnedSourceContext } from './pinned-source-context.js';
 
@@ -14,12 +14,10 @@ export function createPinnedTextSourceContext(
 ) {
   assertPinnedSourceOwner(args.type, args.name);
   if (args.action === 'delete') {
-    assertPinnedOwner(args.type, args.name);
     return createPinnedSourceContext(client, args, config, context, { wholeIncludeReplacement: false });
   }
   const creating = args.action === 'create';
   if (creating) {
-    assertPinnedOwner(args.type, args.name);
     if (typeof args.package !== 'string' || !args.package.trim())
       throw new AdtSafetyError('Creation requires an explicit package.');
     args = { ...args, package: args.package.trim().toUpperCase() };

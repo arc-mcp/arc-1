@@ -69,9 +69,7 @@ export async function handlePinnedSourceWrite(
         ...(state.warnings ? { warnings: state.warnings } : {}),
         next: state.unchangedConfirmed
           ? 'The method already has the requested visibility; no source was saved.'
-          : args.type === 'PROG' || args.type === 'INCL'
-            ? 'Review the inactive source. Program/include activation is not yet available on this pinned route.'
-            : 'Review the inactive source. SAPActivate activates this complete owner, including all existing inactive drafts/includes.',
+          : 'Review the inactive source. SAPActivate activates this complete owner, including its existing inactive drafts and owned includes/texts; other owners require separate selection.',
       }),
     );
   } catch (error) {

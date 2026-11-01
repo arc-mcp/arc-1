@@ -3,8 +3,8 @@
 PR #1142 remains a draft. This checkpoint moves existing main-source updates onto the shared
 `writeActionUpdate` handler and admits standalone on-prem PROG/INCL update, `edit_unit` and
 `add_unit`. It is offline implementation evidence, not live PP qualification or whole-PR acceptance.
-Program/include create/delete/activation, function-group ownership, other types and the remaining
-management families are still pending. The last successful live run remains `77e41fdcd`.
+Program/include CRUD and activation now have offline implementation tests. Function-group ownership,
+other types, management families and fresh PP qualification are still pending. The last successful live run remains `77e41fdcd`.
 
 ## Shared behavior
 
@@ -97,9 +97,8 @@ Fourteen native HTTP-mock cases execute these transitions through the shared han
 
 Deletion selects the existing strict native deletion adapter from the shared action. It retains
 its package/recording rechecks, owning lock, typed absence read-back and bounded cleanup. The
-legacy action retains its original text-pool/CDS prechecks and error/cleanup behavior. This does
-not admit PROG/INCL creation/deletion or bypass their pending technology-specific ownership and
-text-pool rules. The duplicate pinned CRUD orchestrator is removed; native adapters remain
+legacy action retains its original text-pool/CDS prechecks and error/cleanup behavior. At that checkpoint this did not admit PROG/INCL creation/deletion. The later expansion below preserves
+their separate ownership and text-pool rules. The duplicate pinned CRUD orchestrator is removed; native adapters remain
 explicit about their legacy and pinned policies.
 
 ## Evidence limits and next work
@@ -134,16 +133,16 @@ create/delete convergence and the changes below require another review.
   shared diff behavior; pinned native structure verification still refuses inherited-interface
   shapes it cannot cross-check against the local source. No new native composite-interface capture
   or relaxation of that evidence boundary is claimed.
-- **Standalone ownership:** generated `L*`, namespaced `L*` and `SAPL*` identifiers refuse before SAP.
+- **Standalone ownership:** generated `L*` include names and `SAPL*` program/include names refuse before SAP.
   Both before locking and under the lock, canonical program/include metadata must identify the exact
   name, matching PROG/P or PROG/I root and an independent DEVC/K package. Program kind must be
   executableProgram, subroutinePool or modulePool. Container and function-group context evidence
-  refuses. The independently resolved package must agree. Tests cover wrong root/name/type, missing
+  refuses. The later follow-up uses this single validated native package for policy checks instead of fetching the same metadata through a second parser. Tests cover wrong root/name/type, missing
   package, group/container aliases and identity drift under the lock.
 - **Namespaced headers:** the inventory accepts only the exact three-token METHOD header with a
   namespaced interface RHS when the installed grammar labels it Unknown. Reads and method edits
   retain its boundaries; unrelated methods remain accessible. Malformed boundaries have explicit
-  refusal tests and direct readers to complete SAPRead source. Native class-metadata surgery keeps
+  refusal tests and direct readers to complete SAPRead source. Default main-source lint still rejects this parser-unknown header; full handler tests cover that refusal. Reads and pure splicing are supported, while include edits retain their existing lint policy. Native class-metadata surgery keeps
   its separate stricter evidence requirements, including the previously documented delete limitation.
 - **Declaration-only resolution:** only implementations participate in ambiguity and exact/fuzzy
   selection. Abstract declarations no longer hide the sole actual body or interface match;
@@ -178,3 +177,84 @@ uses an authored program with 100, 1,000 and 5,000 independent FORM blocks, edit
 runs configured lint. It records exact source/script hashes, sizes, timings and process RSS. It is
 one increasing-size run on this machine, without SAP/network or concurrent requests; it does not
 establish deployment latency or a memory/concurrency ceiling. All three samples passed lint.
+
+
+## Standalone program/include CRUD and activation
+
+The draft now admits PROG/INCL creation through the shared native source-creation handler and
+owner activation through the existing preaudit engine. Native owner identity and independent
+package are checked again at activation confirmation. Programs may expand only to their own
+native text pool; its exact identity is checked before confirmation and its active state afterward.
+A later verification failure preserves uncertainty and warns that SAP already reported activation.
+Includes activate only the selected owner; referencing programs and their pools are not selected.
+
+Deletion shares the strict native owner adapter and its typed absence check. Programs additionally
+hold the pool lock in the same stateful session, verify that the exact pool is active, and recheck
+owner/package/recording and pool-lock locality before DELETE. The new additional-lock coordinator
+never opens a second session. Its bounded cleanup survives operation cancellation and reports
+unlock/close failures without erasing a confirmed deletion or the primary failure. Legacy text-pool
+cleanup behavior is unchanged. No automatic pool activation or DELETE retry is added.
+
+Native HTTP-mock tests cover creation, activation expansion/refusals, owner/package drift,
+unconfirmed pool activation, same-session locks, inactive-pool refusal, cancellation, uncertain
+DELETE, typed absence and cleanup failure. These are authored fixtures, not live protocol captures.
+Fresh two-writer PP qualification of these bytes remains required.
+
+
+## Fourth Claude review and follow-up
+
+Actual Claude Code **Opus 5.5**, launched with **effort max**, reviewed immutable `7af4069ae6332e68c5fd130085806849bd5145a0`.
+The [verbatim report](broader-pinned-pp-writes/claude-source-review-fixes-20261101.md) has SHA-256
+`b135dc2e4ee8be390dd0146227806098eb1ad3ba058440111113255b307aa714`.
+It found no High, two Medium and ten Low issues and requested fixes and review before a live artifact
+freeze. It independently passed 435 files/11,928 tests, all three TypeScript projects, size/schema
+checks, 59 harness simulations and the source benchmark. First/last reviewer verification and the
+author recheck confirmed the same 4,259 files unchanged. The reviewer executed no individual failing
+reproduction. Its report records a refused out-of-root Read (no returned data), an oversized read
+retried in parts, and the permitted read of its saved test output. Its model initialization and
+launcher arguments substantiate model/effort separately from the reviewer's self-report.
+
+The follow-up dispositions are:
+
+1. **Single-use includes:** native PROG/P context URIs may identify the owner or its source/main.
+   The unchanged A4H include fixture now executes through mutation dispatch with an authored CTS
+   response; array/mixed-context tests check every returned entry and prove no context is followed.
+2. **Missing declaration period:** add_method normalizes the clause before deriving abstractness.
+   Both routes test a missing period with the flag omitted and explicitly true; neither inserts a body.
+3. **Composite-interface removal:** removing any direct interface refuses an unresolved interface
+   implementation that the new definition cannot account for. Both routes exercise the case;
+   pinned retains its separate native-evidence refusal for an inherited shape it cannot prove.
+   Unchanged chained direct interfaces also execute through both handlers.
+4. **Signature symmetry:** signature-only edits cannot change ABSTRACT in either direction.
+   Handler tests cover concrete and declaration-only abstract methods on both routes.
+5. **Program names:** ordinary L-prefixed PROG names, including a namespace, rely on native
+   PROG/P/program-kind evidence. L-prefixed includes and SAPL program/include names remain refused.
+6. **Malformed replacement boundaries:** Unknown METHOD/ENDMETHOD-shaped statements refuse,
+   alongside the existing AST checks; valid keyword-named assignments remain covered.
+7. **Declaration-only guidance:** qualified class selectors and unique interface suffixes now
+   retain the declaration-only explanation through extractMethod, not just its message helper.
+8. **Parser/lint limits:** full handler tests record that default main-source lint blocks the
+   parser-unknown namespaced RHS header even though inventory and pure splice accept its boundary.
+   No lint exemption is introduced. All inventory parse failures now point to complete SAPRead source.
+9. **Public advice:** tool/schema descriptions and docs derive abstractness from the clause;
+   contradictory flags refuse. Definition-edit recovery points to complete update or atomic
+   add/delete actions. Tool-definition snapshots were regenerated for these intentional text changes.
+10. **Owner XML and cost:** native program/include XML is validated and DOCTYPE is refused before
+    parsing. The verified package is authorized directly, removing the duplicate resolver GET/parser.
+    Existing-source mutation tests assert one owner GET before and one under the lock; there is no
+    longer a second package-parser disagreement branch to test.
+11. **Cleanup:** close-only failures carry cleanupFailed consistently. Wording does not assert
+    an unlock happened when no lock was acquired. Confirmed source/deletion state remains visible.
+12. **Creation tests:** lifecycle assertions moved outside the mock fetch. Failure rows verify
+    phases/statuses; added cases execute recording drift, pre-POST cancellation, request binding on
+    POST/PUT, actual abaplint, and an actual inline /checkruns request under the owning lock.
+
+These corrections and the new program CRUD/activation implementation need another immutable
+independent review and fresh PP qualification. They do not change the scope of earlier live evidence.
+
+
+Author validation after these corrections: **437 files / 11,991 unit tests**, all three TypeScript
+projects, build, lint (four existing informational diagnostics), 135-entry policy validation,
+strict documentation, the 890-file size ratchet/schema budgets, and 59 existing harness simulations
+passed. Five tool-definition snapshots changed only the intentional abstract-method guidance.
+The final type-only test-helper annotation was checked by all three TypeScript projects.

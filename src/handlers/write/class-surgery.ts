@@ -10,6 +10,7 @@
 
 import {
   diffMethodSets,
+  ensureClauseTerminator,
   extractMethodNameFromClause,
   findSectionAnchor,
   insertMethodPair,
@@ -198,12 +199,12 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
       const parts: string[] = [];
       if (missingImpls.length > 0) {
         parts.push(
-          `Cannot apply edit_class_definition: the new DEFINITION declares method(s) ${missingImpls.join(', ')} but the existing IMPLEMENTATION block has no matching METHOD…ENDMETHOD body. Either include a METHOD <name>. ENDMETHOD. block per added method in your new source, or use SAPWrite(action="add_method", name="${name}", method="<METHODS clause>") to insert each one atomically.`,
+          `Cannot apply edit_class_definition: the new DEFINITION declares method(s) ${missingImpls.join(', ')} but the existing IMPLEMENTATION block has no matching METHOD…ENDMETHOD body. Use a complete source update to change both blocks, or use SAPWrite(action="add_method", name="${name}", method="<METHODS clause>") to insert each one atomically.`,
         );
       }
       if (orphanImpls.length > 0) {
         parts.push(
-          `Cannot apply edit_class_definition: the new DEFINITION removes method(s) ${orphanImpls.join(', ')} but the existing IMPLEMENTATION block still has METHOD…ENDMETHOD bodies for them (orphan implementation). Either remove those METHOD blocks in your edit, or use SAPWrite(action="delete_method", name="${name}", method="<name>") to drop each one atomically.`,
+          `Cannot apply edit_class_definition: the new DEFINITION removes method(s) ${orphanImpls.join(', ')} but the existing IMPLEMENTATION block still has METHOD…ENDMETHOD bodies for them (orphan implementation). Use a complete source update to remove both declarations and bodies, or use SAPWrite(action="delete_method", name="${name}", method="<name>") to drop each one atomically.`,
         );
       }
       return errorResult(parts.join('\n\n'));
@@ -290,7 +291,9 @@ export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolRe
   if (methodName.includes('~') && visibility !== 'public') {
     return errorResult('Interface method redefinitions must keep public visibility. Use visibility="public".');
   }
-  const declaration = parseDefinitionBlockDeclarations(clause).find((entry) => entry.name === methodName.toUpperCase());
+  const declaration = parseDefinitionBlockDeclarations(ensureClauseTerminator(clause)).find(
+    (entry) => entry.name === methodName.toUpperCase(),
+  );
   const isAbstract = declaration?.isAbstract === true;
   if (args.abstract !== undefined && args.abstract !== isAbstract)
     return errorResult(

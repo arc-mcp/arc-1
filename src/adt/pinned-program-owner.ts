@@ -1,7 +1,9 @@
 /** Native identity evidence for standalone procedural sources; package-only checks cannot identify aliases. */
-import type { AdtClient } from '../../adt/client.js';
-import { AdtSafetyError } from '../../adt/errors.js';
-import { parseXml } from '../../adt/xml-parser.js';
+import { XMLValidator } from 'fast-xml-parser';
+import type { AdtClient } from './client.js';
+import { AdtSafetyError } from './errors.js';
+import { checkPackage } from './safety.js';
+import { parseXml } from './xml-parser.js';
 
 export async function verifyPinnedProgramOwner(client: AdtClient, owner: string): Promise<string | undefined> {
   const selected = /^\/sap\/bc\/adt\/programs\/(programs|includes)\/([^/]+)$/.exec(owner);
@@ -14,7 +16,12 @@ export async function verifyPinnedProgramOwner(client: AdtClient, owner: string)
       'Pinned procedural edits require a standalone native PROG/INCL owner with its own package. Function-group, generated or ambiguous container sources need their dedicated adapter.',
     );
   };
-  if (Buffer.byteLength(response.body, 'utf8') > 1024 * 1024) refuse();
+  if (
+    Buffer.byteLength(response.body, 'utf8') > 1024 * 1024 ||
+    /<!DOCTYPE/i.test(response.body) ||
+    XMLValidator.validate(response.body) !== true
+  )
+    refuse();
   const root = parseXml(response.body)[program ? 'abapProgram' : 'abapInclude'] as Record<string, unknown> | undefined;
   if (!root || Array.isArray(root) || root['@_name'] !== name || root['@_type'] !== (program ? 'PROG/P' : 'PROG/I'))
     refuse();
@@ -32,10 +39,12 @@ export async function verifyPinnedProgramOwner(client: AdtClient, owner: string)
       typeof ref !== 'object' ||
       ref['@_type'] !== 'PROG/P' ||
       typeof ref['@_uri'] !== 'string' ||
-      !/^\/sap\/bc\/adt\/programs\/programs\/[^/]+\/source\/main$/.test(ref['@_uri'])
+      !/^\/sap\/bc\/adt\/programs\/programs\/[^/]+(?:\/source\/main)?$/.test(ref['@_uri'])
     )
       refuse();
   }
   // contextRefCount is usage information, not a complete ownership list; do not follow or authorize those resources.
-  return pkg!['@_name'] as string;
+  const packageName = pkg!['@_name'] as string;
+  await checkPackage(client.safety, packageName, client.getPackageHierarchyResolver());
+  return packageName;
 }

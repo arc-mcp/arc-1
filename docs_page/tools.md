@@ -641,7 +641,7 @@ keep their separate behavior.
 | `method` | string | No | For `edit_method`/`edit_method_signature`/`delete_method`/`change_method_visibility`: method NAME (e.g., `"get_name"`, `"zif_order~process"`, `"lhc_project~approve_project"`). For `add_method`: the full METHODS CLAUSE as ABAP source (e.g., `"METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string."`). |
 | `unit` | string | No | For on-prem `edit_unit`/`add_unit`: existing/new case-insensitive FORM or MODULE name (for example `"PROCESS_ORDERS"` or `"STATUS_0100"`). |
 | `visibility` | string | No | For `add_method`: target visibility section — `public` (default), `protected`, or `private`. For `change_method_visibility`: target visibility section (required). The section header must already exist in the DEFINITION block; if not, ARC-1 refuses with a hint to use `edit_class_definition` first. |
-| `abstract` | boolean | No | For `add_method`: when `true`, only the METHODS clause is inserted into DEFINITION — no `METHOD/ENDMETHOD` stub is added to IMPLEMENTATION. Default `false`. |
+| `abstract` | boolean | No | For `add_method`: optional assertion that must match ABSTRACT in the METHODS clause. The clause determines whether an implementation stub is needed. |
 | `bdefName` | string | No | For `scaffold_rap_handlers`: interface BDEF name used to derive required handler signatures. For `generate_behavior_implementation`: optional override; default discovery reads the class metadata's `<class:rootEntityRef>` to locate the BDEF automatically. |
 | `autoApply` | boolean | No | For `scaffold_rap_handlers`: when `true`, create missing `lhc_*` skeletons, inject missing signatures plus empty method stubs into the behavior pool, and write back. Not used by `generate_behavior_implementation` (which always applies; use `dryRun=true` there to preview). |
 | `targetAlias` | string | No | For `scaffold_rap_handlers` and `generate_behavior_implementation`: optional RAP entity alias filter (scaffold only one alias/handler class) |
@@ -1307,7 +1307,7 @@ Insert a METHODS clause AND an empty `METHOD <name>. ENDMETHOD.` stub in one PUT
 // → inserts METHODS greet ... in PUBLIC SECTION + empty METHOD greet. ENDMETHOD. in IMPLEMENTATION
 ```
 
-Pass `abstract: true` to skip the IMPLEMENTATION stub (for `METHODS x ABSTRACT.` in an abstract class).
+The METHODS clause determines abstractness: `METHODS x ABSTRACT.` creates no IMPLEMENTATION stub. An optional `abstract` flag must agree with that clause.
 
 For an inherited interface method, pass a redefinition clause such as
 `METHODS /IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM REDEFINITION.` (optionally

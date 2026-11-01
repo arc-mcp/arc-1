@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { safeUpdateClassInclude, safeUpdateSource, updateSource, withLockedMutation } from '../../../src/adt/crud.js';
+import {
+  safeUpdateClassInclude,
+  safeUpdateSource,
+  updateSource,
+  withAdditionalMutationLock,
+  withLockedMutation,
+} from '../../../src/adt/crud.js';
 import { AdtSafetyError } from '../../../src/adt/errors.js';
 import type { AdtRequestOptions } from '../../../src/adt/http.js';
 import {
@@ -49,6 +55,33 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('required mutation context', () => {
+  it('refuses additional locks outside the active owning coordinator, including a borrowed completed session', async () => {
+    const { http, scoped, safety, context } = fixture();
+    const policy = { beforeLock: () => {}, validateLock: async () => {} };
+    const operation = vi.fn();
+    expect(() => withAdditionalMutationLock(scoped, '/pool', policy, operation)).toThrow('active pinned');
+    expect(mockFetch).not.toHaveBeenCalled();
+    let borrowed = scoped;
+    await withLockedMutation(http, safety, context, owner, policy, async (session) => {
+      borrowed = session;
+    });
+    const before = mockFetch.mock.calls.length;
+    expect(() => withAdditionalMutationLock(borrowed, '/pool', policy, operation)).toThrow('active pinned');
+    expect(mockFetch).toHaveBeenCalledTimes(before);
+    expect(operation).not.toHaveBeenCalled();
+  });
+
+  it('does not reacquire an owner already held by the coordinator', async () => {
+    const { http, safety, context } = fixture();
+    const policy = { beforeLock: () => {}, validateLock: async () => {} };
+    const operation = vi.fn();
+    await withLockedMutation(http, safety, context, owner, policy, async (session) => {
+      await expect(withAdditionalMutationLock(session, owner, policy, operation)).rejects.toThrow('already locked');
+    });
+    expect(operation).not.toHaveBeenCalled();
+    expect(mockFetch.mock.calls.filter(([url]) => String(url).includes('_action=LOCK'))).toHaveLength(1);
+  });
+
   it.each([true, false])('refuses legacy wrappers on multi-target clients: enabled=%s', async (enabled) => {
     const { http, safety } = fixture();
     safety.multiTargetWrite.enabled = enabled;

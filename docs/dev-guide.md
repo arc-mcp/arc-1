@@ -197,7 +197,7 @@ npm run btp:validate
 ### Shared mutation lifecycle
 
 `src/adt/crud.ts::withLockedMutation` is shared by single-target `safeUpdateSource`,
-`safeUpdateClassInclude`, and the pinned CLAS/INTF adapter in `handlers/write/pinned.ts`.
+`safeUpdateClassInclude`, and the pinned source adapters in `handlers/write/pinned-source-lifecycle.ts`.
 The class-include protocol lives in `adt/class-include-write.ts` with a compatibility export from
 `crud.ts`; pinned main/include writes share `handlers/write/pinned-lock.ts` for under-lock policy.
 Existing pinned includes require their own hash; initialization requires typed native absence.
@@ -205,14 +205,21 @@ Existing pinned includes require their own hash; initialization requires typed n
 cannot enter the legacy wrapper. The required callbacks keep package/recording revalidation in
 the pinned adapter. This is not a generic metadata, deletion, transport or activation engine.
 
-Class actions enter `write/class-surgery-dispatch.ts` with a required mutation context. The already
-admitted pinned main-source `edit_method` uses the same action handler as single-target editing;
-`pinned-class-{context,lifecycle,surgery}.ts` supplies its registered, request-owned native policy.
-It permits one hash-checked main read/save/read-back under the owning lock, reuses package/recording
-revalidation and preserves confirmed saves when cleanup fails. It refuses structure reads and
-include edits; broader class actions still need their own policy and qualification. Legacy class
-cleanup/cache behavior remains separate. The shared method splicer refuses renamed/multiple
-replacement blocks and whole-line ranges containing neighboring statements, independently of lint.
+Class and procedural edits enter the shared action handlers. The registered, request-owned
+`pinned-source-{context,lifecycle}.ts` policy selects one canonical main/include source and enforces
+the fresh hash, owning lock, native package/recording rechecks, exact read-back and bounded cleanup.
+Class structure edits additionally cross-check native main-source metadata; unsupported inherited
+or parser-unknown structures refuse. Shared creation/deletion actions select explicit native profiles.
+`adt/pinned-program-owner.ts` verifies standalone PROG/INCL identity and its independent package.
+
+Program deletion uses `withPinnedActiveTextPoolForDelete`: its additional pool lock belongs to
+`withLockedMutation`'s existing session. `withAdditionalMutationLock` requires that active coordinator;
+it never opens another session or exposes the owning transport. Both locks use independent bounded
+cleanup even after cancellation; failures preserve the primary outcome. The legacy text-pool delete
+profile keeps its historical cleanup behavior. An inactive or unverified pool refuses pinned DELETE.
+Program activation permits only the selected native pool expansion and verifies its final active
+state. Include activation never expands to its users. These procedural paths still need live PP
+qualification; the latest successful deployed evidence remains scoped to `77e41fdcd`.
 
 `mutation-http.ts` gives nested helpers a scoped transport with the pinned deadline, cancellation
 and no-replay options. Child options cannot relax those limits; nested stateful sessions inherit
@@ -237,7 +244,7 @@ deadline or signal. Carry options through nodestructure POSTs, including CSRF an
 Preserve the legacy absence of request options, `localityKnown`, session identity and unlock-error
 precedence. Pinned cleanup instead retains the primary outcome and reports cleanup status. Its
 result serializer lives in `write/pinned-result.ts`; activation still uses its existing independent
-validator and state machine. Existing schemas, capabilities and ADR-0010 constraints are unchanged.
+validator and state machine. The explicit capability matrix and broader-write ADR determine which adapters are admitted.
 
 `pinned-transport-scope.ts` prepares an internal CTS safety/HTTP pair from native parent/task
 evidence and both request lists. Low-level writes reject copied scopes, raw clients and action/ID

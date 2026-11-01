@@ -7,7 +7,7 @@ and top-level runtime input fields. Full action lists also detect additions clas
 [nested-input-contracts.json](nested-input-contracts.json) snapshots every object-valued field (including nested arrays, batch/activation objects, quickfix
 objects, KTD short texts and FLP tiles) in both on-premise and BTP schema variants; custom refinements and handler branch combinations still need separate
 behavioral review. The drift tests require deliberate updates as PR 2 proceeds.
-The draft runtime adds formatter operations and CLAS/INTF deletion to ADR-0010's scoped subset.
+The draft runtime adds formatter operations, class includes and surgery, and standalone PROG/INCL CRUD, unit edits and activation to ADR-0010's scoped subset.
 These additions have separate qualification records and outstanding final review. The full
 [plan](../../plans/2026-10-26-broader-pinned-pp-writes.md) and proposed
 [ADR-0011](../../adr/0011-broader-pinned-pp-mutations.md) define acceptance.
@@ -20,12 +20,13 @@ be reflected in the later runtime matrix, including nested batch validation:
 
 | Family/action | Branch evidence and constraints | Current pinned qualification |
 | --- | --- | --- |
-| CLAS/INTF create/update | `write/pinned.ts`; main source only, explicit create package, source hash on update | ADR-0010 only |
+| CLAS/INTF create/update | Shared `write/create.ts` and `write/update-delete.ts` with registered pinned source/creation policy; explicit create package and existing-source hash | Original ADR-0010 behavior has historical PP evidence; later shared-handler convergence needs fresh qualification |
 | CLAS local-include update | Shared `adt/class-include-write.ts` plus `write/pinned-lock.ts`; four explicit selectors, hash for existing source, typed absence for initialization under class lock | Admitted; [two-writer local qualification](../2026-11-01-broader-pinned-pp-writes-includes.md) passed at `77e41fdcd`; transportable includes remain pending |
 | CLAS/INTF delete | `adt/pinned-delete.ts`; shared native DELETE/lock lifecycle, fresh package/recording checks, verified absence; no source hash | Admitted; combined two-writer PP run at `1b234d3a4` verifies typed absence for local CLAS/INTF; transportable deletion remains pending |
 | Class surgery | `write/class-surgery.ts`, `class-edit.ts`; CLAS only; definitions/implementations/macros/testclasses routing and local-method inference differ by action | Shared main and existing-include `edit_method` implemented; include-method PP qualification pending. Main-source definition/signature/add/delete/visibility adapters and exact source/structure validation implemented offline; definition-include replacement now shares the update protocol; all new adapters still require PP qualification |
-| Procedural surgery | `write/unit-surgery.ts`; PROG or INCL; FUGR structural include is INCL plus `group`, not `type=FUGR` | Pending |
-| FUNC/FUGR/INCL CRUD | `write.ts`, `write/create.ts`, `write/update-delete.ts`; FUNC resolves group, structural INCL locks the include and inherits group package; class includes are update paths | Pending |
+| Procedural surgery | Shared `write/unit-surgery.ts`; standalone PROG/INCL owner verification, source hash and owning lock | Implemented offline; PP qualification pending. Group-owned structural includes still pending |
+| FUNC/FUGR/group-owned INCL CRUD | `write.ts`, `write/create.ts`, `write/update-delete.ts`; FUNC resolves group, structural INCL locks the include and inherits group package; class includes are update paths | Pending |
+| Standalone PROG/INCL CRUD | Shared create/update/delete actions; exact native owner/package, native recording; PROG deletion additionally locks and verifies its active text pool | Implemented offline; PP qualification pending |
 | Text elements | `write/update-delete.ts`, `adt/text-elements.ts`; CLAS symbols only, PROG/FUGR supported parts; pool lock differs from owner, save may invoke activation | Pending exact-pool adapter and native active-version readback |
 | TABL/DTT | `write/table-settings.ts`; update only, parent table package; new settings require parent activation | Pending |
 | TABL/DT, TABL/DS | Write normalizer preserves subtype; `STRU/DS` maps to TABL/DS; bare TABL resolves tables/structures | Pending |
@@ -34,7 +35,7 @@ be reflected in the later runtime matrix, including nested batch validation:
 | Server-driven types | Explicit SDO registry, AFF/DDL distinctions, per-type MIME and native discovery; UIAD has a dedicated branch; TABL/DTI inherits parent table package; APLO is immediately active | Pending per-type adapters/evidence |
 | Batch creation | `write/create.ts`; rejects SDOs and FUGR structural includes. FUNC needs group. Per-item fields/defaults differ from top level. Audit each supported type rather than importing the full write enum | Pending |
 | RAP helpers | `write/rap.ts`; CLAS, potentially creates/edits local implementation includes; may invoke activation | Pending every nested mutation/activation |
-| Activation | `activate.ts`, `adt/devtools.ts`; owner/type resolution, SDO discovery, table/index postconditions and expanded references; batch currently explicitly refuses multi-target | ADR-0010 whole CLAS/INTF owner only |
+| Activation | `activate.ts`, `adt/devtools.ts`; owner/type resolution, SDO discovery, table/index postconditions and expanded references; batch currently explicitly refuses multi-target | CLAS/INTF has historical PP evidence; standalone PROG/INCL and native program-pool expansion implemented offline, fresh qualification pending |
 | Package/API state/publication | `manage.ts`, `adt/api-release.ts`, `adt/refactoring.ts`, `adt/devtools.ts`; actual owners, both move packages and native recording behavior need separate treatment | Pending |
 | CTS | `transport.ts` at handler and ADT layers; low-level whitelist and recursive-release gates cannot simply inherit runtime `allowedTransports=[]` | Internal verified-scope prerequisite implemented; management adapters and PP qualification pending |
 | Trace/proposals | `diagnose.ts`, `adt/diagnostics.ts`; profiler two-stage create, explicit PP user, ST05 per-instance state; quickfix returns edits without persisting source | Pending |

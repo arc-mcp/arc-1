@@ -48,7 +48,7 @@ describe('pinned mutation capability matrix', () => {
         tool: 'SAPWrite',
         action: 'create',
         resource: 'repository-source',
-        types: ['CLAS', 'INTF'],
+        types: ['CLAS', 'INTF', 'PROG', 'INCL'],
         fields: ['action', 'type', 'name', 'source', 'transport', 'package', 'description'],
       },
       {
@@ -111,14 +111,14 @@ describe('pinned mutation capability matrix', () => {
         tool: 'SAPActivate',
         action: 'activate',
         resource: 'whole-owner',
-        types: ['CLAS', 'INTF'],
+        types: ['CLAS', 'INTF', 'PROG', 'INCL'],
         fields: ['action', 'type', 'name'],
       },
       {
         tool: 'SAPWrite',
         action: 'delete',
         resource: 'whole-owner',
-        types: ['CLAS', 'INTF'],
+        types: ['CLAS', 'INTF', 'PROG', 'INCL'],
         fields: ['action', 'type', 'name', 'transport'],
       },
       {
@@ -228,9 +228,18 @@ describe('pinned mutation capability matrix', () => {
         expect(multiTargetInvocationDecision('SAPWrite', args, writer)).toBe('allowed');
         expect(multiTargetInvocationDecision('SAPWrite', args, { ...writer, systemType: 'btp' })).toBe('forbidden');
       }
-      for (const action of ['create', 'delete', 'edit_method'])
+      for (const action of ['edit_method'])
         expect(pinnedMutationAllowed('SAPWrite', { action, type }, writer)).toBe(false);
-      expect(pinnedMutationAllowed('SAPActivate', { type }, writer)).toBe(false);
+      expect(pinnedMutationAllowed('SAPWrite', { action: 'delete', type }, writer)).toBe(true);
+      expect(pinnedMutationAllowed('SAPWrite', { action: 'delete', type }, { ...writer, systemType: 'btp' })).toBe(
+        false,
+      );
+      expect(pinnedMutationAllowed('SAPActivate', { type }, writer)).toBe(true);
+      expect(pinnedMutationAllowed('SAPActivate', { type }, { ...writer, systemType: 'btp' })).toBe(false);
+      expect(pinnedMutationAllowed('SAPWrite', { action: 'create', type }, writer)).toBe(true);
+      expect(pinnedMutationAllowed('SAPWrite', { action: 'create', type }, { ...writer, systemType: 'btp' })).toBe(
+        false,
+      );
     }
     const surface = pinnedMutationSurface('SAPWrite', { ...writer, systemType: 'btp' })!;
     expect(surface.types).toEqual(['CLAS', 'INTF']);

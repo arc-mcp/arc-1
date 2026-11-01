@@ -1,6 +1,6 @@
 # PR 2: broader built-in writes on pinned PP targets
 
-Status: implementation in progress. Formatter, CLAS/INTF deletion, class-include updates, existing-include method edits and main-source class metadata surgery and standalone on-prem PROG/INCL updates/unit edits are admitted in the draft.
+Status: implementation in progress. Formatter, CLAS/INTF deletion, class-include updates, existing-include method edits and main-source class metadata surgery and standalone on-prem PROG/INCL CRUD, unit edits and owner activation are admitted in the draft. Program deletion retains the active-text-pool precheck and both owning-session locks.
 Main source replacement and CLAS/INTF creation/deletion now enter through the shared write actions
 with explicit legacy/pinned native adapters. This later convergence is offline-tested only.
 The fresh local run at `77e41fdcd` qualifies include replacement and the refactored main method path;

@@ -3,12 +3,12 @@ import type { AdtClient } from '../../adt/client.js';
 import { AdtSafetyError } from '../../adt/errors.js';
 import { mutationClient } from '../../adt/mutation-client.js';
 import { assertMutationContext, type PinnedMutationContext } from '../../adt/mutation-context.js';
+import { verifyPinnedProgramOwner } from '../../adt/pinned-program-owner.js';
 import { assertPinnedSourceOwner, type PinnedRecording, pinnedRecording } from '../../adt/pinned-write-policy.js';
 import type { ServerConfig } from '../../server/types.js';
 import { type ClassWriteInclude, normalizeClassWriteInclude, objectUrlForType } from '../object-types.js';
 import { enforceAllowedPackageForObjectUrl } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
-import { verifyPinnedProgramOwner } from './pinned-program-owner.js';
 
 export interface PinnedSourceState {
   readonly context: PinnedMutationContext;
@@ -79,16 +79,16 @@ export function createPinnedSourceContext(
     async enforcePackageForExistingObject() {
       state.phase = 'package-preflight';
       const nativePackage = await verifyPinnedProgramOwner(client, owner);
-      const pkg = await enforceAllowedPackageForObjectUrl(
-        client,
-        owner,
-        'Pinned source edit',
-        undefined,
-        context.requestPolicy,
-      );
+      const pkg =
+        nativePackage ??
+        (await enforceAllowedPackageForObjectUrl(
+          client,
+          owner,
+          'Pinned source edit',
+          undefined,
+          context.requestPolicy,
+        ));
       if (!pkg) throw new AdtSafetyError('The owner package could not be verified.');
-      if (nativePackage !== undefined && nativePackage !== pkg)
-        throw new AdtSafetyError('The native owner package could not be consistently verified.');
       state.pkg = pkg;
       state.phase = 'recording-preflight';
       state.recording = await pinnedRecording(

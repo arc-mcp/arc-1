@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { requestContext } from '../../../src/server/context.js';
-import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
@@ -29,6 +29,8 @@ const config = {
 const texts = {
   CLAS: 'CLASS zcl_new DEFINITION PUBLIC.\nENDCLASS.\nCLASS zcl_new IMPLEMENTATION.\nENDCLASS.',
   INTF: 'INTERFACE zif_new PUBLIC.\nENDINTERFACE.',
+  PROG: "REPORT zprog_new.\nWRITE 'created'.",
+  INCL: '* New independent include.\n',
 };
 let owner = '',
   collection = '',
@@ -38,7 +40,8 @@ let owner = '',
   stored = '',
   fault = '';
 let cancellation: AbortController | undefined;
-const calls: { path: string; method: string; body: string; locked: boolean }[] = [];
+let transportable = false;
+const calls: { path: string; method: string; body: string; locked: boolean; created: boolean }[] = [];
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.resetAllMocks();
@@ -47,21 +50,28 @@ beforeEach(() => {
   saved = false;
   stored = '* native template\n';
   fault = '';
+  transportable = false;
   cancellation = undefined;
   calls.length = 0;
   mockFetch.mockImplementation(async (url, init: any = {}) => {
     const uri = new URL(String(url)),
       method = init.method ?? 'GET',
       path = uri.pathname.toLowerCase();
-    calls.push({ path: path + uri.search, method, body: String(init.body ?? ''), locked });
+    calls.push({ path: path + uri.search, method, body: String(init.body ?? ''), locked, created });
     if (method === 'HEAD') return mockResponse(200, '', { 'x-csrf-token': 'token' });
     if (path.includes('transportchecks'))
       return mockResponse(
         200,
-        `<DATA><DEVCLASS>$TMP</DEVCLASS><DLVUNIT>LOCAL</DLVUNIT><OPERATION>${String(init.body).includes('<OPERATION>I</OPERATION>') ? 'I' : ''}</OPERATION><RESULT>S</RESULT><RECORDING/></DATA>`,
+        `<DATA><DEVCLASS>${transportable ? 'ZTEAM' : '$TMP'}</DEVCLASS><DLVUNIT>${transportable ? 'HOME' : 'LOCAL'}</DLVUNIT><OPERATION>${String(init.body).includes('<OPERATION>I</OPERATION>') ? 'I' : ''}</OPERATION><RESULT>S</RESULT><RECORDING>${transportable || (fault === 'recording-drift' && locked) ? 'X' : ''}</RECORDING></DATA>`,
       );
+    if (path.includes('transportrequests'))
+      return mockResponse(
+        200,
+        '<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900001" tm:type="K" tm:status="D"/></tm:root>',
+      );
+    if (path.includes('/checkruns'))
+      return mockResponse(200, '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"/>');
     if (path === collection && method === 'POST') {
-      expect(created).toBe(false);
       if (fault === 'create-reject' || fault === 'create-unknown')
         return mockResponse(fault === 'create-reject' ? 403 : 503, '');
       created = true;
@@ -69,11 +79,14 @@ beforeEach(() => {
       return mockResponse(201, '<created/>');
     }
     if (uri.searchParams.get('_action') === 'LOCK') {
-      expect(created).toBe(true);
       locked = true;
-      return mockResponse(200, '<DATA><LOCK_HANDLE>new-lock</LOCK_HANDLE><CORRNR/><IS_LOCAL>X</IS_LOCAL></DATA>', {
-        'set-cookie': 'sap-contextid=owned; Path=/',
-      });
+      return mockResponse(
+        200,
+        `<DATA><LOCK_HANDLE>new-lock</LOCK_HANDLE><CORRNR>${transportable ? 'A4HK900001' : ''}</CORRNR><IS_LOCAL>${transportable ? '' : 'X'}</IS_LOCAL></DATA>`,
+        {
+          'set-cookie': 'sap-contextid=owned; Path=/',
+        },
+      );
     }
     if (uri.searchParams.get('_action') === 'UNLOCK') {
       locked = false;
@@ -81,21 +94,21 @@ beforeEach(() => {
     }
     if (path.includes('/http/sessions')) return mockResponse(200, '');
     if (path === owner) {
-      expect(created).toBe(true);
-      expect(locked).toBe(true);
+      const root = collection.endsWith('/programs')
+        ? 'abapProgram'
+        : collection.endsWith('/includes')
+          ? 'abapInclude'
+          : 'root';
       return mockResponse(
         200,
-        `<root xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="${fault === 'package' ? 'ZFOREIGN' : '$TMP'}"/></root>`,
+        `<${root} xmlns:adtcore="http://www.sap.com/adt/core" name="${owner.split('/').at(-1)!.toUpperCase()}" type="PROG/${root === 'abapInclude' ? 'I' : 'P'}" programType="executableProgram"><adtcore:packageRef adtcore:type="DEVC/K" adtcore:name="${fault === 'package' ? 'ZFOREIGN' : transportable ? 'ZTEAM' : '$TMP'}"/></${root}>`,
       );
     }
     if (path === `${owner}/source/main`) {
-      expect(created).toBe(true);
-      expect(locked).toBe(true);
       if (method === 'GET') {
         if (!saved && fault === 'cancel-read') cancellation!.abort();
         return mockResponse(fault === 'initial-read' || (saved && fault === 'readback') ? 503 : 200, stored);
       }
-      expect(method).toBe('PUT');
       if (fault === 'save-reject' || fault === 'save-unknown')
         return mockResponse(fault === 'save-reject' ? 422 : 503, '');
       saved = true;
@@ -105,20 +118,36 @@ beforeEach(() => {
     throw Error(`Unexpected ${method} ${path}`);
   });
 });
-async function invoke(type: keyof typeof texts = 'CLAS', extra: Record<string, unknown> = {}) {
-  collection = `/sap/bc/adt/oo/${type === 'CLAS' ? 'classes' : 'interfaces'}`;
-  const name = type === 'CLAS' ? 'ZCL_NEW' : 'ZIF_NEW';
+async function invoke(
+  type: keyof typeof texts = 'CLAS',
+  extra: Record<string, unknown> = {},
+  settings: ServerConfig = config,
+) {
+  collection =
+    '/sap/bc/adt/' +
+    { CLAS: 'oo/classes', INTF: 'oo/interfaces', PROG: 'programs/programs', INCL: 'programs/includes' }[type];
+  const name = { CLAS: 'ZCL_NEW', INTF: 'ZIF_NEW', PROG: 'ZPROG_NEW', INCL: 'ZINCL_NEW' }[type];
   owner = `${collection}/${name.toLowerCase()}`;
   const result = await handleToolCall(
-    new AdtClient({ baseUrl: 'http://sap:8000', client: '001', safety: { ...defaultSafetyConfig(), ...config } }),
-    config,
+    new AdtClient({ baseUrl: 'http://sap:8000', client: '001', safety: { ...defaultSafetyConfig(), ...settings } }),
+    settings,
     'SAPWrite',
     { action: 'create', type, name, package: ' $tmp ', source: texts[type], ...extra },
+  );
+  const sourceCalls = calls.filter((c) => c.path.split('?')[0] === `${owner}/source/main`);
+  expect(sourceCalls.every((c) => c.created && c.locked && ['GET', 'PUT'].includes(c.method))).toBe(true);
+  expect(sourceCalls.filter((c) => c.method === 'PUT').every((c) => c.path.includes('lockHandle=new-lock'))).toBe(true);
+  expect(
+    calls.filter((c) => c.path.split('?')[0] === owner && c.method === 'GET').every((c) => c.created && c.locked),
+  ).toBe(true);
+  expect(calls.filter((c) => c.path.includes('_action=LOCK')).every((c) => c.created)).toBe(true);
+  expect(calls.filter((c) => c.path.split('?')[0] === collection && c.method === 'POST').every((c) => !c.created)).toBe(
+    true,
   );
   const text = result.content[0].text;
   return { result, body: text.startsWith('{') ? JSON.parse(text) : { message: text } };
 }
-it.each(['CLAS', 'INTF'] as const)(
+it.each(['CLAS', 'INTF', 'PROG', 'INCL'] as const)(
   'creates %s through the shared handler and verifies its saved native source',
   async (type) => {
     const { result, body } = await invoke(type);
@@ -149,6 +178,19 @@ it.each([
   const { result, body } = await invoke();
   expect(result.isError).toBe(true);
   expect(body.state).toBe(state);
+  const expected = {
+    'create-reject': ['create', 403],
+    'create-unknown': ['create', 503],
+    package: ['locked-policy', undefined],
+    'initial-read': ['source-read', 503],
+    'save-reject': ['source-save', 422],
+    'save-unknown': ['source-save', 503],
+    readback: ['source-readback', 503],
+    unlock: ['unlock', undefined],
+  }[failure];
+  expect(body.phase).toBe(expected[0]);
+  if (failure === 'package') expect(body.message).toMatch(/package/i);
+  expect(body.statusCode).toBe(expected[1]);
   expect(created).toBe(exists);
   expect(diagnostic).not.toHaveBeenCalled();
   expect(calls.filter((c) => c.method === 'POST' && c.path.split('?')[0] === collection)).toHaveLength(1);
@@ -165,6 +207,8 @@ it.each(['cancel-created', 'cancel-read'])(
     );
     expect(result.isError).toBe(true);
     expect(body.state).toBe('created-source-not-confirmed');
+    expect(body.phase).toBe(failure === 'cancel-created' ? 'lock' : 'edit-preparation');
+    expect(body.statusCode).toBeUndefined();
     expect(created).toBe(true);
     expect(calls.some((c) => c.method === 'PUT')).toBe(false);
     expect(body.sourceHash).toBeUndefined();
@@ -192,4 +236,62 @@ it('blocks configured lint before creating a native shell', async () => {
   expect(calls.some((c) => (c.method === 'POST' && !c.path.includes('transportchecks')) || c.method === 'PUT')).toBe(
     false,
   );
+});
+
+it('refuses recording drift under the new owner lock before source PUT', async () => {
+  fault = 'recording-drift';
+  const { result, body } = await invoke();
+  expect(result.isError).toBe(true);
+  expect(body).toMatchObject({ state: 'created-source-not-confirmed', phase: 'locked-policy' });
+  expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(0);
+});
+it('cancels before creation without a native request', async () => {
+  cancellation = new AbortController();
+  cancellation.abort();
+  const { result, body } = await requestContext.run({ requestId: 'create-before', signal: cancellation.signal }, () =>
+    invoke(),
+  );
+  expect(result.isError).toBe(true);
+  expect(body.state).toBe('unchanged');
+  expect(calls).toHaveLength(0);
+});
+it('uses the verified request on the native creation POST and save', async () => {
+  transportable = true;
+  const settings = {
+    ...config,
+    allowedPackages: ['ZTEAM'],
+    multiTargetWrite: {
+      ...config.multiTargetWrite,
+      allowedPackages: ['ZTEAM'],
+      allowedTransports: ['A4HK900001'],
+      serverAllowedTransports: ['A4HK900001'],
+    },
+  };
+  const { result } = await invoke('CLAS', { package: 'ZTEAM', transport: 'A4HK900001' }, settings);
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(calls.find((c) => c.method === 'POST' && c.path.split('?')[0] === collection)?.path).toContain(
+    'corrNr=A4HK900001',
+  );
+  expect(calls.find((c) => c.method === 'PUT')?.path).toContain('corrNr=A4HK900001');
+});
+it.each([false, true])('runs actual configured lint before shell creation (invalid=%s)', async (invalid) => {
+  const { result, body } = await invoke('CLAS', invalid ? { source: 'CLASS zcl_new DEFINITION. nonsense !!!' } : {}, {
+    ...config,
+    lintBeforeWrite: true,
+  });
+  expect(!!result.isError).toBe(invalid);
+  expect(created).toBe(!invalid);
+  if (invalid) {
+    expect(body.state).toBe('unchanged');
+    expect(body.message).toMatch(/lint/i);
+  }
+});
+it('runs the actual inline SAP syntax request under the new owner lock', async () => {
+  const { result } = await invoke('CLAS', {}, { ...config, checkBeforeWrite: true });
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  const checks = calls.filter((c) => c.path.includes('/checkruns'));
+  expect(checks).toHaveLength(1);
+  expect(checks[0]).toMatchObject({ locked: true, created: true, method: 'POST' });
+  expect(checks[0]!.body).toContain(Buffer.from(texts.CLAS).toString('base64'));
+  expect(calls.indexOf(checks[0]!)).toBeLessThan(calls.findIndex((c) => c.method === 'PUT'));
 });

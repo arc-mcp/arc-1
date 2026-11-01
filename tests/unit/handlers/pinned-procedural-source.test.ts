@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
@@ -36,6 +37,8 @@ let stored = original,
   fault = '',
   transportable = false;
 let cancellation: AbortController | undefined;
+let metadataOverride: string | undefined;
+let recordingPackage: string | undefined;
 const requests: { path: string; method: string; locked: boolean; body: string }[] = [];
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -45,6 +48,8 @@ beforeEach(() => {
   saved = false;
   fault = '';
   cancellation = undefined;
+  metadataOverride = undefined;
+  recordingPackage = undefined;
   transportable = false;
   requests.length = 0;
   mockFetch.mockImplementation(async (url, init: any = {}) => {
@@ -69,6 +74,7 @@ beforeEach(() => {
     }
     if (path.includes('/http/sessions')) return mockResponse(fault === 'close' ? 503 : 200, '');
     if (path === owner && method === 'GET') {
+      if (metadataOverride !== undefined) return mockResponse(200, metadataOverride);
       const include = owner.includes('/includes/');
       const activeFault = !fault.endsWith('-locked') || locked ? fault.replace(/-locked$/, '') : '';
       const root = include && activeFault !== 'owner-root' ? 'abapInclude' : 'abapProgram';
@@ -92,7 +98,7 @@ beforeEach(() => {
     if (path.includes('transportchecks'))
       return mockResponse(
         200,
-        `<DATA><DEVCLASS>${transportable ? 'ZTEAM' : '$TMP'}</DEVCLASS><DLVUNIT>${transportable ? 'HOME' : 'LOCAL'}</DLVUNIT><OPERATION/><RESULT>S</RESULT><RECORDING>${transportable || (fault === 'recording' && locked) ? 'X' : ''}</RECORDING></DATA>`,
+        `<DATA><DEVCLASS>${recordingPackage ?? (transportable ? 'ZTEAM' : '$TMP')}</DEVCLASS><DLVUNIT>${transportable ? 'HOME' : 'LOCAL'}</DLVUNIT><OPERATION/><RESULT>S</RESULT><RECORDING>${transportable || (fault === 'recording' && locked) ? 'X' : ''}</RECORDING></DATA>`,
       );
     if (path.includes('transportrequests'))
       return mockResponse(
@@ -298,6 +304,7 @@ it.each(['LZFOOF01', '/NS/LZFOOF01', 'SAPLZFOO', '/NS/SAPLZFOO'])(
   'refuses generated/function-group source names before SAP: %s',
   async (name) => {
     for (const type of ['PROG', 'INCL']) {
+      if (type === 'PROG' && !name.replace(/^\/[A-Z0-9_]+\//, '').startsWith('SAPL')) continue;
       const { result } = await invoke(type, 'edit_unit', { name });
       expect(result.isError).toBe(true);
       expect(requests).toHaveLength(0);
@@ -384,4 +391,72 @@ it('edits using the exact hash returned by SAPRead editable', async () => {
   const { result } = await invoke('PROG', 'edit_unit', { expectedSourceHash: snapshot.sourceHash });
   expect(result.isError, result.content[0].text).toBeUndefined();
   expect(stored).toBe(original.replace("'old'", "'new'"));
+});
+
+it('uses the unmodified native single-context include fixture through shared mutation dispatch', async () => {
+  metadataOverride = readFileSync(
+    new URL('../../fixtures/extensions/source/incl-metadata-a4h.xml', import.meta.url),
+    'utf8',
+  );
+  transportable = true;
+  recordingPackage = 'SEU_TEST';
+  const settings = {
+    ...config,
+    allowedPackages: ['SEU_TEST'],
+    multiTargetWrite: {
+      ...config.multiTargetWrite!,
+      allowedPackages: ['SEU_TEST'],
+      allowedTransports: ['A4HK900001'],
+      serverAllowedTransports: ['A4HK900001'],
+    },
+  };
+  const { result } = await invoke(
+    'INCL',
+    'edit_unit',
+    { name: 'ENH_PROG_INCL_IMPLICIT_OPT', transport: 'A4HK900001' },
+    settings,
+  );
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(stored).toContain("WRITE 'new'.");
+  expect(requests.filter((r) => r.method === 'GET' && r.path.split('?')[0] === owner)).toHaveLength(2);
+  expect(requests.some((r) => r.path.includes('/programs/programs/'))).toBe(false);
+});
+it.each([false, true])('validates every returned context without following it (foreign=%s)', async (foreign) => {
+  metadataOverride = `<include:abapInclude xmlns:include="http://www.sap.com/adt/programs/includes" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZARC1_PROGRAM" adtcore:type="PROG/I"><adtcore:packageRef adtcore:name="$TMP" adtcore:type="DEVC/K"/><include:contextRef adtcore:type="PROG/P" adtcore:uri="/sap/bc/adt/programs/programs/zfirst"/><include:contextRef adtcore:type="${foreign ? 'FUGR/I' : 'PROG/P'}" adtcore:uri="${foreign ? '/sap/bc/adt/functions/groups/zforeign' : '/sap/bc/adt/programs/programs/zsecond/source/main'}"/></include:abapInclude>`;
+  const { result } = await invoke('INCL');
+  expect(!!result.isError).toBe(foreign);
+  expect(
+    requests.some((r) => r.path.includes('/zfirst') || r.path.includes('/zsecond') || r.path.includes('/zforeign')),
+  ).toBe(false);
+  expect(requests.filter((r) => r.method === 'PUT')).toHaveLength(foreign ? 0 : 1);
+});
+it.each([
+  '<!DOCTYPE root><abapInclude/>',
+  '<abapInclude name="ZARC1_PROGRAM" type="PROG/I"><packageRef name="$TMP" type="DEVC/K"/>',
+])('refuses non-verifiable owner XML before locking', async (xml) => {
+  metadataOverride = xml;
+  const { result } = await invoke('INCL');
+  expect(result.isError).toBe(true);
+  expect(requests.some((r) => r.path.includes('_action=LOCK') || r.method === 'PUT')).toBe(false);
+});
+it('accepts an ordinary namespaced L-prefixed program after native owner verification', async () => {
+  const { result } = await invoke('PROG', 'update', {
+    name: '/NS/LOAD_DATA',
+    source: "REPORT /ns/load_data. WRITE 'ok'.",
+  });
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(requests.filter((r) => r.method === 'PUT')).toHaveLength(1);
+});
+
+it('reports a close-only failure consistently after a confirmed procedural save', async () => {
+  fault = 'close';
+  const { result, body } = await invoke();
+  expect(result.isError).toBe(true);
+  expect(body).toMatchObject({
+    state: 'saved-inactive',
+    phase: 'session-close',
+    cleanupFailed: true,
+    sessionClosed: false,
+  });
+  expect(body.cleanup).not.toContain('Unlock failed');
 });

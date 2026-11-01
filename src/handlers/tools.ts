@@ -617,7 +617,7 @@ export function getToolDefinitions(
               (btp ? '' : 'edit_unit replaces a FORM/MODULE in PROG/INCL; add_unit appends one at EOF. ') +
               'batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. ' +
               'Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; ' +
-              'add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); ' +
+              'add_method inserts a METHODS clause plus an empty IMPL stub (an ABSTRACT clause skips the stub; an explicit abstract flag must agree); ' +
               'edit_method_signature rewrites one METHODS clause and leaves the body alone; ' +
               'change_method_visibility moves a method to another section and preserves its body; ' +
               'delete_method is destructive — it discards the body, so to re-section a method use change_method_visibility, never delete+add. ' +
@@ -688,7 +688,7 @@ export function getToolDefinitions(
           abstract: {
             type: 'boolean',
             description:
-              'For action=add_method: when true, only the METHODS clause is inserted into DEFINITION; no METHOD/ENDMETHOD stub is added to IMPLEMENTATION. Default false (concrete method — DEFINITION + IMPL stub written atomically).',
+              'For action=add_method: optional assertion that must match ABSTRACT in the METHODS clause. Abstractness is derived from that clause; only concrete methods receive an IMPLEMENTATION stub.',
           },
           bdefName: {
             type: 'string',

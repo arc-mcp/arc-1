@@ -11,7 +11,7 @@
  */
 
 import { postCreate } from './create-request.js';
-import { AdtApiError, extractExceptionType } from './errors.js';
+import { AdtApiError, AdtSafetyError, extractExceptionType } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import {
   assertMutationContext,
@@ -109,6 +109,25 @@ const legacyLockPolicy: MutationLockPolicy = {
   validateLock: async () => {},
 };
 
+type AdditionalLock = <T>(
+  url: string,
+  policy: MutationLockPolicy,
+  operation: (lock: LockResult) => Promise<T>,
+) => Promise<T>;
+const additionalLocks = new WeakMap<AdtHttpClient, AdditionalLock>();
+
+/** Additional native locks belong to the existing coordinator/session, never a new SAP context. */
+export function withAdditionalMutationLock<T>(
+  session: AdtHttpClient,
+  objectUrl: string,
+  policy: MutationLockPolicy,
+  operation: (lock: LockResult) => Promise<T>,
+): Promise<T> {
+  const acquire = additionalLocks.get(session);
+  if (!acquire) throw new AdtSafetyError('An active pinned owning-lock lifecycle is required.');
+  return acquire(objectUrl, policy, operation);
+}
+
 /** Shared session/lock mechanics; adapters retain their native recording, source and result logic. */
 export async function withLockedMutation<T>(
   http: AdtHttpClient,
@@ -123,29 +142,49 @@ export async function withLockedMutation<T>(
   checkOperation(safety, OperationType.Update, 'MutationSession');
   const run = async (owningSession: AdtHttpClient) => {
     const session = mutationHttp(owningSession, safety, context);
+    const held = new Set([objectUrl]);
+    const release = async (url: string, handle: string) => {
+      if (context.mode !== 'pinned-pp' || !handle) return;
+      try {
+        await owningSession.post(
+          `${url}?_action=UNLOCK&lockHandle=${encodeURIComponent(handle)}`,
+          undefined,
+          undefined,
+          undefined,
+          { deadline: Date.now() + 30_000, retryTransientErrors: false, noReplay: true },
+        );
+      } catch {
+        context.cleanup.unlockFailed = true;
+      }
+    };
     policy.beforeLock();
     const lock = await lockObject(session, safety, objectUrl, 'MODIFY', abapRelease, undefined, context.requestPolicy);
+    if (context.mode === 'pinned-pp')
+      additionalLocks.set(session, async (url, extraPolicy, fn) => {
+        if (held.has(url)) throw new AdtSafetyError('The resource is already locked by this mutation.');
+        held.add(url);
+        try {
+          extraPolicy.beforeLock();
+          const extra = await lockObject(session, safety, url, 'MODIFY', abapRelease, undefined, context.requestPolicy);
+          try {
+            await extraPolicy.validateLock(session, extra);
+            return await fn(extra);
+          } finally {
+            await release(url, extra.lockHandle);
+          }
+        } finally {
+          held.delete(url);
+        }
+      });
     try {
       await policy.validateLock(session, lock);
       return await operation(session, lock);
     } finally {
+      additionalLocks.delete(session);
       if (context.mode === 'single-target') {
         // Preserve legacy finally precedence, including an unlock error replacing the primary error.
         await unlockObject(owningSession, objectUrl, lock.lockHandle);
-      } else if (lock.lockHandle) {
-        try {
-          // Use the same owning session, but not the cancelled/expired operation's facade.
-          await owningSession.post(
-            `${objectUrl}?_action=UNLOCK&lockHandle=${encodeURIComponent(lock.lockHandle)}`,
-            undefined,
-            undefined,
-            undefined,
-            { deadline: Date.now() + 30_000, retryTransientErrors: false, noReplay: true },
-          );
-        } catch {
-          context.cleanup.unlockFailed = true;
-        }
-      }
+      } else await release(objectUrl, lock.lockHandle);
     }
   };
   return withMutationSession(

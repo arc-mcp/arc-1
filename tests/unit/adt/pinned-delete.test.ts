@@ -290,17 +290,14 @@ describe('bounded pinned owner deletion', () => {
     expect(locks()).toHaveLength(0);
     expect(deletes()).toHaveLength(0);
   });
-  it.each(['PROG', 'FUGR', 'ENHO', 'DDLS'])(
-    'keeps unqualified %s native prechecks out of this candidate',
-    async (type) => {
-      const c = client();
-      expect(await deletePinnedOwner(c, context(c), { ...input, type })).toMatchObject({
-        state: 'unchanged',
-        phase: 'validation',
-      });
-      expect(requests).toHaveLength(0);
-    },
-  );
+  it.each(['FUGR', 'ENHO', 'DDLS'])('keeps unqualified %s native prechecks out of this candidate', async (type) => {
+    const c = client();
+    expect(await deletePinnedOwner(c, context(c), { ...input, type })).toMatchObject({
+      state: 'unchanged',
+      phase: 'validation',
+    });
+    expect(requests).toHaveLength(0);
+  });
   it('refuses a forged context before any SAP request', async () => {
     const c = client();
     const forged = { ...context(c) };

@@ -63,11 +63,12 @@ export function pinnedFailure(
       ) && transport
         ? { transport }
         : {}),
-      ...(cleanupFailed
+      ...(cleanupFailed || details.sessionClosed === false
         ? {
             cleanupFailed: true,
-            cleanup:
-              details.sessionClosed === true
+            cleanup: !cleanupFailed
+              ? 'Session closure failed. Verify the SAP session and any remaining locks before continuing.'
+              : details.sessionClosed === true
                 ? 'Unlock failed; the owning session was closed. Verify the SAP lock before continuing.'
                 : 'Unlock failed; session closure was not confirmed. Verify the SAP lock before continuing.',
           }

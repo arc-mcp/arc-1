@@ -189,6 +189,13 @@ export function spliceMethodSignature(source: string, method: MethodStructure, n
   const r = method.definition;
   const replacement = ensureClauseTerminator(newSig);
   assertMethodDeclarationReplacement(replacement, method.name);
+  const declaration = parseDefinitionBlockDeclarations(replacement).find(
+    (entry) => entry.name === method.name.toUpperCase(),
+  );
+  if (declaration?.isAbstract !== !!method.abstract)
+    throw new AdtSafetyError(
+      `Changing ABSTRACT for ${method.name} requires changing its implementation too. Use a complete source update.`,
+    );
   return spliceLines(source, replacementStart(source, r.sr, newSig), r.er, replacement);
 }
 
@@ -495,6 +502,7 @@ export function diffMethodSets(structure: ClassStructure, newDefBlock: string, c
     const previousModes = interfaceAbstractModes(previousStatements, structure.className);
     const nextModes = interfaceAbstractModes(parseClassSourceStatements(newDefBlock), structure.className);
     const previousInterfaces = new Set(previousModes.keys());
+    const removedInterface = [...previousInterfaces].some((name) => !interfaces.has(name));
     for (const [name, previousMode] of previousModes)
       if (nextModes.has(name) && nextModes.get(name) !== previousMode)
         throw new AdtSafetyError(
@@ -512,7 +520,7 @@ export function diffMethodSets(structure: ClassStructure, newDefBlock: string, c
         if (
           method?.includes('~') &&
           !declaredNames.has(method) &&
-          previousInterfaces.has(method.split('~')[0]!) &&
+          removedInterface &&
           !interfaces.has(method.split('~')[0]!)
         )
           throw new AdtSafetyError(

@@ -502,7 +502,11 @@ it('uses the encoded owning URL for namespaced class surgery', async () => {
   expect(requests.find((r) => r.method === 'PUT')?.path).toContain(owner);
 });
 
-it('refuses removing ABSTRACT when no implementation body exists', async () => {
+it.each(
+  ['pinned', 'legacy'].flatMap((profile) =>
+    ['edit_class_definition', 'edit_method_signature'].map((action) => ({ profile, action })),
+  ),
+)('refuses removing ABSTRACT without a body: $profile / $action', async ({ profile, action }) => {
   stored = source
     .replace('CLASS zcl_proof DEFINITION.', 'CLASS zcl_proof DEFINITION ABSTRACT.')
     .replace('METHODS selected.', 'METHODS selected ABSTRACT.')
@@ -521,10 +525,25 @@ it('refuses removing ABSTRACT when no implementation body exists', async () => {
   const definition = stored
     .slice(0, stored.indexOf('CLASS zcl_proof IMPLEMENTATION.'))
     .replace('METHODS selected ABSTRACT.', 'METHODS selected.');
-  const { result } = await invoke('edit_class_definition', {
-    source: definition,
-    expectedSourceHash: sourceHash(stored),
-  });
+  const settings =
+    profile === 'pinned'
+      ? config
+      : {
+          ...config,
+          targetId: undefined,
+          multiTargetWrite: undefined,
+          multiTargetEndpoints: false,
+          ppEnabled: false,
+          ppStrict: false,
+        };
+  const { result } = await invoke(
+    action,
+    {
+      source: action === 'edit_class_definition' ? definition : 'METHODS selected',
+      expectedSourceHash: sourceHash(stored),
+    },
+    settings,
+  );
   expect(result.isError).toBe(true);
   expect(result.content[0].text).toContain('Changing ABSTRACT');
   expect(requests.some((r) => r.method === 'PUT')).toBe(false);
@@ -588,4 +607,135 @@ it.each([
   expect(result.isError).toBe(true);
   expect(result.content[0].text).toContain('abstract flag must match');
   expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+});
+
+it.each(['pinned', 'legacy'])('normalizes missing periods before deriving ABSTRACT on %s', async (profile) => {
+  const settings =
+    profile === 'pinned'
+      ? config
+      : {
+          ...config,
+          targetId: undefined,
+          multiTargetWrite: undefined,
+          multiTargetEndpoints: false,
+          ppEnabled: false,
+          ppStrict: false,
+        };
+  for (const flag of [undefined, true]) {
+    stored = source;
+    saved = false;
+    requests.length = 0;
+    const { result } = await invoke(
+      'add_method',
+      { method: 'METHODS added ABSTRACT', ...(flag === undefined ? {} : { abstract: flag }) },
+      settings,
+    );
+    expect(result.isError, result.content[0].text).toBeUndefined();
+    expect(stored).toContain('METHODS added ABSTRACT.');
+    expect(stored).not.toMatch(/\bMETHOD added\./i);
+    expect(requests.filter((r) => r.method === 'PUT')).toMatchObject([{ locked: true }]);
+  }
+});
+it.each(['pinned', 'legacy'])('refuses signature-only ABSTRACT transitions on %s', async (profile) => {
+  const settings =
+    profile === 'pinned'
+      ? config
+      : {
+          ...config,
+          targetId: undefined,
+          multiTargetWrite: undefined,
+          multiTargetEndpoints: false,
+          ppEnabled: false,
+          ppStrict: false,
+        };
+  const { result } = await invoke('edit_method_signature', { source: 'METHODS selected ABSTRACT' }, settings);
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toContain('Changing ABSTRACT');
+  expect(requests.filter((r) => r.method === 'PUT')).toHaveLength(0);
+});
+it.each(['pinned', 'legacy'])(
+  'keeps the actual default-lint limitation for a namespaced header explicit on %s',
+  async (profile) => {
+    stored = source.replace('METHOD selected.', 'METHOD zif_service~/ns/run.');
+    const settings =
+      profile === 'pinned'
+        ? { ...config, lintBeforeWrite: true }
+        : {
+            ...config,
+            lintBeforeWrite: true,
+            targetId: undefined,
+            multiTargetWrite: undefined,
+            multiTargetEndpoints: false,
+            ppEnabled: false,
+            ppStrict: false,
+          };
+    const { result } = await invoke(
+      'edit_method',
+      { method: 'neighbor', source: 'RETURN.', expectedSourceHash: sourceHash(stored) },
+      settings,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/parser_error|abaplint|lint/i);
+    expect(requests.filter((r) => r.method === 'PUT')).toHaveLength(0);
+  },
+);
+
+it.each(['pinned', 'legacy'].flatMap((profile) => [false, true].map((remove) => ({ profile, remove }))))(
+  'handles composite-interface ownership conservatively: $profile / remove=$remove',
+  async ({ profile, remove }) => {
+    stored = interfaceSource.replace('INTERFACES lif_x.', 'INTERFACES lif_y.');
+    metadata = interfaceXml;
+    const definition = stored.slice(0, stored.indexOf('CLASS zcl_proof IMPLEMENTATION.'));
+    const settings =
+      profile === 'pinned'
+        ? config
+        : {
+            ...config,
+            targetId: undefined,
+            multiTargetWrite: undefined,
+            multiTargetEndpoints: false,
+            ppEnabled: false,
+            ppStrict: false,
+          };
+    const { result } = await invoke(
+      'edit_class_definition',
+      {
+        source: remove ? definition.replace('INTERFACES lif_y.', '') : definition,
+        expectedSourceHash: sourceHash(stored),
+      },
+      settings,
+    );
+    if (profile === 'pinned' || remove) {
+      expect(result.isError).toBe(true);
+      expect(requests.filter((r) => r.method === 'PUT')).toHaveLength(0);
+      if (profile === 'legacy') expect(result.content[0].text).toContain('orphan implementation');
+    } else {
+      expect(result.isError, result.content[0].text).toBeUndefined();
+      expect(stored).toContain('METHOD lif_x~run.');
+    }
+  },
+);
+it.each(['pinned', 'legacy'])('preserves chained direct interfaces through the %s handler', async (profile) => {
+  stored = interfaceSource.replace('INTERFACES lif_x.', 'INTERFACES: lif_x, lif_y.');
+  metadata = interfaceXml.replace('start=5,15;end=5,20', 'start=5,16;end=5,21');
+  const definition = stored.slice(0, stored.indexOf('CLASS zcl_proof IMPLEMENTATION.'));
+  const settings =
+    profile === 'pinned'
+      ? config
+      : {
+          ...config,
+          targetId: undefined,
+          multiTargetWrite: undefined,
+          multiTargetEndpoints: false,
+          ppEnabled: false,
+          ppStrict: false,
+        };
+  const { result } = await invoke(
+    'edit_class_definition',
+    { source: definition, expectedSourceHash: sourceHash(stored) },
+    settings,
+  );
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(stored).toContain('METHOD lif_x~run.');
+  expect(requests.filter((r) => r.method === 'PUT')).toMatchObject([{ locked: true }]);
 });

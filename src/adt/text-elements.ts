@@ -10,10 +10,11 @@
  * Split out of client.ts, which keeps only the thin delegating methods.
  */
 
-import { lockObject, unlockObject } from './crud.js';
+import { lockObject, type MutationLockPolicy, unlockObject, withAdditionalMutationLock } from './crud.js';
 import { activate } from './devtools.js';
-import { AdtApiError, AdtError } from './errors.js';
+import { AdtApiError, AdtError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
+import { getMutationContext } from './mutation-http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { textPartChanges } from './text-part-changes.js';
 import { parseXml } from './xml-parser.js';
@@ -215,14 +216,26 @@ export async function writeTextElementPart(
   return result;
 }
 
-/** Explicit metadata can reveal drafts omitted from the caller's inactive-object feed. */
+/** Read exact native identity/state for the owner's pool; never activate it or follow arbitrary URIs. */
+export async function readOwnedTextPoolState(
+  http: AdtHttpClient,
+  objectType: TextElementObjectType,
+  name: string,
+): Promise<'active' | 'inactive'> {
+  assertTextElementsService(http, objectType);
+  return readTextPoolState(http, textElementsObject(objectType, name), objectType, name, true);
+}
+
 async function readTextPoolState(
   http: AdtHttpClient,
   uri: string,
   objectType: TextElementObjectType,
   name: string,
+  fresh = false,
 ): Promise<'active' | 'inactive'> {
-  const response = await http.get(`${uri}?version=inactive`);
+  const response = await http.get(`${uri}?version=inactive`, fresh ? { 'Cache-Control': 'no-cache' } : undefined);
+  if (fresh && Buffer.byteLength(response.body, 'utf8') > 1024 * 1024)
+    throw new AdtApiError('Text-pool metadata exceeded the verification bound.', 409, uri);
   const pool = parseXml(response.body).textElement as Record<string, unknown> | undefined;
   const state = pool?.['@_version'];
   if (
@@ -273,22 +286,13 @@ export async function withActiveTextPoolForDelete<T>(
   name: string,
   deleteOwner: () => Promise<T>,
 ): Promise<T> {
+  if (safety.multiTargetWrite)
+    throw new AdtSafetyError('Pinned text-pool deletion requires its explicit owning-lock policy.');
   if (!serviceAvailable(session, objectType)) return deleteOwner();
   const uri = textElementsObject(objectType, name);
   const lock = await lockObject(session, safety, uri, 'MODIFY');
   try {
-    const version = await readTextPoolState(session, uri, objectType, name);
-    if (version === 'inactive') {
-      const hint =
-        `${objectType} ${name} was not deleted because its text pool is inactive. ` +
-        'Review the draft with its author, then explicitly activate the pool and retry deletion. ' +
-        (objectType === 'PROG'
-          ? `A newly created program needs its first owner activation. If its source cannot compile and you intend to discard it, replace the source with REPORT ${name}., activate the program, then retry deletion.`
-          : 'SAP can leave an empty pool inactive despite a successful activation response. Stop and involve the user; ARC-1 has no verified automatic repair.');
-      const error = new AdtApiError('Deletion refused because the text pool is inactive.', 409, uri);
-      error.extraHint = hint;
-      throw error;
-    }
+    await assertActiveTextPoolForDelete(session, uri, objectType, name);
     return await deleteOwner();
   } finally {
     try {
@@ -296,5 +300,45 @@ export async function withActiveTextPoolForDelete<T>(
     } catch {
       // Owner DELETE also removes the pool; the stateful session closes on every path.
     }
+  }
+}
+
+/** Pinned profile uses the outer coordinator's owning session and independent cleanup budget. */
+export async function withPinnedActiveTextPoolForDelete<T>(
+  session: AdtHttpClient,
+  safety: SafetyConfig,
+  name: string,
+  policy: MutationLockPolicy,
+  deleteOwner: () => Promise<T>,
+): Promise<T> {
+  if (getMutationContext(session, safety)?.mode !== 'pinned-pp')
+    throw new AdtSafetyError('Pinned text-pool deletion requires a registered mutation session.');
+  assertTextElementsService(session, 'PROG');
+  const uri = textElementsObject('PROG', name);
+  return withAdditionalMutationLock(session, uri, policy, async () => {
+    await assertActiveTextPoolForDelete(session, uri, 'PROG', name, true);
+    return deleteOwner();
+  });
+}
+
+async function assertActiveTextPoolForDelete(
+  session: AdtHttpClient,
+  uri: string,
+  objectType: 'PROG' | 'FUGR',
+  name: string,
+  fresh = false,
+): Promise<void> {
+  const version = await readTextPoolState(session, uri, objectType, name, fresh);
+  if (version === 'inactive') {
+    const hint =
+      `${objectType} ${name} was not deleted because its text pool is inactive. ` +
+      'Review the draft with its author, then explicitly activate the pool and retry deletion. ' +
+      (objectType === 'PROG'
+        ? `A newly created program needs its first owner activation. If its source cannot compile and you intend to discard it, replace the source with REPORT ${name}., activate the program, then retry deletion.`
+        : 'SAP can leave an empty pool inactive despite a successful activation response. Stop and involve the user; ARC-1 has no verified automatic repair.');
+    const error = new AdtApiError('Deletion refused because the text pool is inactive.', 409, uri);
+    if (fresh) throw new AdtSafetyError(hint);
+    error.extraHint = hint;
+    throw error;
   }
 }

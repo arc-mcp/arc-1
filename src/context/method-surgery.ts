@@ -90,7 +90,13 @@ export function listMethods(source: string, className: string, abaplintVersion?:
     if (/\r(?!\n)/.test(source)) throw Error('Bare carriage returns are not supported; use LF or CRLF.');
     return methodInventory(source.replace(/\r\n/g, '\n'), className, abaplintVersion ?? DEFAULT_VERSION);
   } catch (error) {
-    return { className, methods: [], success: false, error: error instanceof Error ? error.message : String(error) };
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      className,
+      methods: [],
+      success: false,
+      error: message.includes('SAPRead') ? message : `${message} Read the complete source with SAPRead.`,
+    };
   }
 }
 
@@ -245,6 +251,13 @@ export function extractMethod(
   }
 
   if (!method || method.startLine === 0 || method.endLine === 0) {
+    const declarations = listing.methods.filter((candidate) => !candidate.startLine || !candidate.endLine);
+    const exactDeclaration = declarations.find((candidate) => candidate.name.toUpperCase() === upperName);
+    const qualifiedDeclarations = declarations.filter((candidate) =>
+      hasTilde
+        ? `${candidate.containingClass ?? ''}~${candidate.name}`.toUpperCase() === upperName
+        : candidate.name.toUpperCase().split('~').at(-1) === upperName,
+    );
     return {
       className,
       methodName,
@@ -257,7 +270,7 @@ export function extractMethod(
         className,
         methodName,
         listing.methods,
-        method ?? listing.methods.find((m) => m.name.toUpperCase() === upperName),
+        method ?? exactDeclaration ?? (qualifiedDeclarations.length === 1 ? qualifiedDeclarations[0] : undefined),
       ),
     };
   }
@@ -333,7 +346,7 @@ function methodBoundaries(
           Statements.EndFunction,
         ].some((boundary) => kind instanceof boundary) ||
         (kind instanceof Unknown &&
-          /^(?:CLASS(?:\s|$)|ENDCLASS\b|INTERFACE\s|ENDINTERFACE\b|FORM\s|ENDFORM\b|MODULE\s|ENDMODULE\b|REPORT\s|PROGRAM\s|FUNCTION(?:-|\s)|ENDFUNCTION\b)/i.test(
+          /^(?:METHOD\b|ENDMETHOD\b|CLASS(?:\s|$)|ENDCLASS\b|INTERFACE\s|ENDINTERFACE\b|FORM\s|ENDFORM\b|MODULE\s|ENDMODULE\b|REPORT\s|PROGRAM\s|FUNCTION(?:-|\s)|ENDFUNCTION\b)/i.test(
             statement.concatTokens(),
           ))
       );

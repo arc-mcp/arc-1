@@ -195,7 +195,7 @@ describe('pinned owner deletion admission through shared dispatch', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
   it.each([
-    { type: 'PROG' },
+    { type: 'FUGR' },
     { source: 'report ztest.' },
     { expectedSourceHash: 'a'.repeat(64) },
     { include: 'definitions' },

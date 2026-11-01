@@ -35,6 +35,8 @@ it.each([
   'MODULE foreign OUTPUT.\nENDMODULE.',
   'FUNCTION foreign.\nENDFUNCTION.',
   'REPORT foreign.',
+  'ENDMETHOD foo.',
+  'METHOD other extra.',
   'DATA(x) = 1. " comment\rENDCLASS.',
 ])('refuses replacement boundaries outside the selected method (%s)', (replacement) => {
   const source = block('lcl_worker', '', 'METHOD run.\nENDMETHOD.');
@@ -85,8 +87,9 @@ it.each([
   [block('lcl_owner', '', 'METHOD run.'), 'Method has no ENDMETHOD'],
   ['CLASS lcl_owner IMPLEMENTATION.\nMETHOD run. ENDMETHOD.', 'Incomplete class/method'],
   [block('lcl_owner', '', 'METHOD zif_service~/ns/run extra. ENDMETHOD.'), 'Read the complete source with SAPRead'],
-])('refuses malformed inventory boundaries with useful read guidance: %s', (source, message) => {
+])('refuses malformed inventory boundaries with a specific reason: %s', (source, message) => {
   const result = listMethods(source, 'ZCL_OWNER');
   expect(result.success).toBe(false);
   expect(result.error).toContain(message);
+  expect(result.error).toContain('Read the complete source with SAPRead');
 });

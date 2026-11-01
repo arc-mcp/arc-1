@@ -5,8 +5,10 @@ import { AdtApiError, AdtSafetyError, classifySapDomainError, extractExceptionTy
 import { throwIfRequestCancelled } from './http-deadline.js';
 import { mutationClient } from './mutation-client.js';
 import { assertMutationContext, type PinnedMutationContext } from './mutation-context.js';
-import { assertPinnedOwner, pinnedRecording, validatePinnedLock } from './pinned-write-policy.js';
+import { verifyPinnedProgramOwner } from './pinned-program-owner.js';
+import { assertPinnedSourceOwner, pinnedRecording, validatePinnedLock } from './pinned-write-policy.js';
 import { checkOperation, checkPackage, OperationType } from './safety.js';
+import { withPinnedActiveTextPoolForDelete } from './text-elements.js';
 
 export interface PinnedDeleteResult {
   ok: boolean;
@@ -22,9 +24,8 @@ export interface PinnedDeleteResult {
 }
 
 /**
- * Initially limited to the already-qualified CLAS/INTF owner/recording representation.
- * This helper does not admit SAPWrite.delete. Additional object families must preserve their
- * existing native prechecks (notably ENHO technology and PROG/FUGR text-pool locks).
+ * Explicit standalone source owners only. Programs preserve the native text-pool draft guard.
+ * Other families require their own ownership, recording and technology-specific prechecks.
  */
 export async function deletePinnedOwner(
   client: AdtClient,
@@ -39,9 +40,14 @@ export async function deletePinnedOwner(
     assertMutationContext(client.safety, context);
     if (context.mode !== 'pinned-pp') throw new AdtSafetyError('A pinned mutation context is required.');
     checkOperation(client.safety, OperationType.Delete, 'PinnedDelete');
-    assertPinnedOwner(input.type, input.name);
-    const collection = input.type === 'CLAS' ? 'classes' : 'interfaces';
-    const owner = `/sap/bc/adt/oo/${collection}/${encodeURIComponent(input.name.toLowerCase())}`;
+    assertPinnedSourceOwner(input.type, input.name);
+    const collection = {
+      CLAS: 'oo/classes',
+      INTF: 'oo/interfaces',
+      PROG: 'programs/programs',
+      INCL: 'programs/includes',
+    }[input.type];
+    const owner = `/sap/bc/adt/${collection}/${encodeURIComponent(input.name.toLowerCase())}`;
     if (input.transport !== undefined && !input.transport.trim())
       throw new AdtSafetyError('An explicitly provided CTS request must not be empty.');
     const requested = input.transport?.trim().toUpperCase();
@@ -49,9 +55,11 @@ export async function deletePinnedOwner(
     const options = context.requestPolicy;
     const packageFor = async (activeClient: AdtClient) => {
       throwIfRequestCancelled(options);
-      const pkg = await activeClient.resolveObjectPackage(owner, undefined, options);
+      const nativePackage = await verifyPinnedProgramOwner(activeClient, owner);
+      const pkg = nativePackage ?? (await activeClient.resolveObjectPackage(owner, undefined, options));
       if (!pkg) throw new AdtSafetyError('Deletion requires the actual native owner package.');
-      await checkPackage(activeClient.safety, pkg, activeClient.getPackageHierarchyResolver(options));
+      if (nativePackage === undefined)
+        await checkPackage(activeClient.safety, pkg, activeClient.getPackageHierarchyResolver(options));
       return pkg;
     };
     phase = 'package-preflight';
@@ -80,27 +88,59 @@ export async function deletePinnedOwner(
         },
       },
       async (session, lock) => {
-        throwIfRequestCancelled(options);
-        phase = 'delete';
-        outcome.state = 'delete-unconfirmed';
-        // Reuse the same native wire adapter as ordinary SAPWrite deletion.
-        await deleteObject(session, client.safety, owner, lock.lockHandle, recording.request);
-        phase = 'absence-readback';
-        try {
-          await session.get(owner, { 'Cache-Control': 'no-cache' }, options);
-        } catch (error) {
-          if (
-            error instanceof AdtApiError &&
-            error.isNotFound &&
-            extractExceptionType(error.responseBody ?? '') === 'ExceptionResourceNotFound' &&
-            !classifySapDomainError(error.statusCode, error.responseBody, error.path)
-          ) {
-            outcome.state = 'deleted';
-            return;
+        const performDelete = async () => {
+          throwIfRequestCancelled(options);
+          phase = 'delete';
+          outcome.state = 'delete-unconfirmed';
+          // Reuse the same native wire adapter as ordinary SAPWrite deletion.
+          await deleteObject(session, client.safety, owner, lock.lockHandle, recording.request);
+          phase = 'absence-readback';
+          try {
+            await session.get(owner, { 'Cache-Control': 'no-cache' }, options);
+          } catch (error) {
+            if (
+              error instanceof AdtApiError &&
+              error.isNotFound &&
+              extractExceptionType(error.responseBody ?? '') === 'ExceptionResourceNotFound' &&
+              !classifySapDomainError(error.statusCode, error.responseBody, error.path)
+            ) {
+              outcome.state = 'deleted';
+              return;
+            }
+            throw error;
           }
-          throw error;
-        }
-        throw new AdtSafetyError('DELETE returned but the native owner still exists. Inspect before continuing.');
+          throw new AdtSafetyError('DELETE returned but the native owner still exists. Inspect before continuing.');
+        };
+        if (input.type !== 'PROG') return performDelete();
+        phase = 'text-pool-preflight';
+        return withPinnedActiveTextPoolForDelete(
+          session,
+          client.safety,
+          input.name,
+          {
+            beforeLock: () => {
+              throwIfRequestCancelled(options);
+            },
+            validateLock: async (poolSession, poolLock) => {
+              const current = mutationClient(client, context, poolSession);
+              if ((await packageFor(current)) !== pkg)
+                throw new AdtSafetyError('The program package changed before its text-pool check.');
+              const fresh = await pinnedRecording(
+                poolSession,
+                client.safety,
+                owner,
+                pkg,
+                '',
+                recording.request,
+                options,
+              );
+              if (fresh.local !== recording.local || fresh.request !== recording.request)
+                throw new AdtSafetyError('Recording changed before the text-pool check.');
+              await validatePinnedLock(poolSession, client.safety, poolLock, fresh, options);
+            },
+          },
+          performDelete,
+        );
       },
     );
   } catch (error) {
@@ -144,7 +184,7 @@ export async function deletePinnedOwner(
           sessionClosed: context.cleanup.sessionClosed,
           cleanup:
             cleanupPhase === 'session-close'
-              ? 'Unlock succeeded, but session closure failed. Verify the SAP session before continuing.'
+              ? 'Session closure failed. Verify the SAP session and any remaining locks before continuing.'
               : context.cleanup.sessionClosed === true
                 ? 'Unlock failed; the owning session was closed. Verify the SAP lock before continuing.'
                 : 'Unlock failed; session closure was not confirmed. Verify the SAP lock before continuing.',
