@@ -30,6 +30,7 @@ import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import { SYNTAX_BATCH_TYPES } from '../adt/syntax-batch.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
+import { type DataPreviewInput, validateDataPreviewInput } from './data-preview-input.js';
 import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
 import { dumpFilters, validateDumpFilterInputs } from './dump-filter-inputs.js';
 import { sourcePreconditionError } from './editable-source.js';
@@ -88,13 +89,10 @@ const SAPREAD_CLAS_INCLUDES = ['main', 'testclasses', 'definitions', 'implementa
 const SAPREAD_CLAS_READ_INCLUDES = [...SAPREAD_CLAS_INCLUDES, 'text_symbols'] as const;
 const SAPREAD_DDLS_INCLUDES = ['elements'] as const;
 function validateSapReadInput(
-  input: {
-    type: string;
-    name?: string;
+  input: DataPreviewInput & {
     action?: string;
     include?: string;
     versionUri?: string;
-    sqlFilter?: string;
     objectType?: string;
     source?: string;
     version?: string;
@@ -244,39 +242,7 @@ function validateSapReadInput(
     }
   }
 
-  if (input.type === 'TABLE_QUERY') {
-    if (!('name' in input) || !input.name) {
-      ctx.addIssue({ code: 'custom', path: ['name'], message: 'TABLE_QUERY requires a table or CDS view name.' });
-    }
-  }
-
-  if (input.type === 'TABLE_CONTENTS' && input.sqlFilter) {
-    const sqlFilter = input.sqlFilter.trim();
-    if (/^select\b/i.test(sqlFilter)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['sqlFilter'],
-        message:
-          'TABLE_CONTENTS sqlFilter must be a condition expression only (no SELECT statement). Example: "MANDT = \'100\'" or "MATNR LIKE \'Z%\'".',
-      });
-    }
-    if (/^where\b/i.test(sqlFilter)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['sqlFilter'],
-        message:
-          'TABLE_CONTENTS sqlFilter must not start with WHERE. Pass only the condition expression, for example: "MANDT = \'100\'".',
-      });
-    }
-    if (sqlFilter.includes(';')) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['sqlFilter'],
-        message:
-          'TABLE_CONTENTS sqlFilter must contain exactly one condition expression (no semicolons or multiple statements).',
-      });
-    }
-  }
+  validateDataPreviewInput(input, ctx);
 }
 
 const TableQueryWhereItemSchema = z.object({
