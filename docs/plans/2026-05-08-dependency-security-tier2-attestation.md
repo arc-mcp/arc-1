@@ -1,5 +1,8 @@
 # Dependency Security — Tier 2: Supply-Chain Attestation
 
+> **Status (2026-11-01):** historical proposal. Verify every command before reuse. The release
+> `workflow_dispatch` publishes npm, so never use it as a dry run. Remaining SBOM ideas: roadmap SEC-22.
+
 ## Overview
 
 This plan adds **supply-chain attestation** to ARC-1: machine-verifiable proof that an artifact (npm tarball or Docker image) was built from this repository, by this CI pipeline, at a specific commit. Tier 1 (`dependency-security-tier1-foundation.md`) closed the *what's in the artifact* question (no known vulnerabilities, no malicious deps in CI). Tier 2 closes the *what is the artifact* question — for enterprise customers running ARC-1 on regulated landscapes (banks, government, defense, pharma), procurement teams increasingly require SBOM + signature artifacts on every release. SAP partners and BTP enterprise customers specifically check for them during reviews.
