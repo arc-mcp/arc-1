@@ -186,11 +186,13 @@ establish a network/backend cause. The failed request rejected without a recorde
 A subsequent read of the host's macOS power log found lid-closed sleep beginning at
 06:57:47 UTC, a maintenance wake at 07:13:43 UTC, and sleep again at 07:13:45 UTC.
 The reported sleep lasted 956 seconds; cleanup began within one second of the maintenance wake.
+These are not exact execution boundaries: the last RPC receipt is 2.2 seconds after the sleep entry,
+and the final journal is 2.0 seconds after the next sleep entry. Clock behavior across sleep was not measured.
 This explains the wall-clock gap without recovering the missing fetch error or establishing a
 backend defect. The selected original power events and their hash are retained privately; their
 sanitized observation is in the attempt record. The qualification remains failed. The next run
 requires an awake host, including an open laptop lid; an idle-sleep assertion cannot prevent
-explicit lid-closed sleep.
+explicit lid-closed sleep. Preserve the host power log for the complete run and cleanup window.
 
 The follow-up adds bounded error classifications and both elapsed clocks to failed RPC receipts,
 separate save/read-back phase labels, and a negative control that checks the successful save is
@@ -236,3 +238,27 @@ after that immutable review and still needs independent review. The same follow-
 the host-sleep observation, named SAP audit and changes above. Author validation passes **425 files /
 11,516 tests**, all three typecheck projects, **59 simulations** and lint. Live include qualification
 and IAM/XSUAA rollback remain incomplete; FEAT-93 remains open.
+
+
+## Stream and chain review at `8c259f96`
+
+The [verbatim Opus review](broader-pinned-pp-writes/claude-stream-and-chain-review-20261101.md)
+retained the checkpoint for a new controlled run once original IAM/XSUAA is restored. It found no
+High/Medium issue and four Low follow-ups. Its five checks passed: 425 files / 11,516 tests, all 59
+simulations, all typecheck projects, file/schema budgets and the unchanged 2,617-file snapshot.
+The CLI command explicitly used `--model claude-opus-5-5 --effort max`; the initialization event
+confirmed that model. The review itself correctly says it cannot see the effort setting.
+Verbatim report SHA-256: `4462ca3450269cb3e3acf218fc493c114049c832b352e38649ea08a84d83e4d7`.
+
+| Finding | Disposition |
+| --- | --- |
+| Transport timer classification | Fetch connect/header/body timeout codes now have fixed `transport-timeout` classification. Injected-cause tests cover all three. Independent tests cover an owned abort with an ordinary reader error and a TimeoutError with an un-aborted owned signal. This does not extend Node's fetch timeout or prove its runtime defaults. |
+| Preserve host power logs | The runbook now requires saving the complete run/cleanup window, including failed runs. A run-scoped sleep assertion and open lid remain prerequisites. |
+| Evidence wording | The restored-definition key now names the test role. Timestamp overlaps are explicit; 954,253 ms is the receipt gap, while 956 seconds is the reported sleep. |
+| Chain shape coverage | Public wording now describes only the observed keyword/colon range. The guard additionally honors its start column. Positive selected-name and complete source/structure checks remain mandatory before broader pinned metadata surgery is admitted. |
+
+The current follow-up also converges the existing pinned main-method edit with the
+[single-target action handler](2026-11-01-shared-pinned-method-edit.md). This changes shipped source,
+so the accepted `8c259f96` review is not approval of those later bytes. They need follow-up review,
+a fresh build and new qualification manifests before deployment. IAM/XSUAA rollback and the
+complete two-writer include run remain pending.

@@ -3,6 +3,10 @@ import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
 import { getCurrentContext } from '../../server/context.js';
 import { errorResult, type ToolResult, toolJson } from '../shared.js';
 
+export function isPinnedWriteRejection(error: unknown): boolean {
+  return error instanceof AdtApiError && [400, 401, 403, 404, 409, 412, 415, 422, 423].includes(error.statusCode);
+}
+
 export function pinnedFailure(
   error: unknown,
   state: string,

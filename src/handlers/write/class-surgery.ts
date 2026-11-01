@@ -128,10 +128,10 @@ export async function writeActionEditMethod(ctx: SapWriteContext): Promise<ToolR
       );
     }
 
-    await edit.save(writeUrl, spliced.newSource);
+    const extras = [lintWarnings.warnings, checkNotes].filter(Boolean).join('\n\n');
+    await edit.save(writeUrl, spliced.newSource, extras);
     const where = resolvedInclude ? ` (include: ${resolvedInclude})` : '';
     const msg = `Successfully updated method "${method}" in ${type} ${name}${where}.`;
-    const extras = [lintWarnings.warnings, checkNotes].filter(Boolean).join('\n\n');
     return extras ? textResult(`${msg}\n\n${extras}`) : textResult(msg);
   });
 }

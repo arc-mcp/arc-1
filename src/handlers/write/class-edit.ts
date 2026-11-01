@@ -1,6 +1,7 @@
 /** Keep a class surgery's source, structure and write within one SAP lock. */
 import { lockObject, unlockObject, updateSource } from '../../adt/crud.js';
 import type { AdtHttpClient } from '../../adt/http.js';
+import { assertMutationContext } from '../../adt/mutation-context.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
 import { assertSourceHash } from '../../adt/source-precondition.js';
 import type { ClassStructure } from '../../adt/types.js';
@@ -9,12 +10,13 @@ import { logger } from '../../server/logger.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import type { ToolResult } from '../shared.js';
 import type { SapWriteContext } from './context.js';
+import { withPinnedClassEdit } from './pinned-class-lifecycle.js';
 
-interface ClassEdit {
+export interface ClassEdit {
   http: AdtHttpClient;
   read(url: string): Promise<string>;
   readMainAndStructure(): Promise<{ main: string; structure: ClassStructure }>;
-  save(url: string, source: string): Promise<void>;
+  save(url: string, source: string, warnings?: string): Promise<void>;
 }
 
 export async function withClassEdit(
@@ -23,6 +25,8 @@ export async function withClassEdit(
 ): Promise<ToolResult> {
   const { client, objectUrl, srcUrl, name, transport, invalidateWrittenObject } = ctx;
   checkOperation(client.safety, OperationType.Update, 'EditClass');
+  assertMutationContext(client.safety, ctx.mutationContext);
+  if (ctx.mutationContext.mode === 'pinned-pp') return withPinnedClassEdit(ctx, edit);
   return client.http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
     let writeAttempted = false;

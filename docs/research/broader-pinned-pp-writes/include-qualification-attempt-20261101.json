@@ -190,7 +190,7 @@
     "activeOperations": 0,
     "originalAppEnvironmentAndDropletRestored": true,
     "temporaryDestinationRemoved": true,
-    "sapRoleProfileAndDefinitionRestored": true,
+    "sapUserRoleProfileAndTestRoleDefinitionRestored": true,
     "iamAndXsuaaRestored": false,
     "pending": "Operator BTP session renewal",
     "sapAccessScopeAudit": {

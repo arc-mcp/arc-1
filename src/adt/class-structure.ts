@@ -330,12 +330,10 @@ export function moveMethodDefinition(source: string, method: MethodStructure, ta
 
 /** Native chain ranges can include every earlier declaration in the same statement. */
 function assertUnchainedDeclaration(source: string, method: MethodStructure): void {
-  const { sr, er } = method.definition;
-  const declaration = stripDeclarationComments(
-    splitLines(source)
-      .slice(sr - 1, er)
-      .join('\n'),
-  ).trim();
+  const { sr, sc, er } = method.definition;
+  const lines = splitLines(source).slice(sr - 1, er);
+  if (lines[0] !== undefined) lines[0] = lines[0].slice(sc);
+  const declaration = stripDeclarationComments(lines.join('\n')).trim();
   if (/^(?:CLASS-METHODS|METHODS)\s*:/i.test(declaration)) {
     throw new Error(
       'Chained METHODS declarations cannot be edited individually. Use a complete class source update to preserve neighboring declarations.',

@@ -222,14 +222,20 @@ check, which passed. A primary-writer PP attempt passed 386 assertions before a 
 failed; the second writer and owner activation were not reached. The preserved partial fixture was
 independently verified and removed. Further negative controls and diagnostic coverage address the
 review's diagnostic and test findings. Opus retained the integrated checkpoint with no High/Medium
-issue; subsequent SSE diagnostics, CI controls and evidence clarifications require follow-up review.
+issue. A subsequent immutable Opus review retained `8c259f96`, passed 11,516 tests and 59 simulations,
+and found four Low follow-ups. Its verdict and the follow-up dispositions are retained in the evidence.
 A complete fresh PP run remains required.
 The host power log explains the failed run's long gap as lid-closed sleep; the precise fetch error
-was not captured. A fresh run requires an awake host and remains necessary for qualification.
+was not captured. A fresh run requires an awake host, a preserved power log and remains necessary
+for qualification.
 No additional family is qualified by this incomplete attempt.
 Research for class surgery found overlapping native declaration ranges for chained `METHODS`.
 The shared signature/delete/visibility helpers now refuse those individual edits before saving;
 the broader pinned class-surgery adapter and its source/structure checks remain outstanding.
+The existing pinned main-method edit now shares its single-target action handler with explicit
+pinned lifecycle policy. Common replacement guards refuse renamed/multiple methods and shared
+statement boundaries. This is implementation convergence, not additional capability qualification;
+its review and new artifact-bound live verification remain pending.
 The formatter and local CLAS/INTF deletion adapters now have a
 [combined two-writer PP qualification](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
 at `1b234d3a4`: native authorship/source binding, typed absence, v5 optional-preference preservation

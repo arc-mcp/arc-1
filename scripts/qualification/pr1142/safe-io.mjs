@@ -83,9 +83,11 @@ function transportFailure(code, error, started, timeoutMs, rpc, status, timedOut
       failureKind:
         timedOut || error?.name === 'TimeoutError'
           ? 'timeout'
-          : error?.cause?.message === 'unexpected redirect'
-            ? 'redirect-refused'
-            : 'unclassified',
+          : ['UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT'].includes(error?.cause?.code)
+            ? 'transport-timeout'
+            : error?.cause?.message === 'unexpected redirect'
+              ? 'redirect-refused'
+              : 'unclassified',
       startedAt: new Date(started.wall).toISOString(),
       elapsedMs: Math.max(0, Date.now() - started.wall),
       monotonicElapsedMs: Math.max(0, Math.round(performance.now() - started.monotonic)),

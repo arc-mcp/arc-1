@@ -60,6 +60,17 @@ describe('individual edits of native chained method declarations', () => {
         'Chained METHODS declarations',
       );
     });
+
+    it(`${action} uses the native start column when a chain shares a line with another statement`, () => {
+      const shared = source.replace('PUBLIC SECTION.\n    CLASS-METHODS:', 'PUBLIC SECTION. CLASS-METHODS:');
+      expect(() =>
+        edit(shared, {
+          ...method,
+          definition: { sr: 2, sc: shared.split('\n')[1]!.indexOf('CLASS-METHODS'), er: 4, ec: 13 },
+          implementation: { sr: 10, sc: 2, er: 11, ec: 12 },
+        }),
+      ).toThrow('Chained METHODS declarations');
+    });
   }
 
   it('allows an ordinary declaration containing a colon in its default string', () => {

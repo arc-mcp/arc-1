@@ -595,7 +595,10 @@ export function extractMethod(
 // ─── Splice Method ──────────────────────────────────────────────────
 
 /** Preserve boundary statements, including multiline AMDP headers and trailing comments. */
-function methodBoundaries(source: string, version: Version): { opening: string; closing: string } | undefined {
+function methodBoundaries(
+  source: string,
+  version: Version,
+): { opening: string; closing: string; name: string } | undefined {
   const registry = new Registry(getDefaultAbaplintConfig(version));
   registry.addFile(new MemoryFile('zmethod.prog.abap', source));
   registry.parse();
@@ -630,7 +633,13 @@ function methodBoundaries(source: string, version: Version): { opening: string; 
   const footerLine = lines[footerRow]!;
   const prefix = footerLine.slice(0, footerColumn);
   const indent = /^[ \t]*$/.test(prefix) ? prefix : source.match(/^[ \t]*/)![0];
-  return { opening, closing: [indent + footerLine.slice(footerColumn), ...lines.slice(footerRow + 1)].join('\n') };
+  const name = /^METHOD\s+([^\s.]+)/i.exec(first.concatTokens())?.[1];
+  if (!name) return undefined;
+  return {
+    opening,
+    closing: [indent + footerLine.slice(footerColumn), ...lines.slice(footerRow + 1)].join('\n'),
+    name,
+  };
 }
 
 /**
@@ -669,24 +678,34 @@ export function spliceMethod(
   const trimmedBody = newBody.trim();
   const isFullBlock = /^METHOD\s+/i.test(trimmedBody) && /ENDMETHOD\s*\.?\s*$/i.test(trimmedBody);
 
+  const boundaries = methodBoundaries(extracted.methodSource, abaplintVersion ?? DEFAULT_VERSION);
+  if (!boundaries) {
+    return {
+      newSource: '',
+      oldMethodSource: extracted.methodSource,
+      newMethodSource: '',
+      success: false,
+      error: 'Cannot isolate the selected method. Put neighboring statements on separate lines before editing.',
+    };
+  }
   let newMethodBlock: string;
   if (isFullBlock) {
     // Use the body as-is (preserve original indentation)
     // Normalize to \n for consistent splicing, then re-apply line endings at the end
     newMethodBlock = newBody.replace(/\r\n/g, '\n');
   } else {
-    const boundaries = methodBoundaries(extracted.methodSource, abaplintVersion ?? DEFAULT_VERSION);
-    if (!boundaries) {
-      return {
-        newSource: '',
-        oldMethodSource: extracted.methodSource,
-        newMethodSource: '',
-        success: false,
-        error:
-          'Cannot isolate the method boundaries for a body-only edit. Put METHOD and ENDMETHOD on separate lines, then retry with a complete METHOD...ENDMETHOD block.',
-      };
-    }
     newMethodBlock = `${boundaries.opening}\n${newBody.replace(/\r\n/g, '\n')}\n${boundaries.closing}`;
+  }
+
+  const replacement = methodBoundaries(newMethodBlock, abaplintVersion ?? DEFAULT_VERSION);
+  if (!replacement || replacement.name.toUpperCase() !== extracted.methodName.toUpperCase()) {
+    return {
+      newSource: '',
+      oldMethodSource: extracted.methodSource,
+      newMethodSource: '',
+      success: false,
+      error: `Replacement must contain only the selected METHOD ${extracted.methodName}...ENDMETHOD block.`,
+    };
   }
 
   // Replace in source

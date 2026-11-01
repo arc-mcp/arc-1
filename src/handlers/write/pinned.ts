@@ -1,16 +1,14 @@
 /** Pinned PP policy and source adapter over the shared lock/session lifecycle. */
 import type { AdtClient } from '../../adt/client.js';
 import { safeUpdateClassInclude, withLockedMutation } from '../../adt/crud.js';
-import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
-import { mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
+import { AdtSafetyError } from '../../adt/errors.js';
 import { throwIfRequestCancelled } from '../../adt/http-deadline.js';
 import { mutationClient } from '../../adt/mutation-client.js';
 import type { MutationCleanupState } from '../../adt/mutation-context.js';
 import { deletePinnedOwner } from '../../adt/pinned-delete.js';
 import { assertPinnedOwner, pinnedRecording } from '../../adt/pinned-write-policy.js';
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
-import { assertSourceHash, sourceHash } from '../../adt/source-precondition.js';
-import { spliceMethod } from '../../context/method-surgery.js';
+import { assertSourceHash, editableSourceEquals, sourceHash } from '../../adt/source-precondition.js';
 import type { ServerConfig } from '../../server/types.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import {
@@ -27,8 +25,9 @@ import {
   runPreWriteLint,
   runPreWriteSyntaxCheck,
 } from '../write-helpers.js';
+import { handlePinnedClassSurgery } from './pinned-class-surgery.js';
 import { pinnedSourceLockPolicy } from './pinned-lock.js';
-import { pinnedFailure } from './pinned-result.js';
+import { isPinnedWriteRejection, pinnedFailure } from './pinned-result.js';
 
 export { pinnedFailure } from './pinned-result.js';
 
@@ -37,6 +36,7 @@ export async function handlePinnedWrite(
   args: Record<string, unknown>,
   config: ServerConfig,
 ): Promise<ToolResult> {
+  if (args.action === 'edit_method') return handlePinnedClassSurgery(client, args, config);
   let state = 'unchanged';
   let phase = 'validation';
   const cleanup: MutationCleanupState = { unlockFailed: false };
@@ -77,8 +77,6 @@ export async function handlePinnedWrite(
       (typeof args.expectedSourceHash !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedSourceHash))
     )
       throw new AdtSafetyError('Read SAPRead(format="editable") and supply its expectedSourceHash before editing.');
-    if (action === 'edit_method' && (typeof args.method !== 'string' || !args.method.trim()))
-      throw new AdtSafetyError('edit_method requires a method name.');
     const owner = objectUrlForType(type, objectName.toLowerCase());
     const sourceUrl = `${owner}/source/main`;
     client = mutationClient(client, context);
@@ -94,7 +92,7 @@ export async function handlePinnedWrite(
         );
       return result.warnings;
     };
-    let warnings = action === 'edit_method' || include ? undefined : lint(source);
+    let warnings = include ? undefined : lint(source);
     let pkg: string;
     if (action === 'create') {
       if (typeof args.package !== 'string' || !args.package.trim())
@@ -167,19 +165,6 @@ export async function handlePinnedWrite(
         if (action !== 'create') {
           const current = await http.get(sourceUrl, { Accept: 'text/plain' }, options);
           assertSourceHash(current.body, args.expectedSourceHash as string, sourceUrl);
-          if (action === 'edit_method') {
-            const release = getCachedFeatures()?.abapRelease;
-            const result = spliceMethod(
-              current.body,
-              objectName,
-              String(args.method),
-              source,
-              release ? mapSapReleaseToAbaplintVersion(release) : undefined,
-            );
-            if (!result.success) throw new AdtSafetyError(result.error ?? 'Method splice failed.');
-            source = result.newSource;
-            warnings = lint(source);
-          }
         }
         const syntaxNotes = await runPreWriteSyntaxCheck(
           { http, safety: client.safety },
@@ -202,14 +187,7 @@ export async function handlePinnedWrite(
         await http.put(`${sourceUrl}?${query}`, source, 'text/plain', undefined, options);
         phase = 'source-readback';
         const saved = await http.get(sourceUrl, { Accept: 'text/plain' }, options);
-        // ADT normalizes CRLF and terminal line breaks (INTF removes them; CLAS may add them).
-        const comparable = (value: string) => {
-          const text = value.replace(/\r\n/g, '\n');
-          let end = text.length;
-          while (end > 0 && text.charCodeAt(end - 1) === 10) end--;
-          return text.slice(0, end);
-        };
-        if (comparable(saved.body) !== comparable(source))
+        if (!editableSourceEquals(saved.body, source))
           throw new AdtSafetyError(
             'Save returned but exact editable source read-back did not match. Inspect before continuing.',
           );
@@ -240,7 +218,7 @@ export async function handlePinnedWrite(
     );
   } catch (error) {
     // Definitive SAP rejections did not accept this phase; network/429/5xx outcomes remain unknown.
-    if (error instanceof AdtApiError && [400, 401, 403, 404, 409, 412, 415, 422, 423].includes(error.statusCode)) {
+    if (isPinnedWriteRejection(error)) {
       if (phase === 'create') state = 'creation-rejected';
       if (phase === 'include-initialization') state = 'include-initialization-rejected';
       if (phase === 'source-save')

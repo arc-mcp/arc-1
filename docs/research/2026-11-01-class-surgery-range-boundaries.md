@@ -23,7 +23,7 @@ establishes an unsafe local transformation, not an observed production save or b
 
 Signature replacement, method deletion and visibility movement now refuse a selected declaration
 whose native range starts with `METHODS:` or `CLASS-METHODS:`. The guard precedes the transformation
-and applies to the common helpers. It handles intervening comments and CRLF. Ordinary declarations
+and applies to the common helpers. It handles intervening comments and CRLF, and honors the native start column. Ordinary declarations
 with a colon in a default string still work. An unchanged-visibility request can remain a no-op.
 The supported fallback is a complete editable class source update preserving neighboring methods.
 
@@ -42,4 +42,9 @@ FEAT-93 remains open, including the guarded adapter and two-writer qualification
 Author validation passed 423 files / 11,494 tests, all three typecheck projects, lint, strict docs
 and file/schema budgets. The focused class-surgery/RAP suite passed 282 tests. Local replay of the
 saved native source/structure now refuses all three individual edits before transformation.
-This checkpoint still requires the requested independent Opus review.
+The [subsequent Opus review](broader-pinned-pp-writes/claude-stream-and-chain-review-20261101.md)
+retained this guard for the observed shape. Its Low finding requires positive selected-name
+validation before any broader pinned adapter uses it; that admission remains closed. A follow-up
+adds the start-column case and narrows the public wording. The separately documented
+[shared main-method edit](2026-11-01-shared-pinned-method-edit.md) uses the source parser, not these
+native declaration ranges.

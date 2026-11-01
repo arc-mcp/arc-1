@@ -130,7 +130,7 @@ it('refuses a body-only edit whose line range includes another method', () => {
   );
   const result = spliceMethod(original, 'ZCL_DEMO', 'first', '    RETURN.');
   expect(result.success).toBe(false);
-  expect(result.error).toContain('complete METHOD');
+  expect(result.error).toContain('neighboring statements on separate lines');
 });
 
 it('preserves a split closing statement', () => {

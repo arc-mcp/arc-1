@@ -112,8 +112,9 @@ durability, not a guarantee against disk failure. Check the separate cloud/acces
 
 Keep the host awake throughout qualification and cleanup. On macOS, keep the laptop lid open and
 use an idle-sleep assertion scoped to the harness process; it does not prevent explicit lid-closed
-sleep. A failed include run's 956-second gap coincided with recorded clamshell sleep and ended at a
-maintenance wake. Its missing fetch cause remains unknown and its qualification remains failed.
+sleep. Save the host power log for the complete run and cleanup window in the private run directory,
+including after a failure. The failed include run's 954,253 ms receipt gap coincided with a reported
+956 seconds of clamshell sleep and ended near a maintenance wake. Its missing fetch cause remains unknown and its qualification remains failed.
 Host suspension is not a tested recovery mode; inspect preserved receipts before any new attempt.
 
 Local fault simulations (no SAP, CF or credential access):

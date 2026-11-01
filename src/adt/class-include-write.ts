@@ -11,7 +11,7 @@ import type { AdtHttpClient } from './http.js';
 import { assertMutationContext, type PinnedMutationContext, singleTargetMutationContext } from './mutation-context.js';
 import { assertPinnedOwner } from './pinned-write-policy.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
-import { assertSourceHash, sourceHash } from './source-precondition.js';
+import { assertSourceHash, editableSourceEquals, sourceHash } from './source-precondition.js';
 
 export interface PinnedClassIncludeMutation {
   readonly context: PinnedMutationContext;
@@ -110,13 +110,7 @@ export async function safeUpdateClassInclude(
       pinned.onPhase('source-readback');
       checkOperation(safety, OperationType.Read, 'GetClassInclude');
       const saved = await session.get(includeUrl, { 'Cache-Control': 'no-cache', Accept: 'text/plain' });
-      const comparable = (value: string) => {
-        const text = value.replace(/\r\n/g, '\n');
-        let end = text.length;
-        while (end > 0 && text.charCodeAt(end - 1) === 10) end--;
-        return text.slice(0, end);
-      };
-      if (comparable(saved.body) !== comparable(source))
+      if (!editableSourceEquals(saved.body, source))
         throw new AdtSafetyError(
           'Include save returned but editable source read-back differed. Inspect before continuing.',
         );

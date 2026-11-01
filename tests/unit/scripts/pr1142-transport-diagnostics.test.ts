@@ -5,6 +5,60 @@ import { McpSession } from '../../../scripts/qualification/pr1142/mcp-checks.mjs
 import { boundedFetch, safeFailure } from '../../../scripts/qualification/pr1142/safe-io.mjs';
 
 describe('PR1142 transport failure evidence', () => {
+  it.each(['UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT'])(
+    'distinguishes a fetch transport timer from the owned deadline: %s',
+    async (code) => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(Object.assign(new TypeError('secret'), { cause: { code } })));
+      try {
+        const failure = await boundedFetch(new URL('https://example.invalid')).catch(safeFailure);
+        expect(failure).toMatchObject({ causeCode: code, failureKind: 'transport-timeout' });
+        expect(JSON.stringify(failure)).not.toContain('secret');
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it('recognizes the owned abort when a response reader throws an ordinary error', async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          new ReadableStream({
+            pull() {
+              controller.abort();
+              throw new Error('secret-reader-error');
+            },
+          }),
+        ),
+      ),
+    );
+    try {
+      const failure = await boundedFetch(new URL('https://example.invalid')).catch(safeFailure);
+      expect(failure).toMatchObject({ code: 'HTTP_RESPONSE_FAILED', errorName: 'Error', failureKind: 'timeout' });
+      expect(JSON.stringify(failure)).not.toContain('secret');
+    } finally {
+      timeout.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('recognizes a TimeoutError independently of the owned signal', async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('secret', 'TimeoutError')));
+    try {
+      const failure = await boundedFetch(new URL('https://example.invalid')).catch(safeFailure);
+      expect(controller.signal.aborted).toBe(false);
+      expect(failure).toMatchObject({ code: 'HTTP_REQUEST_FAILED', errorName: 'TimeoutError', failureKind: 'timeout' });
+    } finally {
+      timeout.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each(['timeout', 'disconnect'] as const)(
     'retains diagnostics after an SSE body starts and then %s',
     async (mode) => {

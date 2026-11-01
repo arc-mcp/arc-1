@@ -10,6 +10,7 @@
 
 import type { AdtClient } from '../adt/client.js';
 import { AdtSafetyError } from '../adt/errors.js';
+import { singleTargetMutationContext } from '../adt/mutation-context.js';
 import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
@@ -30,14 +31,7 @@ import {
   sourceUrlForType,
 } from './object-types.js';
 import { errorResult, type ToolResult } from './shared.js';
-import {
-  writeActionAddMethod,
-  writeActionChangeMethodVisibility,
-  writeActionDeleteMethod,
-  writeActionEditClassDefinition,
-  writeActionEditMethod,
-  writeActionEditMethodSignature,
-} from './write/class-surgery.js';
+import { dispatchClassSurgery } from './write/class-surgery-dispatch.js';
 import type { SapWriteContext } from './write/context.js';
 import { writeActionBatchCreate, writeActionCreate } from './write/create.js';
 import { handlePinnedWrite } from './write/pinned.js';
@@ -232,6 +226,7 @@ export async function handleSAPWrite(
   }
 
   const ctx: SapWriteContext = {
+    mutationContext: singleTargetMutationContext(client.safety),
     client,
     args,
     config,
@@ -258,27 +253,17 @@ export async function handleSAPWrite(
       return writeActionUpdate(ctx);
     case 'create':
       return writeActionCreate(ctx);
-    case 'edit_method':
-      return writeActionEditMethod(ctx);
     case 'add_unit':
     case 'edit_unit':
       return writeActionUnit(ctx);
 
-    // Class-section surgery actions (issue #303) — see write/class-surgery.ts.
+    case 'edit_method':
     case 'edit_class_definition':
-      return writeActionEditClassDefinition(ctx);
-
     case 'edit_method_signature':
-      return writeActionEditMethodSignature(ctx);
-
     case 'add_method':
-      return writeActionAddMethod(ctx);
-
     case 'delete_method':
-      return writeActionDeleteMethod(ctx);
-
     case 'change_method_visibility':
-      return writeActionChangeMethodVisibility(ctx);
+      return dispatchClassSurgery(ctx);
 
     case 'scaffold_rap_handlers':
       return writeActionScaffoldRapHandlers(ctx);

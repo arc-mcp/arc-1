@@ -205,6 +205,15 @@ Existing pinned includes require their own hash; initialization requires typed n
 cannot enter the legacy wrapper. The required callbacks keep package/recording revalidation in
 the pinned adapter. This is not a generic metadata, deletion, transport or activation engine.
 
+Class actions enter `write/class-surgery-dispatch.ts` with a required mutation context. The already
+admitted pinned main-source `edit_method` uses the same action handler as single-target editing;
+`pinned-class-{context,lifecycle,surgery}.ts` supplies its registered, request-owned native policy.
+It permits one hash-checked main read/save/read-back under the owning lock, reuses package/recording
+revalidation and preserves confirmed saves when cleanup fails. It refuses structure reads and
+include edits; broader class actions still need their own policy and qualification. Legacy class
+cleanup/cache behavior remains separate. The shared method splicer refuses renamed/multiple
+replacement blocks and whole-line ranges containing neighboring statements, independently of lint.
+
 `mutation-http.ts` gives nested helpers a scoped transport with the pinned deadline, cancellation
 and no-replay options. Child options cannot relax those limits; nested stateful sessions inherit
 them. The lifecycle retains the owning transport for unlock/close with independent bounded cleanup,

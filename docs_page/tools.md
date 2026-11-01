@@ -1260,9 +1260,14 @@ Event blocks such as `START-OF-SELECTION` and `AT SELECTION-SCREEN` are intentio
 
 Backing pattern for class surgery: lock the class → read fresh editable source and matching `/objectstructure` when needed → splice → PUT → unlock. These reads bypass source and inactive-list caches, preserving draft changes completed before the lock. No auto-activation. Caller runs `SAPActivate` next. For `edit_class_definition include=...`, ARC-1 whole-replaces the class-local include directly and auto-initializes a missing include under the same parent class lock before the PUT.
 
-Individual signature changes, deletion and visibility moves refuse chained declarations such as
-`METHODS: first, second.` or `CLASS-METHODS: first, second.` SAP's range for one member can include
-earlier declarations in that chain. Use a complete class source update, preserving the other methods.
+Individual signature changes, deletion and visibility moves refuse a native range that opens with
+`METHODS:` or `CLASS-METHODS:`. A4H returns ranges that include earlier declarations in that chain.
+This guard covers the observed range shape; it does not validate every source/structure mismatch.
+Use a complete class source update for chains, preserving the other methods.
+
+Method body edits require one replacement block with the selected method's actual name. Body-only
+input preserves its opening and closing statements. An edit is refused if the selected whole-line
+range includes neighboring statements; separate those statements in a full source update first.
 
 #### `action="edit_class_definition"` — replace the DEFINITION block whole
 
