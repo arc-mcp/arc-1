@@ -19,7 +19,6 @@ import {
   spliceClassDefinition,
   spliceMethodSignature,
 } from '../../adt/class-structure.js';
-import { safeUpdateClassInclude } from '../../adt/crud.js';
 import { isNotFoundError } from '../../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
 import { spliceMethod } from '../../context/method-surgery.js';
@@ -33,6 +32,7 @@ import {
 import { errorResult, type ToolResult, textResult } from '../shared.js';
 import { runPreWriteLint, runPreWriteSyntaxCheck } from '../write-helpers.js';
 import { withClassEdit } from './class-edit.js';
+import { replaceClassInclude } from './class-include.js';
 import type { SapWriteContext } from './context.js';
 
 export async function writeActionEditMethod(ctx: SapWriteContext): Promise<ToolResult> {
@@ -142,7 +142,6 @@ export async function writeActionEditMethod(ctx: SapWriteContext): Promise<ToolR
 
 export async function writeActionEditClassDefinition(ctx: SapWriteContext): Promise<ToolResult> {
   const {
-    client,
     args,
     config,
     type,
@@ -151,9 +150,7 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
     hasSource,
     include,
     includeProvided,
-    transport,
     lintOverride,
-    objectUrl,
     srcUrl,
     invalidateWrittenObject,
     enforcePackageForExistingObject,
@@ -170,16 +167,7 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
   if (include) {
     // Whole include replacement has no read/modify race; retain missing-include initialization.
     const spliced = source.endsWith('\n') ? source : `${source}\n`;
-    const initialized = await safeUpdateClassInclude(
-      client.http,
-      client.safety,
-      objectUrl,
-      classIncludeUrl(name, include),
-      spliced,
-      transport,
-      getCachedFeatures()?.abapRelease,
-      args.expectedSourceHash as string | undefined,
-    );
+    const initialized = await replaceClassInclude(ctx, spliced);
     invalidateWrittenObject(type, name);
     const initNote = initialized.initialized ? ` Initialised the ${include} include first.` : '';
     return textResult(

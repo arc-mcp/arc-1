@@ -66,7 +66,7 @@ describe('pinned mutation capability matrix', () => {
         action: 'edit_class_definition',
         resource: 'repository-source',
         types: ['CLAS'],
-        fields: ['action', 'type', 'name', 'transport', 'expectedSourceHash', 'source'],
+        fields: ['action', 'type', 'name', 'transport', 'expectedSourceHash', 'source', 'include'],
       },
       {
         tool: 'SAPWrite',
@@ -252,18 +252,23 @@ describe('pinned mutation capability matrix', () => {
     expect(pinnedMutationAllowed('SAPActivate', { type: 'CLAS' }, writer)).toBe(true);
   });
 
-  it.each(['update', 'edit_method'])('limits %s includes to the four explicit CLAS selectors', (selectedAction) => {
-    for (const include of ['definitions', 'implementations', 'macros', 'testclasses']) {
-      const args = { action: selectedAction, type: 'CLAS', include };
-      expect(pinnedMutationAllowed('SAPWrite', args, writer)).toBe(true);
-      for (const type of ['INTF', 'PROG', undefined])
-        expect(pinnedMutationAllowed('SAPWrite', { ...args, type }, writer)).toBe(false);
-      for (const action of ['create', 'delete', 'edit_method_signature'])
-        expect(pinnedMutationAllowed('SAPWrite', { ...args, action }, writer)).toBe(false);
-      expect(pinnedMutationAllowed('SAPWrite', args, { ...writer, allowWrites: false })).toBe(false);
-      expect(pinnedMutationAllowed('SAPWrite', args, { ...writer, ppStrict: false })).toBe(false);
-    }
-    for (const include of ['main', 'text_symbols', 'DEFINITIONS', '../source/main'])
-      expect(pinnedMutationAllowed('SAPWrite', { action: selectedAction, type: 'CLAS', include }, writer)).toBe(false);
-  });
+  it.each(['update', 'edit_method', 'edit_class_definition'])(
+    'limits %s includes to the four explicit CLAS selectors',
+    (selectedAction) => {
+      for (const include of ['definitions', 'implementations', 'macros', 'testclasses']) {
+        const args = { action: selectedAction, type: 'CLAS', include };
+        expect(pinnedMutationAllowed('SAPWrite', args, writer)).toBe(true);
+        for (const type of ['INTF', 'PROG', undefined])
+          expect(pinnedMutationAllowed('SAPWrite', { ...args, type }, writer)).toBe(false);
+        for (const action of ['create', 'delete', 'edit_method_signature'])
+          expect(pinnedMutationAllowed('SAPWrite', { ...args, action }, writer)).toBe(false);
+        expect(pinnedMutationAllowed('SAPWrite', args, { ...writer, allowWrites: false })).toBe(false);
+        expect(pinnedMutationAllowed('SAPWrite', args, { ...writer, ppStrict: false })).toBe(false);
+      }
+      for (const include of ['main', 'text_symbols', 'DEFINITIONS', '../source/main'])
+        expect(pinnedMutationAllowed('SAPWrite', { action: selectedAction, type: 'CLAS', include }, writer)).toBe(
+          false,
+        );
+    },
+  );
 });

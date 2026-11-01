@@ -40,8 +40,8 @@ no PUT. This marker is part of the shared callback protocol; it is not inferred 
 It closes normally, and cleanup failure still returns an error. Confirmed saves retain hash,
 transport and warnings on cleanup failure; unknown/rejected saves do not claim saved source.
 
-`edit_class_definition` with a local include remains denied pending its whole-include replacement
-adapter. Existing include `update` and `edit_method` keep their separate admitted behavior.
+At this checkpoint `edit_class_definition` with a local include remained denied; the subsequent
+shared replacement adapter is described below. Existing include `update` and `edit_method` keep their separate admitted behavior.
 Git/custom plugins and all unimplemented families remain refused. Global-off, read-only destination,
 missing raw scope/exact target grant, aggregate and Basic routes remain mutation-free.
 
@@ -68,5 +68,31 @@ all five actions and the existing read-only combinations. Legacy class/RAP tests
 Required next evidence: Opus review of the fixed revision; reviewed live harness expansion with
 real include methods and metadata operations; a fresh build/run binding and two mapped writers;
 then transportable-object qualification with the later CTS work. These are not waived by unit
-coverage. FEAT-93 remains open for these qualifications, definition-include replacement, all other
+coverage. FEAT-93 remains open for these qualifications, all other
 object/procedural/DDIC/RAP/batch/package/API/CTS/trace/FLP families and the shared-engine convergence.
+
+## Whole-include convergence follow-up
+
+`update` with a class include and `edit_class_definition` with a class include now enter the existing
+shared action handlers and one `replaceClassInclude` adapter. The duplicated pinned update branch
+was removed. Legacy and pinned calls retain explicit lifecycle profiles; the pinned profile uses
+the same reviewed native include protocol, owner/package/recording checks, optional initialization,
+exact existing-include hash and read-back. Its phase updates retain initialized/unknown/rejected
+states and confirmed hashes through cleanup failures. Rejection classification is shared with
+main-source writes. No action is rewritten to `update`, so the original deny-action checks apply.
+
+The definition action replaces the **whole** selected include and retains its trailing-newline
+normalization. Explicit `source=""` plus a hash now survives normalization for this action too,
+allowing a guarded clear; omitted/blank/unhashed clears remain refused. This also makes the guarded
+clear available through the single-target action. Normal whole-include update keeps its exact
+submitted bytes. Both fragment paths skip lint/advisory syntax, now explicitly tested with both
+checks globally enabled. No include initialization is added to `edit_method`.
+
+Focused tests cover all four include kinds, guarded empty source in both profiles, initialization,
+stale/absent hashes, definitive/unknown partial failures and cleanup. Source/metadata main surgery
+still uses its own verified-read callback. This follow-up requires review and fresh live evidence;
+the earlier run and earlier review snapshot are not retroactively extended to it.
+
+Follow-up validation: 432 files / 11,733 tests, all three TypeScript projects, build, lint, policy,
+file/schema budgets and strict documentation pass. The added whole-include cases are real shared
+handler/native-client tests; the unchanged live harness still needs expansion before PP qualification.

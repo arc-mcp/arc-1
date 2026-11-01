@@ -65,8 +65,13 @@ const rows: PinnedMutationCapability[] = [
         ...(action !== 'edit_class_definition' ? ['method'] : []),
         ...(['add_method', 'change_method_visibility'].includes(action) ? ['visibility'] : []),
         ...(action === 'add_method' ? ['abstract'] : []),
+        ...(action === 'edit_class_definition' ? ['include'] : []),
       ],
-      accepts: () => true,
+      accepts: (args) =>
+        args.include === undefined ||
+        (action === 'edit_class_definition' &&
+          args.type === 'CLAS' &&
+          PINNED_CLASS_INCLUDE_NAMES.some((include) => include === args.include)),
     }),
   ),
   {

@@ -120,6 +120,13 @@ describe('pinned write policy composition', () => {
   });
   it.each([
     ...metadataInputs.map((input) => ({ ...input, include: undefined, expectedSourceHash: 'a'.repeat(64) })),
+    ...['definitions', 'implementations', 'macros', 'testclasses'].map((include) => ({
+      action: 'edit_class_definition',
+      include,
+      source: '* Replacement',
+      expectedSourceHash: 'a'.repeat(64),
+    })),
+    { action: 'edit_class_definition', source: '', expectedSourceHash: 'a'.repeat(64) },
     { source: '', expectedSourceHash: 'a'.repeat(64) },
     { source: '* New include\n' },
     ...['definitions', 'implementations', 'macros', 'testclasses'].map((include) => ({

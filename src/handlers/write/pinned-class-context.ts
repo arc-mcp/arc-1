@@ -19,6 +19,8 @@ export interface PinnedClassState {
   readonly context: PinnedMutationContext;
   readonly sourceUrl: string;
   readonly include?: ClassWriteInclude;
+  readonly wholeIncludeReplacement: boolean;
+  includeInitialized?: boolean;
   phase: string;
   state: string;
   pkg?: string;
@@ -41,22 +43,40 @@ export function createPinnedClassContext(
 ): SapWriteContext {
   assertMutationContext(original.safety, context);
   assertPinnedOwner(args.type, args.name);
-  if (!isClassSurgeryAction(args.action) || args.type !== 'CLAS')
+  if (
+    (!isClassSurgeryAction(args.action) && !(args.action === 'update' && args.include !== undefined)) ||
+    args.type !== 'CLAS'
+  )
     throw new AdtSafetyError('Only the admitted class surgery adapter is available.');
-  const needsMethod = args.action !== 'edit_class_definition';
+  const needsMethod = !['edit_class_definition', 'update'].includes(String(args.action));
   if (needsMethod && (typeof args.method !== 'string' || !args.method.trim()))
     throw new AdtSafetyError('A method name or add_method declaration is required.');
   const method = typeof args.method === 'string' ? args.method.trim() : undefined;
   const include = normalizeClassWriteInclude(args.include);
   if (args.include !== undefined && !include)
     throw new AdtSafetyError('Select a supported class include or omit include for main source.');
-  if (args.include !== undefined && args.action !== 'edit_method')
+  if (args.include !== undefined && !['edit_method', 'update', 'edit_class_definition'].includes(String(args.action)))
     throw new AdtSafetyError('This metadata surgery adapter selects main source only.');
-  const selectedInclude = args.action === 'edit_method' ? (include ?? detectLocalHandlerInclude(method!)) : undefined;
-  const needsSource = ['edit_method', 'edit_class_definition', 'edit_method_signature'].includes(String(args.action));
-  if (needsSource && (typeof args.source !== 'string' || !args.source.trim()))
-    throw new AdtSafetyError('A non-empty source is required.');
-  if (typeof args.expectedSourceHash !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedSourceHash))
+  const wholeIncludeReplacement = !!include && ['update', 'edit_class_definition'].includes(String(args.action));
+  const selectedInclude = include ?? (args.action === 'edit_method' ? detectLocalHandlerInclude(method!) : undefined);
+  const needsSource = ['update', 'edit_method', 'edit_class_definition', 'edit_method_signature'].includes(
+    String(args.action),
+  );
+  if (
+    needsSource &&
+    (typeof args.source !== 'string' ||
+      (!args.source.trim() &&
+        (!wholeIncludeReplacement || args.source !== '' || typeof args.expectedSourceHash !== 'string')))
+  )
+    throw new AdtSafetyError(
+      wholeIncludeReplacement
+        ? 'Include source is required; source="" with an existing include hash clears it.'
+        : 'A non-empty source is required.',
+    );
+  if (
+    (!wholeIncludeReplacement || args.expectedSourceHash !== undefined) &&
+    (typeof args.expectedSourceHash !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedSourceHash))
+  )
     throw new AdtSafetyError('Read SAPRead(format="editable") and supply its expectedSourceHash before editing.');
   const name = args.name as string;
   const owner = objectUrlForType('CLAS', name.toLowerCase());
@@ -66,6 +86,7 @@ export function createPinnedClassContext(
     context,
     sourceUrl: selectedInclude ? `${owner}/includes/${selectedInclude}` : `${owner}/source/main`,
     include: selectedInclude,
+    wholeIncludeReplacement,
     state: 'unchanged',
     phase: 'validation',
     readVerified: false,

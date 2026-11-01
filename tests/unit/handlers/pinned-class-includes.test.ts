@@ -9,6 +9,7 @@ import { mockFetch } from './setup-undici-mock.js';
 const { AdtClient } = await import('../../../src/adt/client.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { handlePinnedWrite } = await import('../../../src/handlers/write/pinned.js');
+const quality = await import('../../../src/handlers/write-helpers.js');
 const owner = '/sap/bc/adt/oo/classes/zcl_include';
 const original = '* Original include\n';
 const replacement = '* Updated include\n';
@@ -43,6 +44,7 @@ const requests: Array<{ path: string; method: string; body: string }> = [];
 const typedAbsence =
   '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><type id="ExceptionResourceNotFound"/></exc:exception>';
 beforeEach(() => {
+  vi.restoreAllMocks();
   vi.resetAllMocks();
   stored = original;
   absence = typedAbsence;
@@ -111,9 +113,9 @@ const args = (extra: Record<string, unknown> = {}) => ({
   expectedSourceHash: sourceHash(original),
   ...extra,
 });
-async function invoke(extra: Record<string, unknown> = {}) {
-  const client = new AdtClient({ baseUrl: 'http://sap:8000', safety: { ...defaultSafetyConfig(), ...config } });
-  const result = await handleToolCall(client, config, 'SAPWrite', args(extra));
+async function invoke(extra: Record<string, unknown> = {}, settings = config) {
+  const client = new AdtClient({ baseUrl: 'http://sap:8000', safety: { ...defaultSafetyConfig(), ...settings } });
+  const result = await handleToolCall(client, settings, 'SAPWrite', args(extra));
   const text = result.content[0].text;
   return { result, body: text.startsWith('{') ? JSON.parse(text) : { message: text } };
 }
@@ -149,21 +151,24 @@ describe('pinned class include handler and native lock policy', () => {
     expect(stored).toBe('');
   });
 
-  it('preserves explicit empty include replacement through the shared single-target dispatch too', async () => {
-    const legacy = {
-      ...config,
-      targetId: undefined,
-      multiTargetEndpoints: false,
-      multiTargetWrite: undefined,
-      ppEnabled: false,
-      ppStrict: false,
-    };
-    const client = new AdtClient({ baseUrl: 'http://sap:8000', safety: { ...defaultSafetyConfig(), ...legacy } });
-    const result = await handleToolCall(client, legacy, 'SAPWrite', args({ source: '' }));
-    expect(result.isError, result.content[0].text).toBeUndefined();
-    expect(stored).toBe('');
-    expect(includeWrites()).toHaveLength(1);
-  });
+  it.each(['update', 'edit_class_definition'])(
+    'preserves explicit empty include replacement through single-target %s',
+    async (action) => {
+      const legacy = {
+        ...config,
+        targetId: undefined,
+        multiTargetEndpoints: false,
+        multiTargetWrite: undefined,
+        ppEnabled: false,
+        ppStrict: false,
+      };
+      const client = new AdtClient({ baseUrl: 'http://sap:8000', safety: { ...defaultSafetyConfig(), ...legacy } });
+      const result = await handleToolCall(client, legacy, 'SAPWrite', args({ source: '', action }));
+      expect(result.isError, result.content[0].text).toBeUndefined();
+      expect(stored).toBe(action === 'update' ? '' : '\n');
+      expect(includeWrites()).toHaveLength(1);
+    },
+  );
 
   it.each([
     { source: '', expectedSourceHash: undefined },
@@ -369,5 +374,92 @@ describe('pinned class include handler and native lock policy', () => {
     const { result } = await invoke(extra);
     expect(result.isError).toBe(true);
     expect(requests).toHaveLength(0);
+  });
+});
+
+describe('shared whole-include definition replacement', () => {
+  it.each(['definitions', 'implementations', 'macros', 'testclasses'])(
+    'replaces and initializes %s through edit_class_definition',
+    async (include) => {
+      let outcome = await invoke({ action: 'edit_class_definition', include });
+      expect(outcome.result.isError, outcome.result.content[0].text).toBeUndefined();
+      expect(outcome.body).toMatchObject({
+        action: 'edit_class_definition',
+        include,
+        initialized: false,
+        state: 'saved-inactive',
+        sourceHash: sourceHash(stored!),
+      });
+      stored = undefined;
+      requests.length = 0;
+      outcome = await invoke({ action: 'edit_class_definition', include, expectedSourceHash: undefined });
+      expect(outcome.result.isError, outcome.result.content[0].text).toBeUndefined();
+      expect(outcome.body).toMatchObject({
+        initialized: true,
+        state: 'saved-inactive',
+        sourceHash: sourceHash(stored!),
+      });
+      expect(includeWrites().map((r) => r.method)).toEqual(['POST', 'PUT']);
+      expect(requests.some((r) => r.path.includes('/source/main') || r.path.includes('/objectstructure'))).toBe(false);
+    },
+  );
+  it('preserves the existing definition-action newline behavior when clearing a hashed include', async () => {
+    const { result, body } = await invoke({ action: 'edit_class_definition', source: '' });
+    expect(result.isError, result.content[0].text).toBeUndefined();
+    expect(stored).toBe('\n');
+    expect(body.sourceHash).toBe(sourceHash(stored!));
+  });
+  it.each([
+    { expectedSourceHash: undefined },
+    { expectedSourceHash: 'a'.repeat(64) },
+    { source: '', expectedSourceHash: undefined },
+    { source: '  ', expectedSourceHash: sourceHash(original) },
+  ])('refuses unsafe replacement %j before any mutation', async (extra) => {
+    const { result } = await invoke({ action: 'edit_class_definition', ...extra });
+    expect(result.isError).toBe(true);
+    expect(includeWrites()).toHaveLength(0);
+  });
+  it.each([400, 503])('retains initialized include state when the definition save fails with %s', async (status) => {
+    stored = undefined;
+    putFailure = status;
+    const { result, body } = await invoke({ action: 'edit_class_definition', expectedSourceHash: undefined });
+    expect(result.isError).toBe(true);
+    expect(body).toMatchObject({
+      initialized: true,
+      state: status === 400 ? 'created-include-source-rejected' : 'created-include-source-unknown',
+    });
+    expect(body.sourceHash).toBeUndefined();
+    expect(includeWrites().map((r) => r.method)).toEqual(['POST', 'PUT']);
+  });
+  it('classifies a rejected initialization without claiming a source save', async () => {
+    stored = undefined;
+    initFailure = 403;
+    const { result, body } = await invoke({ action: 'edit_class_definition', expectedSourceHash: undefined });
+    expect(result.isError).toBe(true);
+    expect(body.state).toBe('include-initialization-rejected');
+    expect(includeWrites().map((r) => r.method)).toEqual(['POST']);
+  });
+  it.each(['update', 'edit_class_definition'])(
+    'skips fragment lint and syntax with global checks enabled for %s',
+    async (action) => {
+      const lint = vi.spyOn(quality, 'runPreWriteLint'),
+        syntax = vi.spyOn(quality, 'runPreWriteSyntaxCheck');
+      const { result } = await invoke({ action }, { ...config, lintBeforeWrite: true, checkBeforeWrite: true });
+      expect(result.isError, result.content[0].text).toBeUndefined();
+      expect(lint).not.toHaveBeenCalled();
+      expect(syntax).not.toHaveBeenCalled();
+    },
+  );
+  it('preserves confirmed replacement evidence on cleanup failure', async () => {
+    unlockFailure = true;
+    const { result, body } = await invoke({ action: 'edit_class_definition' });
+    expect(result.isError).toBe(true);
+    expect(body).toMatchObject({
+      state: 'saved-inactive',
+      sourceHash: sourceHash(stored!),
+      initialized: false,
+      cleanupFailed: true,
+      sessionClosed: true,
+    });
   });
 });

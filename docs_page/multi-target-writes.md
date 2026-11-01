@@ -129,7 +129,7 @@ only the aggregate compatibility connection cannot write through that connection
 | `SAPWrite.create` | One CLAS or INTF; explicit package and complete source; required allowed request/task for a transportable package |
 | `SAPWrite.update` | CLAS/INTF main source or CLAS `definitions`, `implementations`, `macros`, `testclasses`; exact editable-source hash for existing source |
 | `SAPWrite.edit_method` | Existing CLAS main-source or local-include method; hash of the complete selected editable source |
-| `SAPWrite.edit_class_definition` | CLAS main source only; replacement definition block and complete editable-main hash; preserves the implementation and checks method symmetry |
+| `SAPWrite.edit_class_definition` | CLAS main definition block with complete main-source hash, or whole selected include replacement; main edits preserve the implementation and check method symmetry |
 | `SAPWrite.edit_method_signature` | CLAS main source; existing method name, new METHODS clause and main hash; body preserved, intermediate signature changes skip lint |
 | `SAPWrite.add_method` | CLAS main source; METHODS clause, optional visibility/abstract flag and main hash; inserts the declaration and applicable body stub |
 | `SAPWrite.delete_method` / `change_method_visibility` | CLAS main source; existing method name and main hash; visibility moves additionally require the target section |
@@ -138,7 +138,7 @@ only the aggregate compatibility connection cannot write through that connection
 | `SAPLint.set_formatter_settings` | Partial indentation/style patch of the mapped SAP user's formatter preferences on this target; native read/merge/write/read-back, not a package-owned object |
 
 For an existing class include, read `SAPRead(type="CLAS", name=..., include=..., format="editable")`
-and pass that include's hash to update or `edit_method`. Omit `include` for main source. An omitted hash can initialize
+and pass that include's hash to `update`, `edit_class_definition` or `edit_method`. Omit `include` for main source. An omitted hash can initialize
 a new optional include only after native absence is verified under the class lock; it cannot replace
 an existing include. To clear an existing include, send exactly `source=""` with its current `expectedSourceHash`.
 Empty source without a hash and whitespace-only source are refused. Results retain a partial
@@ -159,8 +159,9 @@ class lock: owner, source resource/version, declaration/body inventory, names, v
 native ranges must agree. Shared-line boundaries and individual chained declarations are refused
 when a whole-line edit would affect neighbors. Use a reviewed complete source update when structure
 cannot be verified. An already-correct visibility returns `unchanged` without a save. These new
-metadata actions are covered offline; their two-writer PP qualification is still pending. Definition
-replacement with `include` is not yet admitted; use the existing whole-include `update` action.
+metadata actions are covered offline; their two-writer PP qualification is still pending. With `include`, `edit_class_definition` replaces that whole include through the same protocol as
+`update`; it does not splice a local definition. It can initialize a verified missing include or clear
+an existing include with an exact hash. It keeps its existing trailing-newline normalization.
 
 Confirmed saves retain their source hash, selected transport and warnings when unlock or session
 closure fails. The result reports the failed cleanup phase and is not a retry instruction.

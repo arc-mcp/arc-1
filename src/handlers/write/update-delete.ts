@@ -8,7 +8,7 @@ import {
   TEXT_ELEMENT_PARTS,
   type TextElementPart,
 } from '../../adt/client.js';
-import { deleteObject, lockObject, safeUpdateClassInclude, safeUpdateSource, unlockObject } from '../../adt/crud.js';
+import { deleteObject, lockObject, safeUpdateSource, unlockObject } from '../../adt/crud.js';
 import { getBadiEnhancementImplementation } from '../../adt/enhancement-impl.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, findFmHeader, spliceFmSignature } from '../../adt/fm-signature.js';
@@ -23,7 +23,7 @@ import {
 } from '../cds-hints.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import { resolveFmDescriptionLanguage } from '../function-parameter-language.js';
-import { CLASS_WRITE_INCLUDES, canonicalTablType, classIncludeUrl } from '../object-types.js';
+import { CLASS_WRITE_INCLUDES, canonicalTablType } from '../object-types.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
 import {
   isMetadataWriteType,
@@ -33,6 +33,7 @@ import {
   runRapPreflightValidation,
   stripFmParamCommentBlock,
 } from '../write-helpers.js';
+import { replaceClassInclude } from './class-include.js';
 import type { SapWriteContext } from './context.js';
 import { writeMetadataUpdate } from './metadata-update.js';
 
@@ -89,16 +90,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     // the testclasses (CCAU) include is absent — a content PUT alone fails
     // with HTTP 500 "…CCAU does not have any inactive version". safeUpdateClassInclude
     // probes the include and POST-creates it (under the same lock) before the PUT.
-    const { initialized } = await safeUpdateClassInclude(
-      client.http,
-      client.safety,
-      objectUrl,
-      classIncludeUrl(name, include),
-      source,
-      transport,
-      getCachedFeatures()?.abapRelease,
-      args.expectedSourceHash as string | undefined,
-    );
+    const { initialized } = await replaceClassInclude(ctx, source);
     invalidateWrittenObject(type, name);
     const initNote = initialized ? ` (initialised the ${include} include first)` : '';
     return textResult(

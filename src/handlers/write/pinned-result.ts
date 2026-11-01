@@ -7,6 +7,19 @@ export function isPinnedWriteRejection(error: unknown): boolean {
   return error instanceof AdtApiError && [400, 401, 403, 404, 409, 412, 415, 422, 423].includes(error.statusCode);
 }
 
+/** A definitive native rejection applies to the submitted phase, not prior successful steps. */
+export function rejectedPinnedSourceState(state: string, phase: string, includeInitialized?: boolean): string {
+  if (phase === 'create') return 'creation-rejected';
+  if (phase === 'include-initialization') return 'include-initialization-rejected';
+  if (phase === 'source-save')
+    return includeInitialized
+      ? 'created-include-source-rejected'
+      : state.startsWith('created-')
+        ? 'created-source-rejected'
+        : 'source-save-rejected';
+  return state;
+}
+
 export function pinnedFailure(
   error: unknown,
   state: string,

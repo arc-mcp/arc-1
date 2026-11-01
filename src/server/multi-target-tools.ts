@@ -143,7 +143,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
     return {
       ...tool,
       description: write
-        ? 'Create/delete CLAS/INTF, update their main source or replace a CLAS local include on this pinned PP target. edit_method edits an existing method in main source or a selected/inferred class include. Class definition/signature edits, method add/delete and visibility moves use verified native main-source structure. Existing source requires expectedSourceHash from SAPRead(format="editable"); a missing optional include can be initialized under the class lock without a hash. Delete takes no source/hash and verifies native owner absence. Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate activates the complete owner, including existing inactive includes.'
+        ? 'Create/delete CLAS/INTF, update their main source or replace a CLAS local include on this pinned PP target. edit_method edits an existing method in main source or a selected/inferred class include. Main-source class definition/signature edits, method add/delete and visibility moves use verified native main-source structure. Existing source requires expectedSourceHash from SAPRead(format="editable"); a missing optional include can be initialized under the class lock without a hash. Delete takes no source/hash and verifies native owner absence. Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate activates the complete owner, including existing inactive includes.'
         : 'Activate one CLAS/INTF owner on this pinned PP target, including ALL its existing inactive drafts and includes. Additional owners are refused. This is not method-only activation.',
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
       inputSchema: {
@@ -159,7 +159,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                 source: {
                   type: 'string',
                   description:
-                    'Complete CLAS/INTF main source for create/update, or the selected CLAS include for update (source="" with expectedSourceHash clears an existing include); an existing method body or complete METHOD…ENDMETHOD block for edit_method. For edit_class_definition supply the replacement CLASS DEFINITION block; for edit_method_signature supply its METHODS clause. Required for create/update/edit_method/edit_class_definition/edit_method_signature; omit for delete/add_method/delete_method/change_method_visibility.',
+                    'Complete CLAS/INTF main source for create/update, or the selected CLAS include for update (source="" with expectedSourceHash clears an existing include); an existing method body or complete METHOD…ENDMETHOD block for edit_method. For edit_class_definition supply the main CLASS DEFINITION block or the whole selected include; for edit_method_signature supply its METHODS clause. Required for create/update/edit_method/edit_class_definition/edit_method_signature; omit for delete/add_method/delete_method/change_method_visibility.',
                 },
                 package: {
                   type: 'string',
@@ -183,14 +183,14 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                         type: 'string',
                         enum: [...PINNED_CLASS_INCLUDE_NAMES],
                         description:
-                          'CLAS update replaces this complete include; edit_method edits an existing method within it. Both lock the class owner. Explicit include overrides local-class prefix inference. main and text_symbols are not accepted values.',
+                          'CLAS update and edit_class_definition replace this complete include; edit_method edits an existing method within it. All lock the class owner. Explicit include overrides local-class prefix inference. main and text_symbols are not accepted values.',
                       },
                     }
                   : {}),
                 method: {
                   type: 'string',
                   description:
-                    'Existing method name for edit_method, edit_method_signature, delete_method and change_method_visibility; add_method takes a complete METHODS or CLASS-METHODS clause. Only edit_method routes local lhc_/lcl_ class~method to implementations and ltc_ to testclasses; explicit include overrides that inference. Other surgery actions use main source.',
+                    'Existing method name for edit_method, edit_method_signature, delete_method and change_method_visibility; add_method takes a complete METHODS or CLASS-METHODS clause. Only edit_method routes local lhc_/lcl_ class~method to implementations and ltc_ to testclasses; explicit include overrides that inference. Signature/add/delete/visibility actions use main source.',
                 },
               }
             : {}),

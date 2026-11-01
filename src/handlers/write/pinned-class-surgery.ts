@@ -14,7 +14,8 @@ import {
   type PinnedClassState,
   pinnedClassState,
 } from './pinned-class-context.js';
-import { isPinnedWriteRejection, pinnedFailure } from './pinned-result.js';
+import { isPinnedWriteRejection, pinnedFailure, rejectedPinnedSourceState } from './pinned-result.js';
+import { writeActionUpdate } from './update-delete.js';
 
 export async function handlePinnedClassSurgery(
   client: AdtClient,
@@ -29,7 +30,7 @@ export async function handlePinnedClassSurgery(
     const context = pinnedOperationContext(client, config, { tool: 'SAPWrite', args, timeoutMs: 300_000, cleanup });
     ctx = createPinnedClassContext(client, args, config, context);
     state = pinnedClassState(ctx);
-    const result = await dispatchClassSurgery(ctx);
+    const result = await (args.action === 'update' ? writeActionUpdate(ctx) : dispatchClassSurgery(ctx));
     if (result.isError) throw new AdtSafetyError(result.content.map((part) => part.text).join('\n'));
     if (cleanup.unlockFailed || cleanup.sessionClosed === false) {
       state.phase = cleanup.unlockFailed ? 'unlock' : 'session-close';
@@ -46,6 +47,7 @@ export async function handlePinnedClassSurgery(
         state: state.state,
         sourceHash: state.sourceHash,
         ...(state.include ? { include: state.include } : {}),
+        ...(state.includeInitialized !== undefined ? { initialized: state.includeInitialized } : {}),
         ...(state.recording?.request ? { transport: state.recording.request } : {}),
         ...(state.warnings ? { warnings: state.warnings } : {}),
         next: state.unchangedConfirmed
@@ -54,13 +56,15 @@ export async function handlePinnedClassSurgery(
       }),
     );
   } catch (error) {
-    if (state?.phase === 'source-save' && isPinnedWriteRejection(error)) state.state = 'source-save-rejected';
+    if (state && isPinnedWriteRejection(error))
+      state.state = rejectedPinnedSourceState(state.state, state.phase, state.includeInitialized);
     return pinnedFailure(error, state?.state ?? 'unchanged', state?.phase ?? 'validation', cleanup.unlockFailed, {
       sourceHash: state?.sourceHash,
       sessionClosed: cleanup.sessionClosed,
       warnings: state?.warnings,
       transport: state?.recording?.request,
       include: state?.include,
+      initialized: state?.includeInitialized,
     });
   } finally {
     if (ctx) forgetPinnedClassContext(ctx);

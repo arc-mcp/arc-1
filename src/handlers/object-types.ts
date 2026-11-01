@@ -301,7 +301,7 @@ export function normalizeTypeArgsForValidation(
       // Only an exact empty string plus a hash is an intentional include clear.
       // Optional-field pollution and whitespace-only source retain their refusal behaviour.
       if (
-        action === 'update' &&
+        (action === 'update' || action === 'edit_class_definition') &&
         normType === 'CLAS' &&
         normalizeClassWriteInclude(cleaned.include) &&
         args.source === '' &&
