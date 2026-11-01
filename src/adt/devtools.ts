@@ -11,11 +11,14 @@
 import { XMLValidator } from 'fast-xml-parser';
 import { getCurrentContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
+import { ActivationEvidenceError } from './activation-evidence-error.js';
 import { type AunitRunResult, parseAunitRunResult, withAunitCoverage } from './aunit.js';
 import { AdtApiError, AdtNetworkError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
+import { nativeActivationExecuted, nativeInactiveReferences } from './native-activation-evidence.js';
 import { canonicalHostRelativeAdtPath } from './path-safety.js';
+import { assertPinnedActivationOptions } from './pinned-text-pool-activation.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type {
   CdsTestCase,
@@ -122,7 +125,7 @@ export async function prettyPrint(http: AdtHttpClient, safety: SafetyConfig, sou
   return resp.body;
 }
 
-/** Read system-wide ADT PrettyPrinter settings */
+/** Read the connected SAP user's ADT PrettyPrinter settings for this system. */
 export async function getPrettyPrinterSettings(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -149,7 +152,7 @@ export async function getPrettyPrinterSettings(
   };
 }
 
-/** Update system-wide ADT PrettyPrinter settings */
+/** Update the connected SAP user's ADT PrettyPrinter settings for this system. */
 export async function setPrettyPrinterSettings(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -188,11 +191,18 @@ function activationRequestOptions(): AdtRequestOptions {
   };
 }
 
+export interface ActivationReference {
+  uri: string;
+  name?: string;
+  type?: string;
+  deleted?: string;
+}
+
 export interface ActivationOptions {
   preaudit?: boolean;
   name?: string;
   /** Required on the multi-target boundary; validates initial and SAP-expanded references. */
-  validateReferences?: (refs: readonly { uri: string; name?: string }[]) => Promise<void>;
+  validateReferences?: (refs: readonly ActivationReference[]) => Promise<void>;
   beforeSubmit?: () => void;
 }
 
@@ -225,11 +235,7 @@ async function activateWithinBudget(
   options?: ActivationOptions,
 ): Promise<ActivationResult> {
   checkOperation(safety, OperationType.Activate, 'Activate');
-  if (
-    safety.multiTargetWrite &&
-    (!safety.multiTargetWrite.enabled || !options?.validateReferences || options.preaudit === false)
-  )
-    throw new AdtSafetyError('Missing pinned activation validation context.');
+  assertPinnedActivationOptions(http, safety, objectUrl, options);
   await options?.validateReferences?.([{ uri: objectUrl, name: options.name }]);
 
   try {
@@ -972,7 +978,7 @@ export type ActivationOutcome =
   | { kind: 'error'; messages: string[]; details: ActivationMessage[] }
   | {
       kind: 'preaudit';
-      refs: Array<{ uri: string; name: string }>;
+      refs: Array<ActivationReference & { name: string }>;
       messages: string[];
       details: ActivationMessage[];
     };
@@ -1028,28 +1034,22 @@ export function parseActivationOutcome(xml: string, requireExecutionEvidence = f
   if (inactive.length > 0) {
     return {
       kind: 'preaudit',
-      refs: inactive.map((r) => ({ uri: r.uri, name: r.name })),
+      refs: requireExecutionEvidence
+        ? nativeInactiveReferences(xml)
+        : inactive.map((r) => ({ uri: r.uri, name: r.name })),
       messages,
       details,
     };
   }
 
   if (requireExecutionEvidence) {
-    const properties = findDeepNodes(parsed, 'properties');
-    if (
-      !Object.hasOwn(parsed, 'messages') ||
-      properties.length !== 1 ||
-      properties[0]['@_activationExecuted'] !== 'true'
-    )
-      throw new AdtSafetyError(
-        'SAP did not affirm activation execution. Inspect the active and inactive owner before continuing.' +
-          (messages.length
-            ? ` SAP: ${messages
-                .slice(0, 5)
-                .map((text) => text.slice(0, 500))
-                .join('; ')}`
-            : ''),
-      );
+    let confirmed = false;
+    try {
+      confirmed = nativeActivationExecuted(xml);
+    } catch (error) {
+      if (!(error instanceof AdtSafetyError)) throw error;
+    }
+    if (!confirmed) throw new ActivationEvidenceError(messages, details);
   }
   return { kind: 'success', messages, details };
 }
@@ -1076,9 +1076,9 @@ export function parseActivationResult(xml: string): ActivationResult {
  *  Entries with no <object> child (transport-only rows) are ignored. */
 function extractInactiveObjectEntries(
   parsed: Record<string, unknown>,
-): Array<{ name: string; uri: string; user: string }> {
+): Array<{ uri: string; name: string; user: string }> {
   const entries = findDeepNodes(parsed, 'entry');
-  const out: Array<{ name: string; uri: string; user: string }> = [];
+  const out: Array<{ uri: string; name: string; user: string }> = [];
   for (const entry of entries) {
     const objectNode = entry.object;
     if (!objectNode || typeof objectNode !== 'object') continue;

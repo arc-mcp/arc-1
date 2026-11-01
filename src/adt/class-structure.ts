@@ -11,8 +11,8 @@
  *   - The `ec` column is the column AFTER the end token (half-open [sc, ec)).
  *
  * Splice strategy:
- *   - Whole-line splices for class-level and method-level blocks (we never need
- *     sub-line precision; ABAP statements occupy whole lines).
+ *   - Whole-line splices require verified class/method boundaries. Shared-line
+ *     neighboring statements are refused rather than included in a replacement.
  *   - When inserting/removing one METHOD pair, we must process IMPL ranges BEFORE
  *     DEFINITION ranges (they're at larger line numbers) so DEFINITION ranges
  *     stay valid even after the IMPL splice shifts later content.
@@ -22,6 +22,20 @@
  * the intended change).
  */
 
+import { Expressions, Statements } from '@abaplint/core';
+import { methodHeaderName } from '../context/method-inventory.js';
+import {
+  assertClassDefinitionReplacement,
+  assertClassEditBoundary,
+  assertMethodDeclarationBoundary,
+  assertMethodDeclarationReplacement,
+  assertMethodImplementationBoundary,
+  assertSectionHeaderBoundary,
+  classEditStatements,
+  classEndInsertionRow,
+} from './class-edit-boundaries.js';
+import { parseClassSourceStatements } from './class-source-parser.js';
+import { AdtSafetyError } from './errors.js';
 import type { ClassStructure, MethodStructure } from './types.js';
 
 // Bare names and interface-qualified names, including a registered namespace.
@@ -154,7 +168,9 @@ function replacementStart(source: string, declarationRow: number, replacement: s
  * helper to ensure the result is activatable.
  */
 export function spliceClassDefinition(source: string, structure: ClassStructure, newDefBlock: string): string {
+  assertClassDefinitionReplacement(newDefBlock, structure.className);
   const r = structure.classDefinitionBlock;
+  assertClassEditBoundary(source, r, structure.className, 'definition');
   return spliceLines(source, replacementStart(source, r.sr, newDefBlock), r.er, newDefBlock);
 }
 
@@ -168,8 +184,19 @@ export function spliceMethodSignature(source: string, method: MethodStructure, n
   if (!method.definition) {
     throw new Error(`spliceMethodSignature: method ${method.name} has no definition range`);
   }
+  assertUnchainedDeclaration(source, method);
+  assertMethodDeclarationBoundary(source, method.definition, method.name);
   const r = method.definition;
-  return spliceLines(source, replacementStart(source, r.sr, newSig), r.er, ensureClauseTerminator(newSig));
+  const replacement = ensureClauseTerminator(newSig);
+  assertMethodDeclarationReplacement(replacement, method.name);
+  const declaration = parseDefinitionBlockDeclarations(replacement).find(
+    (entry) => entry.name === method.name.toUpperCase(),
+  );
+  if (declaration?.isAbstract !== !!method.abstract)
+    throw new AdtSafetyError(
+      `Changing ABSTRACT for ${method.name} requires changing its implementation too. Use a complete source update.`,
+    );
+  return spliceLines(source, replacementStart(source, r.sr, newSig), r.er, replacement);
 }
 
 // ─── insertMethodPair: atomic DEFINITION + IMPLEMENTATION add ──────────
@@ -206,6 +233,12 @@ export interface InsertMethodPairOpts {
  * block at all (rare, all-abstract), only the DEFINITION is touched.
  */
 export function insertMethodPair(source: string, structure: ClassStructure, opts: InsertMethodPairOpts): string {
+  assertClassEditBoundary(source, structure.classDefinitionBlock, structure.className, 'definition');
+  let implementationEndRow: number | undefined;
+  if (!opts.isAbstract && structure.classImplementationBlock) {
+    assertClassEditBoundary(source, structure.classImplementationBlock, structure.className, 'implementation');
+    implementationEndRow = classEndInsertionRow(source, structure.classImplementationBlock);
+  }
   const anchor = findSectionAnchor(source, structure, opts.visibility);
   if (anchor === null) {
     throw new Error(
@@ -216,6 +249,7 @@ export function insertMethodPair(source: string, structure: ClassStructure, opts
   // Normalize the clause's terminating period up front (issue #536) so the
   // inserted-line count below and the splice both see the same text.
   const decl = ensureClauseTerminator(opts.decl);
+  assertMethodDeclarationReplacement(decl, opts.methodName);
 
   // Stage 1: insert METHODS clause in DEFINITION.
   let next = insertBeforeLine(source, anchor.afterLine + 1, decl);
@@ -228,7 +262,7 @@ export function insertMethodPair(source: string, structure: ClassStructure, opts
   // and the stub lands AFTER the IMPLEMENTATION's ENDCLASS (invalid ABAP).
   if (!opts.isAbstract && structure.classImplementationBlock) {
     const insertedCount = splitLines(decl.replace(/\r?\n$/, '')).length;
-    const newImplEndLine = structure.classImplementationBlock.er + insertedCount;
+    const newImplEndLine = implementationEndRow! + insertedCount;
     const indent = opts.implIndent ?? '  ';
     const stub = `${indent}METHOD ${opts.methodName.toLowerCase()}.\n${indent}ENDMETHOD.`;
     const needsSeparator = splitLines(next)[newImplEndLine - 2]?.trim() !== '';
@@ -247,6 +281,9 @@ export function insertMethodPair(source: string, structure: ClassStructure, opts
  * range) only have their DEFINITION line range removed.
  */
 export function removeMethodPair(source: string, method: MethodStructure): string {
+  assertUnchainedDeclaration(source, method);
+  assertMethodDeclarationBoundary(source, method.definition, method.name);
+  if (method.implementation) assertMethodImplementationBoundary(source, method.implementation, method.name);
   let next = source;
   if (method.implementation) {
     next = removeLinesAndJoinSpacing(next, method.implementation.sr, method.implementation.er);
@@ -302,6 +339,8 @@ export function moveMethodDefinition(source: string, method: MethodStructure, ta
   if (!method.definition) {
     throw new Error(`moveMethodDefinition: method ${method.name} has no definition range`);
   }
+  assertUnchainedDeclaration(source, method);
+  assertMethodDeclarationBoundary(source, method.definition, method.name);
   const lines = splitLines(source);
   const { er } = method.definition;
   let sr = method.definition.sr;
@@ -325,6 +364,20 @@ export function moveMethodDefinition(source: string, method: MethodStructure, ta
   return joinLines(out, eol);
 }
 
+/** Native chain ranges can include every earlier declaration in the same statement. */
+function assertUnchainedDeclaration(source: string, method: MethodStructure): void {
+  const { sr, sc, er } = method.definition;
+  const lines = splitLines(source).slice(sr - 1, er);
+  const wholeLines = stripDeclarationComments(lines.join('\n')).trim();
+  if (lines[0] !== undefined) lines[0] = lines[0].slice(sc);
+  const declaration = stripDeclarationComments(lines.join('\n')).trim();
+  if ([wholeLines, declaration].some((text) => /^(?:CLASS-METHODS|METHODS)\s*:/i.test(text))) {
+    throw new AdtSafetyError(
+      'Chained METHODS declarations cannot be edited individually. Use a complete class source update to preserve neighboring declarations.',
+    );
+  }
+}
+
 // ─── findSectionAnchor ────────────────────────────────────────────────
 
 /**
@@ -342,8 +395,13 @@ export function findSectionAnchor(
   // Step 1: anchor after the LAST existing method in the target section.
   const methods = structure.methods.filter((m) => m.visibility === visibility && m.definition);
   if (methods.length > 0) {
-    const lastEr = Math.max(...methods.map((m) => m.definition.er));
-    return { afterLine: lastEr };
+    const last = methods.reduce((a, b) =>
+      a.definition.er > b.definition.er || (a.definition.er === b.definition.er && a.definition.ec > b.definition.ec)
+        ? a
+        : b,
+    );
+    assertMethodDeclarationBoundary(source, last.definition, last.name, true);
+    return { afterLine: last.definition.er };
   }
 
   // Step 2: anchor immediately after the SECTION header line within the
@@ -356,7 +414,10 @@ export function findSectionAnchor(
   const sectionRe = new RegExp(`^\\s*${visibility.toUpperCase()}\\s+SECTION\\s*\\.`, 'i');
   for (let i = defBlock.sr - 1; i < Math.min(defBlock.er, lines.length); i++) {
     const stripped = lines[i]!.replace(/"[^\n]*$/, '');
-    if (sectionRe.test(stripped)) return { afterLine: i + 1 };
+    if (sectionRe.test(stripped)) {
+      assertSectionHeaderBoundary(source, i + 1, visibility);
+      return { afterLine: i + 1 };
+    }
   }
   return null;
 }
@@ -391,10 +452,83 @@ export interface MethodDiff {
  * exempts ABSTRACT METHODS, EVENTS, INTERFACES, ALIASES from the symmetry
  * check — only concrete methods that need a METHOD…ENDMETHOD block in IMPL.
  */
-export function diffMethodSets(structure: ClassStructure, newDefBlock: string): MethodDiff {
+/** Compare explicit interface body requirements without resolving inherited interface semantics. */
+function interfaceAbstractModes(
+  statements: ReturnType<typeof parseClassSourceStatements>,
+  className: string,
+): Map<string, string> {
+  const modes = new Map<string, string>();
+  let selected = false;
+  for (const statement of statements) {
+    if (statement.get() instanceof Statements.ClassDefinition)
+      selected =
+        statement.findFirstExpression(Expressions.ClassName)?.concatTokens().toUpperCase() === className.toUpperCase();
+    else if (statement.get() instanceof Statements.EndClass) selected = false;
+    else if (selected && statement.get() instanceof Statements.InterfaceDef) {
+      const name = statement.findFirstExpression(Expressions.InterfaceName)?.concatTokens().toUpperCase();
+      if (!name) continue;
+      const abstract = statement.findFirstExpression(Expressions.AbstractMethods);
+      const names = abstract
+        ?.findAllExpressions(Expressions.MethodName)
+        .map((node) => node.concatTokens().toUpperCase())
+        .sort();
+      const tail = statement
+        .getTokens()
+        .slice(2, 5)
+        .map((token) => token.getStr().toUpperCase())
+        .join(' ');
+      modes.set(name, tail === 'ALL METHODS ABSTRACT' ? '*' : (names?.join(',') ?? ''));
+    }
+  }
+  return modes;
+}
+
+export function diffMethodSets(structure: ClassStructure, newDefBlock: string, currentSource?: string): MethodDiff {
+  assertClassDefinitionReplacement(newDefBlock, structure.className);
   const oldNames = new Set(structure.methods.map((m) => m.name));
   const declared = parseDefinitionBlockDeclarations(newDefBlock);
-  const declaredNames = new Set(declared.map((d) => d.name));
+  const methodDeclarations = declared.filter((d) => !d.isEvent && !d.isInterface && !d.isAlias);
+  const declaredNames = new Set(methodDeclarations.map((d) => d.name));
+  for (const previous of structure.methods) {
+    const next = methodDeclarations.find((d) => d.name === previous.name);
+    if (next && next.isAbstract !== previous.abstract)
+      throw new AdtSafetyError(
+        `Changing ABSTRACT for ${previous.name} requires changing its implementation too. Use a complete source update.`,
+      );
+  }
+  if (currentSource !== undefined) {
+    const interfaces = new Set(declared.filter((d) => d.isInterface).map((d) => d.name));
+    const previousStatements = parseClassSourceStatements(currentSource);
+    const previousModes = interfaceAbstractModes(previousStatements, structure.className);
+    const nextModes = interfaceAbstractModes(parseClassSourceStatements(newDefBlock), structure.className);
+    const previousInterfaces = new Set(previousModes.keys());
+    const removedInterface = [...previousInterfaces].some((name) => !interfaces.has(name));
+    for (const [name, previousMode] of previousModes)
+      if (nextModes.has(name) && nextModes.get(name) !== previousMode)
+        throw new AdtSafetyError(
+          `Changing ABSTRACT METHODS for interface ${name} requires reviewing its implementations. Use a complete source update.`,
+        );
+    let selectedImplementation = false;
+    for (const statement of previousStatements) {
+      if (statement.get() instanceof Statements.ClassImplementation)
+        selectedImplementation =
+          statement.findFirstExpression(Expressions.ClassName)?.concatTokens().toUpperCase() ===
+          structure.className.toUpperCase();
+      else if (statement.get() instanceof Statements.EndClass) selectedImplementation = false;
+      else if (selectedImplementation && methodHeaderName(statement)) {
+        const method = methodHeaderName(statement)!.toUpperCase();
+        if (
+          method?.includes('~') &&
+          !declaredNames.has(method) &&
+          removedInterface &&
+          !interfaces.has(method.split('~')[0]!)
+        )
+          throw new AdtSafetyError(
+            `The new definition removes the interface declaration for existing body ${method} (orphan implementation). Keep its INTERFACES or METHODS declaration, or use a complete source update.`,
+          );
+      }
+    }
+  }
 
   const added = declared.filter((d) => !oldNames.has(d.name));
   const removed = structure.methods.filter((m) => !declaredNames.has(m.name));
@@ -403,49 +537,40 @@ export function diffMethodSets(structure: ClassStructure, newDefBlock: string): 
 
 // ─── DEFINITION-block declaration parser ──────────────────────────────
 
-/**
- * Enumerate METHODS / CLASS-METHODS / EVENTS / INTERFACES / ALIASES
- * declarations in a NEW DEFINITION block string. Returns UPPERCASE names with
- * the abstract/event/interface/alias flags.
- *
- * Implementation: regex-scan with leading-comment stripping. We deliberately
- * avoid abaplint here — the fragment is a partial CLASS DEFINITION block and
- * abaplint requires a synthetic IMPLEMENTATION shell wrapper to parse it,
- * which obscures errors and adds complexity for no benefit. The regex handles
- * single-line and multi-line METHODS clauses (REDEFINITION, ABSTRACT keyword
- * detection, multi-line IMPORTING/EXPORTING tails) reliably for issue #303's
- * symmetry-check use case. Edge cases (e.g. METHODS keyword inside a string
- * literal) cannot occur in a valid DEFINITION block — there are no executable
- * statements there.
- */
+/** Enumerate native declarations, including every member of a METHODS chain. */
 export function parseDefinitionBlockDeclarations(defBlock: string): DeclaredMethod[] {
-  return parseWithRegex(defBlock);
-}
-
-function parseWithRegex(defBlock: string): DeclaredMethod[] {
   const out: DeclaredMethod[] = [];
-  // Strip block + line comments before scanning so commented-out METHODS don't count.
-  const stripped = stripDeclarationComments(defBlock);
-  // METHODS / CLASS-METHODS <name> — multi-line clauses span until the period.
-  // We only need the NAME, so the regex looks at the start of each clause.
-  const methodRe = new RegExp(`^[ \\t]*(CLASS-METHODS|METHODS)\\s+(${METHOD_NAME})(?=\\s|\\.)([^.]*)\\.`, 'gim');
-  for (const m of stripped.matchAll(methodRe)) {
-    const name = m[2]!.toUpperCase();
-    const tail = m[3] ?? '';
-    const isAbstract = /\bABSTRACT\b/i.test(tail);
-    out.push({ name, isAbstract, isEvent: false, isInterface: false, isAlias: false });
-  }
-  const eventRe = /^[ \t]*(CLASS-EVENTS|EVENTS)\s+([A-Z_][A-Z0-9_]*)/gim;
-  for (const m of stripped.matchAll(eventRe)) {
-    out.push({ name: m[2]!.toUpperCase(), isAbstract: false, isEvent: true, isInterface: false, isAlias: false });
-  }
-  const ifaceRe = /^[ \t]*INTERFACES\s+([A-Z_][A-Z0-9_]*)/gim;
-  for (const m of stripped.matchAll(ifaceRe)) {
-    out.push({ name: m[1]!.toUpperCase(), isAbstract: false, isEvent: false, isInterface: true, isAlias: false });
-  }
-  const aliasRe = /^[ \t]*ALIASES\s+([A-Z_][A-Z0-9_]*)/gim;
-  for (const m of stripped.matchAll(aliasRe)) {
-    out.push({ name: m[1]!.toUpperCase(), isAbstract: false, isEvent: false, isInterface: false, isAlias: true });
+  for (const statement of classEditStatements(defBlock)) {
+    // The lexer also preserves namespaced method identifiers unsupported by the AST grammar.
+    // This inventory counts declarations; the mutation-boundary guard still requires a parsed declaration.
+    const methodName = new RegExp(`^(?:CLASS-METHODS|METHODS)\\s+(${METHOD_NAME})(?=\\s|\\.)`, 'i').exec(
+      statement.concatTokens(),
+    )?.[1];
+    if (statement.get() instanceof Statements.MethodDef || methodName) {
+      const name =
+        statement.findFirstExpression(Expressions.MethodName)?.concatTokens().toUpperCase() ??
+        methodName?.toUpperCase();
+      if (name)
+        out.push({
+          name,
+          isAbstract: !!statement.findFirstExpression(Expressions.Abstract),
+          isEvent: false,
+          isInterface: false,
+          isAlias: false,
+        });
+    } else {
+      const match = /^(CLASS-EVENTS|EVENTS|INTERFACES|ALIASES)\s+(\S+)/i.exec(statement.concatTokens());
+      if (match)
+        out.push({
+          name: (
+            statement.findFirstExpression(Expressions.InterfaceName)?.concatTokens() ?? match[2]!.replace(/[.,]$/, '')
+          ).toUpperCase(),
+          isAbstract: false,
+          isEvent: /EVENTS/i.test(match[1]!),
+          isInterface: match[1]!.toUpperCase() === 'INTERFACES',
+          isAlias: match[1]!.toUpperCase() === 'ALIASES',
+        });
+    }
   }
   return out;
 }

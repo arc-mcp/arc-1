@@ -5,9 +5,24 @@
  * Safety checks are applied at every entry point.
  */
 
+import { CTS_ACCEPT_TREE, CTS_CONTENT_TYPE_ORGANIZER, CTS_NAMESPACE_TM } from './transport-contract.js';
+
+export { CTS_ACCEPT_TREE, CTS_CONTENT_TYPE_ORGANIZER, CTS_NAMESPACE_TM } from './transport-contract.js';
+
+import { CTS_TERMINAL_RELEASE_STATUSES as TERMINAL_RELEASE_STATUSES } from './transport-contract.js';
+import { parseTransportNodeStates } from './transport-release-state.js';
+
+export { parseTransportNodeStates } from './transport-release-state.js';
+
 import { postCreate } from './create-request.js';
 import { AdtApiError, AdtNetworkError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
+import {
+  assertPinnedTransportDocument,
+  assertPinnedTransportTasks,
+  checkRecursiveTransportReleaseScope,
+  pinnedTransportRequestPolicy,
+} from './pinned-transport-scope.js';
 import { checkOperation, checkTransport, OperationType, type SafetyConfig } from './safety.js';
 import { parseTransportLocks } from './transport-locks.js';
 import type {
@@ -21,6 +36,8 @@ import type {
   TransportTask,
 } from './types.js';
 import { escapeXmlAttr, findDeepNodes, parseNamedItems, parseXml } from './xml-parser.js';
+
+export { checkRecursiveTransportReleaseScope } from './pinned-transport-scope.js';
 
 /**
  * Filter inactive objects (from `getInactiveObjects()`) down to those that belong to transport
@@ -42,21 +59,11 @@ export function inactiveObjectsForTransport(objects: InactiveObject[], transport
 
 // ─── CTS Media Types & Namespaces ──────────────────────────────────
 
-/** Accept header for tree-structured responses (list/get transport) */
-export const CTS_ACCEPT_TREE = 'application/vnd.sap.adt.transportorganizertree.v1+xml';
-
-/** Content-Type / Accept for organizer write operations (create transport) */
-export const CTS_CONTENT_TYPE_ORGANIZER = 'application/vnd.sap.adt.transportorganizer.v1+xml';
-
-/** XML namespace for CTS ADT transport manager payloads */
-export const CTS_NAMESPACE_TM = 'http://www.sap.com/cts/adt/tm';
-
 export const DEFAULT_RELEASE_TIMEOUT_MS = 300_000;
 const DEFAULT_RELEASE_INITIAL_DELAY_MS = 250;
 const DEFAULT_RELEASE_MAX_DELAY_MS = 2_000;
 const MODIFIABLE_RELEASE_STATUSES = new Set(['D', 'L']);
 const IN_FLIGHT_RELEASE_STATUSES = new Set(['O', 'P']);
-const TERMINAL_RELEASE_STATUSES = new Set(['R', 'N']);
 
 function isKnownReleaseStatus(status: string): boolean {
   return (
@@ -86,6 +93,8 @@ export interface TransportReleaseSubmission {
   reports: TransportReleaseReport[];
   /** A submission can have committed remotely even when its HTTP response failed; retain that uncertainty. */
   error?: string;
+  /** Definitive local admission failure before the release POST was invoked. Pinned only. */
+  notSubmitted?: true;
 }
 
 /**
@@ -225,7 +234,7 @@ export async function createTransport(
   objectUrl?: string,
   transportLayer?: string,
 ): Promise<string> {
-  checkTransport(safety, '', 'CreateTransport', true);
+  checkTransport(safety, '', 'CreateTransport', true, http);
 
   const devclass = targetPackage?.trim() ? targetPackage : '$TMP';
   const refXml = objectUrl ? `<REF>${escapeXmlAttr(objectUrl)}</REF>` : '<REF/>';
@@ -288,7 +297,7 @@ export async function createTransportWithTarget(
   target: string,
   owner?: string,
 ): Promise<string> {
-  checkTransport(safety, '', 'CreateTransport', true);
+  checkTransport(safety, '', 'CreateTransport', true, http);
 
   const ownerAttr = owner ? ` tm:owner="${escapeXmlAttr(owner)}"` : '';
   const body = `<?xml version="1.0" encoding="UTF-8"?>
@@ -428,6 +437,8 @@ export function failedReleaseReports(reports: TransportReleaseReport[]): Transpo
   return reports.filter((r) => r.status !== '' && !r.released);
 }
 
+const releaseAdmissionFailures = new WeakSet<Error>();
+
 /** Release a transport request; returns the parsed release check report(s) (`[]` if none/unparseable). */
 export async function releaseTransport(
   http: AdtHttpClient,
@@ -435,7 +446,12 @@ export async function releaseTransport(
   transportId: string,
   requestOptions?: AdtRequestOptions,
 ): Promise<TransportReleaseReport[]> {
-  checkTransport(safety, transportId, 'ReleaseTransport', true);
+  try {
+    checkTransport(safety, transportId, 'ReleaseTransport', true, http);
+  } catch (error) {
+    if (safety.multiTargetWrite && error instanceof Error) releaseAdmissionFailures.add(error);
+    throw error;
+  }
 
   const resp = await http.post(
     `/sap/bc/adt/cts/transportrequests/${encodeURIComponent(transportId)}/newreleasejobs`,
@@ -445,74 +461,6 @@ export async function releaseTransport(
     requestOptions,
   );
   return parseReleaseReports(resp.body);
-}
-
-/** Collect every node with a local XML name, rather than stopping at the first matching branch. */
-function collectAllNamedNodes(value: unknown, name: string, output: Record<string, unknown>[] = []) {
-  if (!value || typeof value !== 'object') return output;
-  if (Array.isArray(value)) {
-    for (const entry of value) collectAllNamedNodes(entry, name, output);
-    return output;
-  }
-
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    if (key === name) {
-      const candidates = Array.isArray(child) ? child : [child];
-      for (const candidate of candidates) {
-        if (candidate && typeof candidate === 'object') output.push(candidate as Record<string, unknown>);
-      }
-    }
-    collectAllNamedNodes(child, name, output);
-  }
-  return output;
-}
-
-/**
- * Flatten a transport-organizer document into request/task state rows.
- *
- * Unlike `parseTransportList`, this deliberately supports a standalone `<tm:task>` response and a
- * task lookup whose response contains the parent request tree. That makes it safe to verify either
- * kind of id after `newreleasejobs`.
- */
-export function parseTransportNodeStates(xml: string): TransportReleaseNodeState[] {
-  const parsed = parseXml(xml);
-  const states = new Map<string, TransportReleaseNodeState>();
-
-  const parentIdFrom = (value: unknown): string => {
-    const raw = String(value ?? '')
-      .trim()
-      .replace(/\/+$/, '');
-    return raw.slice(raw.lastIndexOf('/') + 1);
-  };
-
-  const add = (node: Record<string, unknown>, kind: 'request' | 'task', structuralParent?: string) => {
-    const id = String(node['@_number'] ?? '').trim();
-    if (!id) return;
-    const key = id.toUpperCase();
-    const status = String(node['@_status'] ?? '').toUpperCase();
-    const parentId = parentIdFrom(structuralParent ?? node['@_parent']);
-    const previous = states.get(key);
-    states.set(key, {
-      id,
-      kind,
-      ...(parentId ? { parentId } : previous?.parentId ? { parentId: previous.parentId } : {}),
-      initialStatus: status || previous?.initialStatus || '',
-      lastStatus: status || previous?.lastStatus || '',
-      confirmedReleased: TERMINAL_RELEASE_STATUSES.has(status || previous?.lastStatus || ''),
-      ...(TERMINAL_RELEASE_STATUSES.has(status || previous?.lastStatus || '')
-        ? { confirmation: 'observed_terminal' as const }
-        : {}),
-    });
-  };
-
-  for (const request of collectAllNamedNodes(parsed, 'request')) {
-    const requestId = String(request['@_number'] ?? '').trim();
-    add(request, 'request');
-    for (const task of collectAllNamedNodes(request, 'task')) add(task, 'task', requestId);
-  }
-
-  for (const task of collectAllNamedNodes(parsed, 'task')) add(task, 'task');
-  return [...states.values()];
 }
 
 async function readTransportNodeStates(
@@ -543,20 +491,6 @@ function releaseErrorText(err: unknown): string {
 
   const message = err instanceof Error ? err.message : String(err);
   return message.length <= 300 ? message : `${message.slice(0, 300)}…`;
-}
-
-/** Fail closed when the transport allowlist cannot authorize a concurrently changing CTS subtree. */
-export function checkRecursiveTransportReleaseScope(safety: SafetyConfig): void {
-  const explicitlyUnrestricted =
-    safety.allowedTransports.length === 0 || safety.allowedTransports.some((entry) => entry.trim() === '*');
-  if (explicitlyUnrestricted) return;
-
-  throw new AdtSafetyError(
-    'Recursive transport release is blocked by a restrictive allowedTransports policy. ' +
-      'SAP can fold a child task attached concurrently into the parent release, so exact/prefix allowlists ' +
-      'cannot authorize the complete live subtree atomically. Use an empty legacy allowlist or explicit "*" ' +
-      'only when every current and concurrently attached child of the request is authorized.',
-  );
 }
 
 const isTerminalReleaseReadError = (err: unknown) =>
@@ -669,7 +603,11 @@ async function prepareTransportRelease(
       ? discovered.filter((node) => node.kind === 'task' && transportIdsEqual(node.parentId, transportId))
       : []),
   ].map((node) => ({ ...node }));
-  for (const node of intended) checkTransport(safety, node.id, operation, true);
+  for (const node of intended) {
+    const memberOperation =
+      safety.multiTargetWrite && recursive && node.kind === 'task' ? 'ReleaseTransport' : operation;
+    checkTransport(safety, node.id, memberOperation, true, http);
+  }
   const unknown = intended.filter((node) => !isKnownReleaseStatus(node.lastStatus));
   if (unknown.length > 0) {
     const detail = `CTS returned an unknown initial status for: ${unknown
@@ -695,8 +633,21 @@ async function releaseTransportWithConvergence(
   options: TransportReleaseWaitOptions,
 ): Promise<TransportReleaseResult> {
   const operation = recursive ? 'ReleaseTransportRecursive' : 'ReleaseTransport';
-  checkTransport(safety, transportId, operation, true);
+  checkTransport(safety, transportId, operation, true, http);
   if (recursive) checkRecursiveTransportReleaseScope(safety);
+
+  if (safety.multiTargetWrite) {
+    const policy = pinnedTransportRequestPolicy(safety, http);
+    if (options.deadline !== undefined && !Number.isFinite(options.deadline))
+      throw new AdtSafetyError('Invalid pinned CTS convergence deadline.');
+    const signals = [policy.signal, options.signal].filter((signal): signal is AbortSignal => !!signal);
+    options = {
+      ...options,
+      now: Date.now,
+      deadline: Math.min(policy.deadline, options.deadline ?? Infinity),
+      signal: signals.length > 1 ? AbortSignal.any(signals) : signals[0],
+    };
+  }
 
   const now = options.now ?? Date.now;
   const startedAt = now();
@@ -773,6 +724,8 @@ async function releaseTransportWithConvergence(
 
   const submissionFailureDetail = (): string | undefined => {
     const failed = submissions.filter((submission) => submission.error);
+    if (failed.length > 0 && failed.every((submission) => submission.notSubmitted))
+      return `Release admission refused before submission for ${failed.map((submission) => submission.id).join(', ')}.`;
     return failed.length === 0
       ? undefined
       : `Release submission returned an error for ${failed
@@ -803,7 +756,12 @@ async function releaseTransportWithConvergence(
       const reports = await releaseTransport(http, safety, node.id, requestOptions);
       submissions.push({ id: node.id, reports });
     } catch (err) {
-      submissions.push({ id: node.id, reports: [], error: releaseErrorText(err) });
+      submissions.push({
+        id: node.id,
+        reports: [],
+        error: releaseErrorText(err),
+        ...(err instanceof Error && releaseAdmissionFailures.has(err) ? { notSubmitted: true as const } : {}),
+      });
     }
   };
 
@@ -1023,6 +981,20 @@ async function removeTransportObject(http: AdtHttpClient, taskId: string, obj: T
   });
 }
 
+/** Pinned recursive operations validate every native member before parsing operation-specific fields. */
+async function getTransportForMutation(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  id: string,
+  operation: string,
+): Promise<TransportRequest | null> {
+  if (!safety.multiTargetWrite) return getTransport(http, safety, id);
+  const url = `/sap/bc/adt/cts/transportrequests/${encodeURIComponent(id)}`;
+  const response = await http.get(url, { Accept: CTS_CONTENT_TYPE_ORGANIZER });
+  assertPinnedTransportDocument(safety, http, id, response.body, operation);
+  return parseTransportList(response.body, url).find((request) => request.id === id) ?? null;
+}
+
 /**
  * Delete a transport request.
  *
@@ -1039,21 +1011,41 @@ export async function deleteTransport(
   recursive = false,
   removeLockedObjects = false,
 ): Promise<void> {
-  checkTransport(safety, transportId, 'DeleteTransport', true);
+  checkTransport(safety, transportId, 'DeleteTransport', true, http);
 
   if (recursive || removeLockedObjects) {
-    const transport = await getTransport(http, safety, transportId);
+    const transport = await getTransportForMutation(
+      http,
+      safety,
+      transportId,
+      recursive ? 'DeleteTransport' : 'DeleteTransportObject',
+    );
+    if (safety.multiTargetWrite && !transport)
+      throw new AdtSafetyError('CTS second read did not establish task membership.');
     if (transport) {
+      assertPinnedTransportTasks(
+        safety,
+        http,
+        transportId,
+        transport.tasks,
+        recursive ? 'DeleteTransport' : 'DeleteTransportObject',
+      );
       for (const task of transport.tasks) {
         if (task.status === 'R') continue;
         if (removeLockedObjects) {
           for (const obj of task.objects.filter((o) => o.locked)) {
-            checkTransport(safety, task.id, 'RemoveTransportObject', true);
+            checkTransport(
+              safety,
+              task.id,
+              safety.multiTargetWrite ? 'DeleteTransportObject' : 'RemoveTransportObject',
+              true,
+              http,
+            );
             await removeTransportObject(http, task.id, obj);
           }
         }
         if (recursive) {
-          checkTransport(safety, task.id, 'DeleteTransport', true);
+          checkTransport(safety, task.id, 'DeleteTransport', true, http);
           await http.delete(`/sap/bc/adt/cts/transportrequests/${encodeURIComponent(task.id)}`);
         }
       }
@@ -1083,7 +1075,7 @@ export async function removeObjectFromTransport(
   type: string,
   name: string,
 ): Promise<{ taskId: string; object: TransportObject }> {
-  checkTransport(safety, transportId, 'RemoveTransportObject', true);
+  checkTransport(safety, transportId, 'RemoveTransportObject', true, http);
 
   const transport = await getTransport(http, safety, transportId);
   if (!transport) {
@@ -1100,7 +1092,7 @@ export async function removeObjectFromTransport(
         o.pgmid.toUpperCase() === wantPgmid && o.type.toUpperCase() === wantType && o.name.toUpperCase() === wantName,
     );
     if (match) {
-      checkTransport(safety, task.id, 'RemoveTransportObject', true);
+      checkTransport(safety, task.id, 'RemoveTransportObject', true, http);
       await removeTransportObject(http, task.id, match);
       return { taskId: task.id, object: match };
     }
@@ -1119,14 +1111,17 @@ export async function reassignTransport(
   newOwner: string,
   recursive = false,
 ): Promise<void> {
-  checkTransport(safety, transportId, 'ReassignTransport', true);
+  checkTransport(safety, transportId, 'ReassignTransport', true, http);
 
   if (recursive) {
-    const transport = await getTransport(http, safety, transportId);
+    const transport = await getTransportForMutation(http, safety, transportId, 'ReassignTransport');
+    if (safety.multiTargetWrite && !transport)
+      throw new AdtSafetyError('CTS second read did not establish task membership.');
     if (transport) {
+      assertPinnedTransportTasks(safety, http, transportId, transport.tasks, 'ReassignTransport');
       for (const task of transport.tasks) {
         if (task.status !== 'R') {
-          checkTransport(safety, task.id, 'ReassignTransport', true);
+          checkTransport(safety, task.id, 'ReassignTransport', true, http);
           await reassignSingle(http, task.id, newOwner);
         }
       }

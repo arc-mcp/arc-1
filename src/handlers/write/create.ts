@@ -21,10 +21,12 @@ import { activate, activateBatch } from '../../adt/devtools.js';
 import { badiContainerXml, hasBadiImplementations } from '../../adt/enhancement-impl.js';
 import { AdtApiError, type AdtError, AdtSafetyError } from '../../adt/errors.js';
 import { type FmParameter, findFmHeader, spliceFmSignature } from '../../adt/fm-signature.js';
+import { mutationResponsible } from '../../adt/mutation-client.js';
+import { pinnedFunctionSelection, readPinnedFunctionOwner } from '../../adt/pinned-function-owner.js';
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
 import { isServerDrivenObjectType } from '../../adt/server-driven.js';
 import { getTransport } from '../../adt/transport.js';
-import { escapeXmlAttr, parseFunctionModuleProperties } from '../../adt/xml-parser.js';
+import { escapeXmlAttr } from '../../adt/xml-parser.js';
 import { validateAffHeader } from '../../aff/validator.js';
 import { activationDetailMatchesObject } from '../activation-results.js';
 import { guardCdsSyntax } from '../cds-hints.js';
@@ -77,9 +79,15 @@ import {
 } from './batch-results.js';
 import type { SapWriteContext } from './context.js';
 import { resolveCreateTransport } from './create-transport.js';
+import {
+  createRepositoryObject,
+  prepareCreationRecording,
+  saveCreatedSource,
+  verifyCreatedSource,
+} from './creation.js';
+import { persistFunctionModuleProcessingMetadata } from './function-create-metadata.js';
+import { pinnedSourceState } from './pinned-source-context.js';
 import { postCreateError } from './post-create-error.js';
-
-const FUNCTION_MODULE_MEDIA_TYPE = /^application\/vnd\.sap\.adt\.functions\.fmodules(?:\.v\d+)?\+xml\b/i;
 
 function normalizePackageOverride(rawPackage: unknown, fallback: string): string {
   if (rawPackage === undefined || rawPackage === null) {
@@ -136,40 +144,6 @@ function prepareFunctionModuleCreateSource(
   return { shouldWrite: true, source: stripped.source, warnings };
 }
 
-function getHeader(headers: Record<string, string>, name: string): string | undefined {
-  return Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
-}
-
-/**
- * Change only the processing attributes on the server-provided FUNC metadata
- * envelope. SAP creates a normal function-module shell first; processing type
- * is persisted by a subsequent locked metadata PUT (the same lifecycle used by
- * the ADT Properties → Specific view).
- */
-function rewriteFunctionModuleProcessingMetadata(
-  xml: string,
-  processingType: FunctionProcessingType,
-  updateTaskKind?: FunctionUpdateTaskKind,
-): string {
-  const rootMatch = /<fmodule:abapFunctionModule\b[^>]*>/i.exec(xml);
-  if (!rootMatch || rootMatch.index === undefined) {
-    throw new Error('FUNC processing metadata update failed: SAP did not return an abapFunctionModule envelope.');
-  }
-
-  const withoutProcessingAttributes = rootMatch[0]
-    .replace(/\s+fmodule:processingType\s*=\s*(?:"[^"]*"|'[^']*')/gi, '')
-    .replace(/\s+fmodule:updateTaskKind\s*=\s*(?:"[^"]*"|'[^']*')/gi, '');
-  const attributes = ` fmodule:processingType="${escapeXmlAttr(processingType)}"${
-    updateTaskKind === undefined ? '' : ` fmodule:updateTaskKind="${escapeXmlAttr(updateTaskKind)}"`
-  }`;
-  const rewrittenRoot = withoutProcessingAttributes.replace(
-    /<fmodule:abapFunctionModule/i,
-    (root) => `${root}${attributes}`,
-  );
-
-  return `${xml.slice(0, rootMatch.index)}${rewrittenRoot}${xml.slice(rootMatch.index + rootMatch[0].length)}`;
-}
-
 /** A confirmed create is not undone by a later write, verification, or unlock failure. */
 function functionModuleCreateError(
   ctx: SapWriteContext,
@@ -189,62 +163,17 @@ function functionModuleCreateError(
   return postCreateError(ctx, cause, 'FUNC', object.name, hint);
 }
 
-async function persistFunctionModuleProcessingMetadata(
-  client: SapWriteContext['client'],
-  objectUrl: string,
-  processingType: FunctionProcessingType,
-  updateTaskKind: FunctionUpdateTaskKind | undefined,
-  transport: string | undefined,
-): Promise<void> {
-  const inactiveUrl = `${objectUrl}?version=inactive`;
-  const current = await client.getObjectMetadata(inactiveUrl);
-  const body = rewriteFunctionModuleProcessingMetadata(current.body, processingType, updateTaskKind);
-  // Send the bare media type: SAP returns "…fmodules.v3+xml; charset=utf-8"
-  // (v2 on 750), and on-prem backends are known to reject vendor media types
-  // carrying parameters — same reason `resolveObjectPackage` strips them.
-  const responseContentType = getHeader(current.headers, 'content-type');
-  const discoveredContentType = client.http.discoveryAcceptFor(objectUrl);
-  const contentType =
-    [responseContentType, discoveredContentType]
-      .find((candidate): candidate is string => candidate !== undefined && FUNCTION_MODULE_MEDIA_TYPE.test(candidate))
-      ?.split(';')[0]
-      ?.trim() ?? vendorContentTypeForType('FUNC');
-
-  await safeUpdateObject(
-    client.http,
-    client.safety,
-    objectUrl,
-    body,
-    contentType,
-    transport,
-    getCachedFeatures()?.abapRelease,
-  );
-
-  // A 2xx response alone is insufficient evidence: the collection POST accepts
-  // these attributes and still retains `normal` (live-verified on 758).
-  const persisted = await client.getObjectMetadata(inactiveUrl);
-  const { processingType: actualProcessingType, updateTaskKind: actualUpdateTaskKind } = parseFunctionModuleProperties(
-    persisted.body,
-  );
-  if (
-    actualProcessingType !== processingType ||
-    (updateTaskKind === undefined ? actualUpdateTaskKind !== undefined : actualUpdateTaskKind !== updateTaskKind)
-  ) {
-    throw new Error(
-      `SAP retained processingType="${actualProcessingType ?? 'unknown'}"${
-        actualUpdateTaskKind === undefined ? '' : ` and updateTaskKind="${actualUpdateTaskKind}"`
-      }.`,
-    );
-  }
-}
-
 async function resolveFunctionGroupCreatePackage(
-  client: SapWriteContext['client'],
+  ctx: SapWriteContext,
   group: string,
   requestedPackage: unknown,
   childType: 'FUNC' | 'INCL' = 'FUNC',
 ): Promise<string> {
-  const actualPackage = await client.resolveObjectPackage(functionGroupObjectUrl(group));
+  if (ctx.mutationContext.mode === 'pinned-pp') pinnedSourceState(ctx).phase = 'package-preflight';
+  const actualPackage =
+    ctx.mutationContext.mode === 'pinned-pp'
+      ? (await readPinnedFunctionOwner(ctx.client, pinnedFunctionSelection('FUGR', group).objectUrl))?.packageName
+      : await ctx.client.resolveObjectPackage(functionGroupObjectUrl(group));
   if (!actualPackage) {
     throw new Error(
       `${childType} create blocked: ARC-1 could not determine the parent function group "${group}" package from ADT metadata.`,
@@ -514,11 +443,9 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     name,
     source,
     hasSource,
-    transport,
     lintOverride,
     preflightOverride,
     objectUrl,
-    srcUrl,
     invalidateWrittenObject,
   } = ctx;
   // Discovery gate before any SAP call (the TTYP/DOMA gates live in write.ts, which is at its size budget).
@@ -530,17 +457,14 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   const groupArg = String(args.group ?? '').trim();
   const inheritsGroupPackage = type === 'FUNC' || (type === 'INCL' && groupArg !== '');
   const pkg = inheritsGroupPackage
-    ? await resolveFunctionGroupCreatePackage(client, groupArg, args.package, type === 'INCL' ? 'INCL' : 'FUNC')
+    ? await resolveFunctionGroupCreatePackage(ctx, groupArg, args.package, type === 'INCL' ? 'INCL' : 'FUNC')
     : String(args.package ?? '$TMP');
   await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
   const description = String(args.description ?? name);
 
-  let effectiveTransport = transport;
-  if (!transport) {
-    const resolved = await resolveCreateTransport(client, objectUrl, pkg, config.minimalErrors);
-    if (resolved.error) return errorResult(resolved.error);
-    effectiveTransport = resolved.transport;
-  }
+  const resolved = await prepareCreationRecording(ctx, pkg);
+  if (resolved.error) return errorResult(resolved.error);
+  const effectiveTransport = resolved.transport;
 
   // MSAG transport-vs-task guard. Some SAP releases silently drop message inserts when
   // given a task number as corrNr — CL_ADT_MESSAGE_CLASS_API=>create() passes corrNr to
@@ -709,7 +633,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   // BTP/Steampunk needs cloud-correct create XML (G-3) and a real responsible user (G-5).
   const systemType = resolveWriteSystemType(config, client);
   const cloud = systemType === 'btp';
-  const responsible = config.username || (await client.getEffectiveUser());
+  const responsible = await mutationResponsible(client, config.username);
   if (type === 'ENHO') await prepareEnhoCreateProperties(client, metadataProperties, name);
   const body = buildCreateXml(type, name, pkg, description, metadataProperties, config.language, responsible, cloud);
 
@@ -722,20 +646,20 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   const needsPackageParam = type === 'BDEF' || type === 'TABL' || type === 'TABL/DT' || type === 'TABL/DS';
   let result: string;
   try {
-    result = await createObject(
-      client.http,
-      client.safety,
-      createUrl,
-      type === 'ENHO' ? badiContainerXml(body) : body,
+    result = await createRepositoryObject(ctx, {
+      url: createUrl,
+      body: type === 'ENHO' ? badiContainerXml(body) : body,
       contentType,
-      effectiveTransport,
-      needsPackageParam ? pkg : undefined,
-      getCachedFeatures()?.abapRelease,
+      transport: effectiveTransport,
+      packageName: needsPackageParam ? pkg : undefined,
       systemType,
-      name,
-    );
+    });
   } catch (createErr) {
-    if (createErr instanceof AdtApiError && (createErr.statusCode === 400 || createErr.statusCode === 409)) {
+    if (
+      ctx.mutationContext.mode === 'single-target' &&
+      createErr instanceof AdtApiError &&
+      (createErr.statusCode === 400 || createErr.statusCode === 409)
+    ) {
       const syntaxDetail = await tryPostSaveSyntaxCheck(client, type, name);
       if (syntaxDetail) {
         createErr.message += syntaxDetail;
@@ -760,7 +684,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   if (type === 'FUNC' && metadataProperties.processingType !== undefined) {
     try {
       await persistFunctionModuleProcessingMetadata(
-        client,
+        ctx,
         objectUrl,
         metadataProperties.processingType as FunctionProcessingType,
         metadataProperties.updateTaskKind as FunctionUpdateTaskKind | undefined,
@@ -856,14 +780,11 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     const createSource = funcPreparation.source;
 
     try {
-      await safeUpdateSource(
-        client.http,
-        client.safety,
-        objectUrl,
-        srcUrl,
+      await saveCreatedSource(
+        ctx,
         createSource,
         effectiveTransport,
-        getCachedFeatures()?.abapRelease,
+        mergePreWriteWarnings(preflightWarnings.warnings, lintWarnings.warnings, ...funcPreparation.warnings),
       );
     } catch (cause) {
       if (type === 'FUNC') throw functionModuleCreateError(ctx, cause, 'source');
@@ -883,6 +804,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     return warnings ? textResult(`${msg}\n\n${warnings}`) : textResult(msg);
   }
 
+  await verifyCreatedSource(ctx);
   return textResult(`Created ${type} ${name} in package ${pkg}.\n${result}`);
 }
 
@@ -1022,7 +944,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
   for (const plan of batchPlan) {
     try {
       if (plan.type === 'FUNC') {
-        plan.packageName = await resolveFunctionGroupCreatePackage(client, plan.group!, plan.obj.package);
+        plan.packageName = await resolveFunctionGroupCreatePackage(ctx, plan.group!, plan.obj.package);
         plan.result.packageName = plan.packageName;
       }
       await checkPackage(client.safety, plan.packageName, client.getPackageHierarchyResolver());
@@ -1048,7 +970,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
 
   const systemType = resolveWriteSystemType(config, client);
   const cloud = systemType === 'btp';
-  const responsible = config.username || (await client.getEffectiveUser());
+  const responsible = await mutationResponsible(client, config.username);
   const transportLookupCache = new Map<string, Awaited<ReturnType<typeof getTransport>>>();
   for (const plan of batchPlan) {
     try {
@@ -1129,7 +1051,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       if (plan.type === 'FUNC' && plan.metadata.processingType !== undefined) {
         try {
           await persistFunctionModuleProcessingMetadata(
-            client,
+            ctx,
             plan.objectUrl,
             plan.metadata.processingType as FunctionProcessingType,
             plan.metadata.updateTaskKind as FunctionUpdateTaskKind | undefined,

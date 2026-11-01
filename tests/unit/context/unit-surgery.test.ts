@@ -40,6 +40,28 @@ describe('procedural ABAP unit surgery', () => {
     }
   });
 
+  it.each([
+    ['REPORT zunit_surgery. FORM selected.\nENDFORM.', 'FORM selected.\nENDFORM.'],
+    ['FORM selected.\nENDFORM. FORM neighbor.\nENDFORM.', 'FORM selected.\nENDFORM.'],
+    ['MODULE selected OUTPUT.\nENDMODULE. MODULE neighbor OUTPUT.\nENDMODULE.', 'MODULE selected OUTPUT.\nENDMODULE.'],
+  ])('refuses replacing a unit that shares a boundary line with a neighbor (%s)', (source, replacement) => {
+    const result = spliceUnit(source, 'ZUNIT_SURGERY', 'selected', replacement);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('shares a boundary line');
+    expect(result.newSource).toBe('');
+  });
+
+  it('keeps standalone inline units and trailing comments editable', () => {
+    const result = spliceUnit(
+      'FORM selected. ENDFORM. " selected comment\nFORM neighbor. ENDFORM.',
+      'ZUNIT_SURGERY',
+      'selected',
+      'FORM selected.\nENDFORM.',
+    );
+    expect(result.success).toBe(true);
+    expect(result.newSource).toBe('FORM selected.\nENDFORM.\nFORM neighbor. ENDFORM.');
+  });
+
   it('replaces one FORM and leaves sibling units unchanged', () => {
     const result = spliceUnit(
       PROGRAM,
@@ -107,7 +129,7 @@ ENDMODULE.`,
 
     const missingEnd = spliceUnit(PROGRAM, 'ZUNIT_SURGERY', 'beta', "FORM beta.\n  WRITE 'new'.");
     expect(missingEnd.success).toBe(false);
-    expect(missingEnd.error).toContain('must end with ENDFORM');
+    expect(missingEnd.error).toContain('incomplete ABAP structure');
   });
 
   it('rejects replacement payloads containing an additional procedural block', () => {
@@ -164,4 +186,21 @@ describe('insertUnit', () => {
     expect(result.newSource).toBe('');
     expect(result.error).toBeTruthy();
   });
+});
+
+it.each(['FORM', 'MODULE'] as const)('rejects statements hidden after an END%s terminator', (kind) => {
+  const opening = `${kind} selected${kind === 'MODULE' ? ' OUTPUT' : ''}.`;
+  const original = `${opening}\nEND${kind}.`;
+  for (const tail of [
+    `PERFORM foreign. " END${kind}.`,
+    `DATA end${kind.toLowerCase()}.`,
+    `CLASS lcl_x DEFINITION. ENDCLASS. " END${kind}.`,
+  ]) {
+    const payload = `${opening}\nEND${kind}. ${tail}`;
+    expect(spliceUnit(original, 'ZOWNER', 'selected', payload).success).toBe(false);
+    expect(insertUnit('REPORT zowner.', 'ZOWNER', 'selected', payload).success).toBe(false);
+  }
+  const commented = `${opening}\nEND${kind}. " trailing comment`;
+  expect(spliceUnit(original, 'ZOWNER', 'selected', commented).success).toBe(true);
+  expect(insertUnit('REPORT zowner.', 'ZOWNER', 'selected', commented).success).toBe(true);
 });

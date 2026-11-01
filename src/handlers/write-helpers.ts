@@ -951,7 +951,7 @@ export async function enforceAllowedPackageForObjectUrl(
         `(no adtcore:packageRef/containerRef). Fail-closed: cannot authorize this operation without a verified package.${hint}`,
     );
   }
-  await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
+  await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver(options));
   return pkg;
 }
 

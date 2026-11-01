@@ -10,16 +10,17 @@
 
 import {
   diffMethodSets,
+  ensureClauseTerminator,
   extractMethodNameFromClause,
   findSectionAnchor,
   insertMethodPair,
   isMethodRedefinition,
   moveMethodDefinition,
+  parseDefinitionBlockDeclarations,
   removeMethodPair,
   spliceClassDefinition,
   spliceMethodSignature,
 } from '../../adt/class-structure.js';
-import { safeUpdateClassInclude } from '../../adt/crud.js';
 import { isNotFoundError } from '../../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
 import { spliceMethod } from '../../context/method-surgery.js';
@@ -33,6 +34,7 @@ import {
 import { errorResult, type ToolResult, textResult } from '../shared.js';
 import { runPreWriteLint, runPreWriteSyntaxCheck } from '../write-helpers.js';
 import { withClassEdit } from './class-edit.js';
+import { replaceClassInclude } from './class-include.js';
 import type { SapWriteContext } from './context.js';
 
 export async function writeActionEditMethod(ctx: SapWriteContext): Promise<ToolResult> {
@@ -75,7 +77,11 @@ export async function writeActionEditMethod(ctx: SapWriteContext): Promise<ToolR
   const resolvedInclude: ClassWriteInclude | undefined = include ?? detectedInclude;
 
   return withClassEdit(ctx, async (edit) => {
-    const writeUrl = resolvedInclude ? classIncludeUrl(name, resolvedInclude) : srcUrl;
+    const writeUrl = resolvedInclude
+      ? ctx.mutationContext.mode === 'pinned-pp'
+        ? `${objectUrl}/includes/${resolvedInclude}`
+        : classIncludeUrl(name, resolvedInclude)
+      : srcUrl;
     let currentSource: string;
     try {
       currentSource = await edit.read(writeUrl);
@@ -128,17 +134,16 @@ export async function writeActionEditMethod(ctx: SapWriteContext): Promise<ToolR
       );
     }
 
-    await edit.save(writeUrl, spliced.newSource);
+    const extras = [lintWarnings.warnings, checkNotes].filter(Boolean).join('\n\n');
+    await edit.save(writeUrl, spliced.newSource, extras);
     const where = resolvedInclude ? ` (include: ${resolvedInclude})` : '';
     const msg = `Successfully updated method "${method}" in ${type} ${name}${where}.`;
-    const extras = [lintWarnings.warnings, checkNotes].filter(Boolean).join('\n\n');
     return extras ? textResult(`${msg}\n\n${extras}`) : textResult(msg);
   });
 }
 
 export async function writeActionEditClassDefinition(ctx: SapWriteContext): Promise<ToolResult> {
   const {
-    client,
     args,
     config,
     type,
@@ -147,9 +152,7 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
     hasSource,
     include,
     includeProvided,
-    transport,
     lintOverride,
-    objectUrl,
     srcUrl,
     invalidateWrittenObject,
     enforcePackageForExistingObject,
@@ -166,16 +169,7 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
   if (include) {
     // Whole include replacement has no read/modify race; retain missing-include initialization.
     const spliced = source.endsWith('\n') ? source : `${source}\n`;
-    const initialized = await safeUpdateClassInclude(
-      client.http,
-      client.safety,
-      objectUrl,
-      classIncludeUrl(name, include),
-      spliced,
-      transport,
-      getCachedFeatures()?.abapRelease,
-      args.expectedSourceHash as string | undefined,
-    );
+    const initialized = await replaceClassInclude(ctx, spliced);
     invalidateWrittenObject(type, name);
     const initNote = initialized.initialized ? ` Initialised the ${include} include first.` : '';
     return textResult(
@@ -185,7 +179,7 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
   return withClassEdit(ctx, async (edit) => {
     const { structure, main } = await edit.readMainAndStructure();
     // Refuse-policy: compute the method-set diff against the NEW DEFINITION.
-    const diff = diffMethodSets(structure, source);
+    const diff = diffMethodSets(structure, source, main);
     const missingImpls: string[] = [];
     const orphanImpls: string[] = [];
     for (const add of diff.added) {
@@ -205,12 +199,12 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
       const parts: string[] = [];
       if (missingImpls.length > 0) {
         parts.push(
-          `Cannot apply edit_class_definition: the new DEFINITION declares method(s) ${missingImpls.join(', ')} but the existing IMPLEMENTATION block has no matching METHOD…ENDMETHOD body. Either include a METHOD <name>. ENDMETHOD. block per added method in your new source, or use SAPWrite(action="add_method", name="${name}", method="<METHODS clause>") to insert each one atomically.`,
+          `Cannot apply edit_class_definition: the new DEFINITION declares method(s) ${missingImpls.join(', ')} but the existing IMPLEMENTATION block has no matching METHOD…ENDMETHOD body. Use a complete source update to change both blocks, or use SAPWrite(action="add_method", name="${name}", method="<METHODS clause>") to insert each one atomically.`,
         );
       }
       if (orphanImpls.length > 0) {
         parts.push(
-          `Cannot apply edit_class_definition: the new DEFINITION removes method(s) ${orphanImpls.join(', ')} but the existing IMPLEMENTATION block still has METHOD…ENDMETHOD bodies for them (orphan implementation). Either remove those METHOD blocks in your edit, or use SAPWrite(action="delete_method", name="${name}", method="<name>") to drop each one atomically.`,
+          `Cannot apply edit_class_definition: the new DEFINITION removes method(s) ${orphanImpls.join(', ')} but the existing IMPLEMENTATION block still has METHOD…ENDMETHOD bodies for them (orphan implementation). Use a complete source update to remove both declarations and bodies, or use SAPWrite(action="delete_method", name="${name}", method="<name>") to drop each one atomically.`,
         );
       }
       return errorResult(parts.join('\n\n'));
@@ -218,7 +212,7 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
     const spliced = spliceClassDefinition(main, structure, source);
     const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
     if (lintWarnings.blocked) return lintWarnings.result!;
-    await edit.save(srcUrl, spliced);
+    await edit.save(srcUrl, spliced, lintWarnings.warnings);
     return textResult(
       `Successfully updated DEFINITION of ${type} ${name}. Active version unchanged until activation; read with SAPRead(version="inactive") to verify, then SAPActivate.`,
     );
@@ -297,7 +291,14 @@ export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolRe
   if (methodName.includes('~') && visibility !== 'public') {
     return errorResult('Interface method redefinitions must keep public visibility. Use visibility="public".');
   }
-  const isAbstract = args.abstract === true;
+  const declaration = parseDefinitionBlockDeclarations(ensureClauseTerminator(clause)).find(
+    (entry) => entry.name === methodName.toUpperCase(),
+  );
+  const isAbstract = declaration?.isAbstract === true;
+  if (args.abstract !== undefined && args.abstract !== isAbstract)
+    return errorResult(
+      'The abstract flag must match ABSTRACT in the METHODS declaration. Correct the clause or the flag.',
+    );
   // MAIN-only action: include= is rejected at the schema layer (not in
   // SAPWRITE_INCLUDE_AWARE_ACTIONS). Defensive guard for direct CLI calls.
   if (includeProvided) {
@@ -327,7 +328,7 @@ export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolRe
     // half, so inserting a concrete declaration there would leave it unimplemented.
     if (!isAbstract && !structure.classImplementationBlock) {
       return errorResult(
-        `CLAS ${name} has no IMPLEMENTATION block (purely abstract class). Pass abstract=true to add an abstract method, or add the IMPLEMENTATION half first via edit_class_definition.`,
+        `CLAS ${name} has no IMPLEMENTATION block (purely abstract class). Use a METHODS ... ABSTRACT. declaration for an abstract method, or add the IMPLEMENTATION half through a complete source update.`,
       );
     }
 
@@ -349,7 +350,7 @@ export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolRe
     const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
     if (lintWarnings.blocked) return lintWarnings.result!;
 
-    await edit.save(srcUrl, spliced);
+    await edit.save(srcUrl, spliced, lintWarnings.warnings);
     const stubNote = isAbstract ? ' (abstract — no IMPL stub inserted)' : '';
     return textResult(
       `Successfully added method "${methodName}" (${visibility}) to ${type} ${name}${stubNote}. Active version unchanged until activation; SAPActivate next.`,
@@ -391,7 +392,7 @@ export async function writeActionDeleteMethod(ctx: SapWriteContext): Promise<Too
     const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
     if (lintWarnings.blocked) return lintWarnings.result!;
 
-    await edit.save(srcUrl, spliced);
+    await edit.save(srcUrl, spliced, lintWarnings.warnings);
     const where = method.implementation ? ' (DEFINITION + IMPLEMENTATION)' : ' (DEFINITION only — was ABSTRACT)';
     return textResult(
       `Successfully deleted method "${method.name}" from ${type} ${name}${where}. Active version unchanged until activation; SAPActivate next.`,
@@ -445,6 +446,7 @@ export async function writeActionChangeMethodVisibility(ctx: SapWriteContext): P
 
     // Idempotent: already in the requested section → no write.
     if (method.visibility === target) {
+      edit.unchanged();
       return textResult(
         `Method "${method.name}" is already in the ${target.toUpperCase()} SECTION of ${type} ${name}. No change made.`,
       );
@@ -469,7 +471,7 @@ export async function writeActionChangeMethodVisibility(ctx: SapWriteContext): P
     const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
     if (lintWarnings.blocked) return lintWarnings.result!;
 
-    await edit.save(srcUrl, spliced);
+    await edit.save(srcUrl, spliced, lintWarnings.warnings);
     return textResult(
       `Successfully moved method "${method.name}" from ${method.visibility.toUpperCase()} to ${target.toUpperCase()} SECTION of ${type} ${name} (IMPLEMENTATION preserved). Active version unchanged until activation; SAPActivate next.`,
     );

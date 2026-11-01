@@ -1,8 +1,29 @@
 # PR 2: broader built-in writes on pinned PP targets
 
-Status: proposed design and implementation plan; not implemented or live-qualified.
+Status: implementation in progress. Formatter, CLAS/INTF deletion, class-include updates, existing-include method edits and main-source class metadata surgery and standalone on-prem PROG/INCL CRUD, unit edits and owner activation are admitted in the draft. Program deletion retains the active-text-pool precheck and both owning-session locks. CLAS symbols and on-prem PROG text-part replacement now share the native engine with exact-pool activation and explicit active-content verification; their PP qualification is pending.
+Main source replacement and CLAS/INTF creation/deletion now enter through the shared write actions
+with explicit legacy/pinned native adapters. This later convergence is offline-tested only.
+The [sixth review follow-up](../research/2026-11-01-pinned-text-review-followup.md) fixes requested-text
+verification and activation/reporting issues. The [seventh review and fixes](../research/2026-11-02-pinned-activation-review-followup.md) address minimal-error redaction, recovery failures, input preflight and uncertain locks; these new fixes need independent review. Native
+FUGR/FUNC/group-INCL ownership, creation and shared child-update/delete/text profiles are private candidates with
+offline tests and read-only metadata evidence. They are not yet advertised or qualified.
+The fresh local run at `77e41fdcd` qualifies include replacement and the refactored main method path;
+the later include-method and class metadata adapters, refactored transportable paths and remaining families still need qualification.
+The [combined PP run](../research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
+qualifies the listed local CLAS/INTF and tested v5 formatter cases at `1b234d3a4`. Claude accepted its evidence
+follow-up for continued development; broader capabilities and final acceptance remain outstanding.
 Date: 26 October 2026. Research baseline: `e538bf71197ddb47ea74aca225c340a856d331af`.
 Dependency: [PR 1 shared mutation infrastructure](2026-10-26-shared-mutation-infrastructure.md).
+PR 1 merged as [#1138](https://github.com/arc-mcp/arc-1/pull/1138), commit `ac8385fa4`.
+Implementation starts with [ADR-0011](../adr/0011-broader-pinned-pp-mutations.md), the
+[mutation inventory](../research/broader-pinned-pp-writes/inventory.md) and request-scoped package hierarchy checks.
+[Implementation checkpoint and incomplete review status](../research/2026-10-29-broader-pinned-pp-writes-progress.md).
+[Existing CLAS two-writer PP evidence and remaining qualification](../research/2026-11-01-broader-pinned-pp-writes-pp-qualification.md).
+[CLAS/INTF deletion integration and qualification limits](../research/2026-11-01-broader-pinned-pp-writes-deletion.md).
+[Class-local include implementation and local two-writer qualification](../research/2026-11-01-broader-pinned-pp-writes-includes.md).
+[Shared source adapters and review dispositions](../research/2026-11-01-pinned-source-adapters.md).
+[Text-part adapter and read-only native evidence](../research/2026-11-01-text-pool-active-version.md).
+[Main-source class metadata adapter and remaining qualification](../research/2026-11-01-pinned-class-metadata.md).
 Proposed title: `feat: expand pinned PP writes across built-in development operations`.
 [Research and owner decisions](../research/2026-10-26-multi-target-write-parity.md).
 
@@ -428,10 +449,18 @@ circumvent that choice.
 
 ### Formatter and quickfix
 
+The [1 November formatter checkpoint](../research/2026-11-01-broader-pinned-pp-writes-formatter.md)
+records SAP's user-specific scope documentation, native adapter and handler integration, a restored
+direct-authentication round trip and a two-identity MCP-visible run. Claude identified missing
+in-run actor/backend proof; stronger current-revision PP qualification remains required.
+
 Verify the native scope of formatter settings through PP. The current parser maps unknown styles
 to `keywordUpper` and the writer emits only two fields; do not describe that as preserving native
 fields. For the pinned adapter, patch only explicitly requested supported settings into the native
 document, preserve untouched fields/style values, and refuse an unrecognized document shape.
+Read-only native inspection subsequently found that older GET versions omit preferences replaced by
+PUT. The current pinned adapter therefore requires v5, with no older-version fallback; the native
+qualification reader must inspect that complete representation too.
 Confirm readback, keeping single-target changes separate unless a shared fix is explicitly reviewed.
 Report that it is a settings change, with no claim of DEVCLASS isolation. `format` returns source;
 it does not save it. `apply_quickfix` retains its existing write-scope classification but returns

@@ -68,7 +68,7 @@ sequence.
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing | P1 | M | Ready | Architecture |
 | [ARCH-02](#arch-02) | Server-driven source-state version verification | P3 | S | Needs research | Architecture |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server API | P3 | L | Revisit on trigger | Architecture |
-| [FEAT-93](#feat-93) | Broader pinned PP mutation capabilities | P2 | XL | Design reviewed | Architecture |
+| [FEAT-93](#feat-93) | Broader pinned PP mutation capabilities | P2 | XL | Ready | Architecture |
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
@@ -185,7 +185,7 @@ and upgrade requirements. Do not widen the mutation-free multi-target contract a
 <a id="feat-93"></a>
 ### FEAT-93 — Broader pinned PP mutation capabilities
 
-- **Priority / effort / status:** P2 / XL / Design reviewed
+- **Priority / effort / status:** P2 / XL / Ready
 - **Category:** Architecture
 
 **Remaining gap.** PR [#1080](https://github.com/arc-mcp/arc-1/pull/1080) implements the scoped
@@ -199,16 +199,44 @@ is enabled by the shared-infrastructure extraction; aggregate and Basic writes r
 **Design evidence.** The [26 October research](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-26-multi-target-write-parity.md)
 separates accepted scope from proposed resource policies and live qualification gaps. It proposes
 [PR 1](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-shared-mutation-infrastructure.md)
-for behavior-preserving shared mutation infrastructure, now implemented for review with
+for behavior-preserving shared mutation infrastructure, merged in [#1138](https://github.com/arc-mcp/arc-1/pull/1138) with
 [separate qualification evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-29-shared-mutation-infrastructure.md), followed by
 [PR 2](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-broader-pinned-pp-writes.md)
 for the capability expansion. Existing opted-in writers may gain the documented capabilities;
 read-only applications/destinations must remain mutation-free.
-Author review and two Claude Code Opus 5.5 max reviews are recorded with findings and dispositions
-in the research record. The remaining implementation is PR 2's capability expansion; its live
-qualification remains outstanding.
+Implementation in draft [#1142](https://github.com/arc-mcp/arc-1/pull/1142) includes an explicit
+capability matrix, request-scoped package hierarchy and CTS parent/task checks, native adapter
+budgets, local deletion, class-include replacement and mapped-user formatter preferences.
+[Fresh two-writer PP evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-includes.md)
+at `77e41fdcd` covers the shared main-method handler, all four local include kinds, native
+`testclasses` initialization, owner activation, CLAS/INTF deletion, formatter preservation and
+read-only-route refusals. Native authorship/source checks and complete temporary-access/configuration
+restoration passed. The recorded failed attempt remains failed. Actual Opus 5.5 max reviews and
+finding dispositions are linked from the evidence; this is not whole-PR acceptance.
 
-**Resume when.** PR 1 is accepted and the owner requests PR 2. Preserve the shared foundation's
+Main updates now share the existing update handler; standalone on-prem PROG/INCL update and unit-edit
+adapters have offline tests and native standalone-owner metadata checks; the latest independent
+review follow-up now addresses namespace-bound native identity, activation references and typed removed-resource cleanup; those changes require another review. Their create/delete/activation paths now also have offline tests, including the program text-pool guard and owning-session cleanup; fresh PP qualification remains pending. Function-group ownership and shared update/delete/text profiles now have private offline candidates and GET-only metadata evidence; private creation/processing profiles now have offline checks; activation completion, native FUNC signature normalization, public admission and PP qualification remain pending. FUGR main-source replacement is refused until native evidence supports it.
+CLAS/INTF creation and deletion also enter through the shared actions with explicit native profiles.
+A shared text-part replacement adapter now has offline tests for CLAS symbols and on-prem PROG
+parts, exact-pool activation and explicit active-content proof; its fresh two-writer PP qualification
+is pending. The sixth actual Opus review found three Medium issues in text verification and activation;
+they were reproduced and fixed with offline tests. The seventh actual Opus review confirmed those closures and found one Medium in diagnostic redaction plus eight Low findings. Redaction, recovery, input preflight, uncertain-lock reporting and the listed test gaps now have follow-up fixes; independent re-review remains required before live freezing. Read-only native evidence and review dispositions are linked from the source-adapter
+research. Remaining work includes the additional object-specific mutation adapters,
+all refactored transportable-object paths, other object types and qualification of class/procedural surgery,
+DDIC/RAP, batches, package/API/publication, CTS, runtime tracing and classic FLP, each with its
+resource policy, tests and PP qualification. Main-source class metadata surgery now has exact owner/source/name/range and inventory checks
+with offline tests; its PP qualification remains open. Definition-include replacement shares the
+existing update protocol, including initialization and partial outcomes.
+Source-save cleanup results now retain transport/warnings and report close failures consistently.
+Existing-include method edits share the main-method lifecycle and have offline tests; their PP
+qualification remains pending. Secondary
+native formatter-preference proof, untested native styles, other releases and the separate legacy
+v2 preservation issue remain evidence limits. Aggregate, Basic and read-only connections stay
+mutation-free. Git and custom extensions/plugins remain excluded.
+
+**Resume when.** The PR 1 acceptance and owner request prerequisites are met. Continue the guarded
+adapters and native qualification against the reviewed PR 2 plan. Preserve the shared foundation's
 existing behavior; PR 2 requires a new reviewed ADR qualifying ADR-0010, explicit per-operation
 resource policies, negative tests and real PP evidence. Do not remove the explicit action matrix
 or add a duplicate global write switch. Caching, SaaS and embedding remain separate work. The

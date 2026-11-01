@@ -97,6 +97,9 @@ ENDCLASS.`;
     expect(message).toContain('declared without an implementation');
     expect(message).toContain('Use SAPRead');
     expect(message).not.toContain('methodView');
+    expect(extractMethod(source, 'ZCL_DEMO', 'lcl_demo~execute').error).toContain('declared without an implementation');
+    const interfaceSource = source.replace('METHODS execute.', 'METHODS zif_example~execute REDEFINITION.');
+    expect(extractMethod(interfaceSource, 'ZCL_DEMO', 'execute').error).toContain('declared without an implementation');
     expect(extractMethod(source, 'ZCL_DEMO', 'execut').error).not.toContain('Suggestions');
   });
 

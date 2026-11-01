@@ -73,7 +73,12 @@ import {
   structuredToolError,
 } from './multi-target-server.js';
 import { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js';
-import { injectTargetSchema, multiTargetToolDefinitions, sapTargetsDefinition } from './multi-target-tools.js';
+import {
+  finalizeMultiTargetToolAnnotations,
+  injectTargetSchema,
+  multiTargetToolDefinitions,
+  sapTargetsDefinition,
+} from './multi-target-tools.js';
 import { type PerUserClient, PerUserTransportPool } from './per-user-transport.js';
 import { loadPlugins } from './plugin-loader.js';
 import { createDataResultSemaphore, runtimeMemoryEnvelope } from './runtime-memory.js';
@@ -762,21 +767,16 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
     }
 
     // When authenticated, only show tools the user has scopes for
-    if (enforced) {
+    if (enforced || extra.authInfo) {
       tools = filterToolsByAuthScope(
         tools,
-        [...(projection?.scopes ?? [])],
-        config.denyActions,
-        createQueryDefinition(config, features),
-      );
-    } else if (extra.authInfo) {
-      tools = filterToolsByAuthScope(
-        tools,
-        extra.authInfo.scopes,
+        enforced ? [...(projection?.scopes ?? [])] : (extra.authInfo?.scopes ?? []),
         config.denyActions,
         createQueryDefinition(config, features),
       );
     }
+
+    if (multiTarget) tools = finalizeMultiTargetToolAnnotations(tools);
 
     // FEAT-61: append plugin (Custom_*) tools, gated identically to built-ins (deny-list + scope +
     // `availableOn` system-type visibility). Hyperfocused mode is out of scope for plugins (spec §10),

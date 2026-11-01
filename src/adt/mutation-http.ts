@@ -7,6 +7,13 @@ import type { SafetyConfig } from './safety.js';
 
 const facades = new WeakMap<AdtHttpClient, { http: AdtHttpClient; context: MutationContext }>();
 
+/** Recover only a factory-registered context; callers cannot supply a context-shaped transport field. */
+export function getMutationContext(http: AdtHttpClient, safety: SafetyConfig): MutationContext | undefined {
+  const context = facades.get(http)?.context;
+  if (context) assertMutationContext(safety, context);
+  return context;
+}
+
 function owningHttp(http: AdtHttpClient, context: MutationContext): AdtHttpClient {
   const facade = facades.get(http);
   if (!facade) return http;

@@ -1,0 +1,1028 @@
+{
+  "baseline": "ac8385fa47b6c40c2c77c6507e03c376bfc3b613",
+  "purpose": "Review inventory, not runtime authorization. Action/type combinations and nested batch support require the branch audit in inventory.md.",
+  "actions": {
+    "SAPWrite": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "default-requires-explicit-action-review"
+    },
+    "SAPWrite.create": {
+      "scope": "write",
+      "operation": "C",
+      "resource": "repository",
+      "disposition": "existing-scoped-subset-only"
+    },
+    "SAPWrite.update": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "existing-scoped-subset-only"
+    },
+    "SAPWrite.delete": {
+      "scope": "write",
+      "operation": "D",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPWrite.edit_method": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "existing-scoped-subset-only"
+    },
+    "SAPWrite.add_unit": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPWrite.edit_unit": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPWrite.edit_class_definition": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPWrite.add_method": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPWrite.edit_method_signature": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPWrite.delete_method": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPWrite.change_method_visibility": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPWrite.edit_text_symbols": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPWrite.batch_create": {
+      "scope": "write",
+      "operation": "C",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPWrite.scaffold_rap_handlers": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPWrite.generate_behavior_implementation": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPActivate": {
+      "scope": "write",
+      "operation": "A",
+      "resource": "activation",
+      "disposition": "default-requires-explicit-action-review"
+    },
+    "SAPActivate.activate": {
+      "scope": "write",
+      "operation": "A",
+      "resource": "activation",
+      "disposition": "existing-scoped-subset-only"
+    },
+    "SAPActivate.publish_srvb": {
+      "scope": "write",
+      "operation": "A",
+      "resource": "activation",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPActivate.unpublish_srvb": {
+      "scope": "write",
+      "operation": "A",
+      "resource": "activation",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPLint.set_formatter_settings": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "formatter",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPDiagnose.trace_start": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "trace",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPDiagnose.trace_cancel": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "trace",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPDiagnose.apply_quickfix": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "proposal",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPDiagnose.set_sql_trace_state": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "trace",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPTransport.create": {
+      "scope": "transports",
+      "operation": "X",
+      "resource": "cts",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPTransport.release": {
+      "scope": "transports",
+      "operation": "X",
+      "resource": "cts",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPTransport.release_recursive": {
+      "scope": "transports",
+      "operation": "X",
+      "resource": "cts",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPTransport.reassign": {
+      "scope": "transports",
+      "operation": "X",
+      "resource": "cts",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPTransport.delete": {
+      "scope": "transports",
+      "operation": "X",
+      "resource": "cts",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPTransport.remove_object": {
+      "scope": "transports",
+      "operation": "X",
+      "resource": "cts",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPGit.external_info": {
+      "scope": "git",
+      "operation": "U",
+      "resource": "excluded",
+      "disposition": "excluded"
+    },
+    "SAPGit.stage": {
+      "scope": "git",
+      "operation": "U",
+      "resource": "excluded",
+      "disposition": "excluded"
+    },
+    "SAPGit.clone": {
+      "scope": "git",
+      "operation": "C",
+      "resource": "excluded",
+      "disposition": "excluded"
+    },
+    "SAPGit.pull": {
+      "scope": "git",
+      "operation": "U",
+      "resource": "excluded",
+      "disposition": "excluded"
+    },
+    "SAPGit.push": {
+      "scope": "git",
+      "operation": "U",
+      "resource": "excluded",
+      "disposition": "excluded"
+    },
+    "SAPGit.switch_branch": {
+      "scope": "git",
+      "operation": "U",
+      "resource": "excluded",
+      "disposition": "excluded"
+    },
+    "SAPGit.create_branch": {
+      "scope": "git",
+      "operation": "C",
+      "resource": "excluded",
+      "disposition": "excluded"
+    },
+    "SAPGit.unlink": {
+      "scope": "git",
+      "operation": "D",
+      "resource": "excluded",
+      "disposition": "excluded"
+    },
+    "SAPManage": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "default-requires-explicit-action-review"
+    },
+    "SAPManage.create_package": {
+      "scope": "write",
+      "operation": "C",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPManage.delete_package": {
+      "scope": "write",
+      "operation": "D",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPManage.change_package": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPManage.set_api_state": {
+      "scope": "write",
+      "operation": "U",
+      "resource": "repository",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPManage.flp_create_catalog": {
+      "scope": "write",
+      "operation": "W",
+      "resource": "flp",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPManage.flp_create_group": {
+      "scope": "write",
+      "operation": "W",
+      "resource": "flp",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPManage.flp_create_tile": {
+      "scope": "write",
+      "operation": "W",
+      "resource": "flp",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPManage.flp_add_tile_to_group": {
+      "scope": "write",
+      "operation": "W",
+      "resource": "flp",
+      "disposition": "adapter-and-qualification-required"
+    },
+    "SAPManage.flp_delete_catalog": {
+      "scope": "write",
+      "operation": "W",
+      "resource": "flp",
+      "disposition": "adapter-and-qualification-required"
+    }
+  },
+  "types": {
+    "PROG": {
+      "family": "source",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "CLAS": {
+      "family": "source",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "ADR-0010-main-source-subset-only"
+    },
+    "INTF": {
+      "family": "source",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "ADR-0010-main-source-subset-only"
+    },
+    "FUNC": {
+      "family": "source",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "FUGR": {
+      "family": "source",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "INCL": {
+      "family": "source",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "DDLS": {
+      "family": "source",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "DCLS": {
+      "family": "source",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "DDLX": {
+      "family": "source",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "BDEF": {
+      "family": "source",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "SRVD": {
+      "family": "source",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "SRVB": {
+      "family": "metadata",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "SKTD": {
+      "family": "metadata",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "KTD": {
+      "family": "metadata",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "TABL": {
+      "family": "metadata",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "TABL/DTT": {
+      "family": "table-settings",
+      "crud": [
+        "update"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "TABL/DT": {
+      "family": "metadata",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "TABL/DS": {
+      "family": "metadata",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "DOMA": {
+      "family": "metadata",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "DTEL": {
+      "family": "metadata",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "MSAG": {
+      "family": "metadata",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "TTYP": {
+      "family": "metadata",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "ENQU": {
+      "family": "metadata",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "ENHO": {
+      "family": "metadata",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "DESD": {
+      "family": "server-driven",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "DTSC": {
+      "family": "server-driven",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "CSNM": {
+      "family": "server-driven",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "EVTB": {
+      "family": "server-driven",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "EVTO": {
+      "family": "server-driven",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "COTA": {
+      "family": "server-driven",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "DSFD": {
+      "family": "server-driven",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "DTDC": {
+      "family": "server-driven",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "UIAD": {
+      "family": "server-driven",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "DRTY": {
+      "family": "server-driven",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "APLO": {
+      "family": "server-driven",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "SAJC": {
+      "family": "server-driven",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "SAJT": {
+      "family": "server-driven",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    },
+    "TABL/DTI": {
+      "family": "server-driven",
+      "crud": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "qualification": "new-pinned-adapter-required"
+    }
+  },
+  "aliases": {
+    "PROG/P": "PROG",
+    "PROG/I": "INCL",
+    "CLAS/OC": "CLAS",
+    "INTF/OI": "INTF",
+    "FUGR/F": "FUGR",
+    "FUGR/FF": "FUNC",
+    "DDLS/DF": "DDLS",
+    "DCLS/DL": "DCLS",
+    "BDEF/BDO": "BDEF",
+    "SRVD/SRV": "SRVD",
+    "SRVB/SVB": "SRVB",
+    "DDLX/EX": "DDLX",
+    "TABL/DT": "TABL/DT",
+    "TABL/DS": "TABL/DS",
+    "STRU/DS": "TABL/DS",
+    "DOMA/DD": "DOMA",
+    "DTEL/DE": "DTEL",
+    "MSAG/N": "MSAG",
+    "SKTD/TYP": "SKTD",
+    "TTYP/DA": "TTYP",
+    "ENQU/DL": "ENQU"
+  },
+  "fields": {
+    "SAPWrite": [
+      "abstract",
+      "action",
+      "activate",
+      "activateAtEnd",
+      "autoApply",
+      "bdefName",
+      "bindingType",
+      "category",
+      "changeDocument",
+      "checkBeforeWrite",
+      "conversionExit",
+      "dataType",
+      "deactivateInputHistory",
+      "decimals",
+      "defaultComponentName",
+      "description",
+      "domainName",
+      "dryRun",
+      "expectedSourceHash",
+      "fixedValues",
+      "group",
+      "headingLabel",
+      "headingLength",
+      "include",
+      "length",
+      "lintBeforeWrite",
+      "longLabel",
+      "longLength",
+      "lowercase",
+      "mediumLabel",
+      "mediumLength",
+      "messages",
+      "method",
+      "name",
+      "objects",
+      "odataVersion",
+      "outputLength",
+      "package",
+      "parameters",
+      "preflightBeforeWrite",
+      "processingType",
+      "refObjectDescription",
+      "refObjectName",
+      "refObjectType",
+      "rowType",
+      "rowTypeDecimals",
+      "rowTypeKind",
+      "rowTypeLength",
+      "searchHelp",
+      "searchHelpParameter",
+      "serviceDefinition",
+      "setGetParameter",
+      "shortLabel",
+      "shortLength",
+      "shortTexts",
+      "signExists",
+      "source",
+      "targetAlias",
+      "textPart",
+      "transport",
+      "type",
+      "typeKind",
+      "typeName",
+      "unit",
+      "updateTaskKind",
+      "valueTable",
+      "version",
+      "visibility"
+    ],
+    "SAPActivate": [
+      "action",
+      "group",
+      "name",
+      "objects",
+      "preaudit",
+      "service_type",
+      "type",
+      "version"
+    ],
+    "SAPManage": [
+      "action",
+      "apiState",
+      "apiVisibility",
+      "catalogId",
+      "contract",
+      "description",
+      "domainId",
+      "groupId",
+      "name",
+      "newPackage",
+      "objectName",
+      "objectType",
+      "objectUri",
+      "oldPackage",
+      "packageType",
+      "recordChanges",
+      "responsible",
+      "softwareComponent",
+      "superPackage",
+      "tile",
+      "tileInstanceId",
+      "title",
+      "transport",
+      "transportLayer"
+    ],
+    "SAPTransport": [
+      "action",
+      "description",
+      "group",
+      "id",
+      "limit",
+      "maxResults",
+      "name",
+      "offset",
+      "operation",
+      "owner",
+      "package",
+      "pgmid",
+      "recursive",
+      "removeLockedObjects",
+      "resultFormat",
+      "status",
+      "summary",
+      "target",
+      "timeoutSeconds",
+      "transportLayer",
+      "type",
+      "user"
+    ],
+    "SAPDiagnose": [
+      "action",
+      "aggregate",
+      "analysis",
+      "authObject",
+      "column",
+      "configuration",
+      "coverage",
+      "description",
+      "detailUrl",
+      "errorType",
+      "expiresHours",
+      "failOnSeverity",
+      "filters",
+      "from",
+      "id",
+      "includeFullText",
+      "includeReportXml",
+      "includeSubpackages",
+      "line",
+      "maxExecutions",
+      "maxResults",
+      "name",
+      "objectType",
+      "objects",
+      "onlyFailures",
+      "packageTrees",
+      "packages",
+      "processType",
+      "proposalAffectedObjects",
+      "proposalUri",
+      "proposalUserContent",
+      "resultFormat",
+      "sections",
+      "source",
+      "sourceUri",
+      "sqlOn",
+      "sqlTrace",
+      "timeoutSeconds",
+      "to",
+      "traceUser",
+      "type",
+      "url",
+      "user",
+      "variant",
+      "version"
+    ],
+    "SAPLint": [
+      "action",
+      "indentation",
+      "name",
+      "rules",
+      "source",
+      "style"
+    ]
+  },
+  "actionLists": {
+    "SAPWrite": [
+      "add_method",
+      "add_unit",
+      "batch_create",
+      "change_method_visibility",
+      "create",
+      "delete",
+      "delete_method",
+      "edit_class_definition",
+      "edit_method",
+      "edit_method_signature",
+      "edit_text_symbols",
+      "edit_unit",
+      "generate_behavior_implementation",
+      "scaffold_rap_handlers",
+      "update"
+    ],
+    "SAPActivate": [
+      "activate",
+      "publish_srvb",
+      "unpublish_srvb"
+    ],
+    "SAPManage": [
+      "cache_stats",
+      "change_package",
+      "create_package",
+      "delete_package",
+      "features",
+      "flp_add_tile_to_group",
+      "flp_create_catalog",
+      "flp_create_group",
+      "flp_create_tile",
+      "flp_delete_catalog",
+      "flp_list_catalogs",
+      "flp_list_groups",
+      "flp_list_tiles",
+      "probe",
+      "set_api_state"
+    ],
+    "SAPTransport": [
+      "check",
+      "create",
+      "delete",
+      "diff",
+      "get",
+      "history",
+      "layers",
+      "list",
+      "reassign",
+      "release",
+      "release_recursive",
+      "remove_object",
+      "targets"
+    ],
+    "SAPDiagnose": [
+      "apply_quickfix",
+      "atc",
+      "atc_ci",
+      "atc_variants",
+      "authorization_trace",
+      "cds_sql",
+      "cds_testcases",
+      "dumps",
+      "feed_schema",
+      "gateway_errors",
+      "object_state",
+      "odata_perf",
+      "quickfix",
+      "set_sql_trace_state",
+      "sql_trace_directory",
+      "sql_trace_state",
+      "syntax",
+      "system_messages",
+      "trace_cancel",
+      "trace_requests",
+      "trace_start",
+      "traces",
+      "unittest",
+      "unittest_ci"
+    ],
+    "SAPLint": [
+      "format",
+      "get_formatter_settings",
+      "lint",
+      "lint_and_fix",
+      "list_rules",
+      "set_formatter_settings"
+    ]
+  },
+  "btpFields": {
+    "SAPWrite": [
+      "abstract",
+      "action",
+      "activate",
+      "activateAtEnd",
+      "autoApply",
+      "bdefName",
+      "bindingType",
+      "category",
+      "changeDocument",
+      "checkBeforeWrite",
+      "conversionExit",
+      "dataType",
+      "deactivateInputHistory",
+      "decimals",
+      "defaultComponentName",
+      "description",
+      "domainName",
+      "dryRun",
+      "expectedSourceHash",
+      "fixedValues",
+      "group",
+      "headingLabel",
+      "headingLength",
+      "include",
+      "length",
+      "lintBeforeWrite",
+      "longLabel",
+      "longLength",
+      "lowercase",
+      "mediumLabel",
+      "mediumLength",
+      "messages",
+      "method",
+      "name",
+      "objects",
+      "odataVersion",
+      "outputLength",
+      "package",
+      "parameters",
+      "preflightBeforeWrite",
+      "refObjectDescription",
+      "refObjectName",
+      "refObjectType",
+      "rowType",
+      "rowTypeDecimals",
+      "rowTypeKind",
+      "rowTypeLength",
+      "searchHelp",
+      "searchHelpParameter",
+      "serviceDefinition",
+      "setGetParameter",
+      "shortLabel",
+      "shortLength",
+      "shortTexts",
+      "signExists",
+      "source",
+      "targetAlias",
+      "textPart",
+      "transport",
+      "type",
+      "typeKind",
+      "typeName",
+      "valueTable",
+      "version",
+      "visibility"
+    ]
+  },
+  "btpActionLists": {
+    "SAPWrite": [
+      "add_method",
+      "batch_create",
+      "change_method_visibility",
+      "create",
+      "delete",
+      "delete_method",
+      "edit_class_definition",
+      "edit_method",
+      "edit_method_signature",
+      "edit_text_symbols",
+      "generate_behavior_implementation",
+      "scaffold_rap_handlers",
+      "update"
+    ]
+  }
+}

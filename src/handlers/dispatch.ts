@@ -40,6 +40,7 @@ import { appendIdeLinks } from '../server/ide-links.js';
 import type { IdeLinkContext } from '../server/ide-request.js';
 import { logger } from '../server/logger.js';
 import { type McpRateLimiter, resolveRateLimitUserKey } from '../server/mcp-rate-limit.js';
+import { pinnedUnsupportedRawFields } from '../server/multi-target-write-surface.js';
 import { formatClientInfo } from '../server/trace-context.js';
 import type { ServerConfig } from '../server/types.js';
 import { handleSAPActivate } from './activate.js';
@@ -1011,6 +1012,31 @@ export async function handleToolCall(
     });
     return errorResult(
       `Action '${toolName}${actionOrType ? `.${actionOrType}` : ''}' is denied by server policy (SAP_DENY_ACTIONS).`,
+    );
+  }
+
+  // A meaningful raw field must not disappear into a broader pinned mutation during normalization.
+  if (
+    (config.targetId || config.multiTargetWrite || client.safety.multiTargetWrite) &&
+    pinnedUnsupportedRawFields(toolName, actionOrType, args).length
+  ) {
+    logger.emitAudit({
+      timestamp: new Date().toISOString(),
+      level: 'warn',
+      event: 'safety_blocked',
+      requestId: reqId,
+      user,
+      clientId,
+      target: config.targetId,
+      identity,
+      operation: toolName,
+      reason: 'Unsupported raw field on a pinned operation',
+    });
+    return errorResult(
+      toolJson({
+        error: 'MULTI_TARGET_OPERATION_FORBIDDEN',
+        message: 'This tool, input, or operation is not enabled for this multi-target connection.',
+      }),
     );
   }
 

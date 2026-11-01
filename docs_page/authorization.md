@@ -274,7 +274,7 @@ Use this table to answer: "what must be true before this action can run?" For HT
 | Navigate / code intelligence | `read` | Nothing | Find definition, references, completion. Class hierarchy is the exception below. |
 | Class hierarchy (`SAPNavigate.hierarchy`) | `data` or `sql` plus `read` | `SAP_ALLOW_DATA_PREVIEW=true` or `SAP_ALLOW_FREE_SQL=true` | Reads `SEOMETAREL` via table preview or SQL |
 | Lint / local format / diagnostics | `read` | Nothing | Unit tests can execute code but do not mutate repository objects |
-| Update SAP PrettyPrinter settings | `write` | `SAP_ALLOW_WRITES=true` | `SAPLint.set_formatter_settings` mutates global formatter settings |
+| Update SAP PrettyPrinter settings | `write` | `SAP_ALLOW_WRITES=true` | `SAPLint.set_formatter_settings` changes the connected SAP user's formatter preferences for the system |
 | Read transport info | `read` | Nothing | `SAPTransport.list`, `get`, `diff`, `check`, `history` |
 | Read Git info | `read` | Nothing | `SAPGit.list_repos`, `history`, `objects`, etc. when Git feature exists |
 | Preview named table contents | `data` | `SAP_ALLOW_DATA_PREVIEW=true` | `sql` implies `data` |

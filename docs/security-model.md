@@ -315,6 +315,24 @@ still complete. New backends require new public IDs and grants. Operators must a
 before enabling the feature; separate single-target applications remain the stronger availability
 and deployment-isolation option.
 
+The broader mutation design is tracked separately in proposed
+[ADR-0011](adr/0011-broader-pinned-pp-mutations.md). Its CTS releases/deletes, traces and shared
+FLP/settings resources add operation-specific risks and need guarded adapters plus new PP evidence
+before admission. Functional `transports` scopes compose across role assignments; destination request
+policies remain the target-specific CTS ceiling. The initial PR 2 prerequisite makes package subtree
+evidence fresh for each pinned preflight/under-lock check, with the same cancellation and deadline.
+This prerequisite and the inventory do not extend the accepted ADR-0010 action surface.
+
+The proposed ADR additionally makes downstream boundaries explicit: CTS request policy does not
+isolate import routes, DDIC activation can affect active dependents beyond the checked references,
+and publishing/unpublishing affects other service consumers. Existing reader-authorized Unit and
+trace operations retain their native SAP execution/data permissions; a write grant is not a sandbox
+for authored test behavior or captured trace content. ST05's native instance/client/filter scope
+must be qualified before admission. The verified CTS scope now constrains explicit child submissions,
+selected IDs and action classes, and prevalidates recursive second-read membership before mutation.
+It does not claim an atomic SAP snapshot or qualify request category/state. These broader residual
+effects and the full PP evidence remain proposed PR 2 work, not an extension of R23's shipped acceptance.
+
 
 ## 6. Per-PR security review checklist
 

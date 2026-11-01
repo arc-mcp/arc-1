@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getMutationContext } from '../../../src/adt/mutation-http.js';
 import { resolvePinnedRequest } from '../../../src/adt/pinned-write-policy.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
@@ -6,9 +7,16 @@ import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
+const unexpected: string[] = [];
+beforeEach(() => {
+  unexpected.length = 0;
+});
+afterEach(() => expect(unexpected).toEqual([]));
+
 const { requestContext } = await import('../../../src/server/context.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { handlePinnedWrite } = await import('../../../src/handlers/write/pinned.js');
+const writeHelpers = await import('../../../src/handlers/write-helpers.js');
 const { handlePinnedActivation, validatePinnedActivationReferences } = await import(
   '../../../src/handlers/write/pinned-activation.js'
 );
@@ -53,6 +61,8 @@ let activationRefs: string[] | undefined;
 let activationResponse: string;
 const requests: Array<{ path: string; method: string; body: string }> = [];
 beforeEach(() => {
+  // Prototype spies follow the request/session client clones; restore them between cases.
+  vi.restoreAllMocks();
   vi.resetAllMocks();
   source = initial;
   normalizeLineEndings = false;
@@ -107,7 +117,14 @@ beforeEach(() => {
         200,
         `<class:abapClass xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="${pkg}"/></class:abapClass>`,
       );
-    return mockResponse(200, '', { 'x-csrf-token': 'test-token' });
+    if (
+      method === 'HEAD' ||
+      (method === 'POST' && ['/sap/bc/adt/oo/classes', '/sap/bc/adt/oo/interfaces'].includes(parsed.pathname)) ||
+      parsed.pathname === '/sap/bc/adt/core/http/sessions'
+    )
+      return mockResponse(200, '', { 'x-csrf-token': 'test-token' });
+    unexpected.push(`${method} ${path}`);
+    return mockResponse(599, 'Unexpected fixture request');
   });
 });
 function saves() {
@@ -178,7 +195,11 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
         return fallback(url, options);
       });
       const adt = client();
-      const result = resolvePinnedRequest(adt.http, adt.safety, 'A4HK900002');
+      const result = resolvePinnedRequest(adt.http, adt.safety, 'A4HK900002', {
+        deadline: Date.now() + 300_000,
+        noReplay: true,
+        retryTransientErrors: false,
+      });
       if (parent === 'A4HK900001') await expect(result).resolves.toBe(parent);
       else await expect(result).rejects.toThrow();
     },
@@ -218,7 +239,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
   });
   it('refuses an owner package change under lock even if both packages are allowed', async () => {
     const c = client();
-    vi.spyOn(c, 'resolveObjectPackage').mockResolvedValueOnce('$TMP').mockResolvedValueOnce('ZTEAM');
+    vi.spyOn(AdtClient.prototype, 'resolveObjectPackage').mockResolvedValueOnce('$TMP').mockResolvedValueOnce('ZTEAM');
     const result = await handlePinnedWrite(c, update(), config);
     expect(payload(result).message).toContain('package changed');
     expect(saves()).toHaveLength(0);
@@ -228,7 +249,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     const c = client();
     const resolve = c.resolveObjectPackage.bind(c);
     let calls = 0;
-    vi.spyOn(c, 'resolveObjectPackage').mockImplementation(async (...args) => {
+    vi.spyOn(AdtClient.prototype, 'resolveObjectPackage').mockImplementation(async (...args) => {
       const value = await resolve(...args);
       if (++calls === 2) controller.abort();
       return value;
@@ -239,6 +260,19 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect(payload(result).retryable).toBe(false);
     expect(saves()).toHaveLength(0);
     expect(requests.filter((r) => r.path.includes('_action=UNLOCK'))).toHaveLength(1);
+  });
+  it.each([
+    { action: 'create', type: 'CLAS', name: 'ZCL_TEST', package: '$TMP' },
+    { action: 'update', type: 'CLAS', name: 'ZCL_TEST', expectedSourceHash: sourceHash(initial) },
+    { action: 'edit_method', type: 'CLAS', name: 'ZCL_TEST', method: 'VALUE', expectedSourceHash: sourceHash(initial) },
+  ])('requires source for $action before any backend request', async (args) => {
+    const result = await handlePinnedWrite(client(), args, config);
+    expect(payload(result)).toMatchObject({
+      error: 'PINNED_WRITE_REFUSED',
+      state: 'unchanged',
+      message: 'A non-empty source is required.',
+    });
+    expect(requests).toHaveLength(0);
   });
   it('requires a hash before any backend request and rejects a stale hash under lock', async () => {
     const missing = update();
@@ -252,7 +286,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
   });
   it('reports that no save was sent when ordinary preflight fails', async () => {
     const c = client();
-    vi.spyOn(c, 'resolveObjectPackage').mockRejectedValue(new Error('Metadata unavailable'));
+    vi.spyOn(AdtClient.prototype, 'resolveObjectPackage').mockRejectedValue(new Error('Metadata unavailable'));
     const result = await handlePinnedWrite(c, update(), config);
     expect(payload(result)).toMatchObject({
       error: 'PINNED_WRITE_REFUSED',
@@ -262,20 +296,206 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     });
     expect(saves()).toHaveLength(0);
   });
+  it('rechecks subtree membership under the lock and refuses a package moved out of scope', async () => {
+    const c = client();
+    c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
+    const hierarchy = vi.spyOn(AdtClient.prototype, 'getSubpackages');
+    const packages = vi.spyOn(AdtClient.prototype, 'resolveObjectPackage');
+    let checks = 0;
+    hierarchy.mockImplementation(async (root) => (root === 'ZROOT' && ++checks === 1 ? ['$TMP'] : []));
+    const result = await handlePinnedWrite(c, update(), config);
+    expect(payload(result)).toMatchObject({ state: 'unchanged', phase: 'locked-policy' });
+    expect(checks).toBe(2);
+    expect(saves()).toHaveLength(0);
+    expect(requests.some((r) => r.path.includes('_action=UNLOCK'))).toBe(true);
+    const preflight = packages.mock.contexts[0] as InstanceType<typeof AdtClient>;
+    const locked = packages.mock.contexts[1] as InstanceType<typeof AdtClient>;
+    expect(locked.http).not.toBe(preflight.http);
+    expect((hierarchy.mock.contexts[0] as InstanceType<typeof AdtClient>).http).toBe(preflight.http);
+    expect((hierarchy.mock.contexts[1] as InstanceType<typeof AdtClient>).http).toBe(locked.http);
+    expect(getMutationContext(locked.http, locked.safety)).toBe(getMutationContext(preflight.http, preflight.safety));
+    expect(getMutationContext(locked.http, locked.safety)).toBeDefined();
+    const budgets = hierarchy.mock.calls.map((call) => call[2]);
+    expect(budgets.every((budget) => budget?.noReplay && budget.deadline === budgets[0]?.deadline)).toBe(true);
+  });
+  it.each(['preflight', 'under-lock'] as const)('aborts during the hierarchy walk: %s', async (stage) => {
+    const c = client();
+    const controller = new AbortController();
+    c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
+    const fallback = mockFetch.getMockImplementation()!;
+    let roots = 0;
+    const visited: string[] = [];
+    mockFetch.mockImplementation(async (url: unknown, options: any) => {
+      const parsed = new URL(String(url));
+      if (!parsed.pathname.endsWith('/repository/nodestructure')) return fallback(url, options);
+      const root = parsed.searchParams.get('parent_name')!;
+      visited.push(root);
+      if (root === 'ZROOT' && ++roots === (stage === 'preflight' ? 1 : 2)) controller.abort();
+      return mockResponse(
+        200,
+        root === 'ZROOT'
+          ? '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><TREE_CONTENT><SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>$TMP</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE></TREE_CONTENT></DATA></asx:values></asx:abap>'
+          : '',
+      );
+    });
+    const hierarchy = vi.spyOn(AdtClient.prototype, 'getSubpackages');
+    const result = await requestContext.run({ requestId: 'hierarchy-cancel', signal: controller.signal }, () =>
+      handlePinnedWrite(c, update(), config),
+    );
+    expect(payload(result)).toMatchObject({
+      state: 'unchanged',
+      phase: stage === 'preflight' ? 'package-preflight' : 'locked-policy',
+    });
+    expect(visited).toEqual(stage === 'preflight' ? ['ZROOT'] : ['ZROOT', 'ZROOT']);
+    expect(requests.some((r) => r.path.includes('_action=LOCK'))).toBe(stage === 'under-lock');
+    expect(requests.some((r) => r.path.includes('_action=UNLOCK'))).toBe(stage === 'under-lock');
+    expect(requests.some((r) => r.path.includes('/source/main'))).toBe(false);
+    expect(saves()).toHaveLength(0);
+    expect(hierarchy.mock.calls.every((call) => call[2]?.signal === controller.signal)).toBe(true);
+  });
+  it('independently denies a server subtree even when the destination subtree would allow the package', async () => {
+    const c = client();
+    c.safety.allowedPackages = ['ZGLOBAL/**'];
+    c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZDEST/**'] };
+    vi.spyOn(AdtClient.prototype, 'getSubpackages').mockImplementation(async (root) =>
+      root === 'ZDEST' ? ['$TMP'] : [],
+    );
+    expect((await handlePinnedWrite(c, update(), config)).isError).toBe(true);
+    expect(requests.some((r) => r.path.includes('_action=LOCK'))).toBe(false);
+    expect(saves()).toHaveLength(0);
+  });
+  it('shares a hierarchy decision across both create gates, then refreshes under the lock', async () => {
+    const c = client();
+    c.safety.allowedPackages = ['ZROOT/**'];
+    c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
+    const hierarchy = vi
+      .spyOn(AdtClient.prototype, 'getSubpackages')
+      .mockImplementation(async (root) => (root === 'ZROOT' ? ['$TMP'] : []));
+    const result = await handlePinnedWrite(
+      c,
+      { action: 'create', type: 'CLAS', name: 'ZCL_TEST', package: '$TMP', source: initial },
+      config,
+    );
+    expect(result.isError, result.content[0].text).toBeUndefined();
+    expect(hierarchy.mock.calls.filter(([root]) => root === 'ZROOT')).toHaveLength(2);
+    expect(hierarchy.mock.calls.filter(([root]) => root === '$TMP')).toHaveLength(0);
+  });
+  it('refuses activation when its initial fresh subtree check excludes the owner', async () => {
+    const c = client();
+    c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
+    let roots = 0;
+    vi.spyOn(AdtClient.prototype, 'getSubpackages').mockImplementation(async (root) => {
+      if (root === 'ZROOT') roots++;
+      return [];
+    });
+    const result = await handlePinnedActivation(c, { type: 'CLAS', name: 'ZCL_TEST' });
+    expect(result.isError).toBe(true);
+    expect(roots).toBe(1);
+    expect(requests.some((r) => r.path.includes('/activation?'))).toBe(false);
+  });
+  it('refuses subtree drift after the preaudit prompt and keeps hierarchy reads inside the original policy', async () => {
+    const c = client();
+    const controller = new AbortController();
+    c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
+    activationRefs = [owner];
+    let roots = 0;
+    const hierarchy = vi
+      .spyOn(AdtClient.prototype, 'getSubpackages')
+      .mockImplementation(async (root) => (root === 'ZROOT' && ++roots < 2 ? ['$TMP'] : []));
+    const result = await requestContext.run({ requestId: 'post-prompt-drift', signal: controller.signal }, () =>
+      handlePinnedActivation(c, { type: 'CLAS', name: 'ZCL_TEST' }),
+    );
+    expect(result.isError).toBe(true);
+    expect(roots).toBe(2);
+    const submissions = requests.filter((r) => r.path.includes('/activation?'));
+    expect(submissions).toHaveLength(1);
+    expect(submissions[0].path).toContain('preauditRequested=true');
+    const deadline = hierarchy.mock.calls[0][2]?.deadline;
+    expect(Number.isFinite(deadline)).toBe(true);
+    for (const call of hierarchy.mock.calls)
+      expect(call[2]).toMatchObject({
+        deadline,
+        signal: controller.signal,
+        noReplay: true,
+        retryTransientErrors: false,
+      });
+  });
+  it('actually aborts a hanging activation at the remaining outer deadline', async () => {
+    const c = client();
+    const started = Date.now();
+    let now = started;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const fallback = mockFetch.getMockImplementation()!;
+    let pending = 0;
+    mockFetch.mockImplementation(async (url: unknown, options: any) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith('/activation')) {
+        pending++;
+        return new Promise((_, reject) => {
+          const abort = () => reject(new DOMException('Aborted', 'AbortError'));
+          if (options.signal.aborted) abort();
+          else options.signal.addEventListener('abort', abort, { once: true });
+        });
+      }
+      const result = await fallback(url, options);
+      if (path === owner && options?.method === 'GET') now = started + 299_950;
+      return result;
+    });
+    const result = await handlePinnedActivation(c, { type: 'CLAS', name: 'ZCL_TEST' });
+    expect(result.isError).toBe(true);
+    expect(pending).toBe(1);
+    expect(payload(result)).toMatchObject({ retryable: false, state: 'activation-not-confirmed' });
+  });
+  it('keeps activation HTTP inside the original deadline after a slow preflight', async () => {
+    const c = client();
+    const started = Date.now();
+    let now = started;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const fallback = mockFetch.getMockImplementation()!;
+      mockFetch.mockImplementation(async (url: unknown, options: any) => {
+        const result = await fallback(url, options);
+        if (new URL(String(url)).pathname === owner && options?.method === 'GET') now += 10_000;
+        return result;
+      });
+      const post = vi.spyOn(c.http, 'post');
+      const result = await handlePinnedActivation(c, { type: 'CLAS', name: 'ZCL_TEST' });
+      expect(result.isError, result.content[0].text).toBeUndefined();
+      const activation = post.mock.calls.filter(([path]) => path.includes('/activation?'));
+      expect(activation.length).toBeGreaterThan(0);
+      for (const call of activation)
+        expect(call[4]).toMatchObject({ deadline: started + 300_000, noReplay: true, retryTransientErrors: false });
+    } finally {
+      clock.mockRestore();
+    }
+  });
   it.each(['missing', 'Y', ''])('refuses unproven/mismatched local lock evidence: %s', async (value) => {
     local = value;
     const result = await handlePinnedWrite(client(), update(), config);
     expect(result.isError).toBe(true);
     expect(saves()).toHaveLength(0);
   });
-  it('canonicalizes a verified task to its allowed parent before saving', async () => {
-    pkg = 'ZTEAM';
-    local = '';
-    const result = await handlePinnedWrite(client(), { ...update(), transport: 'A4HK900002' }, config);
-    expect(result.isError, result.content[0].text).toBeUndefined();
-    expect(saves()[0].path).toContain('corrNr=A4HK900001');
-    expect(saves()[0].path).not.toContain('A4HK900002');
-  });
+  it.each(['update', 'edit_method'])(
+    'canonicalizes a verified task to its allowed parent before %s',
+    async (action) => {
+      pkg = 'ZTEAM';
+      local = '';
+      const result = await handlePinnedWrite(
+        client(),
+        {
+          ...update(),
+          action,
+          transport: 'A4HK900002',
+          ...(action === 'edit_method' ? { method: 'value', source: 'result = 2.' } : {}),
+        },
+        config,
+      );
+      expect(result.isError, result.content[0].text).toBeUndefined();
+      expect(saves()[0].path).toContain('corrNr=A4HK900001');
+      expect(saves()[0].path).not.toContain('A4HK900002');
+      expect(payload(result).transport).toBe('A4HK900001');
+    },
+  );
   it('refuses a destination-denied recording request', async () => {
     pkg = 'ZTEAM';
     local = '';
@@ -335,6 +555,80 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     });
     expect(result.cleanup).toContain(closed ? 'was closed' : 'was not confirmed');
   });
+  it.each(
+    ['create', 'update', 'edit_method'].flatMap((action) =>
+      ['unlock', 'close', 'both'].map((failure) => ({ action, failure })),
+    ),
+  )('retains confirmed source, warnings and parent request on cleanup failure: %j', async ({ action, failure }) => {
+    pkg = 'ZTEAM';
+    local = '';
+    failUnlock = failure !== 'close';
+    vi.spyOn(writeHelpers, 'runPreWriteLint').mockReturnValue({
+      blocked: false,
+      warnings: 'Saved-source lint warning',
+    });
+    const fallback = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url: unknown, options: any) => {
+      const response = await fallback(url, options);
+      if (String(url).includes('_action=LOCK')) response.headers.set('set-cookie', 'sap-contextid=owned; Path=/');
+      if (String(url).includes('/http/sessions') && failure !== 'unlock') return mockResponse(503, '');
+      return response;
+    });
+    const input = {
+      ...update(),
+      action,
+      transport: 'A4HK900002',
+      ...(action === 'create' ? { package: 'ZTEAM', expectedSourceHash: undefined } : {}),
+      ...(action === 'edit_method' ? { method: 'value', source: 'result = 2.' } : {}),
+    };
+    const result = await handlePinnedWrite(client(), input, config);
+    expect(result.isError).toBe(true);
+    expect(payload(result)).toMatchObject({
+      error: 'PINNED_WRITE_INCOMPLETE',
+      state: 'saved-inactive',
+      sourceHash: sourceHash(source),
+      phase: failure === 'close' ? 'session-close' : 'unlock',
+      sessionClosed: failure === 'unlock',
+      transport: 'A4HK900001',
+      warnings: 'Saved-source lint warning',
+      retryable: false,
+    });
+    expect(source).toContain('result = 2.');
+    expect(saves()).toHaveLength(1);
+    expect(requests.filter((r) => r.path.includes('_action=UNLOCK'))).toHaveLength(1);
+    expect(requests.filter((r) => r.path.includes('/http/sessions'))).toHaveLength(1);
+  });
+  it.each(['update', 'edit_method'])(
+    'retains selected parent but no confirmed hash/warnings after uncertain %s',
+    async (action) => {
+      pkg = 'ZTEAM';
+      local = '';
+      failSave = 503;
+      vi.spyOn(writeHelpers, 'runPreWriteLint').mockReturnValue({ blocked: false, warnings: 'Not saved' });
+      const result = payload(
+        await handlePinnedWrite(
+          client(),
+          {
+            ...update(),
+            action,
+            transport: 'A4HK900002',
+            ...(action === 'edit_method' ? { method: 'value', source: 'result = 2.' } : {}),
+          },
+          config,
+        ),
+      );
+      expect(result).toMatchObject({
+        state: 'source-save-unknown',
+        phase: 'source-save',
+        transport: 'A4HK900001',
+        retryable: false,
+      });
+      expect(result.sourceHash).toBeUndefined();
+      expect(result.warnings).toBeUndefined();
+      expect(source).toBe(initial);
+      expect(saves()).toHaveLength(1);
+    },
+  );
   it('preserves a created stub when SAP rejects its source', async () => {
     failSave = 422;
     const result = payload(
@@ -417,9 +711,13 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
       return fallback(url, options);
     });
     const c = client();
-    await expect(resolvePinnedRequest(c.http, c.safety, 'A4HK900002')).rejects.toThrow(
-      'The selected task must be modifiable',
-    );
+    await expect(
+      resolvePinnedRequest(c.http, c.safety, 'A4HK900002', {
+        deadline: Date.now() + 300_000,
+        noReplay: true,
+        retryTransientErrors: false,
+      }),
+    ).rejects.toThrow('The selected task must be modifiable');
   });
   it.each([{ serverAllowedTransports: [] }, { serverAllowedTransports: ['A4HK999999'] }])(
     'independently enforces the server CTS write ceiling: %j',
@@ -499,4 +797,27 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect(result.isError, result.content[0].text).toBeUndefined();
     expect(requests.filter((r) => r.path.includes('/activation?'))).toHaveLength(1);
   });
+});
+
+it.each(['CLAS', 'INTF'] as const)('refuses duplicate native references for %s', (type) => {
+  const selected = type === 'CLAS' ? owner : '/sap/bc/adt/oo/interfaces/zif_test';
+  expect(() => validatePinnedActivationReferences(selected, type, [{ uri: selected }, { uri: selected }])).toThrow(
+    'unqualified reference',
+  );
+});
+it.each(['CLAS', 'INTF'] as const)('accepts namespace slash hex case only for %s', (type) => {
+  const selected = `/sap/bc/adt/oo/${type === 'CLAS' ? 'classes' : 'interfaces'}/%2Fns%2Fztest`;
+  expect(() =>
+    validatePinnedActivationReferences(selected, type, [
+      {
+        uri: selected.replace(/%2F/g, '%2f'),
+        name: '/NS/ZTEST',
+        type: type === 'CLAS' ? 'CLAS/OC' : 'INTF/OI',
+        deleted: 'false',
+      },
+    ]),
+  ).not.toThrow();
+  expect(() =>
+    validatePinnedActivationReferences(selected, type, [{ uri: selected.replace('ztest', '%7atest') }]),
+  ).toThrow();
 });

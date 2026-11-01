@@ -298,6 +298,16 @@ export function normalizeTypeArgsForValidation(
       if (action === 'edit_text_symbols' && typeof args.source === 'string') cleaned.source = args.source;
       // SAPWrite preserves TABL/DT and TABL/DS so the create path can route by subtype.
       const normType = cleaned.type === undefined ? undefined : normalizeWriteObjectType(String(cleaned.type ?? ''));
+      // Only an exact empty string plus a hash is an intentional include clear.
+      // Optional-field pollution and whitespace-only source retain their refusal behaviour.
+      if (
+        (action === 'update' || action === 'edit_class_definition') &&
+        normType === 'CLAS' &&
+        normalizeClassWriteInclude(cleaned.include) &&
+        args.source === '' &&
+        typeof cleaned.expectedSourceHash === 'string'
+      )
+        cleaned.source = args.source;
       // Drop an inapplicable `include`: it is only meaningful for a CLAS local-include
       // write (update/edit_method/edit_class_definition). GPT/OpenAI callers frequently
       // attach include="definitions" to unrelated writes (DDLS/PROG/DTEL/delete/batch_create),

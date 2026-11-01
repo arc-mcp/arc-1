@@ -1,4 +1,4 @@
-/** Stable read-only tool surface and target schema helpers for multi-target v1. */
+/** Explicit read and pinned-mutation surfaces, plus target schema helpers. */
 
 import { isOperationAllowed, OperationType, type OperationTypeCode } from '../adt/safety.js';
 import { getActionPolicy, invocationPolicyKey } from '../authz/policy.js';
@@ -8,12 +8,16 @@ import type { TargetDescriptor } from './destination-registry.js';
 import { TARGET_CATALOG_MAX_OFFSET, TARGET_CATALOG_MAX_QUERY_LENGTH } from './multi-target-catalog.js';
 import { TARGET_ID_PATTERN } from './multi-target-identity.js';
 import {
-  PINNED_ACTIVATE_FIELDS,
-  PINNED_WRITE_ACTIONS,
-  PINNED_WRITE_FIELDS,
+  pinnedCompanionAllowed,
+  pinnedCompanionSurface,
   pinnedMutationAllowed,
-  pinnedWriteEnabled,
+  pinnedMutationSurface,
 } from './multi-target-write-surface.js';
+import {
+  PINNED_CLASS_INCLUDE_NAMES,
+  pinnedCompanionCapability,
+  pinnedMutationCapability,
+} from './pinned-mutation-capabilities.js';
 import type { ServerConfig } from './types.js';
 
 export const MULTI_TARGET_TOOLS = new Set([
@@ -109,10 +113,12 @@ export function multiTargetInvocationDecision(
   args: Record<string, unknown>,
   config: ServerConfig,
 ): 'allowed' | 'target-policy-denied' | 'forbidden' {
-  if (toolName === 'SAPWrite' || toolName === 'SAPActivate')
+  const action = invocationPolicyKey(toolName, args) ?? (toolName === 'SAPActivate' ? 'activate' : undefined);
+  if (pinnedMutationCapability(toolName, action))
     return pinnedMutationAllowed(toolName, args, config) ? 'allowed' : 'forbidden';
+  if (pinnedCompanionCapability(toolName, action))
+    return pinnedCompanionAllowed(toolName, args, config) ? 'allowed' : 'forbidden';
   if (!MULTI_TARGET_TOOLS.has(toolName)) return 'forbidden';
-  const action = invocationPolicyKey(toolName, args);
   if (toolName === 'SAPQuery' && action === 'long_text' && config.systemType === 'btp') return 'forbidden';
   const actionRule = MULTI_TARGET_ACTION_RULES.get(toolName);
   if (actionRule && (!action || !actionRule.actions.has(action.toLowerCase()))) return 'forbidden';
@@ -127,17 +133,20 @@ export function multiTargetInvocationDecision(
 
 function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefinition | undefined {
   if (tool.name === 'SAPWrite' || tool.name === 'SAPActivate') {
-    if (!pinnedWriteEnabled(config)) return undefined;
+    const surface = pinnedMutationSurface(tool.name, config);
+    if (!surface) return undefined;
     const write = tool.name === 'SAPWrite';
-    const fields = write ? PINNED_WRITE_FIELDS : PINNED_ACTIVATE_FIELDS;
+    const procedural = surface.types.includes('PROG');
+    const textPools = surface.actions.includes('edit_text_symbols');
+    const fields = surface.fields;
     const properties = Object.fromEntries(
       Object.entries(tool.inputSchema.properties as Record<string, unknown>).filter(([key]) => fields.has(key)),
     );
     return {
       ...tool,
       description: write
-        ? 'Create CLAS/INTF or update their main source on this pinned PP target. edit_method supports existing CLAS main methods. Updates require expectedSourceHash from SAPRead(format="editable"). Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate activates the complete owner, including existing inactive includes.'
-        : 'Activate one CLAS/INTF owner on this pinned PP target, including ALL its existing inactive drafts and includes. Additional owners are refused. This is not method-only activation.',
+        ? `Create or delete ${surface.types.join('/')} owners, update their main source or replace a CLAS local include on this pinned PP target. edit_method edits an existing method in main source or a selected/inferred class include. ${procedural ? 'On-prem edit_unit/add_unit replace/append one FORM or MODULE in a standalone PROG/INCL. ' : ''}Main-source class definition/signature edits, method add/delete and visibility moves use verified native main-source structure. Existing source requires expectedSourceHash from SAPRead(format="editable"); a missing optional include can be initialized under the class lock without a hash. Delete takes no source/hash and verifies native owner absence.${procedural ? ' Program deletion locks its text pool and refuses inactive pool drafts.' : ''} Destination and server package/transport restrictions both apply. Source saves remain inactive.${textPools ? ` edit_text_symbols replaces CLAS symbols${procedural ? ' or one PROG text part' : ''} without a source hash; it locks and activates the exact text pool, including its other pending text parts, and verifies the active content.` : ''} SAPActivate selects one complete owner, including existing inactive class includes${procedural ? ' or the selected program text pool reported by native preaudit; INCL activation never selects its users or their pools' : ''}.`
+        : `Activate one ${surface.types.join('/')} owner on this pinned PP target, including ALL its existing inactive drafts and class includes.${procedural ? ' Native preaudit may add only the selected program text pool, whose final active state is verified. INCL activation selects only that standalone include.' : ''} Additional owners are refused. This is not method-only activation.`,
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
       inputSchema: {
         type: 'object',
@@ -147,17 +156,16 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
             ? {
                 name: {
                   type: 'string',
-                  description: 'Uppercase CLAS/INTF owner name, at most 30 characters; optional registered namespace.',
+                  description: `Uppercase owner name; CLAS/INTF at most 30 characters${procedural ? ', standalone PROG/INCL identifiers at most 40' : ''}; optional registered namespace.`,
                 },
                 source: {
                   type: 'string',
-                  description:
-                    'Complete CLAS/INTF main source for create/update; an existing main method body or complete METHOD…ENDMETHOD block for edit_method.',
+                  description: `Complete CLAS/INTF source for create/update${procedural ? ', or complete PROG/INCL source for create/update; one FORM…ENDFORM or MODULE…ENDMODULE block for edit_unit/add_unit' : ''}, or the selected CLAS include for update (source="" with expectedSourceHash clears an existing include); an existing method body or complete METHOD…ENDMETHOD block for edit_method. For edit_class_definition supply the main CLASS DEFINITION block or the whole selected include; for edit_method_signature supply its METHODS clause. Required for create/update/edit_method/${procedural ? 'edit_unit/add_unit/' : ''}edit_class_definition/edit_method_signature; omit for delete/add_method/delete_method/change_method_visibility.${textPools ? ' For edit_text_symbols, provide the raw selected text-part body; source="" clears it. Whole-part replacement has no optimistic hash precondition and is limited to 1 MiB.' : ''}`,
                 },
                 package: {
                   type: 'string',
                   description:
-                    'Required explicit package for create. Must match both server and destination policies. Omit for updates.',
+                    'Required explicit package for create. Must match both server and destination policies. Omit for update/delete.',
                 },
                 transport: {
                   type: 'string',
@@ -168,24 +176,47 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                   type: 'string',
                   pattern: '^[a-f0-9]{64}$',
                   description:
-                    'Required for update/edit_method: SHA-256 from SAPRead(format="editable") on this owner main source. Omit for create.',
+                    'SHA-256 from SAPRead(format="editable") on the exact main source or selected include; required for existing source updates and every class/procedural surgery action. Omit for create/delete, edit_text_symbols, or a new optional include verified absent under lock.',
                 },
+                ...(textPools
+                  ? {
+                      textPart: {
+                        type: 'string',
+                        enum: procedural ? ['symbols', 'selections', 'headings'] : ['symbols'],
+                        description: `Complete part to replace; default symbols. CLAS supports symbols only.${procedural ? ' PROG also supports selections and headings.' : ''} Activation covers the whole text pool.`,
+                      },
+                    }
+                  : {}),
+                ...(fields.has('include')
+                  ? {
+                      include: {
+                        type: 'string',
+                        enum: [...PINNED_CLASS_INCLUDE_NAMES],
+                        description:
+                          'CLAS update and edit_class_definition replace this complete include; edit_method edits an existing method within it. All lock the class owner. Explicit include overrides local-class prefix inference. main and text_symbols are not accepted values.',
+                      },
+                    }
+                  : {}),
                 method: {
                   type: 'string',
                   description:
-                    'Existing CLAS main-source method name, only for edit_method. Local-class/include methods are unavailable.',
+                    'Existing method name for edit_method, edit_method_signature, delete_method and change_method_visibility; add_method takes a complete METHODS or CLASS-METHODS clause. Only edit_method routes local lhc_/lcl_ class~method to implementations and ltc_ to testclasses; explicit include overrides that inference. Signature/add/delete/visibility actions use main source.',
                 },
               }
             : {}),
-          type: { type: 'string', enum: ['CLAS', 'INTF'] },
-          action: { type: 'string', enum: write ? [...PINNED_WRITE_ACTIONS] : ['activate'] },
+          type: { type: 'string', enum: surface.types },
+          action: { type: 'string', enum: surface.actions },
         },
-        required: write ? ['action', 'type', 'name', 'source'] : ['type', 'name'],
+        required: write ? ['action', 'type', 'name'] : ['type', 'name'],
         additionalProperties: false,
       },
     };
   }
-  if (!MULTI_TARGET_TOOLS.has(tool.name)) return undefined;
+  const mutationSurface = pinnedMutationSurface(tool.name, config);
+  const companionSurface = pinnedCompanionSurface(tool.name, config);
+  const expandedFields = new Set([...(mutationSurface?.fields ?? []), ...(companionSurface?.fields ?? [])]);
+  const hasReaderSurface = MULTI_TARGET_TOOLS.has(tool.name);
+  if (!hasReaderSurface && !mutationSurface && !companionSurface) return undefined;
   const schema = tool.inputSchema;
   const properties = (schema.properties as Record<string, unknown> | undefined) ?? {};
   const field = tool.name === 'SAPRead' ? 'type' : 'action';
@@ -195,16 +226,31 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
   }
   const values = definition.enum
     .map(String)
-    .filter((value) => isMultiTargetInvocationAllowed(tool.name, { [field]: value }, config));
+    .filter(
+      (value) =>
+        mutationSurface?.actions.includes(value) ||
+        companionSurface?.actions.includes(value) ||
+        isMultiTargetInvocationAllowed(tool.name, { [field]: value }, config),
+    );
   if (values.length === 0) return undefined;
   const actionRule = MULTI_TARGET_ACTION_RULES.get(tool.name);
-  const prunedProperties = actionRule
-    ? Object.fromEntries(Object.entries(properties).filter(([name]) => !actionRule.omittedProperties.has(name)))
-    : properties;
+  const prunedProperties = Object.fromEntries(
+    Object.entries(properties).filter(([name]) =>
+      hasReaderSurface
+        ? !actionRule?.omittedProperties.has(name) || expandedFields.has(name)
+        : expandedFields.has(name),
+    ),
+  );
+  const mutates = values.some((value) => !!pinnedMutationCapability(tool.name, value));
   return pruneQueryDefinition(
     {
       ...tool,
-      annotations: { ...tool.annotations, readOnlyHint: true, destructiveHint: false },
+      annotations: {
+        ...tool.annotations,
+        readOnlyHint: !mutates,
+        destructiveHint: mutates,
+        ...(mutates ? { idempotentHint: false } : {}),
+      },
       inputSchema: {
         ...schema,
         properties: {
@@ -219,6 +265,25 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
 
 export function multiTargetToolDefinitions(tools: ToolDefinition[], config: ServerConfig): ToolDefinition[] {
   return tools.map((tool) => pruneDefinition(tool, config)).filter((tool): tool is ToolDefinition => !!tool);
+}
+
+/** Functional scope/action-denial pruning runs later; annotate only the actions that survived it. */
+export function finalizeMultiTargetToolAnnotations(tools: ToolDefinition[]): ToolDefinition[] {
+  return tools.map((tool) => {
+    const properties = tool.inputSchema.properties as Record<string, { enum?: unknown[] }> | undefined;
+    const actions = properties?.action?.enum;
+    if (!Array.isArray(actions)) return tool;
+    const mutates = actions.some((action) => !!pinnedMutationCapability(tool.name, action));
+    return {
+      ...tool,
+      annotations: {
+        ...tool.annotations,
+        readOnlyHint: !mutates,
+        destructiveHint: mutates,
+        ...(mutates ? { idempotentHint: false } : {}),
+      },
+    };
+  });
 }
 
 function targetSchema(targets: readonly TargetDescriptor[]): Record<string, unknown> {

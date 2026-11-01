@@ -613,10 +613,10 @@ For multi-target v1, data preview and SQL require both application ceilings and 
 destination opt-ins. The [reviewed tool/action surface](multi-target-setup.md#allowed-tools) also
 includes offline lint, read-only transport inspection, ATC and ABAP Unit. ATC/Unit execute SAP
 workloads: keep them out of routine deployment smoke tests, and deny their actions when not approved.
-For scoped CLAS/INTF writes and whole-owner activation, complete the separate
+For the mutations listed in the capability guide, complete the separate
 [pinned PP write setup](multi-target-writes.md) after this read-only acceptance. Aggregate and Basic
-routes remain mutation-free. Transport/Git management, SAP-backed formatter/settings actions, plugins,
-UI and hyperfocused mode remain unavailable.
+routes remain mutation-free. Git management, plugins, UI and hyperfocused mode remain unavailable;
+other write operations require an explicitly supported native adapter in that guide.
 
 When data preview or SQL is enabled, keep the shipped 2 MiB cumulative response allowance and two
 process-wide data-result slots initially. Wide rows can reach the byte ceiling below the 10,000-row

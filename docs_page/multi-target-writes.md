@@ -4,7 +4,7 @@ Multi-target writes use the existing pinned URL and the existing `SAP_ALLOW_WRIT
 They require Principal Propagation (PP), target-filtered authorization, destination opt-in,
 and a separate exact write grant. Enabling the global switch alone grants no multi-target writes.
 
-| Connection | Reads | Scoped object writes |
+| Connection | Reads | Built-in mutations |
 |---|---|---|
 | Pinned PP `/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp` | Subject to access grants and SAP authorization | Only when every write gate below agrees |
 | Aggregate `/multi/mcp` | Explicit target on each call | Never |
@@ -51,10 +51,13 @@ Keep the destination's real `sap-sysid`, `sap-client`, URL, Cloud Connector loca
 `arc1.target_alias` from the existing setup. On read-only target `QAS/001`, omit all three write
 properties. A pinned URL names the public target ID, including its alias if configured.
 
-**Both package lists apply.** A package must match the global list and the destination list.
+**Both package lists apply to repository writes.** A package must match the global list and the destination list.
 Here, `ZTEAM_OTHER` is not writable merely because it matches the global subtree. Conversely, a
 destination cannot permit a package excluded globally. Existing-object checks use the real SAP
 package, not a package supplied by the caller. Package subtree lookup failures deny the write.
+Pinned checks fetch fresh subtree evidence during preflight and again under the lock, within the
+write call's cancellation and deadline. A slow or unavailable hierarchy can therefore refuse a write
+that an earlier check allowed; an earlier positive result is not reused to authorize the save.
 
 Destination package lists support exact names, prefix patterns (`ZTEAM*`), DEVCLASS subtrees
 (`ZTEAM/**`) and explicit `*`. Transport lists support exact request IDs, prefixes and explicit `*`.
@@ -123,18 +126,135 @@ only the aggregate compatibility connection cannot write through that connection
 
 | Action | Requirements |
 |---|---|
-| `SAPWrite.create` | One CLAS or INTF; explicit package and complete source; required allowed request/task for a transportable package |
-| `SAPWrite.update` | CLAS/INTF main source; `expectedSourceHash` from `SAPRead(format="editable")` |
-| `SAPWrite.edit_method` | Existing CLAS main-source method; hash of the complete editable main source |
-| `SAPActivate` | One CLAS/INTF owner; activates all of that owner's existing inactive drafts and includes |
+| `SAPWrite.create` | One CLAS/INTF or on-prem standalone PROG/INCL; explicit package and complete source; required allowed request/task for a transportable package |
+| `SAPWrite.update` | CLAS/INTF main source, on-prem standalone PROG/INCL source, or CLAS `definitions`, `implementations`, `macros`, `testclasses`; exact editable-source hash for existing source |
+| `SAPWrite.edit_text_symbols` | CLAS symbols or on-prem PROG symbols/selections/headings; explicit raw part source, including `""` to clear; whole-part replacement without a hash, exact-pool activation and active-content verification |
+| `SAPWrite.edit_unit` / `add_unit` | On-prem standalone PROG/INCL; complete named FORM or MODULE block and hash of the complete owner source; add appends at physical EOF |
+| `SAPWrite.edit_method` | Existing CLAS main-source or local-include method; hash of the complete selected editable source |
+| `SAPWrite.edit_class_definition` | CLAS main definition block with complete main-source hash, or whole selected include replacement; main edits preserve the implementation, compare declared bodies and existing direct interface declarations, and refuse explicit method/interface ABSTRACT changes that need a complete source update |
+| `SAPWrite.edit_method_signature` | CLAS main source; existing method name, new METHODS clause and main hash; body preserved, ABSTRACT transitions refuse, other intermediate signature changes skip lint |
+| `SAPWrite.add_method` | CLAS main source; METHODS clause, optional visibility/abstract flag and main hash; abstractness comes from the clause, an explicit flag must agree, and a body stub is added only for a concrete method |
+| `SAPWrite.delete_method` / `change_method_visibility` | CLAS main source; existing method name and main hash; visibility moves additionally require the target section |
+| `SAPWrite.delete` | One CLAS/INTF or on-prem standalone PROG/INCL owner; PROG also holds the text-pool lock and refuses inactive pool drafts; actual package and native recording checks before/under lock, followed by verified owner absence; omit source and source hash |
+| `SAPActivate` | One CLAS/INTF or on-prem standalone PROG/INCL owner; includes its existing inactive class includes or native-reported program text pool. A selected pool requires native state verification; an unselected pool is inspected when its service is available, with unavailable state reported as unknown. Results identify the actual scope, including pool-only confirmation; INCL does not select its users or their pools |
+| `SAPLint.set_formatter_settings` | Partial indentation/style patch of the mapped SAP user's formatter preferences on this target; native read/merge/write/read-back, not a package-owned object |
 
-Creates and edits save inactive source. Review it before activation. **Activation is whole-owner**,
+Program/include creation, deletion and activation have offline tests in this draft; fresh PP
+qualification remains pending. Function-group structural includes still require their own adapter. Native include
+activation/deletion results report the returned context count and consumer packages without treating
+those consumers as additional write owners. These are not complete where-used inventories: changing
+or deleting a shared include can break its consumers.
+
+The tested NW 7.50 system lacks the native textelements service. Text-part replacement and guarded
+PROG deletion refuse when that service is unavailable. A PROG activation that completed before its
+pool verification failed reports the native result and uncertainty; inspect it before another attempt.
+An inactive pool blocks deletion. Review its drafts with their author and activate the intended pool
+in ADT first; pinned SAPActivate does not expose direct REPT activation, and deletion never activates
+pending text changes automatically. Typed resource absence on unlock after verified deletion is
+accepted only when the owning session closes. Other cleanup failures name the affected lock URI.
+Source saves stay inactive until explicit activation. Existing-source updates and unit edits use the owner lock, fresh source hash and exact
+read-back. Shared-line neighbors refuse; put FORM/MODULE boundaries on separate lines first.
+
+
+For an existing class include, read `SAPRead(type="CLAS", name=..., include=..., format="editable")`
+and pass that include's hash to `update`, `edit_class_definition` or `edit_method`. Omit `include` for main source. An omitted hash can initialize
+a new optional include only after native absence is verified under the class lock; it cannot replace
+an existing include. To clear an existing include, send exactly `source=""` with its current `expectedSourceHash`.
+Empty source without a hash and whitespace-only source are refused. Results retain a partial
+initialization if the following save fails. Activation still affects the complete class and its drafts.
+The [two-writer local include replacement run](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-includes.md) passed at `77e41fdcd`; transportable includes remain unqualified.
+
+For `edit_method`, `lhc_class~method` and `lcl_class~method` infer `implementations`, while
+`ltc_class~method` infers `testclasses`. An explicit supported `include` wins. Read that exact
+include with `format="editable"` first: a main-source hash does not authorize an include edit.
+The adapter edits only an existing method; it never initializes a missing include. It preserves
+neighboring methods/classes and saves inactive source under the owning class lock. Fragment lint
+and advisory syntax checks are skipped, as on single-target include edits; whole-owner activation
+performs SAP's syntax checks. This new include-method adapter has offline tests and still needs
+its own reviewed, artifact-bound PP qualification.
+
+Standalone procedural edits require fresh native PROG/P or PROG/I metadata with the exact name and
+its own package, checked before locking and again under the lock. Generated `L*` include names and `SAPL*` program/include names (also namespaced),
+container/group aliases, mismatched metadata and unresolved ownership refuse.
+Executable programs, subroutine pools and module pools are recognized; this does not qualify their
+live writes. Include usage contexts do not authorize edits to the programs that use the include.
+
+Main-source class surgery verifies SAP's native structure against the same editable source under the
+class lock: owner, source resource/version, declaration/body inventory, names, visibility and exact
+native ranges must agree. Shared-line boundaries and individual chained declarations are refused
+when a whole-line edit would affect neighbors. Use a reviewed complete source update when structure
+cannot be verified, including inherited-interface metadata that cannot be matched to a direct local
+declaration. Structural checks do not replace SAP semantic validation. An already-correct visibility returns `unchanged` without a save. These new
+metadata actions are covered offline; their two-writer PP qualification is still pending. With `include`, `edit_class_definition` replaces that whole include through the same protocol as
+`update`; it does not splice a local definition. It can initialize a verified missing include or clear
+an existing include with an exact hash. It keeps its existing trailing-newline normalization.
+
+Confirmed saves retain their source hash, selected transport and warnings when unlock or session
+closure fails. The result reports the failed cleanup phase and is not a retry instruction.
+
+Text-part writes use the native text-pool lock and replace the selected part completely. They
+read the current inactive part under that lock, preserving other parts, and report removed entries.
+Before activation, readback must preserve the requested keys, values and supported annotations;
+native key padding, line endings, trailing padding and resolved DDIC labels are handled explicitly.
+Ambiguous or mismatching readback leaves the save unverified and sends no activation. A pinned
+`SAPActivate` action denial also disables these writes because their native lifecycle includes activation.
+This representation has no optimistic source-hash precondition: read the part first and review the
+whole replacement. Source and verification bodies are limited to 1 MiB of UTF-8. The pool is
+unlocked before activation in the same SAP session. Only that pool is submitted; its other pending
+text parts activate too. Fresh native metadata and an explicit active-version part read must agree
+with the saved readback. A class's already-empty active symbols are a verified no-op; inactive empty
+drafts are not skipped. A never-activated program may need an explicit first owner activation.
+Unconfirmed activation or mismatching active content is incomplete and is never retried automatically.
+After an unconfirmed submitted activation, bounded read-only verification reports the observed pool
+state and active-part match when available; a matching read does not turn a native activation error
+into success. Native activation messages are retained in bounded form.
+Function-group text writes remain pending their ownership adapter. These new text-write paths still
+require fresh two-writer PP qualification; the
+[native read investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-text-pool-active-version.md)
+is read-only evidence.
+
+Writable pinned PP connections also expose `SAPLint.format` and `get_formatter_settings` with their
+normal `read` scope. These supporting reads remain hidden on reader connections, read-only
+destinations, aggregate routes and Basic targets. `format` returns formatted source without saving it.
+Use `SAP_DENY_ACTIONS=SAPLint.set_formatter_settings` to prohibit preference changes while retaining
+the supporting reads on otherwise writable pinned connections.
+
+Formatter settings reads and patches require SAP's preferred representation to be native v5. Patches preserve untouched attributes visible in that XML,
+and refuse older representations or unrecognized metadata before writing. This does not establish
+preservation of hidden native storage, such as a dormant case mode under style `none`.
+The current adapter refuses settings reads and patches when native style is `toUpper` or `toLower`;
+users in either state cannot use this adapter to read or change their preferences. The accepted
+styles are `keywordUpper`, `keywordLower`, `keywordAuto` and `none`, but only `keywordUpper` and
+`keywordLower` were exercised by the v5 live run. Older versions omit preferences that SAP's PUT
+can reset; there is no fallback. The adapter sends strong native ETags when supplied, but native
+conditional-write enforcement is not qualified. Every live preference write was
+`native-unconditional`, so concurrent updates to the same user's preferences can overwrite each other. An uncertain outcome is not a
+rollback; read the settings before deciding whether another update is appropriate. The
+[formatter qualification record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-formatter.md)
+records the historical v2 limits and a later v5 run at `1b234d3a4`, with in-run native author/source
+receipts, primary-user native preference changes, all five optional v5 fields seeded and preserved,
+and verified restoration. The secondary's preference evidence is MCP-visible only; same-user
+concurrency and hidden native fields remain outside that proof. Historical v2 comparisons do not
+establish preservation of newer preferences. Broader PR #1142 remains a draft.
+
+Deletion removes the current complete owner. It does not require or protect a previous source read.
+Use `SAP_DENY_ACTIONS=SAPWrite.delete` to disable deletion while retaining other admitted writes.
+If SAP accepts DELETE but absence cannot be verified, the result remains unconfirmed; inspect the
+object before deciding whether to try again. A verified deletion with failed cleanup is reported
+as deleted with a cleanup failure. The [deletion record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-deletion.md)
+contains historical direct-native evidence for the earlier any-404 adapter and the later two-user
+PP run at `1b234d3a4`. The latter confirms typed absence for four local CLAS/INTF owners and final
+cleanup. Transportable deletion remains unqualified.
+
+Source creates and edits save inactive source. Review it before activation. **Activation is whole-owner**,
 including drafts created previously or by another session; it is not method-only activation.
-Use `SAP_DENY_ACTIONS=SAPActivate` if your team must activate separately in ADT. Hidden actions,
-other types, deletes, include editing, batches, RAP/DDIC, publication, transport management and Git
+Use `SAP_DENY_ACTIONS=SAPActivate,SAPWrite.edit_text_symbols` if your team must activate separately in ADT. Hidden actions,
+other types, batches, RAP/DDIC, publication, transport management and Git
 are refused even if a client sends the call directly. Per-call lint-disable options are unavailable.
 ABAP Unit can execute newly authored code under the SAP user; deny `SAPDiagnose.unittest` unless
-that execution is intended. Global lint configuration applies; `SAP_CHECK_BEFORE_WRITE` remains advisory. SAP authorization is
+that execution is intended. Global lint configuration applies to main-source saves except intermediate signature edits; class-include
+replacement and include-method edits skip lint and advisory syntax checks. `SAP_CHECK_BEFORE_WRITE`
+remains advisory for the paths that use it. SAP authorization is
 always required in addition to ARC-1 policy. Live qualification used SAP_BASIS 758 SP02 with
 Cloud Connector PP. Other releases must affirm the same lock, recording and activation evidence;
 unrecognized responses fail closed. An activation response without positive execution evidence

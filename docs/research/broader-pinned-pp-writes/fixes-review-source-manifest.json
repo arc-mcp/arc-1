@@ -1,0 +1,21 @@
+{
+  "baseCommit": "87dcd620a5b5d7dcca6a0d467a616f9e5d342ef5",
+  "files": {
+    "docs/adr/0011-broader-pinned-pp-mutations.md": "599494fa55896506e416c456d32ced223859b024718ebc6a770f1e765a7e5579",
+    "docs/research/broader-pinned-pp-writes/inventory.json": "3372af5af610433c6ffb9c5c793174b67871a76c6e4b86e4d807f9648334c234",
+    "docs/research/broader-pinned-pp-writes/inventory.md": "28cff02c082a16cea13d885861ef4f5e2a598fed20c941335c9eab03f1bd46a8",
+    "docs/research/broader-pinned-pp-writes/nested-input-contracts.json": "2de5dd915379aa25691dddadc9b30e1f4b0cf1d60b3fb4056769a125d07726b5",
+    "package-lock.json": "08ab605eb3ee5ee053838119c9e065a7d87f7433f31cfe0021a54db1947cddd2",
+    "src/adt/package-hierarchy.ts": "805ef694cca9e533f2c1afd0002bb71c4f6e2fef8cc210f5f926310bed69ae04",
+    "src/adt/pinned-transport-scope.ts": "342287afdfe86bf40a77cf14f792c9c6878e21b620e8ab5e6db54a7141cb877d",
+    "src/adt/safety.ts": "38402998534980c4139bfa76d065dcf103dbbfbc5313c00e1f13e765cfdd2c25",
+    "src/adt/transport.ts": "af870e053bda62cd4faf62eef28b6aa097614f32d68d2d1f5a4ac0a0f4f1ff37",
+    "tests/integration/pinned-transport-scope.integration.test.ts": "ebf720e34f0ec0d315df24bd41dcc833b7c944c64464a8033fd9fad2ac387dbf",
+    "tests/unit/adt/pinned-package-hierarchy.test.ts": "9376bb11d83190b2a478d9de45a5babfe67da82df6ae4b5043d3a45feb3332de",
+    "tests/unit/adt/pinned-transport-scope.test.ts": "b3b0e868a8017952230854041ca9f1af88a0abc32ea6e839e75415830d8dc6b1",
+    "tests/unit/handlers/pinned-writes.test.ts": "0cd5498b14f4c4a9b586ba97fa118ea6da035fe8cb6ea131d2974ce41883ae90",
+    "tests/unit/server/pinned-mutation-inventory.test.ts": "456884c9d3ae21a6816cdbac66b9ca6bd45efc9ef95420827e584c19015daf67",
+    "docs/research/broader-pinned-pp-writes/claude-foundation-review.md": "b14a53a67bbab7651312f58353c7eb6698cf9590c4e6875ef780035ed507d75a",
+    "docs/research/broader-pinned-pp-writes/claude-hierarchy-review.md": "f20e7c5854384500c203873b43cfebd7d18ef1d55ed2cf297ae6f2466f5c592a"
+  }
+}

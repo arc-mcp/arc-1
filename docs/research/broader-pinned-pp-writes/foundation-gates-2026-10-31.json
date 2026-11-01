@@ -1,0 +1,68 @@
+[
+  {
+    "check": "test",
+    "exit": 1,
+    "seconds": 34.3
+  },
+  {
+    "check": "typecheck",
+    "exit": 0,
+    "seconds": 2.6
+  },
+  {
+    "check": "lint",
+    "exit": 0,
+    "seconds": 0.6
+  },
+  {
+    "check": "policy",
+    "exit": 0,
+    "seconds": 0.4
+  },
+  {
+    "check": "build",
+    "exit": 0,
+    "seconds": 0.9
+  },
+  {
+    "check": "sizes",
+    "exit": 0,
+    "seconds": 0.5
+  },
+  {
+    "check": "shutdown-recheck",
+    "exit": 0,
+    "tests": 12
+  },
+  {
+    "check": "full-unit-recheck",
+    "exit": 0,
+    "files": 385,
+    "tests": 10642
+  },
+  {
+    "check": "docs-build",
+    "exit": 0
+  },
+  {
+    "check": "native-source-lifecycle",
+    "exit": 0,
+    "authentication": "direct-test-identity",
+    "cleanup": "verified GET 404"
+  },
+  {
+    "check": "native-cts-scope-lifecycle",
+    "exit": 0,
+    "authentication": "direct-test-identity",
+    "request": "A4HK906592",
+    "cleanup": "verified GET 404",
+    "releasePerformed": false
+  },
+  {
+    "check": "native-cts-membership-read",
+    "exit": 0,
+    "authentication": "direct-test-identity",
+    "parentAndTask": true,
+    "mutations": 0
+  }
+]

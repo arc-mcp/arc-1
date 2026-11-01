@@ -1,0 +1,26 @@
+{
+  "baseCommit": "03593894c769d6f042a0770f89950c99120fc0aa",
+  "model": "claude-opus-5-5",
+  "effort": "max",
+  "files": {
+    "src/adt/allowlist-policy.ts": "548f41f3afc397017cac6f498c566108b1f1f28e5f24385146dcd2e25c827191",
+    "src/adt/client.ts": "48490d896ebd607f83356f586950ce550c454e69bce80e3032aff5ef92985155",
+    "src/adt/mutation-client.ts": "a4b53ec28b9705968eef1eeda77df37955dfb358ed202b07b722a6307433149f",
+    "src/adt/mutation-http.ts": "ef47932f49854be33c6fd658f67e9ceafa041c2c52309b4134e1bb487316ac0f",
+    "src/adt/pinned-transport-scope.ts": "cf437871a2ad0646c4db75642e1d6c543a61708e540bff53e51249eecba95b31",
+    "src/adt/pinned-write-policy.ts": "b9b6bbe3e51b072bba9a3b6383bd85d87e1cbaac191c6c57133707ce8a11c33a",
+    "src/adt/safety.ts": "030ee8aaae703bb6d01a2d45413fa3637e14e834a8cf10421bcad427e966facd",
+    "src/adt/transport-contract.ts": "b944e3c3ea44312ac36df4eff0bfa0cb9e17a86b5bcd2473b89e754e30063be0",
+    "src/adt/transport-release-state.ts": "3008e7cf9d6e4e0d573b208b777353f5081dfbc774732f143b2e560cbceaf1a4",
+    "src/adt/transport.ts": "d26c49cc77ad11fa3731a47c2819aa95479b92542200664255a6c5b6df270991",
+    "src/handlers/write/create.ts": "21eb5d5d76a1e0ebde9e7b704091271be912851ae8c39a4849dd5b7e1080e1c3",
+    "src/handlers/write/metadata-update.ts": "78dcd649cd17e1e5fe3dea0fd07034161740a14e5e0cca9f718a207c2e916ffe",
+    "src/handlers/write/pinned-activation.ts": "25d758bebdf90ab9d2ec5f0103a2cf992dda352d54d84198dc65e35c3292a633",
+    "src/handlers/write/pinned.ts": "708bd78b5f04522908434eca14e3ca44fbfec16358ca66359a5376cb7270133d",
+    "tests/integration/pinned-transport-scope.integration.test.ts": "44243fb7dd5afbf0e1cbfcc8500f2043bdd490c9b666fa5f3c2d4d9488e746ca",
+    "tests/unit/adt/mutation-client.test.ts": "a3ed7c4882b08663f03417167e0631dfe8daf5fa675f25a72172fe50a2ef0f64",
+    "tests/unit/adt/pinned-transport-scope.test.ts": "299a7f30611cebc5913f272b1fe8efed74c1161c9afbb414893987c62bbfbb42",
+    "tests/unit/handlers/pinned-writes.test.ts": "de75d713ef858cc4f0a423ab32c4e58c5d7325775e85b6aadbd663fce17c5d61",
+    "tests/unit/server/pinned-mutation-inventory.test.ts": "245200b1fa1d4ddaa85d104c17264f7bf5646940858662503e39827695987ab6"
+  }
+}

@@ -8,11 +8,12 @@ import {
   TEXT_ELEMENT_PARTS,
   type TextElementPart,
 } from '../../adt/client.js';
-import { deleteObject, lockObject, safeUpdateClassInclude, safeUpdateSource, unlockObject } from '../../adt/crud.js';
+import { deleteObject, lockObject, unlockObject } from '../../adt/crud.js';
 import { getBadiEnhancementImplementation } from '../../adt/enhancement-impl.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, findFmHeader, spliceFmSignature } from '../../adt/fm-signature.js';
 import type { AdtHttpClient } from '../../adt/http.js';
+import { assertMutationContext } from '../../adt/mutation-context.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
 import { withActiveTextPoolForDelete } from '../../adt/text-elements.js';
 import {
@@ -23,7 +24,7 @@ import {
 } from '../cds-hints.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import { resolveFmDescriptionLanguage } from '../function-parameter-language.js';
-import { CLASS_WRITE_INCLUDES, canonicalTablType, classIncludeUrl } from '../object-types.js';
+import { CLASS_WRITE_INCLUDES, canonicalTablType } from '../object-types.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
 import {
   isMetadataWriteType,
@@ -33,8 +34,12 @@ import {
   runRapPreflightValidation,
   stripFmParamCommentBlock,
 } from '../write-helpers.js';
+import { replaceClassInclude } from './class-include.js';
 import type { SapWriteContext } from './context.js';
 import { writeMetadataUpdate } from './metadata-update.js';
+import { deletePinnedRepositoryOwner } from './owner-delete.js';
+import { writePinnedTextPool } from './pinned-text-pool.js';
+import { replaceOwnerSource } from './source-update.js';
 
 function isDeleteDependencyError(err: AdtApiError): boolean {
   const clean = AdtApiError.extractCleanMessage(err.responseBody ?? err.message).toLowerCase();
@@ -58,12 +63,10 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     source,
     hasSource,
     include,
-    transport,
     lintOverride,
     preflightOverride,
     checkOverride,
     objectUrl,
-    srcUrl,
     invalidateWrittenObject,
     enforcePackageForExistingObject,
   } = ctx;
@@ -89,16 +92,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     // the testclasses (CCAU) include is absent — a content PUT alone fails
     // with HTTP 500 "…CCAU does not have any inactive version". safeUpdateClassInclude
     // probes the include and POST-creates it (under the same lock) before the PUT.
-    const { initialized } = await safeUpdateClassInclude(
-      client.http,
-      client.safety,
-      objectUrl,
-      classIncludeUrl(name, include),
-      source,
-      transport,
-      getCachedFeatures()?.abapRelease,
-      args.expectedSourceHash as string | undefined,
-    );
+    const { initialized } = await replaceClassInclude(ctx, source);
     invalidateWrittenObject(type, name);
     const initNote = initialized ? ` (initialised the ${include} include first)` : '';
     return textResult(
@@ -178,21 +172,15 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
   };
   // A signature-only FUNC edit derives its replacement from fresh bytes under the lock.
   // A failed read aborts; there is no empty-body fallback or unlocked source read.
-  const replacement = needsCurrentFunctionSource
-    ? (current: string, session: AdtHttpClient) => checkSource(prepareFunctionSource(current), session)
-    : await checkSource(effectiveSource);
+  const replacement =
+    needsCurrentFunctionSource || ctx.mutationContext.mode === 'pinned-pp'
+      ? (current: string, session: AdtHttpClient) =>
+          checkSource(needsCurrentFunctionSource ? prepareFunctionSource(current) : effectiveSource, session)
+      : await checkSource(effectiveSource);
 
-  // If safeUpdateSource throws (lock conflict, network error, etc.), checkNotes
-  // is intentionally discarded — pre-check warnings only matter when the write succeeded.
-  await safeUpdateSource(
-    client.http,
-    client.safety,
-    objectUrl,
-    srcUrl,
-    replacement,
-    transport,
-    getCachedFeatures()?.abapRelease,
-    args.expectedSourceHash as string | undefined,
+  // Only a confirmed source save retains its quality notes in the pinned result.
+  await replaceOwnerSource(ctx, replacement, () =>
+    mergePreWriteWarnings(preflightWarnings.warnings, lintWarnings.warnings, checkNotes, fmParamStripWarning),
   );
   invalidateWrittenObject(type, name);
   const msg = `Successfully updated ${type} ${name}.`;
@@ -210,6 +198,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
 export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResult> {
   const { client, type, name, transport, objectUrl, invalidateWrittenObject, enforcePackageForExistingObject } = ctx;
   checkOperation(client.safety, OperationType.Delete, 'DeleteObject');
+  if (ctx.mutationContext.mode === 'pinned-pp') return deletePinnedRepositoryOwner(ctx);
   await enforcePackageForExistingObject();
   if (type === 'ENHO') {
     const stored = await getBadiEnhancementImplementation(client.http, client.safety, name);
@@ -292,6 +281,7 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
  *  The client locks, reads, PUTs, reads back, unlocks, then activates; the package gate here checks
  *  the owning object's real package (ctx.objectUrl). Not an ABAP-source write → no lint. */
 export async function writeActionEditTextSymbols(ctx: SapWriteContext): Promise<ToolResult> {
+  assertMutationContext(ctx.client.safety, ctx.mutationContext);
   const {
     args,
     client,
@@ -322,7 +312,10 @@ export async function writeActionEditTextSymbols(ctx: SapWriteContext): Promise<
   await enforcePackageForExistingObject();
   let result: Awaited<ReturnType<typeof client.writeTextElementPart>>;
   try {
-    result = await client.writeTextElementPart(type, name, part, source, transport);
+    result =
+      ctx.mutationContext.mode === 'pinned-pp'
+        ? await writePinnedTextPool(ctx, part)
+        : await client.writeTextElementPart(type, name, part, source, transport);
   } finally {
     // A successful PUT can leave a draft even if the subsequent activation fails.
     invalidateWrittenObject();

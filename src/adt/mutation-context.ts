@@ -6,6 +6,11 @@ import type { MultiTargetWritePolicy, SafetyConfig } from './safety.js';
 export interface MutationCleanupState {
   unlockFailed: boolean;
   sessionClosed?: boolean;
+  /** The LOCK request may have reached SAP without returning its handle/context. */
+  unknownLocks?: { uri: string; statusCode?: number }[];
+  unlockFailures?: { uri: string; statusCode?: number; absentAfterDelete?: true }[];
+  /** Typed UNLOCK 404 after verified DELETE/absence, resolved only by confirmed owning-session closure. */
+  removedLocksAfterDelete?: { uri: string; statusCode: 404; absentAfterDelete: true }[];
 }
 
 interface SingleTargetMutationContext {
@@ -26,8 +31,8 @@ export interface PinnedMutationContext {
   };
   readonly recordingPolicy: MultiTargetWritePolicy;
   readonly identityMode: 'mapped-user-unverified';
-  /** Source saves do not activate. The existing separate activation adapter must validate the owner. */
-  readonly activationPolicy: 'separate-whole-owner-validation';
+  /** Source saves remain separate; owner or internal resource activation needs its native validation. */
+  readonly activationPolicy: 'validated-native-activation';
   readonly cleanup: MutationCleanupState;
 }
 
@@ -64,7 +69,7 @@ export function pinnedMutationContext(
     requestPolicy: Object.freeze({ ...budget, noReplay: true, retryTransientErrors: false }),
     recordingPolicy: safety.multiTargetWrite,
     identityMode: 'mapped-user-unverified',
-    activationPolicy: 'separate-whole-owner-validation',
+    activationPolicy: 'validated-native-activation',
     cleanup,
   });
 }
@@ -86,7 +91,7 @@ export function pinnedSessionCleanup(
     timeoutMs: 30_000,
     noReplay: true,
     onClose: (closed) => {
-      context.cleanup.sessionClosed = closed;
+      if (context.cleanup.sessionClosed !== false) context.cleanup.sessionClosed = closed;
     },
   };
 }

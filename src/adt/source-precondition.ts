@@ -6,6 +6,17 @@ export function sourceHash(source: string): string {
   return createHash('sha256').update(source, 'utf8').digest('hex');
 }
 
+/** ADT normalizes CRLF and terminal newlines; all other editable source bytes must agree. */
+export function editableSourceEquals(left: string, right: string): boolean {
+  const comparable = (source: string) => {
+    const text = source.replace(/\r\n/g, '\n');
+    let end = text.length;
+    while (end > 0 && text.charCodeAt(end - 1) === 10) end--;
+    return text.slice(0, end);
+  };
+  return comparable(left) === comparable(right);
+}
+
 export function assertSourceHash(source: string, expected: string | undefined, sourceUrl: string): void {
   if (expected !== undefined && sourceHash(source) !== expected) {
     throw new AdtSafetyError(

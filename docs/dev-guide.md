@@ -100,7 +100,8 @@ use SAP's separate **Multi-Target Application** packaging terminology.
    record. These qualify only enforced mode; standard behavior must remain unchanged.
    For scoped writes, read [ADR-0010](adr/0010-pinned-pp-multi-target-writes.md), its
    [implementation contract](plans/2026-10-22-multi-target-pinned-writes.md), and the
-   [operator guide](../docs_page/multi-target-writes.md).
+   [operator guide](../docs_page/multi-target-writes.md). Broader adapters also follow
+   [ADR-0011](adr/0011-broader-pinned-pp-mutations.md) and its explicit capability/qualification matrix.
 2. At startup, `src/server/destination-discovery.ts` projects subaccount destinations into a
    secret-safe shape, `destination-registry.ts` validates them, and `server.ts`/`http.ts` create the
    pinned and aggregate HTTP factories.
@@ -118,9 +119,10 @@ use SAP's separate **Multi-Target Application** packaging terminology.
 ### Invariants
 
 - Default off; BTP CF only; XSUAA-only route auth; `ARC1_CACHE=none`; standard tool mode; UI,
-  plugins and shared cookies remain unavailable. ADR-0010 permits only scoped CLAS/INTF writes and
-  whole-owner activation on explicitly enabled pinned PP targets with exact write grants; aggregate,
-  Copilot and Basic routes remain mutation-free. Transport/Git management remains unavailable. PP
+  plugins and shared cookies remain unavailable. ADR-0010 establishes scoped writes and ADR-0011
+  defines broader native adapters on explicitly enabled pinned PP targets with exact write grants.
+  Only combinations in `pinned-mutation-capabilities.ts` are admitted; the operator guide records
+  qualification limits. Aggregate, Copilot and Basic remain mutation-free; Git stays excluded. PP
   targets are strict per-user. Basic is a separate default-off shared identity, never fallback, and
   requires exactly one CF instance. ATC and ABAP Unit are available as workload-producing reads;
   operators can disable them with `SAP_DENY_ACTIONS`.
@@ -197,10 +199,49 @@ npm run btp:validate
 ### Shared mutation lifecycle
 
 `src/adt/crud.ts::withLockedMutation` is shared by single-target `safeUpdateSource`,
-`safeUpdateClassInclude`, and the pinned CLAS/INTF adapter in `handlers/write/pinned.ts`.
+`safeUpdateClassInclude`, and the pinned source adapters in `handlers/write/pinned-source-lifecycle.ts`.
+The class-include protocol lives in `adt/class-include-write.ts` with a compatibility export from
+`crud.ts`; pinned main/include writes share `handlers/write/pinned-lock.ts` for under-lock policy.
+Existing pinned includes require their own hash; initialization requires typed native absence.
 `mutation-context.ts` requires a factory-created legacy or pinned context; a multi-target client
 cannot enter the legacy wrapper. The required callbacks keep package/recording revalidation in
 the pinned adapter. This is not a generic metadata, deletion, transport or activation engine.
+
+Class and procedural edits enter the shared action handlers. The registered, request-owned
+`pinned-source-{context,lifecycle}.ts` policy selects one canonical main/include source and enforces
+the fresh hash, owning lock, native package/recording rechecks, exact read-back and bounded cleanup.
+Class structure edits additionally cross-check native main-source metadata; unsupported inherited
+or parser-unknown structures refuse. Shared creation/deletion actions select explicit native profiles.
+`adt/pinned-program-owner.ts` verifies standalone PROG/INCL identity and its independent package.
+
+Program deletion uses `withPinnedActiveTextPoolForDelete`: its additional pool lock belongs to
+`withLockedMutation`'s existing session. `withAdditionalMutationLock` requires that active coordinator;
+it never opens another session or exposes the owning transport. Both locks use independent bounded
+cleanup even after cancellation; failures preserve the primary outcome. The legacy text-pool delete
+profile keeps its historical cleanup behavior. An inactive or unverified pool refuses pinned DELETE.
+After successful DELETE and typed owner-absence readback, a native adapter can identify its resource
+as deleted through the lock policy. A typed not-found UNLOCK is then resolved only by that exact
+owning session's confirmed close; generic 404 and other failures still report the affected URI/status.
+Never set deletion proof from DELETE status alone or clear unrelated cleanup failures.
+Program activation permits only the selected native pool expansion. Every native result is followed
+by a pool-state read, and results distinguish owner-only from expanded scope and preserve uncertainty.
+Include activation never expands to its users; native context counts/packages are usage information,
+not another ownership grant or a complete where-used inventory. These procedural paths still need live PP
+qualification; the latest successful deployed evidence remains scoped to `77e41fdcd`.
+
+Text-part replacement shares `text-elements.ts::writeTextElementPartWithPolicy` with an explicit
+registered profile. The pool lock differs from the repository owner; pinned validation binds both.
+Its post-unlock hook stays on the same owning session and runs only after a successful operation,
+confirmed unlock and a valid request budget. `pinned-text-pool-activation.ts` issues a one-use exact-URI
+grant only during that hook; ordinary caller options cannot disable native preaudit. Active metadata
+and an explicit active part equal to saved readback are both required. The save preserves other text
+parts, but whole-pool activation also activates their pending drafts. Submitted text PUT errors remain
+uncertain because native error status does not establish an atomic rejection.
+
+`native-xml-evidence.ts` retains namespace bindings, rejects ambiguous identity attributes, malformed
+or DOCTYPE-bearing documents, and bounds metadata. `native-activation-evidence.ts` preserves preaudit
+name/type/deleted evidence. Normalize only namespace-separator hex case when matching admitted URIs;
+do not decode arbitrary percent escapes or follow native refs outside the selected owner policy.
 
 `mutation-http.ts` gives nested helpers a scoped transport with the pinned deadline, cancellation
 and no-replay options. Child options cannot relax those limits; nested stateful sessions inherit
@@ -211,12 +252,31 @@ Opening `withStatefulSession` through the facade creates an independent SAP cont
 the parent's lock handle there. Its close callback is independent. Only the coordinator's
 owning session updates the mutation result's `sessionClosed` field.
 
+Use `mutation-client.ts::mutationClient` to bind existing native readers to that transport, including
+inside the owning session. Cloning preserves the existing own-enumerable field contract; it does not
+change the original client or its ordinary read retry policy. `mutationResponsible` omits optional
+responsibility for an unverified PP mapping and preserves the legacy identity fallback.
+
+Pinned package subtree checks require the mutation request policy too. Pass it into
+`getPackageHierarchyResolver(options)` or derive it from a factory-registered mutation facade.
+Recording/lock-policy helpers likewise refuse missing, replayable or unbounded options. Each
+pinned check obtains fresh hierarchy evidence; the legacy cached resolver never captures a pinned
+deadline or signal. Carry options through nodestructure POSTs, including CSRF and queue waits.
+
 Preserve the legacy absence of request options, `localityKnown`, session identity and unlock-error
 precedence. Pinned cleanup instead retains the primary outcome and reports cleanup status. Its
 result serializer lives in `write/pinned-result.ts`; activation still uses its existing independent
-validator and state machine. Existing schemas, capabilities and ADR-0010 constraints are unchanged.
+validator and state machine. The explicit capability matrix and broader-write ADR determine which adapters are admitted.
 
-Focused tests: `tests/unit/adt/mutation-{compatibility,lifecycle,isolation}.test.ts` and
+`pinned-transport-scope.ts` prepares an internal CTS safety/HTTP pair from native parent/task
+evidence and both request lists. Low-level writes reject copied scopes, raw clients and action/ID
+widening. Recursive delete/reassign validate the whole second-read set before the first submission;
+unknown/omitted tasks refuse. Create requires unrestricted request policies. This is membership and
+budget infrastructure, not type/state qualification or runtime admission. Source-recording policy
+remains separate. Pure allowlist/MIME modules avoid a safety→transport import cycle.
+
+Focused tests: `tests/unit/adt/mutation-{client,compatibility,lifecycle,isolation}.test.ts`,
+`tests/unit/adt/pinned-transport-scope.test.ts` and
 `tests/unit/handlers/pinned-writes.test.ts`. The optional destructive integration test
 `tests/integration/mutation-lifecycle.integration.test.ts` creates and deletes one unique `$TMP`
 class using the configured direct test identity. It exercises both adapters, not real PP routing.
@@ -279,7 +339,7 @@ See the [implementation evidence](research/2026-10-29-shared-mutation-infrastruc
 | Add/modify procedural unit surgery (`SAPWrite edit_unit` / `add_unit`, #558/#776) | `src/context/unit-surgery.ts`, `src/handlers/write/unit-surgery.ts`, `src/handlers/{write,schemas,tools}.ts`, `src/authz/policy.ts`, tests. FORM/MODULE only for on-prem PROG/INCL (including `INCL group=`); event blocks have no abaplint structure and stay unsupported. `add_unit` appends at physical EOF without moving INCLUDEs; both actions refuse incomplete MODULE structures. Keep the fresh editable-source GET inside the SAP lock, without cached draft/version selection ([live evidence and scope](plans/2026-09-21-edit-unit-lock.md)). |
 | Add/extend SAPRead `grep` regex search | `src/context/grep.ts` (`grepSource` — `gim` regex w/ literal fallback, ±3 context, 100-match cap), `src/handlers/read.ts` (`if (args.grep)` branch per source-bearing read; CLAS uses `client.getClassInclude`; FUGR greps each expanded include via `grepSourceBlocks`, where a per-include literal miss is not an invalid pattern; rejects `grep`+`method` together), `src/adt/client.ts` (`getClassInclude`), `schemas.ts`/`tools.ts`, tests (#313). |
 | Extend edit_method for class-local includes (CCDEF/CCIMP) | `src/handlers/write/class-surgery.ts` (`detectLocalHandlerInclude` + `edit_method` include routing), `src/handlers/schemas.ts` (`validateSapWriteInput` accepts `include`), `tools.ts`, tests. Auto-detect: `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses, `zif_X~method`→MAIN. |
-| Add CLAS class-section surgery (`add_method`/`delete_method`/`edit_method_signature`/`change_method_visibility`/`edit_class_definition`, #303) | `src/adt/class-structure.ts` (splice/diff helpers), `src/adt/client.ts` (`getClassStructure`), `src/adt/xml-parser.ts` (`parseClassStructure` — 7.50 split + 7.58+ unified shapes), `src/handlers/write/class-surgery.ts`, `src/handlers/{schemas,tools}.ts`, `src/authz/policy.ts`, tests + `objectstructure-clas-*` fixtures. Refuse-policy diff runs client-side before PUT (adds need an IMPL stub; orphan IMPLs rejected); `include=` writes skip it. |
+| Add CLAS class-section surgery (`add_method`/`delete_method`/`edit_method_signature`/`change_method_visibility`/`edit_class_definition`, #303) | `src/adt/class-structure.ts` (splice/diff helpers), `src/adt/client.ts` (`getClassStructure`), `src/adt/xml-parser.ts` (`parseClassStructure` — 7.50 split + 7.58+ unified shapes), `src/handlers/write/class-surgery.ts`, `src/handlers/{schemas,tools}.ts`, `src/authz/policy.ts`, tests + `objectstructure-clas-*` fixtures. Refuse-policy diff runs client-side before PUT (adds need an IMPL stub; orphan IMPLs rejected); `include=` writes skip it. Individual signature/delete/visibility edits refuse chained declarations because native ranges include earlier members; see [range evidence](research/2026-11-01-class-surgery-range-boundaries.md). |
 | Add SAPSearch tadir_lookup `source` variants (adt/db/both) | `src/handlers/search.ts` (`handleSAPSearch` tadir_lookup branch + merge/splitBrain), `src/handlers/{schemas,tools}.ts` (`source` enum), `src/adt/client.ts` (`lookupObjectsViaDb` via `runQuery`), `src/authz/policy.ts`, `src/adt/types.ts`, tests. `db`/`both` escalate to **sql scope** (viewer-only can't piggyback); default `adt`. |
 | SAPWrite batch preflight / `activateAtEnd` | `src/handlers/write/create.ts` (`writeActionBatchCreate`) + `write/batch-results.ts`, `schemas.ts`/`tools.ts`, tests. All deterministic checks precede creation; per-entry persistence survives failed writes/activation. Invalidate confirmed/uncertain mutations, including failures. Failed terminal activation never infers success from missing object messages. `activateAtEnd` still activates the already-written subset after a runtime write failure. |
 | Modify hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |
@@ -326,7 +386,7 @@ See the [implementation evidence](research/2026-10-29-shared-mutation-infrastruc
 | Add Layer B auth mechanism | `src/adt/http.ts` (applyAuthHeader at ~line 830, fetchCsrfToken at ~line 669), `src/server/server.ts` (buildAdtConfig — perUser flag), `tests/unit/adt/http.test.ts` |
 | Add safety config option | `src/adt/safety.ts`, `src/server/config.ts`, `src/server/types.ts` |
 | Add an `AdtClient` instance field / modify `withSafety()` clone | `src/adt/client.ts` (`withSafety()` clones via `Object.assign(Object.create(AdtClient.prototype), this, { safety })` — skips the ctor so the live HTTP session/cookies are shared, and copies **every own field by reference automatically**, so a new field rides along with no re-attach list. Just declare the field as a normal class field — plain TS `private`, NOT `#private` (Object.assign can't copy `#private`). Caches/holders are shared by instance, not deep-copied), `tests/unit/adt/client.test.ts` (`describe('withSafety')` — the structural guard already asserts every field except `safety` is shared by reference). Regression: #333 (a TABL cache field missing on the clone; stdio exempt — uses the constructor-built client). TABL write routes are never cached — a long-lived client must re-ask SAP after a structure is recreated as a table (#285 guard) — and the write fallback evicts the read-route cache entry before probing. |
-| Modify `allowedPackages` pattern syntax (exact / `Z*` / `ZFOO/**` subtree) | `src/adt/safety.ts` (`decidePackageAllowed` + `checkPackage` + `intersectList.covers`), `src/adt/package-hierarchy.ts` (resolver + TTL cache, fail-closed), `src/adt/client.ts` (`getSubpackages` + `getPackageHierarchyResolver` holder shared across clones), the per-tool handler modules (resolver at every `checkPackage`) + `src/handlers/manage.ts` (`invalidatePackageHierarchy()` on package mgmt), `src/adt/{gcts,abapgit}.ts`, tests. Subtree match needs runtime BFS via `POST /sap/bc/adt/repository/nodestructure` (`parseSubpackageNodestructure`); sync `isPackageAllowed` returns false for non-root subtree hits — only async `checkPackage` resolves them. Mutating ops gate the object's real package via the module-level `enforceAllowedPackageForObjectUrl(client, objectUrl, label)` helper in `src/handlers/write-helpers.ts` (resolve→`checkPackage`, fail-closed, no-op when unrestricted): used by `enforcePackageForExistingObject` (update/delete/surgery), `handleSAPActivate` (single + every batch object), and `change_package` (the real source). SRVB publish/unpublish is gated the same way since #403: `src/handlers/activate.ts` passes `SERVICEBINDING_V2_ACCEPT` as the Accept override to `enforceAllowedPackageForObjectUrl` (the SRVB URL's default Accept returns JSON without `packageRef`; the servicebinding XML renders it). The shared HTTP layer retries v1 XML once when a binding GET rejects v2 without advertising a type (#991; `docs/research/2026-10-13-srvb-v1-compatibility.md`). |
+| Modify `allowedPackages` pattern syntax (exact / `Z*` / `ZFOO/**` subtree) | `src/adt/safety.ts` (`decidePackageAllowed` + `checkPackage` + `intersectList.covers`), `src/adt/package-hierarchy.ts` (resolver + TTL cache, fail-closed), `src/adt/client.ts` (`getSubpackages` + `getPackageHierarchyResolver`; legacy holder shared across clones, pinned evidence fresh per decision and bound to the mutation budget), the per-tool handler modules (resolver at every `checkPackage`) + `src/handlers/manage.ts` (`invalidatePackageHierarchy()` on package mgmt), `src/adt/{gcts,abapgit}.ts`, tests. Subtree match needs runtime BFS via `POST /sap/bc/adt/repository/nodestructure` (`parseSubpackageNodestructure`); sync `isPackageAllowed` returns false for non-root subtree hits — only async `checkPackage` resolves them. Mutating ops gate the object's real package via the module-level `enforceAllowedPackageForObjectUrl(client, objectUrl, label)` helper in `src/handlers/write-helpers.ts` (resolve→`checkPackage`, fail-closed, no-op when unrestricted): used by `enforcePackageForExistingObject` (update/delete/surgery), `handleSAPActivate` (single + every batch object), and `change_package` (the real source). SRVB publish/unpublish is gated the same way since #403: `src/handlers/activate.ts` passes `SERVICEBINDING_V2_ACCEPT` as the Accept override to `enforceAllowedPackageForObjectUrl` (the SRVB URL's default Accept returns JSON without `packageRef`; the servicebinding XML renders it). The shared HTTP layer retries v1 XML once when a binding GET rejects v2 without advertising a type (#991; `docs/research/2026-10-13-srvb-v1-compatibility.md`). |
 | Add feature probe | `src/adt/features.ts` (`PROBES` array — one endpoint per feature; status classification by `classifyFeatureProbeStatus`: 2xx/400/405/5xx → available, 401/403/404 → unavailable; surface reason via `FeatureStatus.message`). |
 | Add feature-gated write guard | `src/handlers/write/rap.ts` (checkRapAvailable pattern), `src/adt/features.ts` |
 | Add E2E test | `tests/e2e/`, helpers in `tests/e2e/helpers.ts`, fixtures in `tests/e2e/fixtures.ts` |

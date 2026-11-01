@@ -10,6 +10,7 @@
 
 import type { AdtClient } from '../adt/client.js';
 import { AdtSafetyError } from '../adt/errors.js';
+import { singleTargetMutationContext } from '../adt/mutation-context.js';
 import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
@@ -20,6 +21,7 @@ import {
   isTablesEndpointAvailable,
   isTableTypesEndpointAvailable,
 } from './feature-cache.js';
+import { functionGroupIncludePrefix } from './function-group-names.js';
 import {
   canonicalTablType,
   functionGroupIncludeObjectUrl,
@@ -30,14 +32,7 @@ import {
   sourceUrlForType,
 } from './object-types.js';
 import { errorResult, type ToolResult } from './shared.js';
-import {
-  writeActionAddMethod,
-  writeActionChangeMethodVisibility,
-  writeActionDeleteMethod,
-  writeActionEditClassDefinition,
-  writeActionEditMethod,
-  writeActionEditMethodSignature,
-} from './write/class-surgery.js';
+import { dispatchClassSurgery } from './write/class-surgery-dispatch.js';
 import type { SapWriteContext } from './write/context.js';
 import { writeActionBatchCreate, writeActionCreate } from './write/create.js';
 import { handlePinnedWrite } from './write/pinned.js';
@@ -62,7 +57,8 @@ export async function handleSAPWrite(
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
 ): Promise<ToolResult> {
-  if (config.multiTargetEndpoints && config.targetId) return handlePinnedWrite(client, args, config);
+  if (config.targetId || config.multiTargetWrite || client.safety.multiTargetWrite)
+    return handlePinnedWrite(client, args, config);
   const action = String(args.action ?? '');
   const type = normalizeWriteObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
@@ -172,8 +168,7 @@ export async function handleSAPWrite(
     if (action === 'create' || action === 'delete') {
       // SAP names includes [namespace/]L<GROUP>…: a different prefix earns an
       // opaque 500 "Attributes for program X have not been saved". Reject it with a usable message.
-      const match = group.toUpperCase().match(/^(\/[^/]+\/)(.+)$/);
-      const expectedPrefix = match ? `${match[1]}L${match[2]}` : `L${group.toUpperCase()}`;
+      const expectedPrefix = functionGroupIncludePrefix(group);
       if (!name.toUpperCase().startsWith(expectedPrefix)) {
         return errorResult(
           `FUGR structural include names must start with ${expectedPrefix} — got "${name}". ` +
@@ -231,6 +226,7 @@ export async function handleSAPWrite(
   }
 
   const ctx: SapWriteContext = {
+    mutationContext: singleTargetMutationContext(client.safety),
     client,
     args,
     config,
@@ -257,27 +253,17 @@ export async function handleSAPWrite(
       return writeActionUpdate(ctx);
     case 'create':
       return writeActionCreate(ctx);
-    case 'edit_method':
-      return writeActionEditMethod(ctx);
     case 'add_unit':
     case 'edit_unit':
       return writeActionUnit(ctx);
 
-    // Class-section surgery actions (issue #303) — see write/class-surgery.ts.
+    case 'edit_method':
     case 'edit_class_definition':
-      return writeActionEditClassDefinition(ctx);
-
     case 'edit_method_signature':
-      return writeActionEditMethodSignature(ctx);
-
     case 'add_method':
-      return writeActionAddMethod(ctx);
-
     case 'delete_method':
-      return writeActionDeleteMethod(ctx);
-
     case 'change_method_visibility':
-      return writeActionChangeMethodVisibility(ctx);
+      return dispatchClassSurgery(ctx);
 
     case 'scaffold_rap_handlers':
       return writeActionScaffoldRapHandlers(ctx);

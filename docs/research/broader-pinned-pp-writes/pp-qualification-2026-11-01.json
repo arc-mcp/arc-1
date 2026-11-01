@@ -1,0 +1,144 @@
+{
+  "sourceRevision": "2d160378504119902f700edfdeb11195498fd05e",
+  "verifiedAt": "2026-10-31T23:30:39.354899+00:00",
+  "scope": "Existing pinned CLAS main-source lifecycle only; no broader mutation admission",
+  "target": {
+    "sid": "A4H",
+    "client": "001",
+    "basis": "758",
+    "publicAlias": "PR1142/001",
+    "authentication": "strict Principal Propagation"
+  },
+  "runs": {
+    "writerA": {
+      "passedAssertions": 79,
+      "failedAssertions": 0,
+      "failedChecks": [],
+      "harnessRevision": "Earlier harness; executed hash not retained"
+    },
+    "writerAneg": {
+      "passedAssertions": 57,
+      "failedAssertions": 0,
+      "failedChecks": [],
+      "harnessRevision": "Per-run executed hash not retained; final snapshot hash is source-review evidence only"
+    },
+    "readonlyA": {
+      "passedAssertions": 23,
+      "failedAssertions": 0,
+      "failedChecks": [],
+      "harnessRevision": "Per-run executed hash not retained; final snapshot hash is source-review evidence only"
+    },
+    "writerB": {
+      "passedAssertions": 12,
+      "failedAssertions": 2,
+      "failedChecks": [
+        {
+          "test": "backend_basis_758",
+          "pass": false
+        },
+        {
+          "test": "qualification.execution",
+          "pass": false,
+          "phase": "backend_components",
+          "code": "BACKEND_BASIS_758"
+        }
+      ],
+      "harnessRevision": "Earlier harness; executed hash not retained"
+    },
+    "writerB2": {
+      "passedAssertions": 16,
+      "failedAssertions": 2,
+      "failedChecks": [
+        {
+          "test": "create.tool_success",
+          "pass": false,
+          "error": "PINNED_WRITE_REFUSED",
+          "state": "creation-rejected",
+          "phase": "create",
+          "statusCode": 403,
+          "message": "SAP rejected this operation phase. Review the status and current object before continuing."
+        },
+        {
+          "test": "qualification.execution",
+          "pass": false,
+          "phase": "create",
+          "code": "UNEXPECTED_TOOL_OUTCOME"
+        }
+      ],
+      "harnessRevision": "Per-run executed hash not retained; final snapshot hash is source-review evidence only"
+    },
+    "writerB3": {
+      "passedAssertions": 104,
+      "failedAssertions": 0,
+      "failedChecks": [],
+      "harnessRevision": "Per-run executed hash not retained; final snapshot hash is source-review evidence only"
+    }
+  },
+  "primaryInitialLimit": "Observed positive lifecycle and native author results are historical evidence. Executed harness hash was not retained; final-snapshot F4\u2013F6 safeguards cannot be attributed to this run. Weak negative predicates are superseded by writerAneg.",
+  "secondaryAttempts": [
+    "Components probe stopped before mutation; native sentinel added.",
+    "Create rejected by SAP with 403; SU53 showed missing S_ABPLNGVS. Native GET confirmed absent.",
+    "After temporary Standard ABAP permission, full writerB3 run passed."
+  ],
+  "nativeAuthors": {
+    "distinctExpectedSapUsers": true,
+    "actors": [
+      {
+        "actor": "writerA",
+        "createdByMatches": true,
+        "changedByMatches": true,
+        "version": "active",
+        "masterSystem": "A4H",
+        "activeSourceFinalValue": true
+      },
+      {
+        "actor": "writerB",
+        "createdByMatches": true,
+        "changedByMatches": true,
+        "version": "active",
+        "masterSystem": "A4H",
+        "activeSourceFinalValue": true
+      }
+    ]
+  },
+  "cleanup": {
+    "bothFixtureDeletesVerified404": true,
+    "originalSapRolesProfilesAndValidityRestored": true,
+    "temporaryRoleDefinitionRetainedUnassigned": true,
+    "originalAppDropletAndEnvironmentRestored": true,
+    "originalRouteAndSizingRestored": true,
+    "healthHttpStatus": 200,
+    "xsuaaSecurityDescriptorRestored": true,
+    "temporaryIamRoleAndCollectionAbsent": true,
+    "temporaryDestinationAbsent": true,
+    "tokensPersisted": false
+  },
+  "limitations": [
+    "Read-only destination also lacked a write-target grant; this run does not isolate those two gates.",
+    "No concurrent writers, cross-user same-owner drafts, INTF writes or broader operations qualified.",
+    "Native createdBy and final changedBy verified; no claim about every intermediate mutation audit actor.",
+    "Claude Opus 5.5 max accepted F1\u2013F9 at final-snapshot source level; historical evidence limits CLS-1\u20136 are recorded in the closing review.",
+    "Final harness hashes do not attest the exact harness executed for each historical run; all results remain pinned to source revision 2d160378."
+  ],
+  "harnessSourceSha256": {
+    "qualification.mjs": "780fa5341cd4cdeb61d768627e211629e39030eb33b7e7cb2a008e171a35123c",
+    "mcp-checks.mjs": "320557590275f8aa523485f33ebf727ae0d3c4b0075e11a795df2408a2c1ad1c",
+    "safe-io.mjs": "11e107eb429e21db6eae394c4f0321ff8c610236c769723cb57613c1fc4092da",
+    "live-harness.mjs": "8ab66d04828cec0d10e090e7b7759a6ad58cace1cc149383e19091241ff7fd06",
+    "harness-regression.mjs": "8aecf1d2f1b0579242051d5068a7877ef4961bc45e5d4f0e2e225c04a8ff673e",
+    "backend-checks.mjs": "3579a0312446983b4e1b363947eca61b5a9f437c6be3113fd9185333380ae326",
+    "native-fixture-evidence.mts": "e203968696ee2f07cd9b2e533acd5e2cea23e82388fc61708d2463c00a4e5bb4",
+    "cleanup-fixtures.mts": "f4724f8978ab015bec9c32a8c4227ba35c85f27c46bb42bc4b638c66118374bb",
+    "verify-sap-rollback.mts": "6ddfd27cfb8aef3313783a643db7f7e01a3388b548385731bf479d36c49e8b73"
+  },
+  "secondaryAttemptReservations": "Failed backend-probe and create-403 attempt files were retained under separate names before the inspected retry; independent native absence was checked before writerB3.",
+  "claimProvenance": {
+    "nativeAuthors": "Native fixture evidence script plus operator inspection; masterSystem was recorded but not part of the scripted passed predicate. Final source used a value regex, not an exact final-source hash.",
+    "fixtureCleanup": "Native cleanup script with metadata checks; no source hash recheck under the cleanup lock.",
+    "cloudAndSapAccessRestoration": "Separate operator-run CF/BTP/destination controls and SAP role/profile verification; not assertions produced by the qualification module.",
+    "tokensPersisted": "Operator handling statement; no exhaustive persistence attestation.",
+    "backendSentinel": "Operator-entered native-read hash supplied to the harness; not produced by its qualification function.",
+    "preflightAbsent": "Operator-entered fact from a separate native preflight read.",
+    "secondaryAttemptReservations": "Operator inspection of retained backend-probe-failed and create-403 attempt files; not attested by the frozen source packet."
+  }
+}

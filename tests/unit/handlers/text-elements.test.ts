@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError } from '../../../src/adt/errors.js';
+import { singleTargetMutationContext } from '../../../src/adt/mutation-context.js';
 import type { TextElementPart } from '../../../src/adt/text-elements.js';
 import type { SapWriteContext } from '../../../src/handlers/write/context.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -218,8 +219,10 @@ describe('text elements routing and safety', () => {
         ),
       );
       const invalidateWrittenObject = vi.fn();
+      const client = createClient();
       const ctx = {
-        client: createClient(),
+        client,
+        mutationContext: singleTargetMutationContext(client.safety),
         args: {},
         type: 'PROG',
         name: 'ZTEST',
@@ -532,8 +535,10 @@ describe('PROG/FUGR deletion preserves inactive text pools', () => {
   it('does not invalidate unchanged object caches on an inactive-pool refusal', async () => {
     mockSap(metadata('PROG', 'ZTEST', 'inactive'));
     const invalidateWrittenObject = vi.fn();
+    const client = createClient();
     const ctx = {
-      client: createClient(),
+      client,
+      mutationContext: singleTargetMutationContext(client.safety),
       type: 'PROG',
       name: 'ZTEST',
       objectUrl: '/sap/bc/adt/programs/programs/ztest',

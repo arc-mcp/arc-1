@@ -11,11 +11,20 @@
  */
 
 import { postCreate } from './create-request.js';
-import { AdtApiError, extractExceptionType, isNotFoundError } from './errors.js';
+import {
+  AdtApiError,
+  AdtNetworkError,
+  AdtSafetyError,
+  classifySapDomainError,
+  extractExceptionType,
+} from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
+import { throwIfRequestCancelled } from './http-deadline.js';
 import {
   assertMutationContext,
+  type MutationCleanupState,
   type MutationContext,
+  type PinnedMutationContext,
   pinnedSessionCleanup,
   singleTargetMutationContext,
 } from './mutation-context.js';
@@ -102,12 +111,46 @@ export async function unlockObject(http: AdtHttpClient, objectUrl: string, lockH
 export interface MutationLockPolicy {
   beforeLock: () => void;
   validateLock: (session: AdtHttpClient, lock: LockResult) => Promise<void>;
+  /** Native operations such as text-pool activation require unlock first, on this same SAP session. */
+  afterUnlock?: (session: AdtHttpClient) => Promise<void>;
+  /** A verified no-op may have no post-unlock work; cleanup failures are still recorded. */
+  afterUnlockNeeded?: () => boolean;
+  /** Native DELETE adapter only: true after successful DELETE and typed owner-absence readback. */
+  confirmedResourceDeletion?: () => boolean;
 }
 
 const legacyLockPolicy: MutationLockPolicy = {
   beforeLock: () => {},
   validateLock: async () => {},
 };
+
+type AdditionalLock = <T>(
+  url: string,
+  policy: MutationLockPolicy,
+  operation: (lock: LockResult) => Promise<T>,
+) => Promise<T>;
+const additionalLocks = new WeakMap<AdtHttpClient, AdditionalLock>();
+const postUnlockContexts = new WeakMap<AdtHttpClient, MutationContext>();
+
+/** Internal owned-resource activation grants exist only during the coordinator's post-unlock phase. */
+export function pinnedPostUnlockContext(session: AdtHttpClient, safety: SafetyConfig): PinnedMutationContext {
+  const context = postUnlockContexts.get(session);
+  if (context?.mode !== 'pinned-pp') throw new AdtSafetyError('An active pinned post-unlock lifecycle is required.');
+  assertMutationContext(safety, context);
+  return context;
+}
+
+/** Additional native locks belong to the existing coordinator/session, never a new SAP context. */
+export function withAdditionalMutationLock<T>(
+  session: AdtHttpClient,
+  objectUrl: string,
+  policy: MutationLockPolicy,
+  operation: (lock: LockResult) => Promise<T>,
+): Promise<T> {
+  const acquire = additionalLocks.get(session);
+  if (!acquire) throw new AdtSafetyError('An active pinned owning-lock lifecycle is required.');
+  return acquire(objectUrl, policy, operation);
+}
 
 /** Shared session/lock mechanics; adapters retain their native recording, source and result logic. */
 export async function withLockedMutation<T>(
@@ -121,40 +164,135 @@ export async function withLockedMutation<T>(
 ): Promise<T> {
   assertMutationContext(safety, context);
   checkOperation(safety, OperationType.Update, 'MutationSession');
+  if (
+    context.mode === 'pinned-pp' &&
+    (context.cleanup.unlockFailed || context.cleanup.sessionClosed === false || context.cleanup.unknownLocks?.length)
+  )
+    throw new AdtSafetyError(
+      'A prior mutation session has unresolved cleanup. Inspect SAP before starting another native mutation step.',
+    );
+  let owningSessionClosed: boolean | undefined;
+  const removedLocks: NonNullable<MutationCleanupState['unlockFailures']> = [];
+  const recordUnlockFailure = (failure: NonNullable<MutationCleanupState['unlockFailures']>[number]) => {
+    if (context.mode !== 'pinned-pp') return;
+    context.cleanup.unlockFailed = true;
+    (context.cleanup.unlockFailures ??= []).push(failure);
+  };
   const run = async (owningSession: AdtHttpClient) => {
     const session = mutationHttp(owningSession, safety, context);
+    const acquire = async (url: string) => {
+      try {
+        return await lockObject(session, safety, url, 'MODIFY', abapRelease, undefined, context.requestPolicy);
+      } catch (error) {
+        if (
+          context.mode === 'pinned-pp' &&
+          (error instanceof AdtNetworkError ||
+            (error instanceof AdtApiError && (error.isServerError || error.statusCode === 429)))
+        )
+          (context.cleanup.unknownLocks ??= []).push({
+            uri: url,
+            ...(error instanceof AdtApiError ? { statusCode: error.statusCode } : {}),
+          });
+        throw error;
+      }
+    };
+    const held = new Set([objectUrl]);
+    const release = async (url: string, handle: string, lockPolicy: MutationLockPolicy) => {
+      if (context.mode !== 'pinned-pp' || !handle) return;
+      try {
+        await owningSession.post(
+          `${url}?_action=UNLOCK&lockHandle=${encodeURIComponent(handle)}`,
+          undefined,
+          undefined,
+          undefined,
+          { deadline: Date.now() + 30_000, retryTransientErrors: false, noReplay: true },
+        );
+      } catch (error) {
+        const failure = { uri: url, ...(error instanceof AdtApiError ? { statusCode: error.statusCode } : {}) };
+        if (
+          error instanceof AdtApiError &&
+          error.isNotFound &&
+          extractExceptionType(error.responseBody ?? '') === 'ExceptionResourceNotFound' &&
+          !classifySapDomainError(error.statusCode, error.responseBody, error.path) &&
+          lockPolicy.confirmedResourceDeletion?.() === true
+        ) {
+          // Deleting an owner can remove its pool too. This is only resolved after this session closes.
+          removedLocks.push({ ...failure, absentAfterDelete: true });
+        } else recordUnlockFailure(failure);
+      }
+    };
     policy.beforeLock();
-    const lock = await lockObject(session, safety, objectUrl, 'MODIFY', abapRelease, undefined, context.requestPolicy);
+    const lock = await acquire(objectUrl);
+    if (context.mode === 'pinned-pp')
+      additionalLocks.set(session, async (url, extraPolicy, fn) => {
+        if (held.has(url)) throw new AdtSafetyError('The resource is already locked by this mutation.');
+        held.add(url);
+        try {
+          extraPolicy.beforeLock();
+          const extra = await acquire(url);
+          try {
+            await extraPolicy.validateLock(session, extra);
+            return await fn(extra);
+          } finally {
+            await release(url, extra.lockHandle, extraPolicy);
+          }
+        } finally {
+          held.delete(url);
+        }
+      });
+    let result: T;
     try {
       await policy.validateLock(session, lock);
-      return await operation(session, lock);
+      result = await operation(session, lock);
     } finally {
+      additionalLocks.delete(session);
       if (context.mode === 'single-target') {
         // Preserve legacy finally precedence, including an unlock error replacing the primary error.
         await unlockObject(owningSession, objectUrl, lock.lockHandle);
-      } else if (lock.lockHandle) {
-        try {
-          // Use the same owning session, but not the cancelled/expired operation's facade.
-          await owningSession.post(
-            `${objectUrl}?_action=UNLOCK&lockHandle=${encodeURIComponent(lock.lockHandle)}`,
-            undefined,
-            undefined,
-            undefined,
-            { deadline: Date.now() + 30_000, retryTransientErrors: false, noReplay: true },
-          );
-        } catch {
-          context.cleanup.unlockFailed = true;
-        }
+      } else await release(objectUrl, lock.lockHandle, policy);
+    }
+    if (policy.afterUnlock && policy.afterUnlockNeeded?.() !== false) {
+      if (context.mode === 'pinned-pp') {
+        if (context.cleanup.unlockFailed || removedLocks.length)
+          throw new AdtSafetyError('Unlock was not confirmed; the post-unlock operation was not sent.');
+        throwIfRequestCancelled(context.requestPolicy);
+      }
+      postUnlockContexts.set(session, context);
+      try {
+        await policy.afterUnlock(session);
+      } finally {
+        postUnlockContexts.delete(session);
       }
     }
+    return result;
   };
-  return withMutationSession(
-    http,
-    safety,
-    context,
-    run,
-    context.mode === 'pinned-pp' ? pinnedSessionCleanup(context) : undefined,
-  );
+  try {
+    return await withMutationSession(
+      http,
+      safety,
+      context,
+      run,
+      context.mode === 'pinned-pp'
+        ? {
+            ...pinnedSessionCleanup(context),
+            onClose: (closed) => {
+              owningSessionClosed = closed;
+              pinnedSessionCleanup(context).onClose?.(closed);
+            },
+          }
+        : undefined,
+    );
+  } finally {
+    if (context.mode === 'pinned-pp' && removedLocks.length) {
+      if (owningSessionClosed !== true) for (const failure of removedLocks) recordUnlockFailure(failure);
+      else
+        context.cleanup.removedLocksAfterDelete = removedLocks.map(({ uri }) => ({
+          uri,
+          statusCode: 404,
+          absentAfterDelete: true,
+        }));
+    }
+  }
 }
 
 /**
@@ -377,66 +515,8 @@ export async function initClassInclude(
   await postCreate(http, url, '');
 }
 
-/**
- * High-level: update a class-local include, auto-initialising it first if it
- * doesn't exist yet. lock → GET-probe include → (POST-create if 404) → PUT → unlock,
- * all in one stateful session sharing a single lock.
- *
- * Why probe-first instead of catch-the-500: the missing-include PUT failure is a
- * release/language-dependent 500 ("does not have any inactive version"), whereas
- * a `GET` 404 is deterministic and release-agnostic. Probing before the write
- * also avoids relying on an untested "POST-init + retry-PUT after a failed PUT in
- * the same locked session" path. The extra GET is cheap — include writes are
- * deliberate edits, not a hot path — and when the include already exists (the
- * common case, including the auto-existing CCDEF/CCIMP/CCMAC) the probe returns
- * 200 and init is skipped, so behaviour for those includes is unchanged.
- *
- * Returns `{ initialized }` so the handler can tell the caller whether the
- * include was created as part of this write.
- */
-export async function safeUpdateClassInclude(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  classObjectUrl: string,
-  includeUrl: string,
-  source: string,
-  transport?: string,
-  abapRelease?: string,
-  expectedSourceHash?: string,
-): Promise<{ initialized: boolean }> {
-  checkOperation(safety, OperationType.Update, 'UpdateSource');
-  return await withLockedMutation(
-    http,
-    safety,
-    singleTargetMutationContext(safety),
-    classObjectUrl,
-    legacyLockPolicy,
-    async (session, lock) => {
-      const effectiveTransport = transport ?? (lock.corrNr || undefined);
-      let initialized = false;
-      // Probe whether the include exists. 404 → not initialised yet.
-      let exists = true;
-      try {
-        checkOperation(safety, OperationType.Read, 'GetClassInclude');
-        const current = await session.get(includeUrl, { 'Cache-Control': 'no-cache' }, { suppressNotFoundLog: true });
-        assertSourceHash(current.body, expectedSourceHash, includeUrl);
-      } catch (err) {
-        if (isNotFoundError(err) && expectedSourceHash === undefined) {
-          exists = false;
-        } else {
-          throw err;
-        }
-      }
-      if (!exists) {
-        await initClassInclude(session, safety, includeUrl, lock.lockHandle, effectiveTransport);
-        initialized = true;
-      }
-      await updateSource(session, safety, includeUrl, source, lock.lockHandle, effectiveTransport);
-      return { initialized };
-    },
-    abapRelease,
-  );
-}
+// Compatibility export; the shared adapter keeps the legacy signature and explicit pinned policy.
+export { safeUpdateClassInclude } from './class-include-write.js';
 
 /**
  * High-level: update object metadata with guaranteed unlock.

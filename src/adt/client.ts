@@ -27,6 +27,7 @@ import { readEnhancementImplementation } from './enhancements.js';
 import { AdtApiError, AdtError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
+import { mutationPackageHierarchy } from './mutation-client.js';
 import { getDirectPackageContents } from './package-browser.js';
 import { requirePackageFilteredSearch } from './package-contents.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
@@ -326,15 +327,9 @@ export class AdtClient {
     );
   }
 
-  /**
-   * Lazily build (and return) the DEVCLASS hierarchy resolver. The resolver
-   * powers `ZFOO/**` subtree rules in `allowedPackages`; reads/writes that
-   * don't trigger a subtree rule never instantiate it (zero cost).
-   *
-   * Shared across `withSafety()` clones — the hierarchy is per-SAP-system, not
-   * per-safety-scope. Cache invalidation is exposed via `invalidatePackageHierarchy()`.
-   */
-  getPackageHierarchyResolver(): PackageHierarchyResolver {
+  /** Legacy clones share their resolver; pinned checks fetch fresh, request-bounded evidence. */
+  getPackageHierarchyResolver(options?: AdtRequestOptions): PackageHierarchyResolver {
+    if (this.safety.multiTargetWrite) return mutationPackageHierarchy(this, options);
     if (!this.packageHierarchyResolverHolder.resolver) {
       this.packageHierarchyResolverHolder.resolver = new AdtPackageHierarchyResolver((root) =>
         this.getSubpackages(root),
@@ -1276,7 +1271,7 @@ export class AdtClient {
    * itself does not honour a maxResults parameter on the SAP side and
    * returns the full child set in one round-trip.
    */
-  async getSubpackages(packageName: string, maxResults = 1000): Promise<string[]> {
+  async getSubpackages(packageName: string, maxResults = 1000, options?: AdtRequestOptions): Promise<string[]> {
     checkOperation(this.safety, OperationType.Read, 'GetSubpackages');
     const limit = clampUrlLimit(maxResults, 1000);
     const enc = encodeURIComponent(packageName);
@@ -1291,9 +1286,11 @@ export class AdtClient {
       `<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">` +
       `<asx:values><DATA><TV_NODEKEY>000000</TV_NODEKEY></DATA></asx:values>` +
       `</asx:abap>`;
-    const resp = await this.http.post(url, body, 'application/vnd.sap.as+xml; charset=UTF-8; dataname=null', {
-      Accept: 'application/vnd.sap.as+xml',
-    });
+    const contentType = 'application/vnd.sap.as+xml; charset=UTF-8; dataname=null';
+    const headers = { Accept: 'application/vnd.sap.as+xml' };
+    const resp = options
+      ? await this.http.post(url, body, contentType, headers, options)
+      : await this.http.post(url, body, contentType, headers);
     const names = parseSubpackageNodestructure(resp.body);
     const upperSelf = packageName.toUpperCase();
     // Parsed package names are already canonical and unique; exclude self and cap the result.

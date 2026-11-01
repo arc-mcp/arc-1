@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { safeUpdateClassInclude, safeUpdateSource, updateSource, withLockedMutation } from '../../../src/adt/crud.js';
+import {
+  safeUpdateClassInclude,
+  safeUpdateSource,
+  updateSource,
+  withAdditionalMutationLock,
+  withLockedMutation,
+} from '../../../src/adt/crud.js';
 import { AdtSafetyError } from '../../../src/adt/errors.js';
 import type { AdtRequestOptions } from '../../../src/adt/http.js';
 import {
@@ -49,6 +55,164 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('required mutation context', () => {
+  it('does not run post-unlock work while deleted-resource cleanup still awaits owning closure', async () => {
+    const { http, safety, context, cleanup } = fixture();
+    const fallback = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url, options) =>
+      String(url).includes('_action=UNLOCK')
+        ? mockResponse(
+            404,
+            '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><namespace id="com.sap.adt"/><type id="ExceptionResourceNotFound"/><message>Resource does not exist.</message></exc:exception>',
+          )
+        : fallback(url, options),
+    );
+    const afterUnlock = vi.fn();
+    await expect(
+      withLockedMutation(
+        http,
+        safety,
+        context,
+        owner,
+        {
+          beforeLock: () => {},
+          validateLock: async () => {},
+          confirmedResourceDeletion: () => true,
+          afterUnlock,
+        },
+        async () => 'deleted',
+      ),
+    ).rejects.toThrow('Unlock was not confirmed');
+    expect(afterUnlock).not.toHaveBeenCalled();
+    expect(cleanup).toMatchObject({
+      unlockFailed: false,
+      sessionClosed: true,
+      removedLocksAfterDelete: [{ uri: owner, statusCode: 404, absentAfterDelete: true }],
+    });
+  });
+
+  it('runs post-unlock work on the same scoped session before its single close', async () => {
+    const { http, safety, context, cleanup } = fixture();
+    const posts = vi.spyOn(AdtHttpClient.prototype, 'post');
+    const policy = {
+      beforeLock: () => {},
+      validateLock: async () => {},
+      afterUnlock: async (session: typeof http) => {
+        expect(() => withAdditionalMutationLock(session, '/pool', policy, vi.fn())).toThrow('active pinned');
+        await session.post('/after-unlock', 'activation');
+      },
+    };
+    const result = await withLockedMutation(http, safety, context, owner, policy, async (session) => {
+      await session.put('/save', 'new text');
+      return 'saved';
+    });
+    expect(result).toBe('saved');
+    const calls = mockFetch.mock.calls as [string, RequestInit][];
+    const urls = calls.map(([url]) => url);
+    const unlock = urls.findIndex((url) => url.includes('_action=UNLOCK'));
+    const followup = urls.findIndex((url) => url.includes('/after-unlock'));
+    const close = urls.findIndex((url) => url.includes('/http/sessions'));
+    expect(unlock).toBeGreaterThan(urls.findIndex((url) => url.includes('/save')));
+    expect(followup).toBeGreaterThan(unlock);
+    expect(close).toBeGreaterThan(followup);
+    expect(urls.filter((url) => url.includes('/http/sessions'))).toHaveLength(1);
+    expect(new Headers(calls[followup][1].headers).get('Cookie')).toContain('sap-contextid=owning');
+    expect(posts.mock.calls.find(([url]) => url === '/after-unlock')?.[4]).toMatchObject(context.requestPolicy);
+    expect(cleanup).toEqual({ unlockFailed: false, sessionClosed: true });
+  });
+
+  it.each(['validation', 'save', 'unlock', 'cancellation'] as const)(
+    'does not run post-unlock work after %s fails',
+    async (failure) => {
+      const { http, safety, context, cleanup, controller } = fixture();
+      const fallback = mockFetch.getMockImplementation()!;
+      mockFetch.mockImplementation(async (url, options) =>
+        failure === 'unlock' && String(url).includes('_action=UNLOCK')
+          ? mockResponse(503, 'unlock uncertain')
+          : fallback(url, options),
+      );
+      const afterUnlock = vi.fn();
+      await expect(
+        withLockedMutation(
+          http,
+          safety,
+          context,
+          owner,
+          {
+            beforeLock: () => {},
+            validateLock: async () => {
+              if (failure === 'validation') throw new Error('validation');
+            },
+            afterUnlock,
+          },
+          async () => {
+            if (failure === 'save') throw new Error('save');
+            if (failure === 'cancellation') controller.abort();
+            return 'saved';
+          },
+        ),
+      ).rejects.toThrow();
+      expect(afterUnlock).not.toHaveBeenCalled();
+      expect(mockFetch.mock.calls.filter(([url]) => String(url).includes('_action=UNLOCK'))).toHaveLength(1);
+      expect(cleanup).toMatchObject({ unlockFailed: failure === 'unlock', sessionClosed: true });
+      if (failure === 'unlock') expect(cleanup).toMatchObject({ unlockFailures: [{ uri: owner, statusCode: 503 }] });
+    },
+  );
+
+  it('does not replay uncertain post-unlock work and still closes the owning session', async () => {
+    const { http, safety, context, cleanup } = fixture();
+    const fallback = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url, options) =>
+      String(url).includes('/after-unlock')
+        ? mockResponse(503, 'activation uncertain', { 'retry-after': '0' })
+        : fallback(url, options),
+    );
+    await expect(
+      withLockedMutation(
+        http,
+        safety,
+        context,
+        owner,
+        {
+          beforeLock: () => {},
+          validateLock: async () => {},
+          afterUnlock: async (session) => {
+            await session.post('/after-unlock', 'activation');
+          },
+        },
+        async () => 'saved',
+      ),
+    ).rejects.toMatchObject({ statusCode: 503 });
+    expect(mockFetch.mock.calls.filter(([url]) => String(url).includes('/after-unlock'))).toHaveLength(1);
+    expect(cleanup).toEqual({ unlockFailed: false, sessionClosed: true });
+  });
+
+  it('refuses additional locks outside the active owning coordinator, including a borrowed completed session', async () => {
+    const { http, scoped, safety, context } = fixture();
+    const policy = { beforeLock: () => {}, validateLock: async () => {} };
+    const operation = vi.fn();
+    expect(() => withAdditionalMutationLock(scoped, '/pool', policy, operation)).toThrow('active pinned');
+    expect(mockFetch).not.toHaveBeenCalled();
+    let borrowed = scoped;
+    await withLockedMutation(http, safety, context, owner, policy, async (session) => {
+      borrowed = session;
+    });
+    const before = mockFetch.mock.calls.length;
+    expect(() => withAdditionalMutationLock(borrowed, '/pool', policy, operation)).toThrow('active pinned');
+    expect(mockFetch).toHaveBeenCalledTimes(before);
+    expect(operation).not.toHaveBeenCalled();
+  });
+
+  it('does not reacquire an owner already held by the coordinator', async () => {
+    const { http, safety, context } = fixture();
+    const policy = { beforeLock: () => {}, validateLock: async () => {} };
+    const operation = vi.fn();
+    await withLockedMutation(http, safety, context, owner, policy, async (session) => {
+      await expect(withAdditionalMutationLock(session, owner, policy, operation)).rejects.toThrow('already locked');
+    });
+    expect(operation).not.toHaveBeenCalled();
+    expect(mockFetch.mock.calls.filter(([url]) => String(url).includes('_action=LOCK'))).toHaveLength(1);
+  });
+
   it.each([true, false])('refuses legacy wrappers on multi-target clients: enabled=%s', async (enabled) => {
     const { http, safety } = fixture();
     safety.multiTargetWrite.enabled = enabled;
@@ -211,6 +375,24 @@ describe('request policy reaches the real ADT transport', () => {
 });
 
 describe('shared lock lifecycle', () => {
+  it('refuses another native lock lifecycle after its prior owning session failed to close', async () => {
+    const { scoped, safety, context, cleanup } = fixture();
+    const fallback = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url: string, options) =>
+      url.includes('/http/sessions') ? mockResponse(503, 'close unavailable') : fallback(url, options),
+    );
+    const policy = { beforeLock: () => {}, validateLock: async () => {} };
+    await withLockedMutation(scoped, safety, context, owner, policy, async () => undefined);
+    expect(cleanup.sessionClosed).toBe(false);
+    const count = mockFetch.mock.calls.length;
+    const next = vi.fn();
+    await expect(withLockedMutation(scoped, safety, context, owner, policy, next)).rejects.toThrow(
+      'prior mutation session has unresolved cleanup',
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalledTimes(count);
+    expect(cleanup.sessionClosed).toBe(false);
+  });
   it('reports only the owning close when an independent nested session fails to close', async () => {
     const { scoped, safety, context, cleanup } = fixture();
     const fallback = mockFetch.getMockImplementation()!;

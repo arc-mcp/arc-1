@@ -1,0 +1,64 @@
+# PR 2 mutation inventory
+
+Baseline: merged PR #1138, `ac8385fa47b6c40c2c77c6507e03c376bfc3b613`.
+This is an implementation review inventory, **not an authorization table or a parity claim**.
+[inventory.json](inventory.json) freezes mutation policy rows, write types, relevant slash aliases
+and top-level runtime input fields. Full action lists also detect additions classified as reads/tests.
+[nested-input-contracts.json](nested-input-contracts.json) snapshots every object-valued field (including nested arrays, batch/activation objects, quickfix
+objects, KTD short texts and FLP tiles) in both on-premise and BTP schema variants; custom refinements and handler branch combinations still need separate
+behavioral review. The drift tests require deliberate updates as PR 2 proceeds.
+The draft runtime adds formatter operations, class includes and surgery, standalone PROG/INCL CRUD, unit edits and activation, and CLAS/PROG text-part replacement to ADR-0010's scoped subset.
+These additions have separate qualification records and outstanding final review. The full
+[plan](../../plans/2026-10-26-broader-pinned-pp-writes.md) and proposed
+[ADR-0011](../../adr/0011-broader-pinned-pp-mutations.md) define acceptance.
+
+## Branch constraints
+
+The type registry is not a Cartesian product. The JSON's CRUD lists describe candidate single-object
+paths for review; native discovery and the actual handler determine support. These constraints must
+be reflected in the later runtime matrix, including nested batch validation:
+
+| Family/action | Branch evidence and constraints | Current pinned qualification |
+| --- | --- | --- |
+| CLAS/INTF create/update | Shared `write/create.ts` and `write/update-delete.ts` with registered pinned source/creation policy; explicit create package and existing-source hash | Original ADR-0010 behavior has historical PP evidence; later shared-handler convergence needs fresh qualification |
+| CLAS local-include update | Shared `adt/class-include-write.ts` plus `write/pinned-lock.ts`; four explicit selectors, hash for existing source, typed absence for initialization under class lock | Admitted; [two-writer local qualification](../2026-11-01-broader-pinned-pp-writes-includes.md) passed at `77e41fdcd`; transportable includes remain pending |
+| CLAS/INTF delete | `adt/pinned-delete.ts`; shared native DELETE/lock lifecycle, fresh package/recording checks, verified absence; no source hash | Admitted; combined two-writer PP run at `1b234d3a4` verifies typed absence for local CLAS/INTF; transportable deletion remains pending |
+| Class surgery | `write/class-surgery.ts`, `class-edit.ts`; CLAS only; definitions/implementations/macros/testclasses routing and local-method inference differ by action | Shared main and existing-include `edit_method` implemented; include-method PP qualification pending. Main-source definition/signature/add/delete/visibility adapters and exact source/structure validation implemented offline; definition-include replacement now shares the update protocol; all new adapters still require PP qualification |
+| Procedural surgery | Shared `write/unit-surgery.ts`; standalone PROG/INCL owner verification, source hash and owning lock | Implemented offline; PP qualification pending. Group-owned structural includes still pending |
+| FUNC/FUGR/group-owned INCL CRUD | `write.ts`, `write/create.ts`, `write/update-delete.ts`; FUNC resolves group, structural INCL locks the include and inherits group package; class includes are update paths | Pending |
+| Standalone PROG/INCL CRUD | Shared create/update/delete actions; exact native owner/package, native recording; PROG deletion additionally locks and verifies its active text pool | Implemented offline; PP qualification pending |
+| Text elements | `write/update-delete.ts`, `adt/text-elements.ts`; CLAS symbols only, PROG/FUGR supported parts; pool lock differs from owner, save may invoke activation | CLAS symbols and PROG parts implemented offline through the shared exact-pool lifecycle and explicit active readback; fresh two-writer PP qualification and FUGR ownership remain pending |
+| TABL/DTT | `write/table-settings.ts`; update only, parent table package; new settings require parent activation | Pending |
+| TABL/DT, TABL/DS | Write normalizer preserves subtype; `STRU/DS` maps to TABL/DS; bare TABL resolves tables/structures | Pending |
+| DOMA/DTEL/MSAG/TTYP/ENQU/ENHO/SRVB | Metadata update/create branches; DTEL, TTYP and others have post-create saves; ENHO requires BADI_IMPL technology; publication is separate | Pending |
+| SKTD/KTD | Alias handling, reference fields, short texts and native draft merge; no assumption that generic batch creation reproduces single SKTD creation | Pending |
+| Server-driven types | Explicit SDO registry, AFF/DDL distinctions, per-type MIME and native discovery; UIAD has a dedicated branch; TABL/DTI inherits parent table package; APLO is immediately active | Pending per-type adapters/evidence |
+| Batch creation | `write/create.ts`; rejects SDOs and FUGR structural includes. FUNC needs group. Per-item fields/defaults differ from top level. Audit each supported type rather than importing the full write enum | Pending |
+| RAP helpers | `write/rap.ts`; CLAS, potentially creates/edits local implementation includes; may invoke activation | Pending every nested mutation/activation |
+| Activation | `activate.ts`, `adt/devtools.ts`; owner/type resolution, SDO discovery, table/index postconditions and expanded references; batch currently explicitly refuses multi-target | CLAS/INTF has historical PP evidence; standalone PROG/INCL and native program-pool expansion implemented offline, fresh qualification pending |
+| Package/API state/publication | `manage.ts`, `adt/api-release.ts`, `adt/refactoring.ts`, `adt/devtools.ts`; actual owners, both move packages and native recording behavior need separate treatment | Pending |
+| CTS | `transport.ts` at handler and ADT layers; low-level whitelist and recursive-release gates cannot simply inherit runtime `allowedTransports=[]` | Internal verified-scope prerequisite implemented; management adapters and PP qualification pending |
+| Trace/proposals | `diagnose.ts`, `adt/diagnostics.ts`; profiler two-stage create, explicit PP user, ST05 per-instance state; quickfix returns edits without persisting source | Pending |
+| Formatter | `pinned-formatter.ts`, `adt/pinned-formatter.ts`; preserving partial XML patch and explicit read companions | Admitted; combined run at `1b234d3a4` binds native author/source and primary v5 preferences; secondary preference proof is MCP-only, other styles/releases remain unqualified |
+| Classic FLP | `manage.ts`, `adt/flp.ts`; five mutations through PAGE_BUILDER_CUST, relationships and membership evidence differ by operation | Pending PP non-ADT path/CSRF/recording/readback qualification |
+| Git/custom extensions | Explicit owner exclusion; retain hidden-call denial and plugins-off topology | Excluded |
+
+## Identity fields
+
+| Location | Current dependency | Required pinned treatment |
+| --- | --- | --- |
+| `write/create.ts`, including batch | `mutationResponsible` preserves the legacy configured/effective-user fallback | Omit optional responsible when mapped user is unverified; verify native author independently |
+| `write/metadata-update.ts` | Shared identity helper during metadata merge | Preserve native stored responsibility; never insert JWT username as mapped identity |
+| `manage.ts create_package` | Explicit responsible or configured username; cloud internal user fallback | On-prem explicit valid SAP responsible; no omission/JWT fallback. Preserve topology restrictions |
+| `transport.ts list/create` | Default list user and explicit create owner from `client.username` | Native logged-on read default; omit optional create owner; retain explicit authorized reassignment target |
+| `diagnose.ts trace_start/requests` | Default trace username from client | Explicit SAP username when native default is not authoritative; do not infer from IdP name |
+
+The native source author, person-responsible and requested trace/reassignment subject are different
+concepts. Tests must not assert that an explicit responsibility field establishes PP acting identity.
+
+## Remaining gates
+
+Resolve every action/type/input combination, aliases and nested fields into the runtime admission
+matrix as its guarded adapter lands. The snapshots catch action, type, alias, top-level and all object-valued nested-schema drift in both platform variants; they do not
+replace branch-level behavioral tests, backend qualification, native identity evidence or review.
+Keep pending combinations refused and document them. Full PR 2 remains in progress.

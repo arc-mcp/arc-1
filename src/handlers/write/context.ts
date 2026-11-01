@@ -3,6 +3,7 @@
  */
 
 import type { AdtClient } from '../../adt/client.js';
+import type { MutationContext } from '../../adt/mutation-context.js';
 import type { CachingLayer } from '../../cache/caching-layer.js';
 import type { ServerConfig } from '../../server/types.js';
 import type { CacheSecurityContext } from '../cache-security.js';
@@ -15,6 +16,7 @@ import type { ClassWriteInclude } from '../object-types.js';
  * them (e.g. invalidateWrittenObject would key the cache off the old name).
  */
 export interface SapWriteContext {
+  readonly mutationContext: MutationContext;
   readonly client: AdtClient;
   readonly args: Record<string, unknown>;
   readonly config: ServerConfig;

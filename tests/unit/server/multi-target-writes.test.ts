@@ -1,6 +1,9 @@
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import { describe, expect, it } from 'vitest';
+import { Ajv2020 } from 'ajv/dist/2020.js';
+import { describe, expect, it, vi } from 'vitest';
+import { AdtClient } from '../../../src/adt/client.js';
 import { checkPackage, checkTransport, defaultSafetyConfig } from '../../../src/adt/safety.js';
+import { handleToolCall } from '../../../src/handlers/dispatch.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { DestinationRegistry } from '../../../src/server/destination-registry.js';
 import { parseTargetGrant } from '../../../src/server/multi-target-authorization.js';
@@ -8,8 +11,13 @@ import { parseDestinationAllowlist } from '../../../src/server/multi-target-dest
 import { projectMultiTargetRequest } from '../../../src/server/multi-target-request-projection.js';
 import { buildMultiTargetConfig } from '../../../src/server/multi-target-runtime.js';
 import { buildMultiTargetServerInstructions, prepareMultiTargetCall } from '../../../src/server/multi-target-server.js';
-import { multiTargetToolDefinitions } from '../../../src/server/multi-target-tools.js';
+import {
+  finalizeMultiTargetToolAnnotations,
+  multiTargetToolDefinitions,
+} from '../../../src/server/multi-target-tools.js';
+import { PINNED_READ_COMPANIONS } from '../../../src/server/pinned-mutation-capabilities.js';
 import { NATIVE_NAVIGATION_INSTRUCTIONS } from '../../../src/server/server-instructions.js';
+import { filterToolsByAuthScope } from '../../../src/server/tool-auth.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 const base = {
@@ -67,7 +75,336 @@ function runtime(identity = auth(), mode: 'pinned' | 'aggregate' = 'pinned') {
   return buildMultiTargetConfig(base, r.targets[0], { mode, authorization: projectMultiTargetRequest(r, identity) });
 }
 
+const metadataInputs = [
+  { action: 'edit_class_definition', source: 'CLASS zcl_test DEFINITION. ENDCLASS.' },
+  { action: 'edit_method_signature', method: 'RUN', source: 'METHODS run.' },
+  { action: 'add_method', method: 'METHODS added.', visibility: 'public', abstract: false },
+  { action: 'delete_method', method: 'RUN' },
+  { action: 'change_method_visibility', method: 'RUN', visibility: 'private' },
+];
+
 describe('pinned write policy composition', () => {
+  it.each(['', ' \r\n\t'])('routes blank include input to the handler refusal without SAP I/O: %j', async (source) => {
+    const r = registry(),
+      identity = auth();
+    const prepared = await prepareMultiTargetCall({
+      options: {
+        mode: 'pinned',
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: base,
+        authorization: projectMultiTargetRequest(r, identity),
+      },
+      toolName: 'SAPWrite',
+      rawArgs: { action: 'update', type: 'CLAS', name: 'ZARC1_INCLUDE', include: 'definitions', source },
+      requestId: 'include-blank',
+      authInfo: identity,
+    });
+    expect(prepared.handled).toBe(false);
+    if (prepared.handled) throw new Error('Blank input must reach the handler');
+    const client = new AdtClient({
+      baseUrl: 'http://sap.invalid',
+      safety: { ...defaultSafetyConfig(), ...prepared.activeConfig },
+    });
+    const requests = (['get', 'post', 'put', 'delete'] as const).map((method) =>
+      vi.spyOn(client.http, method).mockRejectedValue(new Error('Unexpected SAP I/O')),
+    );
+    const result = await handleToolCall(client, prepared.activeConfig, 'SAPWrite', prepared.args);
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text)).toMatchObject({
+      error: 'PINNED_WRITE_REFUSED',
+      state: 'unchanged',
+      message: 'Include source is required; source="" with an existing include hash clears it.',
+    });
+    for (const request of requests) expect(request).not.toHaveBeenCalled();
+  });
+  it.each([
+    ...metadataInputs.map((input) => ({ ...input, include: undefined, expectedSourceHash: 'a'.repeat(64) })),
+    ...['definitions', 'implementations', 'macros', 'testclasses'].map((include) => ({
+      action: 'edit_class_definition',
+      include,
+      source: '* Replacement',
+      expectedSourceHash: 'a'.repeat(64),
+    })),
+    { action: 'edit_class_definition', source: '', expectedSourceHash: 'a'.repeat(64) },
+    { source: '', expectedSourceHash: 'a'.repeat(64) },
+    { source: '* New include\n' },
+    ...['definitions', 'implementations', 'macros', 'testclasses'].map((include) => ({
+      action: 'edit_method',
+      include,
+      method: 'lcl_worker~run',
+      source: 'body',
+      expectedSourceHash: 'a'.repeat(64),
+    })),
+    ...['lhc_worker~run', 'lcl_worker~run', 'ltc_worker~run'].map((method) => ({
+      action: 'edit_method',
+      include: undefined,
+      method,
+      source: 'body',
+      expectedSourceHash: 'a'.repeat(64),
+    })),
+  ])('prepares a valid class write through the pinned route and catalog: %j', async (input) => {
+    const r = registry();
+    const identity = auth();
+    const rawArgs = Object.fromEntries(
+      Object.entries({
+        action: 'update',
+        type: 'CLAS',
+        name: 'ZARC1_INCLUDE',
+        include: 'definitions',
+        ...input,
+      }).filter(([, value]) => value !== undefined),
+    );
+    const result = await prepareMultiTargetCall({
+      options: {
+        mode: 'pinned',
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: base,
+        authorization: projectMultiTargetRequest(r, identity),
+      },
+      toolName: 'SAPWrite',
+      rawArgs,
+      requestId: 'include-valid',
+      authInfo: identity,
+    });
+    expect(result.handled).toBe(false);
+    if (result.handled) throw new Error('Valid include request was refused');
+    expect(result.args).toMatchObject(rawArgs);
+    const write = multiTargetToolDefinitions(getToolDefinitions(runtime()), runtime()).find(
+      (t) => t.name === 'SAPWrite',
+    )!;
+    const validate = new Ajv2020({ strictTypes: false, allowUnionTypes: true }).compile(write.inputSchema);
+    expect(validate(rawArgs), JSON.stringify(validate.errors)).toBe(true);
+  });
+  it.each(['CLAS', 'INTF'])('prepares %s deletion without source or hash', async (type) => {
+    const r = registry();
+    const identity = auth();
+    const result = await prepareMultiTargetCall({
+      options: {
+        mode: 'pinned',
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: base,
+        authorization: projectMultiTargetRequest(r, identity),
+      },
+      toolName: 'SAPWrite',
+      rawArgs: { action: 'delete', type, name: 'ZARC1_DELETE' },
+      requestId: 'delete-valid',
+      authInfo: identity,
+    });
+    expect(result.handled).toBe(false);
+    const write = multiTargetToolDefinitions(getToolDefinitions(runtime()), runtime()).find(
+      (t) => t.name === 'SAPWrite',
+    )!;
+    expect((write.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).toContain('delete');
+    const validate = new Ajv2020({ strictTypes: false, allowUnionTypes: true }).compile(write.inputSchema);
+    expect(validate({ action: 'delete', type, name: 'ZARC1_DELETE' }), JSON.stringify(validate.errors)).toBe(true);
+    const denied = filterToolsByAuthScope([write], ['read', 'write'], ['SAPWrite.delete'])[0];
+    expect((denied.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).not.toContain('delete');
+  });
+  it.each([
+    { action: 'delete', type: 'CLAS', include: 'testclasses' },
+    { action: 'delete', type: 'CLAS', processingType: 'normal' },
+    { action: 'delete', type: 'CLAS', updateTaskKind: 'immediate' },
+    { action: 'create', type: 'CLAS', source: 'source', package: '$TMP', include: 'definitions' },
+    { action: 'create', type: 'INTF', source: 'source', package: '$TMP', processingType: 'normal' },
+    { action: 'update', type: 'INTF', source: 'source', expectedSourceHash: 'a'.repeat(64), include: 'main' },
+  ])('rejects raw input before legacy normalization drops it: %j', async (rawArgs) => {
+    const r = registry();
+    const identity = auth();
+    const result = await prepareMultiTargetCall({
+      options: {
+        mode: 'pinned',
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: base,
+        authorization: projectMultiTargetRequest(r, identity),
+      },
+      toolName: 'SAPWrite',
+      rawArgs: { name: 'ZARC1_DELETE', ...rawArgs },
+      requestId: 'raw-field-refusal',
+      authInfo: identity,
+    });
+    expect(result.handled).toBe(true);
+    if (!result.handled) throw new Error('Meaningful raw field reached destination preparation');
+    expect(JSON.stringify(result.result)).toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
+  });
+  it.each(['reader', 'no-write-grant', 'destination-readonly', 'global-readonly', 'aggregate', 'basic'] as const)(
+    'keeps deletion and class surgery out of %s catalogs and direct calls',
+    async (kind) => {
+      const instance = { ...base, allowWrites: kind !== 'global-readonly', multiTargetAllowBasicAuth: true };
+      const r = registry(
+        kind === 'destination-readonly' || kind === 'basic' ? { 'arc1.allow_writes': 'false' } : {},
+        instance,
+        kind === 'basic' ? 'BasicAuthentication' : 'PrincipalPropagation',
+      );
+      const identity = kind === 'reader' ? auth(['A4H/001'], ['read']) : kind === 'no-write-grant' ? auth([]) : auth();
+      const options = {
+        mode: kind === 'aggregate' ? ('aggregate' as const) : ('pinned' as const),
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: instance,
+        authorization: projectMultiTargetRequest(r, identity),
+      };
+      const config = buildMultiTargetConfig(instance, r.targets[0], options);
+      expect(multiTargetToolDefinitions(getToolDefinitions(config), config).some((t) => t.name === 'SAPWrite')).toBe(
+        false,
+      );
+      for (const input of [{ action: 'delete' }, ...metadataInputs]) {
+        const result = await prepareMultiTargetCall({
+          options,
+          toolName: 'SAPWrite',
+          rawArgs: {
+            type: 'CLAS',
+            name: 'ZARC1_DELETE',
+            ...input,
+            ...(kind === 'aggregate' ? { target: 'A4H/001' } : {}),
+          },
+          requestId: 'class-action-denied',
+          authInfo: identity,
+        });
+        expect(result.handled).toBe(true);
+        if (!result.handled) throw new Error('Mutation escaped route refusal');
+        expect(JSON.stringify(result.result)).toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
+      }
+    },
+  );
+  it('adds only the explicit formatter companions and setting action to a writable pinned catalog', () => {
+    expect(PINNED_READ_COMPANIONS.map(({ tool, action, fields }) => ({ tool, action, fields }))).toEqual([
+      { tool: 'SAPLint', action: 'get_formatter_settings', fields: ['action'] },
+      { tool: 'SAPLint', action: 'format', fields: ['action', 'source'] },
+    ]);
+    const config = runtime();
+    const catalog = multiTargetToolDefinitions(getToolDefinitions(config), config);
+    const lint = catalog.find((tool) => tool.name === 'SAPLint')!;
+    expect((lint.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).toEqual([
+      'lint',
+      'lint_and_fix',
+      'list_rules',
+      'format',
+      'get_formatter_settings',
+      'set_formatter_settings',
+    ]);
+    expect(lint.inputSchema.properties).toHaveProperty('indentation');
+    expect(lint.inputSchema.properties).toHaveProperty('style');
+    expect(lint.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    const denied = finalizeMultiTargetToolAnnotations(
+      filterToolsByAuthScope(catalog, ['read', 'write'], ['SAPLint.set_formatter_settings']),
+    );
+    const readLint = denied.find((tool) => tool.name === 'SAPLint')!;
+    expect((readLint.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).not.toContain(
+      'set_formatter_settings',
+    );
+    expect(readLint.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+  });
+
+  it.each(['reader', 'destination-readonly', 'aggregate', 'basic', 'global-readonly'] as const)(
+    'keeps formatter calls and companions out of the %s route',
+    async (kind) => {
+      const instance = { ...base, allowWrites: kind !== 'global-readonly', multiTargetAllowBasicAuth: true };
+      const r = registry(
+        kind === 'destination-readonly' || kind === 'basic' ? { 'arc1.allow_writes': 'false' } : {},
+        instance,
+        kind === 'basic' ? 'BasicAuthentication' : 'PrincipalPropagation',
+      );
+      const identity = kind === 'reader' ? auth([], ['read']) : auth();
+      const options = {
+        mode: kind === 'aggregate' ? ('aggregate' as const) : ('pinned' as const),
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: instance,
+        authorization: projectMultiTargetRequest(r, identity),
+      };
+      const config = buildMultiTargetConfig(instance, r.targets[0], options);
+      const lint = multiTargetToolDefinitions(getToolDefinitions(config), config).find(
+        (tool) => tool.name === 'SAPLint',
+      )!;
+      expect((lint.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).toEqual([
+        'lint',
+        'lint_and_fix',
+        'list_rules',
+      ]);
+      expect(lint.inputSchema.properties).not.toHaveProperty('indentation');
+      expect(lint.inputSchema.properties).not.toHaveProperty('style');
+      for (const args of [
+        { action: 'format', source: 'REPORT ztest.' },
+        { action: 'get_formatter_settings' },
+        { action: 'set_formatter_settings', indentation: false },
+      ]) {
+        const result = await prepareMultiTargetCall({
+          options,
+          toolName: 'SAPLint',
+          rawArgs: { ...args, ...(kind === 'aggregate' ? { target: 'A4H/001' } : {}) },
+          requestId: 'formatter-denied',
+          authInfo: identity,
+        });
+        expect(result.handled).toBe(true);
+        if (!result.handled) throw new Error('Formatter reached preparation on a read-only route');
+        expect(JSON.stringify(result.result)).toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
+      }
+    },
+  );
+
+  it.each([
+    { action: 'set_formatter_settings' },
+    { action: 'set_formatter_settings', style: 'unknown' },
+    { action: 'set_formatter_settings', indentation: 'maybe' },
+    { action: 'set_formatter_settings', indentation: false, user: 'OTHER' },
+    { action: 'get_formatter_settings', user: 'OTHER' },
+    { action: 'format', source: {} },
+    { action: 'format' },
+    { action: 'format', source: 'REPORT ztest.', target: 'OTHER/001' },
+  ])('rejects invalid/hidden formatter inputs before PP preparation: %j', async (rawArgs) => {
+    const r = registry();
+    const identity = auth();
+    const result = await prepareMultiTargetCall({
+      options: {
+        mode: 'pinned',
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: base,
+        authorization: projectMultiTargetRequest(r, identity),
+      },
+      toolName: 'SAPLint',
+      rawArgs,
+      requestId: 'formatter-invalid',
+      authInfo: identity,
+    });
+    expect(result.handled).toBe(true);
+    if (!result.handled) throw new Error('Invalid formatter arguments reached preparation');
+    expect(JSON.stringify(result.result)).toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
+  });
+
+  it.each([
+    { action: 'set_formatter_settings', indentation: false },
+    { action: 'set_formatter_settings', indentation: 'false' },
+    { action: 'set_formatter_settings', indentation: 0 },
+    { action: 'set_formatter_settings', style: 'none' },
+    { action: 'get_formatter_settings' },
+    { action: 'format', source: 'REPORT ztest.' },
+  ])('prepares supported formatter inputs without weakening their route policy: %j', async (rawArgs) => {
+    const r = registry();
+    const identity = auth();
+    const result = await prepareMultiTargetCall({
+      options: {
+        mode: 'pinned',
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: base,
+        authorization: projectMultiTargetRequest(r, identity),
+      },
+      toolName: 'SAPLint',
+      rawArgs,
+      requestId: 'formatter-valid',
+      authInfo: identity,
+    });
+    expect(result.handled).toBe(false);
+    if (result.handled) throw new Error('Valid formatter arguments were refused');
+    expect(result.activeConfig.multiTargetWrite?.enabled).toBe(true);
+    expect(result.selectedTarget.target).toBe('A4H/001');
+  });
+
   it.each(['writer', 'reader', 'aggregate'] as const)(
     'retains native navigation and accurate mutation guidance for %s connections',
     (kind) => {
@@ -84,7 +421,9 @@ describe('pinned write policy composition', () => {
       expect(instructions.length).toBeLessThan(2048);
       if (kind === 'writer') {
         expect(instructions).toContain('scoped read/write');
-        expect(instructions).toContain('CLAS/INTF main-source writes require both package policies');
+        expect(instructions).toContain(
+          'CLAS/INTF main-source writes, CLAS local-include replacements/method edits, main-source class surgery and owner deletion require both package policies',
+        );
         expect(instructions).toContain('Activation affects the whole owner');
         expect(instructions).not.toContain('Writes, activation, transport/Git mutations');
       } else {
@@ -191,18 +530,37 @@ describe('pinned write policy composition', () => {
     const write = definitions.find((t) => t.name === 'SAPWrite')!;
     expect(write).toBeDefined();
     expect(write.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: false });
-    expect(write.inputSchema.properties).not.toHaveProperty('include');
+    expect(write.inputSchema.properties).toHaveProperty('include.enum', [
+      'definitions',
+      'implementations',
+      'macros',
+      'testclasses',
+    ]);
     expect(write.inputSchema.properties).not.toHaveProperty('lintBeforeWrite');
     const aggregate = runtime(auth(), 'aggregate');
     expect(
       multiTargetToolDefinitions(getToolDefinitions(aggregate), aggregate).some((t) => t.name === 'SAPWrite'),
     ).toBe(false);
   });
+
+  it.each(['SAPActivate', 'SAPActivate.activate', 'SAPActivate.act*'])(
+    'omits implicit text activation when %s is denied',
+    (deny) => {
+      const config = { ...runtime(), denyActions: [deny] };
+      const write = multiTargetToolDefinitions(getToolDefinitions(config), config).find(
+        (tool) => tool.name === 'SAPWrite',
+      )!;
+      expect((write.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).not.toContain(
+        'edit_text_symbols',
+      );
+      expect((write.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).toContain('update');
+    },
+  );
   it.each([
     { action: 'delete' },
     { type: 'PROG' },
     { include: 'main' },
-    { method: 'lcl_helper~run' },
+    { include: 'text_symbols' },
     { target: 'A4H/001' },
     { lintBeforeWrite: false },
     { objects: [] },
