@@ -22,6 +22,25 @@ function readFixture(name: string): string {
 }
 
 describe('buildFmSignatureClause', () => {
+  it.each(['importing', 'exporting', 'changing', 'tables'] as const)(
+    'preserves explicit typing and adds TYPE only to bare expressions for %s',
+    (kind) => {
+      for (const [type, expected] of [
+        ['STRING', 'TYPE STRING'],
+        ['TYPE STRING', 'TYPE STRING'],
+        ['LIKE ICON-NAME', 'LIKE ICON-NAME'],
+        ['REF TO CL_ABAP_TYPEDESCR', 'TYPE REF TO CL_ABAP_TYPEDESCR'],
+        ['TYPE REF TO CL_ABAP_TYPEDESCR', 'TYPE REF TO CL_ABAP_TYPEDESCR'],
+        [' like icon-name ', 'like icon-name'],
+        ['LIKE-FIELD', 'TYPE LIKE-FIELD'],
+        ['TYPE-FIELD', 'TYPE TYPE-FIELD'],
+      ]) {
+        const result = buildFmSignatureClause([{ kind, name: 'P', type }]);
+        expect(result).toBe(`  ${kind.toUpperCase()}\n    P ${expected}`);
+      }
+    },
+  );
+
   it('returns empty string for empty params array', () => {
     expect(buildFmSignatureClause([])).toBe('');
   });
@@ -105,6 +124,31 @@ describe('buildFmSignatureClause', () => {
 });
 
 describe('parseFmSignature', () => {
+  it.each(['importing', 'exporting', 'changing', 'tables'] as const)('preserves LIKE for %s', (kind) => {
+    const source = `FUNCTION z_test\n  ${kind}\n    p LIKE icon-name.\nENDFUNCTION.`;
+    const { params } = parseFmSignature(source);
+    expect(params).toEqual([{ kind, name: 'P', type: 'LIKE icon-name' }]);
+    expect(buildFmSignatureClause(params)).toContain('P LIKE icon-name');
+  });
+
+  it('keeps OPTIONAL separate from SAP’s trailing untyped-parameter pragma', () => {
+    const source = 'FUNCTION z_test\n IMPORTING\n iv TYPE ANY OPTIONAL ##ADT_PARAMETER_UNTYPED.\nENDFUNCTION.';
+    const { params } = parseFmSignature(source);
+    expect(params).toEqual([{ kind: 'importing', name: 'IV', type: 'ANY ##ADT_PARAMETER_UNTYPED', optional: true }]);
+    expect(parseFmSignature(spliceFmSignature(source, 'Z_TEST', params)).params).toEqual(params);
+  });
+
+  it.each(['popup-to-confirm.abap', 'bapi-user-getlist.abap'])('round-trips the native signature in %s', (fixture) => {
+    const source = readFixture(fixture);
+    const { params, bodyStart } = parseFmSignature(source);
+    const name = /FUNCTION\s+(\S+)/i.exec(source)![1]!;
+    const rebuilt = spliceFmSignature(source, name, params);
+    const rebuiltHeader = rebuilt.slice(0, parseFmSignature(rebuilt).bodyStart);
+    const normalize = (header: string) => header.replace(/\s+/g, ' ').trim().toUpperCase();
+    expect(normalize(rebuiltHeader)).toBe(normalize(source.slice(0, bodyStart)));
+    expect(rebuilt.slice(parseFmSignature(rebuilt).bodyStart)).toBe(source.slice(bodyStart));
+  });
+
   it.each(['/NS/FOO', '/1BCDWB/GENERATED'])(
     'parses and edits namespaced function %s while preserving documentation and the body',
     (name) => {

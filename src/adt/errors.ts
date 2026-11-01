@@ -20,8 +20,8 @@ import { decodeXmlEntities } from './xml-entities.js';
 
 /** Base error for all ADT-related errors */
 export class AdtError extends Error {
-  /** A create request failed without establishing whether SAP committed it. */
-  creationOutcome?: 'unknown';
+  /** Creation was confirmed before a later failure, or its outcome could not be established. */
+  creationOutcome?: 'unknown' | 'confirmed';
 
   /** A plugin POST failed without establishing whether its service executed it. */
   pluginPostOutcome?: 'unknown';
@@ -1062,6 +1062,11 @@ function parseOptionalInt(value: string | undefined): number | undefined {
 function extractInlineLineNumber(text: string): number | undefined {
   const match = text.match(/\bline\s+(\d+)\b/i);
   return match?.[1] ? parseOptionalInt(match[1]) : undefined;
+}
+
+/** A control request failed before the intended data operation could receive a response. */
+export class AdtCsrfBootstrapError extends AdtApiError {
+  override name = 'AdtCsrfBootstrapError';
 }
 
 /** Network-level error (DNS, connection refused, timeout) */
