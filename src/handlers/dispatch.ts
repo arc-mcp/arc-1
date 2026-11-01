@@ -708,6 +708,7 @@ export function getToolRegistry(): ToolRegistry {
     handleSAPDiagnose(ctx.client, ctx.args, ctx.config.minimalErrors, {
       configuredAbapRelease:
         ctx.config.multiTargetEndpoints || ctx.config.targetId ? undefined : ctx.config.abapRelease,
+      configuredSystemType: ctx.config.systemType === 'auto' ? undefined : ctx.config.systemType,
     }),
   );
   reg('SAPTransport', (ctx) => handleSAPTransport(ctx.client, ctx.args, ctx.config));
