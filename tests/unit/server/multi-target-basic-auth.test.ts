@@ -334,7 +334,12 @@ describe('multi-target shared Basic authentication', () => {
           method: 'tools/call',
           params: {
             name: 'SAPRead',
-            arguments: { type: 'CLAS', name: 'ZCL_TEST', ...(mode === 'aggregate' ? { target: target.target } : {}) },
+            arguments: {
+              type: 'CLAS',
+              extensions: 'none',
+              name: 'ZCL_TEST',
+              ...(mode === 'aggregate' ? { target: target.target } : {}),
+            },
           },
         };
         for (const editor of ['eclipse', 'vscode', undefined, 'eclipse']) {

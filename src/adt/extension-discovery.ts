@@ -192,7 +192,12 @@ export class ExtensionDiscoverySession {
   }
 
   addNode(node: ExtensionNode, depth = 0): boolean {
-    if (this.result.nodes.some((existing) => extensionKey(existing) === extensionKey(node))) return true;
+    const existing = this.result.nodes.find((existing) => extensionKey(existing) === extensionKey(node));
+    if (existing) {
+      // A second provider can enrich the same observed version without replacing its identity.
+      existing.switch ??= node.switch;
+      return true;
+    }
     if (depth > this.limits.depth) {
       this.omit('depth');
       return false;

@@ -1,0 +1,26 @@
+{
+  "target": "npl",
+  "checkedAt": "2026-10-31T21:02:59.573Z",
+  "results": [
+    {
+      "args": {
+        "type": "ENHO",
+        "name": "CL_OO_ADT_ENHANCED_CLASS1"
+      },
+      "isError": false,
+      "sha256": "c16b8ada6ca908d14da515f62a1bc08034b02301478937bde0cd8c7fb00067ea",
+      "revision": "00000",
+      "include": "CL_OO_ADT_ENHANCED_CLASS1=====E",
+      "provenance": true
+    },
+    {
+      "args": {
+        "type": "INCL",
+        "name": "CL_OO_ADT_ENHANCED_CLASS1=====E"
+      },
+      "isError": false,
+      "sha256": "52efda2ed1523919933149e55f8d7d00dc9bfe2e67df87486d9ce56ba32fe1d6",
+      "provenance": true
+    }
+  ]
+}

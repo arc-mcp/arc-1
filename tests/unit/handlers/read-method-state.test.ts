@@ -43,7 +43,7 @@ describe('signature reads through the source cache', () => {
     expect(JSON.parse(signature.content[0]!.text!).signature).toBe('METHODS execute IMPORTING value TYPE string.');
     const body = await call({ ...args, methodView: undefined });
     expect(body.content[0]?.text).toBe('METHOD execute.\n  DATA(copy) = value.\nENDMETHOD.');
-    const full = await call({ type: 'CLAS', name: 'ZCL_DEMO' });
+    const full = await call({ type: 'CLAS', name: 'ZCL_DEMO', extensions: 'none' });
     expect(full.content[0]?.text).toContain(SOURCE);
     expect(memory.getSource('CLAS', 'ZCL_DEMO')?.source).toBe(SOURCE);
     expect(mockFetch).toHaveBeenCalledTimes(4);

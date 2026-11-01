@@ -36,6 +36,22 @@ describe('native relation protocol', () => {
       },
     ]);
   });
+  it('requires exact EXTED_OBJ and preserves enhancement-to-base direction independently of hooks', () => {
+    const enhancement = { ...child, type: 'ENHO/XH', uri: '/sap/bc/adt/enhancements/enhoxh/z_enhancement' };
+    const network = normalizeRelationNetwork(relationXml(root, [enhancement], 'EXTED_OBJ'), 'EXTED_OBJ', root);
+    expect(network.objects).toContainEqual(enhancement);
+    expect(network.edges).toEqual([
+      {
+        from: enhancement.uri,
+        to: root.uri,
+        kind: 'extends',
+        context: 'EXTED_OBJ',
+        evidence: 'sap_relation_explorer',
+        direct: null,
+      },
+    ]);
+    expect(() => normalizeRelationNetwork(relationXml(root, [child], 'ENV'), 'EXTED_OBJ', root)).toThrow('context');
+  });
   it('keeps same-name different-type/URI objects', () => {
     const ddl = { ...child, name: 'ZSAME', type: 'DDLS/DF', uri: '/sap/bc/adt/ddic/ddl/sources/zsame' };
     const behavior = { ...ddl, type: 'BDEF/BDO', uri: '/sap/bc/adt/bo/behaviordefinitions/zsame' };
