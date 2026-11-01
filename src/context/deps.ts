@@ -54,6 +54,7 @@ const BUILTIN_TYPES = new Set([
   'SYST',
   'ANY',
   'DATA',
+  'OBJECT', // Built-in root class, not a repository object.
   'CLIKE',
   'CSEQUENCE',
   'NUMERIC',

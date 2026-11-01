@@ -1875,42 +1875,16 @@ describe('SAPRead handler', () => {
       },
     );
 
-    it('reads class with format="structured" and method param — format takes precedence', async () => {
-      const classMetadataXml = `<?xml version="1.0" encoding="utf-8"?>
-<class:abapClass class:category="00" class:fixPointArithmetic="true"
-    adtcore:name="ZCL_TEST" adtcore:description="Test class" adtcore:language="EN"
-    adtcore:masterLanguage="EN"
-    xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:adtcore="http://www.sap.com/adt/core">
-  <adtcore:packageRef adtcore:name="$TMP"/>
-</class:abapClass>`;
-      mockFetch.mockReset();
-      mockFetch.mockImplementation(async (url: string) => {
-        const urlStr = String(url);
-        if (urlStr.includes('/oo/classes/ZCL_TEST') && !urlStr.includes('/source/') && !urlStr.includes('/includes/')) {
-          return mockResponse(200, classMetadataXml, { 'x-csrf-token': 'T' });
-        }
-        if (urlStr.includes('/source/main')) {
-          return mockResponse(200, 'CLASS zcl_test DEFINITION.\nENDCLASS.\nCLASS zcl_test IMPLEMENTATION.\nENDCLASS.', {
-            'x-csrf-token': 'T',
-          });
-        }
-        if (urlStr.includes('/includes/')) {
-          return mockResponse(404, 'Not Found', { 'x-csrf-token': 'T' });
-        }
-        return mockResponse(200, '', { 'x-csrf-token': 'T' });
-      });
-
+    it('rejects structured class reads combined with a method before contacting SAP', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'CLAS',
         name: 'ZCL_TEST',
         format: 'structured',
         method: 'get_name',
       });
-
-      expect(result.isError).toBeUndefined();
-      const parsed = JSON.parse(result.content[0]?.text ?? '');
-      expect(parsed.metadata).toBeDefined();
-      expect(parsed.main).toBeDefined();
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Do not combine method with format="structured"');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('structured response is valid JSON with expected keys', async () => {

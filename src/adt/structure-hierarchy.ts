@@ -14,7 +14,7 @@ export { type EmbeddedStructureRef, parseEmbeddedStructures } from './embedded-s
 
 import type { AdtClient, SourceReadOptions, SourceReadResult } from './client.js';
 import { findWhereUsed, type WhereUsedResult } from './codeintel.js';
-import { AdtApiError, isNotFoundError } from './errors.js';
+import { AdtApiError, AdtCsrfBootstrapError, AdtResponseLimitError, isNotFoundError } from './errors.js';
 
 export type StructureNodeKind = 'root' | 'include' | 'append';
 
@@ -43,7 +43,7 @@ export interface StructureHierarchyResult {
     unresolved: number;
     truncated: number;
   };
-  extensionDiscovery?: ExtensionDiscoveryResult;
+  extensionDiscovery?: Omit<ExtensionDiscoveryResult, 'edges'>;
   warnings?: string[];
 }
 
@@ -64,7 +64,7 @@ export async function buildStructureHierarchy(
   const maxDepth = parseMaxDepth(options.maxDepth);
   const warnings: string[] = [];
   const sourceCache = new Map<string, string | null>();
-  let appendDiscoveryDisabled = false;
+  let fallbackDisabled = false;
   let session: ExtensionDiscoverySession | undefined;
   let totalNodes = 0;
   const appendCache = new Map<string, EmbeddedStructureRef[]>();
@@ -148,10 +148,11 @@ export async function buildStructureHierarchy(
 
     let extensionRefs: EmbeddedStructureRef[] = [];
     if (appendCache.has(upper)) extensionRefs = appendCache.get(upper)!;
-    else if (includeExtensions && !appendDiscoveryDisabled && !session!.stopped) {
+    else if (includeExtensions && !session!.stopped) {
       const found = await discoverDdicAppends(client, session!, upper, path.length);
       extensionRefs = found.references.map((ref) => ({ name: ref.name, kind: 'append', attribute: null }));
       if (
+        !fallbackDisabled &&
         ['not_advertised', 'unsupported'].includes(found.provider.status) &&
         found.provider.reason !== 'unsupported_version'
       ) {
@@ -167,7 +168,7 @@ export async function buildStructureHierarchy(
         };
         await session!.provider(fallback, async () => {
           extensionRefs = await findExtensionRefs(client, session!, upper, readSource, warnings, (reason) => {
-            appendDiscoveryDisabled = true;
+            fallbackDisabled = true;
             fallback.status = reason === 'unsupported' ? 'unsupported' : 'incomplete';
             fallback.reason = reason;
           });
@@ -213,11 +214,17 @@ export async function buildStructureHierarchy(
     maxDepth,
     tree,
     summary: summarizeStructureTree(tree),
-    ...(includeExtensions ? { extensionDiscovery: session.finish() } : {}),
+    ...(includeExtensions ? { extensionDiscovery: structureDiscoveryMetadata(session.finish()) } : {}),
     ...(warnings.length > 0 || session.result.issues.length > 0
       ? { warnings: [...new Set([...warnings, ...session.result.issues])] }
       : {}),
   };
+}
+
+// Structure context already exposes its occurrence tree. The provider's append-only
+// edges omit include owners; do not expose them as a second, disconnected graph.
+function structureDiscoveryMetadata({ edges: _edges, ...metadata }: ExtensionDiscoveryResult) {
+  return metadata;
 }
 
 async function findExtensionRefs(
@@ -250,7 +257,7 @@ async function findExtensionRefs(
   } catch (err) {
     if (isUnavailableWhereUsedError(err)) {
       warnings.push(
-        `Where-used endpoint unavailable for ${baseName}; append discovery was skipped for the rest of the tree.`,
+        `Where-used endpoint unavailable for ${baseName}; index fallback was skipped for the rest of the tree.`,
       );
       disableAppendDiscovery('unsupported');
     } else {
@@ -261,7 +268,7 @@ async function findExtensionRefs(
   // Every candidate needs a source read; large where-used lists otherwise fan out into thousands of requests.
   if (candidates.size > MAX_APPEND_CANDIDATES) {
     warnings.push(
-      `Where-used returned ${candidates.size} structure candidates for ${baseName}, exceeding the append scan limit of ${MAX_APPEND_CANDIDATES}; append discovery was skipped for the rest of the tree.`,
+      `Where-used returned ${candidates.size} structure candidates for ${baseName}, exceeding the append scan limit of ${MAX_APPEND_CANDIDATES}; index fallback was skipped for the rest of the tree.`,
     );
     session.omit('candidates', candidates.size);
     disableAppendDiscovery('candidate_limit');
@@ -309,14 +316,19 @@ function escapeRegExp(value: string): string {
 }
 
 function isUnavailableWhereUsedError(err: unknown): boolean {
-  return err instanceof AdtApiError && WHERE_USED_UNAVAILABLE_STATUSES.has(err.statusCode);
+  return (
+    err instanceof AdtApiError &&
+    !(err instanceof AdtCsrfBootstrapError) &&
+    WHERE_USED_UNAVAILABLE_STATUSES.has(err.statusCode)
+  );
 }
 
 function validateAppendIndex(xml: string): void {
   try {
     const parsed = parseRelationXml(xml);
     if (!Object.hasOwn(parsed, 'usageReferenceResult')) throw new ExtensionProtocolError('Invalid append index.');
-  } catch {
+  } catch (error) {
+    if (error instanceof AdtResponseLimitError) throw error;
     throw new ExtensionProtocolError('Invalid append index.');
   }
 }

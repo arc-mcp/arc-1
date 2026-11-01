@@ -3,6 +3,7 @@ import type { AdtClient } from './client.js';
 import { AdtApiError, AdtResponseLimitError } from './errors.js';
 import {
   type ExtensionDiscoverySession,
+  type ExtensionIdentity,
   type ExtensionNode,
   ExtensionProtocolError,
   type ExtensionProvider,
@@ -103,6 +104,7 @@ export async function discoverDdicAppends(
   session: ExtensionDiscoverySession,
   name: string,
   depth = 0,
+  owner?: ExtensionIdentity,
 ): Promise<{ provider: ExtensionProvider; references: ExtensionNode[] }> {
   const provider: ExtensionProvider = {
     id: 'ddic_appends',
@@ -163,12 +165,14 @@ export async function discoverDdicAppends(
     for (const node of references) {
       if (session.addNode(node, depth))
         session.addEdge({
-          from:
-            name.toUpperCase() === session.request.root.name.toUpperCase()
+          from: owner
+            ? extensionKey(owner)
+            : name.toUpperCase() === session.request.root.name.toUpperCase()
               ? extensionKey(session.request.root)
               : `TABL:${name.toUpperCase()}:active`,
           to: extensionKey(node),
           kind: 'append',
+          observationVersion: 'provider_current',
         });
     }
   });

@@ -3,6 +3,7 @@ import { ddicExtensionAdapter } from '../../../src/adt/ddic-extension-adapter.js
 import type { DdicExtensionClient } from '../../../src/adt/ddic-extensions.js';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import { ExtensionDiscoverySession, renderExtensionDiscovery } from '../../../src/adt/extension-discovery.js';
+import type { AdtRequestOptions } from '../../../src/adt/http-deadline.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { buildStructureHierarchy } from '../../../src/adt/structure-hierarchy.js';
 
@@ -10,8 +11,8 @@ function setup(sources: Record<string, string>, appends: Record<string, string[]
   const root = { type: 'TABL', name: 'ZROOT', version: 'active' };
   const request = { root, scope: 'root source' };
   const session = new ExtensionDiscoverySession('sources', request, defaultSafetyConfig());
-  const get = vi.fn(async (path: string) => {
-    session.options.attemptBudget!.consume();
+  const get = vi.fn(async (path: string, _headers?: unknown, options?: AdtRequestOptions) => {
+    options?.attemptBudget?.consume();
     const name = new URL(path, 'https://local').pathname.split('/')[6]!.toUpperCase();
     if (path.endsWith('/enhancements'))
       return {
@@ -21,8 +22,8 @@ function setup(sources: Record<string, string>, appends: Record<string, string[]
       body: `<blueSource name="${name}" type="TABL/DS" version="active"><link rel="http://www.sap.com/adt/relations/enhancements" href="./${name}/enhancements"/></blueSource>`,
     };
   });
-  const getSource = vi.fn(async (name: string) => {
-    session.options.attemptBudget!.consume();
+  const getSource = vi.fn(async (name: string, options?: AdtRequestOptions) => {
+    options?.attemptBudget?.consume();
     if (sources[name] === undefined) throw new AdtApiError('Source unavailable', 404, '/source');
     return { source: sources[name]!, notModified: false, statusCode: 200 };
   });
@@ -60,6 +61,46 @@ describe('bounded DDIC source graph', () => {
     expect(hierarchy.tree.children).toEqual([]);
     expect(getSource).toHaveBeenCalledTimes(1);
     expect(getSource.mock.calls[0]![0]).toBe('ZROOT');
+  });
+  it('uses the structure occurrence tree without exposing a disconnected metadata graph', async () => {
+    const sources = {
+      ZROOT: 'define structure zroot {}',
+      ZAPPEND: 'extend type zroot with zappend {\n include zinc;\n}',
+      ZINC: 'define structure zinc {}',
+      ZCHILD: 'extend type zinc with zchild {}',
+    };
+    const { client } = setup(sources, { ZROOT: ['ZAPPEND'], ZINC: ['ZCHILD'] });
+    const result = await buildStructureHierarchy(client, 'ZROOT');
+    expect(result.tree.children[0]).toMatchObject({
+      structure: 'ZAPPEND',
+      kind: 'append',
+      children: [{ structure: 'ZINC', kind: 'include', children: [{ structure: 'ZCHILD', kind: 'append' }] }],
+    });
+    expect(result.extensionDiscovery).not.toHaveProperty('edges');
+    expect(result.extensionDiscovery?.nodes.map((node) => node.name)).toEqual(['ZAPPEND', 'ZCHILD']);
+  });
+  it('joins append descendants to the discovered identity and qualifies each edge observation', async () => {
+    const sources = {
+      ZROOT: 'define structure zroot {}',
+      ZAPPEND: 'extend type zroot with zappend {\n include zinc;\n}',
+      ZINC: 'define structure zinc {}',
+    };
+    const { client, session, request } = setup(sources, { ZROOT: ['ZAPPEND'] });
+    await ddicExtensionAdapter(client, sources.ZROOT)(session, request);
+    const identities = new Set(
+      [request.root, ...session.result.nodes].map((node) => `${node.type}:${node.name}:${node.version}`),
+    );
+    for (const edge of session.result.edges) {
+      expect(identities.has(edge.from), edge.from).toBe(true);
+      expect(identities.has(edge.to), edge.to).toBe(true);
+    }
+    expect(session.result.edges).toContainEqual(
+      expect.objectContaining({
+        from: 'TABL:ZAPPEND:provider_current',
+        to: 'TABL:ZINC:active',
+        observationVersion: 'active',
+      }),
+    );
   });
   it('honors a hidden TABL denial before the mandatory explicit-context root read', async () => {
     const { client, getSource } = setup({ ZROOT: 'define structure zroot {}' });

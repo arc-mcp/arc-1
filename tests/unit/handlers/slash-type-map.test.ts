@@ -100,14 +100,14 @@ describe('KNOWN_BASE_TYPES exhaustiveness', () => {
     expect(orphans).toEqual([]);
   });
 
-  it('objectBasePath returns a valid /sap/bc/adt/ URL for every KNOWN_BASE_TYPES entry except FUNC', () => {
-    // Exhaustiveness regression test. FUNC is the documented exception
+  it('objectBasePath returns a valid /sap/bc/adt/ URL for every KNOWN_BASE_TYPES entry except FUNC/SHLP', () => {
+    // Exhaustiveness regression test. FUNC requires parent group context; SHLP uses metadata only.
     // (function modules require parent group context — there is no single
     // base path; objectBasePath('FUNC') intentionally throws — see codex
-    // PR #223 follow-up). Every other canonical type must return a usable
+    // PR #223 follow-up). Every other non-SHLP canonical type must return a usable
     // ADT URL.
     for (const type of KNOWN_BASE_TYPES) {
-      if (type === 'FUNC') continue;
+      if (type === 'FUNC' || type === 'SHLP') continue;
       const url = objectBasePath(type);
       expect(url, `${type} → ${url}`).toMatch(/^\/sap\/bc\/adt\//);
       expect(url.endsWith('/'), `${type} should end with '/'`).toBe(true);
@@ -126,6 +126,13 @@ describe('KNOWN_BASE_TYPES exhaustiveness', () => {
     expect(() => objectBasePath('FUNC')).toThrow(
       /function module.*cannot be resolved to a single base path|requires the parent function group/i,
     );
+  });
+
+  it('SHLP aliases use a specialized reader and never become program/source URLs', () => {
+    expect(normalizeObjectType('SHLP/DH')).toBe('SHLP');
+    expect(normalizeObjectType('SHLP/DHF')).toBe('SHLP/DHF');
+    for (const type of ['SHLP', 'SHLP/DH']) expect(() => objectBasePath(type)).toThrow(/specialized metadata/);
+    expect(() => objectBasePath('SHLP/DHF')).toThrow(/refusing/);
   });
 
   it('VIEW routes through the VIT generic-object endpoint, not /programs/programs/', () => {
@@ -175,12 +182,12 @@ describe('Slash-form throw guard (codex P1: removed aliases must not silently ro
     expect(() => objectBasePath('FOO/BAR')).toThrow(/refusing to build URL for slash-form type/);
   });
 
-  it('objectBasePath does NOT throw for canonical short types (except FUNC, which is intentional)', () => {
-    // Positive control: every canonical type except FUNC stays callable.
+  it('objectBasePath does NOT throw for canonical short types (except specialized FUNC/SHLP)', () => {
+    // Positive control: every canonical type except FUNC/SHLP stays callable.
     // FUNC is the documented exception — see "objectBasePath('FUNC') throws"
     // above for rationale.
     for (const type of KNOWN_BASE_TYPES) {
-      if (type === 'FUNC') continue;
+      if (type === 'FUNC' || type === 'SHLP') continue;
       expect(() => objectBasePath(type), `${type} unexpectedly threw`).not.toThrow();
     }
   });

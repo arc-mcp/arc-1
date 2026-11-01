@@ -76,6 +76,43 @@ define table ztab {
   });
 
   describe('buildStructureHierarchy', () => {
+    it.each(['unavailable', 'too_many'])('keeps dedicated child discovery after %s index fallback', async (failure) => {
+      const post = vi.fn(async () => {
+        if (failure === 'unavailable') throw new AdtApiError('Unavailable', 400, '/usageReferences');
+        return {
+          body: whereUsedXml(
+            Array.from({ length: 13 }, (_, i) => ({
+              name: `ZREF${i}`,
+              type: 'TABL/DS',
+              uri: `/sap/bc/adt/ddic/structures/ZREF${i}`,
+            })),
+          ),
+        };
+      });
+      const client = makeStructureClient(
+        {
+          ZBASE: 'define structure zbase {\n include zinc;\n}',
+          ZINC: 'define structure zinc {}',
+          ZAPPEND: 'extend type zinc with zappend {}',
+        },
+        post,
+      );
+      client.http.get = vi.fn(async (path: string) => {
+        if (path.endsWith('/enhancements'))
+          return {
+            body: '<elementInfo name="ZINC" type="TABL/DS"><elementInfo name="ZAPPEND" type="TABL/DS" uri="/sap/bc/adt/ddic/structures/ZAPPEND/source/main"/></elementInfo>',
+          };
+        const name = new URL(path, 'https://local').pathname.split('/').at(-1)!;
+        return {
+          body: `<blueSource name="${name}" type="TABL/DS" version="active">${name === 'ZINC' ? '<link rel="http://www.sap.com/adt/relations/enhancements" href="./ZINC/enhancements"/>' : ''}</blueSource>`,
+        };
+      }) as unknown as AdtClient['http']['get'];
+      const result = await buildStructureHierarchy(client, 'ZBASE');
+      expect(result.tree.children[0]?.children).toContainEqual(
+        expect.objectContaining({ structure: 'ZAPPEND', kind: 'append' }),
+      );
+      expect(post).toHaveBeenCalledTimes(1);
+    });
     it('finds appends through one native query per structure and confirms their source', async () => {
       const post = vi.fn(async (path: string) => {
         if (path.includes('/scope')) throw new AdtApiError('Not found', 404, path);
@@ -168,7 +205,7 @@ define table ztab {
       expect(post).toHaveBeenCalledTimes(1);
       expect(result.warnings).toEqual(
         expect.arrayContaining([
-          'Where-used endpoint unavailable for ZBASE; append discovery was skipped for the rest of the tree.',
+          'Where-used endpoint unavailable for ZBASE; index fallback was skipped for the rest of the tree.',
         ]),
       );
     });
@@ -191,7 +228,7 @@ define table ztab {
       expect(result.tree.children).toEqual([{ structure: 'ZINC', attribute: null, kind: 'include', children: [] }]);
       expect(result.warnings).toEqual(
         expect.arrayContaining([
-          'Where-used returned 51 structure candidates for ZBASE, exceeding the append scan limit of 12; append discovery was skipped for the rest of the tree.',
+          'Where-used returned 51 structure candidates for ZBASE, exceeding the append scan limit of 12; index fallback was skipped for the rest of the tree.',
         ]),
       );
       expect(post).toHaveBeenCalledTimes(1);

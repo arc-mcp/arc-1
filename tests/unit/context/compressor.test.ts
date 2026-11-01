@@ -58,6 +58,31 @@ ENDCLASS.`;
 }
 
 describe('compressContext', () => {
+  it('never fetches built-in OBJECT while resolving real dependencies recursively', async () => {
+    const source = `CLASS zcl_root DEFINITION.
+  PUBLIC SECTION.
+    DATA generic TYPE REF TO object.
+    DATA helper TYPE REF TO zcl_object_helper.
+ENDCLASS.
+CLASS zcl_root IMPLEMENTATION.
+ENDCLASS.`;
+    const client = mockClient({
+      ZCL_OBJECT_HELPER: `CLASS zcl_object_helper DEFINITION.
+  PUBLIC SECTION.
+    DATA generic TYPE REF TO OBJECT.
+ENDCLASS.
+CLASS zcl_object_helper IMPLEMENTATION.
+ENDCLASS.`,
+    });
+
+    const result = await compressContext(client, source, 'ZCL_ROOT', 'CLAS', 20, 2);
+
+    expect(result.depsResolved).toBe(1);
+    expect(result.output).toContain('zcl_object_helper');
+    expect(vi.mocked(client.getClass).mock.calls.map(([name]) => name.toUpperCase())).toEqual(['ZCL_OBJECT_HELPER']);
+    expect(client.getInterface).not.toHaveBeenCalled();
+  });
+
   it('compresses class with dependencies', async () => {
     const mainSource = `CLASS zcl_order DEFINITION PUBLIC.
   PUBLIC SECTION.

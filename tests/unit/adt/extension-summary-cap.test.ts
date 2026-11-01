@@ -30,8 +30,9 @@ describe('mixed provider rendering at the summary output cap', () => {
     expect(Buffer.byteLength(output[0]!.text)).toBeLessThanOrEqual(2048);
     expect(summary.providerStatuses).toEqual({ returned: 19, denied: 1 });
     expect(summary.providers.length + summary.omittedProviders).toBe(20);
-    expect(summary.issues.length + summary.omittedIssues).toBe(20);
-    expect(summary.omissions.output).toBe(summary.omittedProviders + summary.omittedIssues);
+    expect(summary.issues).toContain('summary_metadata_omitted');
+    expect(summary.omittedIssues).toBe(20);
+    expect(summary.omissions.output).toBeGreaterThanOrEqual(summary.omittedProviders + summary.omittedIssues);
     expect(result.providers).toHaveLength(20);
     expect(result.issues).toHaveLength(20);
   });

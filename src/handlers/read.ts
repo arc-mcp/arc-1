@@ -37,6 +37,7 @@ import type { CachingLayer } from '../cache/caching-layer.js';
 import { extractCdsElements } from '../context/cds-deps.js';
 import { grepSource, grepSourceBlocks } from '../context/grep.js';
 import { readLineRange } from '../context/line-range.js';
+import { extractOwnMethodSignature } from '../context/method-signature.js';
 import { extractMethod, formatMethodListing, listMethods } from '../context/method-surgery.js';
 import { isActionDenied } from '../server/deny-actions.js';
 import { logger } from '../server/logger.js';
@@ -51,6 +52,8 @@ import {
   normalizeObjectType,
   objectUrlForType,
 } from './object-types.js';
+import { readMethodOptionError } from './read-method-options.js';
+import { handleSearchHelp } from './search-help.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { handleSyntaxCheck } from './syntax.js';
 
@@ -232,6 +235,10 @@ async function handleSAPReadBase(
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
   const requestedVersion = (args.version ?? 'active') as RequestedSourceVersion;
+  const methodError = readMethodOptionError(args, type);
+  if (methodError) return errorResult(methodError);
+
+  if (type === 'SHLP') return handleSearchHelp(client, args);
 
   const hasLineRange = args.lineStart !== undefined || args.lineEnd !== undefined;
   if (hasLineRange) {
@@ -548,6 +555,17 @@ async function handleSAPReadBase(
         extensionBase.source = methodSource;
         const probedAbapRelease = getCachedFeatures()?.abapRelease;
         const abaplintVer = probedAbapRelease ? mapSapReleaseToAbaplintVersion(probedAbapRelease) : undefined;
+        if (args.methodView === 'signature') {
+          const result = extractOwnMethodSignature(methodSource, name, methodParam, abaplintVer);
+          if (!result.success) return errorResult(result.error);
+          const { success: _success, ...declaration } = result;
+          return cachedJsonResult(
+            toolJson({ className: name, scope: 'own-declaration', ...declaration }),
+            false,
+            false,
+            versionWarning,
+          );
+        }
         if (methodParam === '*') {
           const listing = listMethods(methodSource, name, abaplintVer);
           return textResult(formatMethodListing(listing));

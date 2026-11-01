@@ -1,0 +1,1073 @@
+{
+  "purpose": "Synthetic model routing and completed-trajectory evaluation, not live SAP or a billed-token estimate. Four initial scenarios, then five after review (qualified local method added); strict call trajectories and a three-call cap. Failed runs are retained; no pre-feature schema control.",
+  "runs": [
+    {
+      "timestamp": "2026-10-31T20:40:43.744Z",
+      "phase": "original wording",
+      "model": "qwen3.6:35b-mlx",
+      "summary": {
+        "totalScenarios": 4,
+        "passed": 3,
+        "failed": 1,
+        "avgToolSelectionScore": 0.83,
+        "avgParameterScore": 1,
+        "avgOverallScore": 0.9,
+        "avgToolCalls": 1.75,
+        "avgDurationMs": 12239,
+        "totalTokens": 205323,
+        "totalPromptTokens": 204225,
+        "totalCompletionTokens": 1098
+      },
+      "scores": [
+        {
+          "scenarioId": "read-method-own-signature",
+          "toolSelectionScore": 1,
+          "parameterScore": 1,
+          "overallScore": 1,
+          "toolCallCount": 1,
+          "trace": [
+            {
+              "id": "call_3sbi57pe",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "execute",
+                "methodView": "signature"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_3sbi57pe",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "execute",
+                  "methodView": "signature"
+                }
+              }
+            ]
+          ],
+          "finalAnswer": "The `EXECUTE` method in class `ZCL_TOKEN_EVAL` has:\n\n- **Import parameter**: `iv_text` of type **`string`**\n- **Return parameter**: `rv_length` of type **`i`** (integer)",
+          "finalAnswerPassed": true,
+          "tracePassed": true,
+          "totalTokens": 40991,
+          "promptTokens": 40790,
+          "maxPromptTokens": 20463,
+          "completionTokens": 201,
+          "durationMs": 25340,
+          "explanation": "Expected tool trace matched",
+          "passed": true
+        },
+        {
+          "scenarioId": "read-method-implementation",
+          "toolSelectionScore": 0.3333333333333333,
+          "parameterScore": 1,
+          "overallScore": 0.6,
+          "toolCallCount": 3,
+          "trace": [
+            {
+              "id": "call_f7pg1u5q",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "execute"
+              }
+            },
+            {
+              "id": "call_0kem6zzc",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "methodView": "signature"
+              }
+            },
+            {
+              "id": "call_srh5mocu",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_f7pg1u5q",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "execute"
+                }
+              }
+            ],
+            [
+              {
+                "id": "call_0kem6zzc",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "methodView": "signature"
+                }
+              }
+            ],
+            [
+              {
+                "id": "call_srh5mocu",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL"
+                }
+              }
+            ]
+          ],
+          "finalAnswerPassed": false,
+          "tracePassed": false,
+          "totalTokens": 61593,
+          "promptTokens": 61292,
+          "maxPromptTokens": 20566,
+          "completionTokens": 301,
+          "durationMs": 7740,
+          "explanation": "Tool trace mismatch: expected 1 call(s) across 1 turn(s), observed 3 across 3; No final assistant answer was captured",
+          "passed": false
+        },
+        {
+          "scenarioId": "read-method-inventory",
+          "toolSelectionScore": 1,
+          "parameterScore": 1,
+          "overallScore": 1,
+          "toolCallCount": 1,
+          "trace": [
+            {
+              "id": "call_tt4in4yk",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "*"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_tt4in4yk",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "*"
+                }
+              }
+            ]
+          ],
+          "finalAnswer": "The class **ZCL_TOKEN_EVAL** has **1 method**:\n\n| Visibility | Method Name | Parameters | Return Type |\n|---|---|---|---|\n| PUBLIC | `execute` | `iv_text TYPE string` (importing) | `rv_length TYPE i` |",
+          "finalAnswerPassed": true,
+          "tracePassed": true,
+          "totalTokens": 41047,
+          "promptTokens": 40758,
+          "maxPromptTokens": 20434,
+          "completionTokens": 289,
+          "durationMs": 7502,
+          "explanation": "Expected tool trace matched",
+          "passed": true
+        },
+        {
+          "scenarioId": "read-method-typo-recovery",
+          "toolSelectionScore": 1,
+          "parameterScore": 1,
+          "overallScore": 1,
+          "toolCallCount": 2,
+          "trace": [
+            {
+              "id": "call_m76ltejm",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "excute"
+              }
+            },
+            {
+              "id": "call_0psufhnz",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "execute"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_m76ltejm",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "excute"
+                }
+              }
+            ],
+            [
+              {
+                "id": "call_0psufhnz",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "execute"
+                }
+              }
+            ]
+          ],
+          "finalAnswer": "The correct method name is `execute` (not `excute`). Here's its implementation in class `ZCL_TOKEN_EVAL`:\n\n```abap\nMETHOD execute.\n  rv_length = strlen( iv_text ).\nENDMETHOD.\n```\n\nThis method simply calculates the length of the input parameter `iv_text` using ABAP's `strlen` function and assigns the result to the return parameter `rv_length`.",
+          "finalAnswerPassed": true,
+          "tracePassed": true,
+          "totalTokens": 61692,
+          "promptTokens": 61385,
+          "maxPromptTokens": 20571,
+          "completionTokens": 307,
+          "durationMs": 8374,
+          "explanation": "Expected tool trace matched",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-10-31T20:42:34.600Z",
+      "phase": "original wording",
+      "model": "qwen3.6:35b-mlx",
+      "summary": {
+        "totalScenarios": 4,
+        "passed": 3,
+        "failed": 1,
+        "avgToolSelectionScore": 0.83,
+        "avgParameterScore": 1,
+        "avgOverallScore": 0.9,
+        "avgToolCalls": 1.75,
+        "avgDurationMs": 9007,
+        "totalTokens": 205580,
+        "totalPromptTokens": 204225,
+        "totalCompletionTokens": 1355
+      },
+      "scores": [
+        {
+          "scenarioId": "read-method-own-signature",
+          "toolSelectionScore": 1,
+          "parameterScore": 1,
+          "overallScore": 1,
+          "toolCallCount": 1,
+          "trace": [
+            {
+              "id": "call_owv10eih",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "methodView": "signature",
+                "method": "execute"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_owv10eih",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "methodView": "signature",
+                  "method": "execute"
+                }
+              }
+            ]
+          ],
+          "finalAnswer": "In class `ZCL_TOKEN_EVAL`, the `execute` method has the following parameters:\n\n| Type       | Parameter Name   | Type   |\n|------------|------------------|--------|\n| **Importing**  | `iv_text`   | `string`   |\n| **Returning**  | `rv_length`    | `i` (integer) |\n\n- **Importing**: `iv_text` (`string`) \u2014 the input text to process.\n- **Returning**: `rv_length` (`i`) \u2014 returns an integer, likely representing a length or count result.",
+          "finalAnswerPassed": true,
+          "tracePassed": true,
+          "totalTokens": 41176,
+          "promptTokens": 40790,
+          "maxPromptTokens": 20463,
+          "completionTokens": 386,
+          "durationMs": 10769,
+          "explanation": "Expected tool trace matched",
+          "passed": true
+        },
+        {
+          "scenarioId": "read-method-implementation",
+          "toolSelectionScore": 0.3333333333333333,
+          "parameterScore": 1,
+          "overallScore": 0.6,
+          "toolCallCount": 3,
+          "trace": [
+            {
+              "id": "call_ch8hae6o",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "execute"
+              }
+            },
+            {
+              "id": "call_zxa3hnxm",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "methodView": "signature"
+              }
+            },
+            {
+              "id": "call_35e9hde1",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "format": "structured"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_ch8hae6o",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "execute"
+                }
+              }
+            ],
+            [
+              {
+                "id": "call_zxa3hnxm",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "methodView": "signature"
+                }
+              }
+            ],
+            [
+              {
+                "id": "call_35e9hde1",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "format": "structured"
+                }
+              }
+            ]
+          ],
+          "finalAnswerPassed": false,
+          "tracePassed": false,
+          "totalTokens": 61636,
+          "promptTokens": 61292,
+          "maxPromptTokens": 20566,
+          "completionTokens": 344,
+          "durationMs": 8704,
+          "explanation": "Tool trace mismatch: expected 1 call(s) across 1 turn(s), observed 3 across 3; No final assistant answer was captured",
+          "passed": false
+        },
+        {
+          "scenarioId": "read-method-inventory",
+          "toolSelectionScore": 1,
+          "parameterScore": 1,
+          "overallScore": 1,
+          "toolCallCount": 1,
+          "trace": [
+            {
+              "id": "call_c47p15ao",
+              "name": "SAPRead",
+              "arguments": {
+                "method": "*",
+                "name": "ZCL_TOKEN_EVAL",
+                "type": "CLAS"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_c47p15ao",
+                "name": "SAPRead",
+                "arguments": {
+                  "method": "*",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "type": "CLAS"
+                }
+              }
+            ]
+          ],
+          "finalAnswer": "Class **ZCL_TOKEN_EVAL** contains **1 method**:\n\n| Section | Method | Parameters |\n|---------|--------|------------|\n| PUBLIC | `EXECUTE` | IMPORTING `iv_text` (TYPE `string`) \u2192 RETURNING `rv_length` (TYPE `i`) |",
+          "finalAnswerPassed": true,
+          "tracePassed": true,
+          "totalTokens": 40978,
+          "promptTokens": 40758,
+          "maxPromptTokens": 20434,
+          "completionTokens": 220,
+          "durationMs": 5018,
+          "explanation": "Expected tool trace matched",
+          "passed": true
+        },
+        {
+          "scenarioId": "read-method-typo-recovery",
+          "toolSelectionScore": 1,
+          "parameterScore": 1,
+          "overallScore": 1,
+          "toolCallCount": 2,
+          "trace": [
+            {
+              "id": "call_d3c82rj7",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "excute"
+              }
+            },
+            {
+              "id": "call_g11dxd4y",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "execute"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_d3c82rj7",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "excute"
+                }
+              }
+            ],
+            [
+              {
+                "id": "call_g11dxd4y",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "execute"
+                }
+              }
+            ]
+          ],
+          "finalAnswer": "The correct method name is **`execute`** (not `excute`). Here's its full implementation:\n\n```abap\nMETHOD execute.\n  rv_length = strlen( iv_text ).\nENDMETHOD.\n```\n\nThe method is minimal \u2014 it simply calculates the string length of the input parameter `iv_text` using `strlen()` and assigns the result to the output parameter `rv_length`.",
+          "finalAnswerPassed": true,
+          "tracePassed": true,
+          "totalTokens": 61790,
+          "promptTokens": 61385,
+          "maxPromptTokens": 20571,
+          "completionTokens": 405,
+          "durationMs": 11536,
+          "explanation": "Expected tool trace matched",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-10-31T20:45:10.205Z",
+      "phase": "wording experiment (not retained)",
+      "model": "qwen3.6:35b-mlx",
+      "summary": {
+        "totalScenarios": 4,
+        "passed": 2,
+        "failed": 2,
+        "avgToolSelectionScore": 0.75,
+        "avgParameterScore": 1,
+        "avgOverallScore": 0.85,
+        "avgToolCalls": 2,
+        "avgDurationMs": 14206,
+        "totalTokens": 205382,
+        "totalPromptTokens": 204296,
+        "totalCompletionTokens": 1086
+      },
+      "scores": [
+        {
+          "scenarioId": "read-method-own-signature",
+          "toolSelectionScore": 1,
+          "parameterScore": 1,
+          "overallScore": 1,
+          "toolCallCount": 1,
+          "trace": [
+            {
+              "id": "call_2yzwoizg",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "execute",
+                "methodView": "signature"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_2yzwoizg",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "execute",
+                  "methodView": "signature"
+                }
+              }
+            ]
+          ],
+          "finalAnswer": "The `execute` method in class `ZCL_TOKEN_EVAL` has the following parameters:\n\n**Importing parameter:**\n- `iv_text` \u2014 type **`string`**\n\n**Returning parameter:**\n- `rv_length` \u2014 type **`i`** (integer)",
+          "finalAnswerPassed": true,
+          "tracePassed": true,
+          "totalTokens": 41089,
+          "promptTokens": 40818,
+          "maxPromptTokens": 20477,
+          "completionTokens": 271,
+          "durationMs": 27398,
+          "explanation": "Expected tool trace matched",
+          "passed": true
+        },
+        {
+          "scenarioId": "read-method-implementation",
+          "toolSelectionScore": 0.3333333333333333,
+          "parameterScore": 1,
+          "overallScore": 0.6,
+          "toolCallCount": 3,
+          "trace": [
+            {
+              "id": "call_mn1vfapc",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "execute"
+              }
+            },
+            {
+              "id": "call_8s2j9wgh",
+              "name": "SAPContext",
+              "arguments": {
+                "action": "deps",
+                "name": "ZCL_TOKEN_EVAL",
+                "type": "CLAS"
+              }
+            },
+            {
+              "id": "call_vnk9ehjz",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "format": "structured",
+                "method": "*"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_mn1vfapc",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "execute"
+                }
+              }
+            ],
+            [
+              {
+                "id": "call_8s2j9wgh",
+                "name": "SAPContext",
+                "arguments": {
+                  "action": "deps",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "type": "CLAS"
+                }
+              }
+            ],
+            [
+              {
+                "id": "call_vnk9ehjz",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "format": "structured",
+                  "method": "*"
+                }
+              }
+            ]
+          ],
+          "finalAnswerPassed": false,
+          "tracePassed": false,
+          "totalTokens": 61614,
+          "promptTokens": 61265,
+          "maxPromptTokens": 20511,
+          "completionTokens": 349,
+          "durationMs": 14113,
+          "explanation": "Tool trace mismatch: expected 1 call(s) across 1 turn(s), observed 3 across 3; No final assistant answer was captured",
+          "passed": false
+        },
+        {
+          "scenarioId": "read-method-inventory",
+          "toolSelectionScore": 1,
+          "parameterScore": 1,
+          "overallScore": 1,
+          "toolCallCount": 1,
+          "trace": [
+            {
+              "id": "call_1e9xv6f7",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "*"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_1e9xv6f7",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "*"
+                }
+              }
+            ]
+          ],
+          "finalAnswer": "Class `ZCL_TOKEN_EVAL` has **1 method**:\n\n| Visibility | Method | Importing | Returning |\n|------------|--------|-----------|-----------|\n| PUBLIC | `execute` | `iv_text` (string) | `rv_length` (i) |",
+          "finalAnswerPassed": true,
+          "tracePassed": true,
+          "totalTokens": 40978,
+          "promptTokens": 40786,
+          "maxPromptTokens": 20448,
+          "completionTokens": 192,
+          "durationMs": 6947,
+          "explanation": "Expected tool trace matched",
+          "passed": true
+        },
+        {
+          "scenarioId": "read-method-typo-recovery",
+          "toolSelectionScore": 0.6666666666666666,
+          "parameterScore": 1,
+          "overallScore": 0.8,
+          "toolCallCount": 3,
+          "trace": [
+            {
+              "id": "call_ahingwre",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "excute"
+              }
+            },
+            {
+              "id": "call_hn5ilb56",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "execute"
+              }
+            },
+            {
+              "id": "call_0nhow1q6",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "execute"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_ahingwre",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "excute"
+                }
+              }
+            ],
+            [
+              {
+                "id": "call_hn5ilb56",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "execute"
+                }
+              }
+            ],
+            [
+              {
+                "id": "call_0nhow1q6",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "execute"
+                }
+              }
+            ]
+          ],
+          "finalAnswerPassed": false,
+          "tracePassed": false,
+          "totalTokens": 61701,
+          "promptTokens": 61427,
+          "maxPromptTokens": 20585,
+          "completionTokens": 274,
+          "durationMs": 8367,
+          "explanation": "Tool trace mismatch: expected 2 call(s) across 2 turn(s), observed 3 across 3; No final assistant answer was captured",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-10-31T21:08:44.866Z",
+      "phase": "after Claude review fixes (five scenarios)",
+      "model": "qwen3.6:35b-mlx",
+      "sourceHashes": {
+        "src/handlers/read.ts": "940e329d0615f1c0d037feecadbc2954b3148be04ba37a5ba94520230a1ed24d",
+        "src/context/method-signature.ts": "8c5000a3d8f16e39a6c66b9bf5ddc88fce3f06c9d9ebf946e26e84673bd7ad00",
+        "src/context/method-suggestions.ts": "2df37afe4bcacd253cc7f1d306300e3e66e3f6dd72ae6d2877c2c832658c8f67",
+        "src/handlers/read-method-options.ts": "9453b195b2ed969a9b9a1bca095f9daddfe8d7c2a5c1d9b1fc844b33db0cec08",
+        "src/handlers/tools.ts": "3fb22eb53c7955d46e35e3030d740cdbb324fd8d3bfafc032e16fd7fa6822b63",
+        "src/context/method-surgery.ts": "baf6015efaf3a7ee6c8c31e36bb5eb19696f7f1b37384c71f65898e2b4e01988",
+        "src/handlers/schemas.ts": "e3dede285d084ed36818bcaca19bbe98719ba0484f02b6374c56087c4390d5a3"
+      },
+      "summary": {
+        "totalScenarios": 5,
+        "passed": 4,
+        "failed": 1,
+        "avgToolSelectionScore": 0.85,
+        "avgParameterScore": 1,
+        "avgOverallScore": 0.91,
+        "avgToolCalls": 1.8,
+        "avgDurationMs": 6467,
+        "totalTokens": 226023,
+        "totalPromptTokens": 224546,
+        "totalCompletionTokens": 1477
+      },
+      "scores": [
+        {
+          "scenarioId": "read-method-own-signature",
+          "toolSelectionScore": 1,
+          "parameterScore": 1,
+          "overallScore": 1,
+          "toolCallCount": 1,
+          "trace": [
+            {
+              "id": "call_m1tl4nq8",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "execute",
+                "methodView": "signature"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_m1tl4nq8",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "execute",
+                  "methodView": "signature"
+                }
+              }
+            ]
+          ],
+          "finalAnswer": "In class `ZCL_TOKEN_EVAL`, the `execute` method has:\n\n| Parameter | Type | Kind |\n|---|---|---|\n| `iv_text` | `string` | Importing |\n| `rv_length` | `i` (integer) | Returning |",
+          "finalAnswerPassed": true,
+          "tracePassed": true,
+          "totalTokens": 41031,
+          "promptTokens": 40800,
+          "maxPromptTokens": 20468,
+          "completionTokens": 231,
+          "durationMs": 17301,
+          "explanation": "Expected tool trace matched",
+          "passed": true
+        },
+        {
+          "scenarioId": "read-method-implementation",
+          "toolSelectionScore": 0.25,
+          "parameterScore": 1,
+          "overallScore": 0.55,
+          "toolCallCount": 4,
+          "trace": [
+            {
+              "id": "call_81zzxr5g",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "execute"
+              }
+            },
+            {
+              "id": "call_hi6r1yzx",
+              "name": "SAPContext",
+              "arguments": {
+                "action": "deps",
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL"
+              }
+            },
+            {
+              "id": "call_cb4boa1d",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "methodView": "signature"
+              }
+            },
+            {
+              "id": "call_fisqu07a",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_81zzxr5g",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "execute"
+                }
+              },
+              {
+                "id": "call_hi6r1yzx",
+                "name": "SAPContext",
+                "arguments": {
+                  "action": "deps",
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL"
+                }
+              }
+            ],
+            [
+              {
+                "id": "call_cb4boa1d",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "methodView": "signature"
+                }
+              },
+              {
+                "id": "call_fisqu07a",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL"
+                }
+              }
+            ]
+          ],
+          "finalAnswerPassed": false,
+          "tracePassed": false,
+          "totalTokens": 41160,
+          "promptTokens": 40814,
+          "maxPromptTokens": 20490,
+          "completionTokens": 346,
+          "durationMs": 4615,
+          "explanation": "Tool trace mismatch: expected 1 call(s) across 1 turn(s), observed 4 across 2; No final assistant answer was captured",
+          "passed": false
+        },
+        {
+          "scenarioId": "read-method-inventory",
+          "toolSelectionScore": 1,
+          "parameterScore": 1,
+          "overallScore": 1,
+          "toolCallCount": 1,
+          "trace": [
+            {
+              "id": "call_fs3201tl",
+              "name": "SAPRead",
+              "arguments": {
+                "method": "*",
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_fs3201tl",
+                "name": "SAPRead",
+                "arguments": {
+                  "method": "*",
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL"
+                }
+              }
+            ]
+          ],
+          "finalAnswer": "Here are the methods in class ZCL_TOKEN_EVAL:\n1. `EXECUTE` (Public) - IMPORTING iv_text TYPE string, RETURNING VALUE(rv_length) TYPE i",
+          "finalAnswerPassed": true,
+          "tracePassed": true,
+          "totalTokens": 40961,
+          "promptTokens": 40768,
+          "maxPromptTokens": 20439,
+          "completionTokens": 193,
+          "durationMs": 2166,
+          "explanation": "Expected tool trace matched",
+          "passed": true
+        },
+        {
+          "scenarioId": "read-method-local-qualified",
+          "toolSelectionScore": 1,
+          "parameterScore": 1,
+          "overallScore": 1,
+          "toolCallCount": 1,
+          "trace": [
+            {
+              "id": "call_bep9th4v",
+              "name": "SAPRead",
+              "arguments": {
+                "method": "lcl_worker~execute",
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_bep9th4v",
+                "name": "SAPRead",
+                "arguments": {
+                  "method": "lcl_worker~execute",
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL"
+                }
+              }
+            ]
+          ],
+          "finalAnswer": "The `execute` method in the local class `lcl_worker` of global class `ZCL_TOKEN_EVAL` is very simple:\n\n```abap\nMETHOD execute.\n  result = 42.\nENDMETHOD.\n```\n\n**It returns the hardcoded value `42`.**",
+          "finalAnswerPassed": true,
+          "tracePassed": true,
+          "totalTokens": 41122,
+          "promptTokens": 40752,
+          "maxPromptTokens": 20421,
+          "completionTokens": 370,
+          "durationMs": 3954,
+          "explanation": "Expected tool trace matched",
+          "passed": true
+        },
+        {
+          "scenarioId": "read-method-typo-recovery",
+          "toolSelectionScore": 1,
+          "parameterScore": 1,
+          "overallScore": 1,
+          "toolCallCount": 2,
+          "trace": [
+            {
+              "id": "call_jivet1p6",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "excute"
+              }
+            },
+            {
+              "id": "call_oy9kz8ls",
+              "name": "SAPRead",
+              "arguments": {
+                "type": "CLAS",
+                "name": "ZCL_TOKEN_EVAL",
+                "method": "execute"
+              }
+            }
+          ],
+          "traceTurns": [
+            [
+              {
+                "id": "call_jivet1p6",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "excute"
+                }
+              }
+            ],
+            [
+              {
+                "id": "call_oy9kz8ls",
+                "name": "SAPRead",
+                "arguments": {
+                  "type": "CLAS",
+                  "name": "ZCL_TOKEN_EVAL",
+                  "method": "execute"
+                }
+              }
+            ]
+          ],
+          "finalAnswer": "The method name was misspelled as `excute` \u2014 the correct spelling is **`execute`**.\n\nHere's the implementation of method `execute` in class `ZCL_TOKEN_EVAL`:\n\n```abap\nMETHOD execute.\n  rv_length = strlen( iv_text ).\nENDMETHOD.\n```\n\n**Summary:** The method simply calculates and assigns the length of the input parameter `iv_text` to the output parameter `rv_length` using ABAP's built-in `strlen()` function.",
+          "finalAnswerPassed": true,
+          "tracePassed": true,
+          "totalTokens": 61749,
+          "promptTokens": 61412,
+          "maxPromptTokens": 20582,
+          "completionTokens": 337,
+          "durationMs": 4300,
+          "explanation": "Expected tool trace matched",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "wordingExperiment": {
+    "retained": false,
+    "methodViewDescription": "CLAS: requires method=\"<name>\"; returns its own MAIN declaration with parameters/exceptions. No locals, interfaces, inheritance or other selectors. Omit for body.",
+    "missingMethodError": "methodView=\"signature\" requires method=\"<name>\" for one bare method declared in the global class, not \"*\" or a qualified name. Read interface declarations with type=INTF."
+  }
+}

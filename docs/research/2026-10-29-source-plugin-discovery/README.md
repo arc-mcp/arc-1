@@ -106,3 +106,11 @@ The shared primary checkout was preserved. No SAP writes, merge or release was p
 No roadmap impact: the current roadmap's FEAT-03 concerns enhancement authoring, which this
 read-only feature does not implement. Other releases/BTP and unobserved family/release pairs,
 runtime switch applicability and atomic snapshots remain unqualified.
+
+
+## 2026-10-31 follow-up
+
+The [test gap audit](../2026-10-31-source-plugin-test-audit/README.md) records additional
+regressions, missing-provider and location-fragment fixes, BTP 920 FUNC/FUGR contract checks,
+public MCP tests on 758, and the subsequent Claude Code review. Its qualification limits
+supersede this document's earlier blanket BTP-unqualified statement for the checked objects.

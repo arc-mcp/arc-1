@@ -52,3 +52,25 @@ The test-gap audit, added transport/public-handler tests, BTP SAP_BASIS 920 publ
 qualification and remaining gaps are recorded in [test-gap-audit.md](test-gap-audit.md).
 Its live evidence is [btp-public.json](btp-public.json). These qualify the BTP cases described
 there; the 2026-10-29 observations above retain their original build and scope.
+
+## 2026-11-01 main integration
+
+DDIC #1143 and source plug-in #1158 have merged into main. This branch now incorporates main
+`dd1893877`, including their final parser, budget, CSRF recovery, renderer and context-label fixes.
+The remaining diff contains class-stage providers and the hardened #1124 fallback. #1124 is
+incorporated and superseded here; its original author is preserved in commit `707e474eb`.
+See [the current integration contract](../../dev/class-extension-discovery.md).
+
+All 411 unit files / **11,178 tests** pass. Typecheck, lint, policy, build and size/schema gates
+pass; the standard full schema is 74,952/75,000 bytes without a budget increase. Seven snapshot
+updates change only the shared extension-mode description relative to main. The newer method
+cache regression explicitly selects `extensions=none` when measuring base-source request counts.
+The class authorization tests now inject unresolved retry evidence inside the failing operation,
+retaining main's independently tested successful CSRF/auth recovery semantics.
+
+Fresh read-only public class replays pass all eight cases on each 750/758 target, preserving
+none-mode base blocks. [Sanitized evidence](main-integration-replay.json) binds runtime-file hashes.
+The fresh BTP rerun could not execute: authentication succeeded, then the stopped system returned
+HTTP 503 before all five tests. The earlier 920 evidence remains scoped to its recorded build.
+No SAP data or source mutations occurred. Independent review and CI results are recorded in the
+PR description after completion. Roadmap checked: no roadmap impact.

@@ -199,7 +199,10 @@ describe('class-bound enhancements', () => {
   });
   it('does not turn unresolved authorization followed by unsupported context into another provider read', async () => {
     const s = setup({ network: fixture('class-exted.xml').replaceAll('EXTED_OBJ', 'ENV') });
-    s.session.options.attemptBudget!.authorizationFailureObserved = true;
+    s.post.mockImplementationOnce(async () => {
+      s.session.options.attemptBudget!.authorizationFailureObserved = true;
+      return { body: fixture('class-exted.xml').replaceAll('EXTED_OBJ', 'ENV') };
+    });
     const result = await s.run();
     expect(s.session.stopped).toBe(true);
     expect(result.providers[0]?.status).toBe('incomplete');
@@ -208,7 +211,10 @@ describe('class-bound enhancements', () => {
   it('does not use a qualified source fallback after unresolved authorization', async () => {
     const s = setup();
     const nodes = await discoverClassIdentities(s.client, s.session, s.request);
-    s.session.options.attemptBudget!.authorizationFailureObserved = true;
+    s.get.mockImplementationOnce(async () => {
+      s.session.options.attemptBudget!.authorizationFailureObserved = true;
+      throw new AdtNetworkError('authorization retry lost its connection');
+    });
     await discoverClassSources(s.client, s.session, nodes, '750');
     expect(s.session.stopped).toBe(true);
     expect(s.getRevisions).not.toHaveBeenCalled();

@@ -48,3 +48,16 @@ already-read unfiltered base and optional cached capability hints. It checks at 
 in summary, never treats descriptions as evidence, and records `candidates` omissions independently
 from wire, source and rendered-output limits. No secondary session, SQL or alternate candidate fallback is used.
 The renderer keeps aggregate provider statuses if the full provider list cannot fit the output cap.
+
+Graph edges use `extensionKey` of the exact discovered owner identity, including for nested
+append traversal. `observationVersion` qualifies the edge's separate metadata/source observation:
+DDIC append relations are `provider_current`, include edges parsed from active source are `active`.
+Explicit structure context exposes its occurrence `tree`; its `extensionDiscovery` metadata omits
+the provider's append-only `edges` projection, which cannot represent that complete tree.
+An active source body does not relabel its unversioned discovery identity. Canonical node
+deduplication remains type/name/version; distinct version observations are not collapsed.
+A completed data read or final non-auth HTTP error from the data request clears intermediate
+auth/CSRF retry evidence. A failed CSRF bootstrap or blocked redirect is not such a response.
+Final 401/403/429, unresolved transport failures with auth evidence, unsafe protocol,
+cancellation and budget failures retain their terminal behavior. Empty/malformed index responses
+are protocol failures, not valid empty provider lists.
