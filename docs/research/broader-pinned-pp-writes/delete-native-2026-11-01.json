@@ -1,0 +1,57 @@
+{
+  "startedAt": "2026-11-01T01:03:50.550Z",
+  "finishedAt": "2026-11-01T01:03:59.967Z",
+  "authentication": "direct MARIAN, not PP",
+  "target": "A4H/001",
+  "allAbsent": true,
+  "passed": true,
+  "baseRevision": "1c05fda69f47f15426dea14c14304be9c59159de",
+  "candidateFiles": {
+    "src/adt/pinned-delete.ts": "d57d9199d815c8b4be97e3a534fb7d2dbef813cea02068fb157fda36a87e8e56",
+    "tests/unit/adt/pinned-delete.test.ts": "fb424ee41ca9445884ca257a3d0e882825aa81076ffdf930999355fd9057ff73"
+  },
+  "harnessSha256": "4989e9ee5ba2e80573d02fbf799bd4c7ce1550956617bb40175f466853bd61d3",
+  "fixtures": [
+    {
+      "type": "CLAS",
+      "name": "ZARC1_D2_C_0DAE56CD",
+      "preflightAbsent": true,
+      "identity": {
+        "createdBy": "MARIAN",
+        "createdAt": "2026-11-01T00:00:00Z",
+        "sourceSha256": "e4b1ec0684e5048d1f5763f9357fdde643ed2cab383c22009f4cd14dc000e784"
+      },
+      "deletion": {
+        "ok": true,
+        "state": "deleted",
+        "phase": "absence-readback",
+        "retryable": false
+      },
+      "independentAbsence": true,
+      "finalAbsenceVerified": true
+    },
+    {
+      "type": "INTF",
+      "name": "ZARC1_D2_I_0DAE56CD",
+      "preflightAbsent": true,
+      "identity": {
+        "createdBy": "MARIAN",
+        "createdAt": "2026-11-01T00:00:00Z",
+        "sourceSha256": "eb017d2be4dcb4130db34a7e1341549027c7fc00a7380b67e5dd2439e9411abf"
+      },
+      "deletion": {
+        "ok": true,
+        "state": "deleted",
+        "phase": "absence-readback",
+        "retryable": false
+      },
+      "independentAbsence": true,
+      "finalAbsenceVerified": true
+    }
+  ],
+  "limitations": [
+    "Direct MARIAN authentication, not PP route qualification.",
+    "Local $TMP only; CTS and negative behavior are unit evidence.",
+    "No tool admission at this checkpoint; other native deletion prechecks remain out of scope."
+  ]
+}
