@@ -1,11 +1,12 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
-import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const writeHelpers = await import('../../../src/handlers/write-helpers.js');
 const { requestContext } = await import('../../../src/server/context.js');
 const owner = '/sap/bc/adt/oo/classes/zcl_test';
 const initial = `CLASS zcl_test DEFINITION PUBLIC FINAL CREATE PUBLIC.
@@ -72,6 +73,7 @@ function backend(options: Options = {}) {
     requests: [] as {
       method: string;
       path: string;
+      body: string;
       headers: Record<string, string>;
       locked: boolean;
       aborted?: boolean;
@@ -83,11 +85,17 @@ function backend(options: Options = {}) {
     state.requests.push({
       method,
       path: parsed.pathname + parsed.search,
+      body: String(init.body ?? ''),
       headers: init.headers ?? {},
       locked: state.locked,
       aborted: init.signal?.aborted,
     });
     if (method === 'HEAD') return mockResponse(200, '', { 'x-csrf-token': 'T' });
+    if (parsed.pathname === '/sap/bc/adt/checkruns')
+      return mockResponse(
+        200,
+        '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><chkl:properties checkExecuted="true"/><msg type="W" line="8" shortText="Native syntax warning"/></chkl:messages>',
+      );
     if (parsed.pathname.includes('/http/sessions')) {
       state.closes++;
       return mockResponse(options.closeFailure ? 503 : 200, '');
@@ -141,13 +149,15 @@ function backend(options: Options = {}) {
   });
   return state;
 }
-const call = (changes: Record<string, unknown> = {}) =>
-  handleToolCall(
-    new AdtClient({ baseUrl: 'http://sap:8000', safety: { ...defaultSafetyConfig(), ...config } }),
-    config,
+const call = (changes: Record<string, unknown> = {}, overrides: Partial<ServerConfig> = {}) => {
+  const effective = { ...config, ...overrides };
+  return handleToolCall(
+    new AdtClient({ baseUrl: 'http://sap:8000', safety: { ...defaultSafetyConfig(), ...effective } }),
+    effective,
     'SAPWrite',
     { ...args, ...changes },
   );
+};
 const payload = (result: Awaited<ReturnType<typeof call>>) => JSON.parse(result.content[0].text);
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -179,6 +189,7 @@ it.each([
   { expectedSourceHash: undefined },
   { expectedSourceHash: 'bad' },
   { method: 'ltc_x~test' },
+  { method: ' lhc_x~value' },
   { include: 'implementations' },
   { action: 'add_method' },
 ])('refuses unsupported or incomplete input before SAP: %j', async (changes) => {
@@ -264,6 +275,50 @@ it.each([{ unlockFailure: true }, { closeFailure: true }])(
       phase: options.unlockFailure ? 'unlock' : 'session-close',
       sessionClosed: !options.closeFailure,
     });
+    expect(state.puts).toBe(1);
+    expect(state.unlocks).toBe(1);
+    expect(state.closes).toBe(1);
+  },
+);
+
+it.each(['METHOD value.\n result = .\nENDMETHOD.', 'result = 2'])(
+  'blocks a real lint error on the spliced class without a source save: %s',
+  async (source) => {
+    const state = backend();
+    const result = await call({ source }, { lintBeforeWrite: true });
+    expect(result.isError).toBe(true);
+    expect(payload(result)).toMatchObject({ state: 'unchanged', phase: 'edit-preparation' });
+    expect(payload(result).message).toContain('Pre-write lint check failed');
+    expect(state.puts).toBe(0);
+    expect(state.source).toBe(initial);
+    expect(state.unlocks).toBe(1);
+    expect(state.closes).toBe(1);
+  },
+);
+
+it.each([{}, { unlockFailure: true }, { closeFailure: true }])(
+  'retains lint and native syntax warnings with a verified save: %j',
+  async (options) => {
+    const state = backend(options);
+    const lint = vi
+      .spyOn(writeHelpers, 'runPreWriteLint')
+      .mockReturnValue({ blocked: false, warnings: 'Lint warning fixture' });
+    const result = await call({}, { lintBeforeWrite: true, checkBeforeWrite: true });
+    expect(result.isError).toBe(Object.keys(options).length ? true : undefined);
+    const parsed = payload(result);
+    expect(parsed).toMatchObject({ state: 'saved-inactive', sourceHash: sourceHash(state.source) });
+    expect(parsed.warnings).toContain('Lint warning fixture');
+    expect(parsed.warnings).toContain('Native syntax warning');
+    expect(lint).toHaveBeenCalledOnce();
+    const lintSource = lint.mock.calls[0]![0];
+    expect(lintSource).toContain('result = 2.');
+    expect(lintSource).toContain('result = 99.');
+    const checks = state.requests.filter((request) => request.path.startsWith('/sap/bc/adt/checkruns'));
+    expect(checks).toHaveLength(1);
+    expect(checks[0]).toMatchObject({ method: 'POST', locked: true });
+    expect(checks[0]!.headers['X-sap-adt-sessiontype']).toBe('stateful');
+    expect(checks[0]!.body).toContain(Buffer.from(lintSource).toString('base64'));
+    expect(state.requests.indexOf(checks[0]!)).toBeLessThan(state.requests.findIndex((r) => r.method === 'PUT'));
     expect(state.puts).toBe(1);
     expect(state.unlocks).toBe(1);
     expect(state.closes).toBe(1);

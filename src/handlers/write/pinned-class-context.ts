@@ -33,7 +33,7 @@ export function createPinnedClassContext(
   assertPinnedOwner(args.type, args.name);
   if (args.action !== 'edit_method' || args.type !== 'CLAS' || args.include !== undefined)
     throw new AdtSafetyError('Only the admitted main-source method adapter is available.');
-  if (typeof args.method !== 'string' || !args.method.trim() || /^(?:lhc_|lcl_|ltc_)/i.test(args.method))
+  if (typeof args.method !== 'string' || !args.method.trim() || /^(?:lhc_|lcl_|ltc_)/i.test(args.method.trim()))
     throw new AdtSafetyError('An admitted global-class method name is required.');
   if (typeof args.source !== 'string' || !args.source.trim())
     throw new AdtSafetyError('A non-empty source is required.');

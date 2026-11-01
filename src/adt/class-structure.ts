@@ -332,9 +332,10 @@ export function moveMethodDefinition(source: string, method: MethodStructure, ta
 function assertUnchainedDeclaration(source: string, method: MethodStructure): void {
   const { sr, sc, er } = method.definition;
   const lines = splitLines(source).slice(sr - 1, er);
+  const wholeLines = stripDeclarationComments(lines.join('\n')).trim();
   if (lines[0] !== undefined) lines[0] = lines[0].slice(sc);
   const declaration = stripDeclarationComments(lines.join('\n')).trim();
-  if (/^(?:CLASS-METHODS|METHODS)\s*:/i.test(declaration)) {
+  if ([wholeLines, declaration].some((text) => /^(?:CLASS-METHODS|METHODS)\s*:/i.test(text))) {
     throw new Error(
       'Chained METHODS declarations cannot be edited individually. Use a complete class source update to preserve neighboring declarations.',
     );

@@ -27,7 +27,7 @@ const config = {
 const source =
   'CLASS zcl_test DEFINITION PUBLIC FINAL CREATE PUBLIC.\nENDCLASS.\nCLASS zcl_test IMPLEMENTATION.\nENDCLASS.\n';
 beforeEach(() => vi.resetAllMocks());
-it.each(['create', 'update'])(
+it.each(['create', 'update', 'edit_method'])(
   'a pinned %s stops on one CSRF bootstrap 503 before submitting a mutation',
   async (action) => {
     const requests: { method: string; path: string }[] = [];
@@ -51,6 +51,7 @@ it.each(['create', 'update'])(
         type: 'CLAS',
         name: 'ZCL_TEST',
         source,
+        ...(action === 'edit_method' ? { method: 'value' } : {}),
         ...(action === 'create' ? { package: '$TMP' } : { expectedSourceHash: sourceHash(source) }),
       },
       config,

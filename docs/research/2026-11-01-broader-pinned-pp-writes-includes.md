@@ -154,7 +154,8 @@ The archived recovery script enforces those comparisons, but its contemporaneous
 persist the individual before-lock/under-lock observations or a script hash. Its hash was captured
 retrospectively; this is a code audit plus recorded outcome, not independent runtime proof of each comparison.
 The original application/environment, temporary destination and SAP role/profile are restored;
-temporary IAM entries and XSUAA restoration await operator BTP session renewal.
+temporary IAM entries and XSUAA restoration initially awaited operator BTP session renewal;
+they were subsequently restored and freshly verified at 13:44:21 UTC, as recorded below.
 
 The follow-up closes the review's offline coverage gaps: persisted attempts are checked when the
 mock receives each include mutation, including the second writer; contradictory or missing save
@@ -205,7 +206,7 @@ terminal newlines. These are offline checks; the complete include PP run remains
 Current `main` was integrated at `c8a0c9c27`, retaining both instructions in the sole textual conflict.
 That exact tree passed 422 files / 11,474 tests, 55 simulations, typechecks, build, lint, strict docs and
 size/schema budgets before this diagnostic follow-up. FEAT-93 remains open; neither checkpoint is
-whole-PR acceptance. Temporary BTP IAM/XSUAA rollback remains pending reauthentication.
+whole-PR acceptance. Temporary BTP IAM/XSUAA rollback was still pending at that checkpoint; the later restoration is recorded below.
 
 Author validation of the diagnostic follow-up passed **422 files / 11,478 tests**, all three
 typecheck projects, **59 offline simulations** (20 formatter and 39 deletion, including 22 include
@@ -234,10 +235,10 @@ The seven new Low findings have these dispositions:
 | Include-support contradiction | The writes document now distinguishes admitted include replacement from still-refused include method surgery. |
 
 The [shared chain refusal](2026-11-01-class-surgery-range-boundaries.md) at `65585c620` was added
-after that immutable review and still needs independent review. The same follow-up will examine
-the host-sleep observation, named SAP audit and changes above. Author validation passes **425 files /
+after that immutable review. The next review, recorded below, examined the shared guard,
+host-sleep observation, named SAP audit and changes above. Author validation passes **425 files /
 11,516 tests**, all three typecheck projects, **59 simulations** and lint. Live include qualification
-and IAM/XSUAA rollback remain incomplete; FEAT-93 remains open.
+remained incomplete at that checkpoint. IAM/XSUAA was subsequently restored; FEAT-93 remains open.
 
 
 ## Stream and chain review at `8c259f96`
@@ -260,5 +261,21 @@ Verbatim report SHA-256: `4462ca3450269cb3e3acf218fc493c114049c832b352e38649ea08
 The current follow-up also converges the existing pinned main-method edit with the
 [single-target action handler](2026-11-01-shared-pinned-method-edit.md). This changes shipped source,
 so the accepted `8c259f96` review is not approval of those later bytes. They need follow-up review,
-a fresh build and new qualification manifests before deployment. IAM/XSUAA rollback and the
-complete two-writer include run remain pending.
+a fresh build and new qualification manifests before deployment. The complete two-writer include
+run remains pending. IAM/XSUAA restoration is recorded below.
+
+
+## Original cloud configuration restored
+
+At **2026-11-01 13:44:21 UTC**, the operator's BTP session was renewed and the remaining temporary
+role collection and role were removed. XSUAA security was restored using the saved original
+configuration. Fresh read-only checks then matched the app environment, droplet, routes and seven
+XSUAA security fields against the original baseline and verified exact absence of both temporary
+IAM objects. The app is started with `SAP_ALLOW_WRITES=false`.
+
+The private `cloud-restoration-verified.json` receipt includes comparison hashes, the fields checked,
+run identity and the restoration/verification script hashes. Its sanitized observation is included
+in the attempt JSON. The rollback ledger is `fully-restored`, with `awaitingBtpLogin=false` and
+`activeConfigurationChanged=false`. SAP role/profile, destination and fixture restoration retain
+their earlier evidence timestamps; these cloud checks do not claim to re-exercise SAP authorization.
+The failed include run remains failed. A new reviewed artifact and new manifests are still required.

@@ -191,8 +191,8 @@
     "originalAppEnvironmentAndDropletRestored": true,
     "temporaryDestinationRemoved": true,
     "sapUserRoleProfileAndTestRoleDefinitionRestored": true,
-    "iamAndXsuaaRestored": false,
-    "pending": "Operator BTP session renewal",
+    "iamAndXsuaaRestored": true,
+    "pending": null,
     "sapAccessScopeAudit": {
       "at": "2026-11-01T12:33:32.764Z",
       "system": "A4H",
@@ -238,6 +238,48 @@
         }
       },
       "fullNamedRowsRetainedPrivately": true
+    },
+    "cloudRestoration": {
+      "at": "2026-11-01T13:44:21.541514Z",
+      "runId": "85255428-666f-4e20-a960-19624f580d30",
+      "originalBaselineUsed": true,
+      "appState": "STARTED",
+      "checks": {
+        "environment": {
+          "matchesOriginalBaseline": true,
+          "sha256": "8fe6f83865bdabac49ed550834b8d4b36fbd0df8b7239eccefae514c1c029344"
+        },
+        "droplet": {
+          "matchesOriginalBaseline": true,
+          "sha256": "984f73b6b6a696573cb29d4284bb070ae95c273834ee548039b99a0aa469d127"
+        },
+        "routes": {
+          "matchesOriginalBaseline": true,
+          "sha256": "073c3c42e625a861f9c2390cc1e57190149de1ee9c9686513740d10d1059164e"
+        },
+        "xsuaa": {
+          "matchesOriginalBaseline": true,
+          "sha256": "9a45c5df66fb45efee2e3b89b8001efe89600fe5100bb4d8060fcf4432e197ee",
+          "comparedFields": [
+            "tenant-mode",
+            "scopes",
+            "authorities",
+            "foreign-scope-references",
+            "attributes",
+            "role-templates",
+            "oauth2-configuration"
+          ]
+        },
+        "ARC1_PR1142_PP_WRITERS": {
+          "absent": true
+        },
+        "PR1142 exact PP development": {
+          "absent": true
+        }
+      },
+      "operatorScriptSha256": "cf468fe9af79fa15a2567e7f59b674d0d8f5bf9f7ae42eec699ff9f9069ce7c8",
+      "verificationScriptSha256": "8d350e01dac0137f33623f9a4847f71237afa9c971ac14e5bd2efe5b48183679",
+      "scope": "Fresh CF app/environment/droplet/routes and BTP IAM/XSUAA checks. SAP access, destination and fixture restoration retain their earlier independent evidence timestamps."
     }
   },
   "qualification": "incomplete; retry with a fresh reviewed source binding and fixture manifest",

@@ -358,6 +358,25 @@ it.each([false, true])('does not erase a FUNC body when its locked read fails (g
   expect(state.locked).toBe(false);
 });
 
+it('refuses the old compact include fixture without removing its class boundaries', async () => {
+  const local =
+    "CLASS lhc_x DEFINITION. PUBLIC SECTION. METHODS m. ENDCLASS.\nCLASS lhc_x IMPLEMENTATION. METHOD m. WRITE 'old'. ENDMETHOD. ENDCLASS.";
+  const state = backend({ initialSource: local });
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+    type: 'CLAS',
+    name: 'ZGUARD',
+    action: 'edit_method',
+    method: 'lhc_x~m',
+    source: "METHOD m. WRITE 'new'. ENDMETHOD.",
+    expectedSourceHash: hash(local),
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]!.text).toContain('Cannot isolate the selected method');
+  expect(state.calls.some((c) => c.method === 'PUT')).toBe(false);
+  expect(state.source).toBe(local);
+  expect(state.locked).toBe(false);
+});
+
 it('identifies the auto-routed local include and accepts a hash re-read from that include', async () => {
   const local =
     "CLASS lhc_x DEFINITION. PUBLIC SECTION. METHODS m. ENDCLASS.\nCLASS lhc_x IMPLEMENTATION.\n METHOD m. WRITE 'old'. ENDMETHOD.\nENDCLASS.";

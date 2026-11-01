@@ -173,7 +173,7 @@ an absent code remains null. Raw messages, URLs, headers and arguments are omitt
 cover an SSE body that stalls or disconnects after headers. Failed receipt persistence retains the
 original transport error and marks `receiptWriteFailed`; a successful response whose receipt cannot
 be persisted still stops the run.
-Save and follow-up read have separate phase labels. A repeated failure at the same include step
+Save and follow-up read have separate phase labels. A repeated failure at the same step
 requires recovery and diagnosis before another live attempt, not an automatic retry.
 
 If an incomplete fixture lacks its normal ownership receipt, prepare a separate recovery bound to

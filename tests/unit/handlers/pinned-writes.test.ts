@@ -446,14 +446,27 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect(result.isError).toBe(true);
     expect(saves()).toHaveLength(0);
   });
-  it('canonicalizes a verified task to its allowed parent before saving', async () => {
-    pkg = 'ZTEAM';
-    local = '';
-    const result = await handlePinnedWrite(client(), { ...update(), transport: 'A4HK900002' }, config);
-    expect(result.isError, result.content[0].text).toBeUndefined();
-    expect(saves()[0].path).toContain('corrNr=A4HK900001');
-    expect(saves()[0].path).not.toContain('A4HK900002');
-  });
+  it.each(['update', 'edit_method'])(
+    'canonicalizes a verified task to its allowed parent before %s',
+    async (action) => {
+      pkg = 'ZTEAM';
+      local = '';
+      const result = await handlePinnedWrite(
+        client(),
+        {
+          ...update(),
+          action,
+          transport: 'A4HK900002',
+          ...(action === 'edit_method' ? { method: 'value', source: 'result = 2.' } : {}),
+        },
+        config,
+      );
+      expect(result.isError, result.content[0].text).toBeUndefined();
+      expect(saves()[0].path).toContain('corrNr=A4HK900001');
+      expect(saves()[0].path).not.toContain('A4HK900002');
+      expect(payload(result).transport).toBe('A4HK900001');
+    },
+  );
   it('refuses a destination-denied recording request', async () => {
     pkg = 'ZTEAM';
     local = '';

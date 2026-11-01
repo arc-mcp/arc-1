@@ -12,7 +12,13 @@ export function pinnedFailure(
   state: string,
   phase: string,
   cleanupFailed = false,
-  details: { sourceHash?: string; sessionClosed?: boolean; include?: string; initialized?: boolean } = {},
+  details: {
+    sourceHash?: string;
+    sessionClosed?: boolean;
+    include?: string;
+    initialized?: boolean;
+    warnings?: string;
+  } = {},
 ): ToolResult {
   const context = getCurrentContext();
   return errorResult(

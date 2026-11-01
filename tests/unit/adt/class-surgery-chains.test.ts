@@ -34,6 +34,11 @@ const edits = {
 
 describe('individual edits of native chained method declarations', () => {
   for (const [action, edit] of Object.entries(edits)) {
+    it(`${action} still recognizes a whole-line chain when the native column is off by one`, () => {
+      expect(() => edit(source, { ...method, definition: { ...method.definition, sc: 5 } })).toThrow(
+        'Chained METHODS declarations',
+      );
+    });
     it.each(['CLASS-METHODS', 'METHODS'])(
       `${action} refuses a %s chain instead of removing its neighbor`,
       (keyword) => {

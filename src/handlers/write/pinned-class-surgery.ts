@@ -55,6 +55,7 @@ export async function handlePinnedClassSurgery(
     return pinnedFailure(error, state?.state ?? 'unchanged', state?.phase ?? 'validation', cleanup.unlockFailed, {
       sourceHash: state?.sourceHash,
       sessionClosed: cleanup.sessionClosed,
+      warnings: state?.warnings,
     });
   } finally {
     if (ctx) forgetPinnedClassContext(ctx);

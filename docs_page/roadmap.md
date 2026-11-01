@@ -235,7 +235,10 @@ the broader pinned class-surgery adapter and its source/structure checks remain 
 The existing pinned main-method edit now shares its single-target action handler with explicit
 pinned lifecycle policy. Common replacement guards refuse renamed/multiple methods and shared
 statement boundaries. This is implementation convergence, not additional capability qualification;
-its review and new artifact-bound live verification remain pending.
+Opus retained that checkpoint with no High/Medium finding. Its follow-up adds direct quality/CTS
+and cleanup-warning tests and documents remaining shared-line metadata and cleanup-result gaps.
+The follow-up review and new artifact-bound live verification remain pending. The original
+IAM/XSUAA configuration is now restored and freshly verified; this does not qualify the failed run.
 The formatter and local CLAS/INTF deletion adapters now have a
 [combined two-writer PP qualification](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
 at `1b234d3a4`: native authorship/source binding, typed absence, v5 optional-preference preservation

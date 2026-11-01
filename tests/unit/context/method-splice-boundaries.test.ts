@@ -17,6 +17,29 @@ CLASS zexample IMPLEMENTATION.
 ENDCLASS.`;
 
 describe('method replacement boundaries', () => {
+  it('leaves body syntax to lint while preserving the selected boundaries', () => {
+    const result = spliceMethod(source, 'zexample', 'value', 'result = 2');
+    expect(result.success).toBe(true);
+    expect(result.newSource).toContain('result = 2\n ENDMETHOD.');
+    expect(result.newSource).toContain('METHOD other.\n  result = 99.\n ENDMETHOD.');
+  });
+
+  it.each(['value', 'other'])('checks a complete AMDP replacement named %s', (name) => {
+    const header = 'BY DATABASE PROCEDURE FOR HDB\n LANGUAGE SQLSCRIPT OPTIONS READ-ONLY.';
+    const amdp = source.replace('METHOD value.\n  result = 1.', `METHOD value\n ${header}\n result = 1;`);
+    const result = spliceMethod(
+      amdp,
+      'zexample',
+      'value',
+      `METHOD ${name}\n ${header}\n result = 2;\nENDMETHOD.`,
+      Version.v758,
+    );
+    expect(result.success).toBe(name === 'value');
+    if (name === 'value') {
+      expect(result.newSource).toContain('result = 2;');
+      expect(result.newSource).toContain('result = 99.');
+    } else expect(result.newSource).toBe('');
+  });
   it.each([
     'METHOD other. ENDMETHOD.',
     'METHOD value. ENDMETHOD. METHOD other. ENDMETHOD.',
