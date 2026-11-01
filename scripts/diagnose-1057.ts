@@ -1,6 +1,6 @@
 /** Temporary research driver; this workflow and its helpers must not be merged into main. */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { recordWhereUsed } from '../tests/helpers/where-used-diagnostics.js';
 import {
@@ -8,9 +8,9 @@ import {
   call,
   checkTarget,
   cleanupPair,
-  makeClient,
   MANIFEST,
   type Manifest,
+  makeClient,
   PUBLIC_DIR,
   readManifest,
   recordDescriptions,
@@ -19,10 +19,14 @@ import {
   withReadDeadline,
   writeJson,
 } from '../tests/helpers/where-used-experiment.js';
+import { suiteFailed, summarizeSuite } from '../tests/helpers/where-used-suite.js';
 
-async function trials() {
-  if (existsSync(MANIFEST)) throw new Error('Refusing to overwrite an existing diagnostic manifest.');
-  let state: Manifest = { baseline: BASELINE, startedUtc: new Date().toISOString(), pairs: [], trialFailures: 0 };
+async function suite() {
+  const orderProof = `${PUBLIC_DIR}/order.json`;
+  const reportPath = 'test-results/integration.json';
+  if (existsSync(MANIFEST) || existsSync(orderProof) || existsSync(reportPath))
+    throw new Error('Refusing to overwrite prior diagnostic evidence.');
+  let state: Manifest = { baseline: BASELINE, startedUtc: new Date().toISOString(), pairs: [], suiteExitCode: null };
   writeJson(MANIFEST, state);
   writeJson(`${PUBLIC_DIR}/provenance.json`, {
     baseline: BASELINE,
@@ -30,60 +34,65 @@ async function trials() {
     packageVersion: JSON.parse(readFileSync('package.json', 'utf8')).version,
     runId: process.env.GITHUB_RUN_ID ?? null,
     transport: 'HTTPS proxy; historical CI used direct HTTP on the same SAP host',
+    setupDifferences:
+      'Installed-component and metadata ownership probes; $TMP mutation safety may resolve packages; research config restores frozen baseline size order',
+    bail: 1,
+    retry: 0,
   });
-  // Fail before creating anything if the CI secrets point to a different system.
   await checkTarget(makeClient());
-  const started = Date.now();
   mkdirSync('test-results/1057-private', { recursive: true });
-  for (let trial = 1; trial <= 6; trial++) {
-    if (Date.now() - started > 17 * 60_000) {
-      state.stop = 'process';
-      break;
-    }
-    const suffix = `${Date.now().toString(36).toUpperCase()}${trial}`;
-    state.pairs.push({
-      root: `ZAR1057_ROOT_${suffix}`,
-      consumer: `ZAR1057_USE_${suffix}`,
-      absentBeforeCreate: false,
-      attempts: [],
-      conflicts: [],
-      outcome: 'setup',
-      cleanup: {},
-    });
+  const log = openSync('test-results/1057-private/suite.log', 'w', 0o600);
+  try {
+    const result = spawnSync(
+      process.execPath,
+      ['node_modules/vitest/vitest.mjs', 'run', '--config', 'vitest.research-1057.config.ts', '--bail=1', '--retry=0'],
+      { stdio: ['ignore', log, log] },
+    );
+    state = readManifest();
+    state.suiteExitCode = result.status;
+    if (result.error || result.signal) state.stop = 'process';
     writeJson(MANIFEST, state);
-    console.log(JSON.stringify({ trial, root: state.pairs.at(-1)!.root, consumer: state.pairs.at(-1)!.consumer }));
-    const log = openSync(`test-results/1057-private/trial-${trial}.log`, 'w', 0o600);
     try {
-      // Every trial gets a fresh client/process. Raw assertion details stay out of public logs/artifacts.
-      const result = spawnSync(
-        process.execPath,
-        [
-          'node_modules/vitest/vitest.mjs',
-          'run',
-          '--config',
-          'vitest.integration.config.ts',
-          'tests/integration/where-used-diagnosis.integration.test.ts',
-          '--reporter=json',
-          `--outputFile=test-results/1057-private/trial-${trial}.json`,
-        ],
-        { stdio: ['ignore', log, log] },
+      // Keep the baseline reporters; their configured outputFile overrides the CLI option.
+      // Neither the default report path nor this private directory is uploaded.
+      renameSync(reportPath, 'test-results/1057-private/suite.json');
+      const order = JSON.parse(readFileSync(orderProof, 'utf8'));
+      if (
+        order.fileCount !== 35 ||
+        order.targetRank !== 27 ||
+        order.predecessor !== 'tests/integration/mutation-lifecycle.integration.test.ts'
+      )
+        throw new Error('Unverified integration order.');
+      const allowedFiles = new Set(
+        execFileSync('git', ['ls-files', 'tests/integration'], { encoding: 'utf8' })
+          .trim()
+          .split('\n')
+          .filter((path) => path.endsWith('.test.ts') && !path.endsWith('.slow.integration.test.ts')),
       );
-      state = readManifest();
-      if (result.status !== 0) state.trialFailures++;
-      if (result.error || result.signal) state.stop = 'process';
-    } finally {
-      closeSync(log);
+      const summary = summarizeSuite(
+        JSON.parse(readFileSync('test-results/1057-private/suite.json', 'utf8')),
+        allowedFiles,
+      );
+      writeJson(`${PUBLIC_DIR}/suite-summary.json`, summary);
+      if (!summary.success && result.status === 0) state.stop = 'process';
+      if (!summary.ownedTestReported || state.pairs.length !== 1 || state.pairs[0]?.outcome === 'setup')
+        state.stop ??= 'setup';
+    } catch (error) {
+      state.stop = 'process';
+      recordError(state, 'suite-report', error);
     }
-    writeJson(MANIFEST, state);
-    console.log(JSON.stringify({ trial, outcome: state.pairs.at(-1)!.outcome, stop: state.stop ?? null }));
-    if (
-      state.stop ||
-      (state.pairs.some((pair) => pair.retain === 'control') && state.pairs.some((pair) => pair.retain === 'failure'))
-    )
-      break;
+  } finally {
+    closeSync(log);
   }
   writeJson(MANIFEST, state);
-  // This stage succeeds so the hold and cleanup run. The final verdict preserves every failed trial.
+  console.log(
+    JSON.stringify({
+      suiteExitCode: state.suiteExitCode,
+      outcome: state.pairs[0]?.outcome ?? 'unexecuted',
+      stop: state.stop ?? null,
+    }),
+  );
+  // Allow observation and cleanup to run; the final verdict preserves the full suite's exit status.
 }
 
 async function observe(phase: 'before-native' | 'after-native') {
@@ -98,6 +107,7 @@ async function observe(phase: 'before-native' | 'after-native') {
   } catch (error) {
     state.observationFailures = (state.observationFailures ?? 0) + 1;
     recordError(state, 'observation-target', error);
+    return;
   }
   if (phase === 'after-native' && !state.holdStartedUtc) return;
   state.holdStartedUtc ??= new Date().toISOString();
@@ -174,7 +184,12 @@ async function cleanup() {
   await checkTarget(client);
   // A killed step cannot prove the last server-side operation settled. Keep the manifest and
   // allow a quiet interval before deletion; report that uncertainty instead of claiming certainty.
-  const unfinished = state.pairs.some((pair) => pair.outcome === 'setup' && pair.attempts.length > 0);
+  const unfinished = state.pairs.some(
+    (pair) =>
+      pair.attempts.length > 0 &&
+      (pair.outcome === 'setup' ||
+        (pair.phase === 'cleanup' && pair.attempts.some((name) => pair.cleanup[name] !== 'absent'))),
+  );
   if (unfinished) {
     writeJson(`${PUBLIC_DIR}/late-operation-warning.json`, { serverCompletionUncertain: true, waitSeconds: 120 });
     await delay(120_000);
@@ -196,19 +211,19 @@ async function cleanup() {
 
 async function main() {
   const action = process.argv[2];
-  if (action === 'trials') await trials();
+  if (action === 'suite') await suite();
   else if (action === 'observe-before-native') await observe('before-native');
   else if (action === 'observe-after-native') await observe('after-native');
   else if (action === 'cleanup') await cleanup();
   else if (action === 'verdict') {
     const state = readManifest();
-    if (state.stop || state.trialFailures || state.observationFailures || !state.cleanupFinishedUtc)
-      process.exitCode = 1;
+    if (suiteFailed(state)) process.exitCode = 1;
     console.log(
       JSON.stringify({
-        trialFailures: state.trialFailures,
+        suiteExitCode: state.suiteExitCode,
         stop: state.stop ?? null,
-        reproduced: state.pairs.some((pair) => pair.outcome === 'ordinary-scoped-failure'),
+        outcome: state.pairs[0]?.outcome ?? 'unexecuted',
+        activeSourcesMatch: state.pairs[0]?.activeSourcesMatch ?? null,
       }),
     );
   } else throw new Error('Unknown diagnostic stage.');

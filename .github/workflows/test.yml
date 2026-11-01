@@ -10,7 +10,7 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     concurrency:
       group: ${{ github.repository }}-sap-live-a4h
       cancel-in-progress: false
@@ -30,9 +30,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Run at most six fresh-process trials
-        timeout-minutes: 22
-        run: npx tsx scripts/diagnose-1057.ts trials
+        env:
+          TEST_SAP_USER: ''
+          TEST_SAP_PASSWORD: ''
+      - name: Run the full integration suite once
+        timeout-minutes: 30
+        run: npx tsx scripts/diagnose-1057.ts suite
       - name: Publish names and original observations before inspection
         if: always()
         uses: actions/upload-artifact@v7

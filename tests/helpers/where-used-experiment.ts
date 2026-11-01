@@ -20,7 +20,7 @@ export interface Pair {
   conflicts: string[];
   activatedAt?: number;
   outcome: Outcome;
-  retain?: 'control' | 'failure';
+  retain?: 'failure';
   indexOk?: boolean;
   activeSourcesMatch?: boolean;
   phase?: string;
@@ -30,7 +30,7 @@ export interface Manifest {
   baseline: typeof BASELINE;
   startedUtc: string;
   pairs: Pair[];
-  trialFailures: number;
+  suiteExitCode: number | null;
   errors?: { phase: string; kind: string; status: number | null; category: string | null }[];
   stop?: 'target' | 'setup' | 'index' | 'cleanup' | 'process';
   observationFailures?: number;
@@ -69,18 +69,36 @@ export function writeJson(path: string, value: unknown): void {
 }
 export function readManifest(): Manifest {
   const value = JSON.parse(readFileSync(MANIFEST, 'utf8')) as Manifest;
-  if (value.baseline !== BASELINE || !Array.isArray(value.pairs) || value.pairs.length > 6) {
+  if (value.baseline !== BASELINE || !Array.isArray(value.pairs) || value.pairs.length > 1) {
     throw new ProbeError('ownership');
   }
   for (const pair of value.pairs) validatePair(pair);
   return value;
 }
 export function validatePair(pair: Pair): void {
-  const suffix = /^ZAR1057_ROOT_([A-Z0-9]{7,12})$/.exec(pair.root)?.[1];
-  if (!suffix || pair.consumer !== `ZAR1057_USE_${suffix}`) throw new ProbeError('ownership');
+  const run = /^ZAR1018_ROOT_([A-Z]{1,4})[A-Z0-9]{5}$/.exec(pair.root)?.[1];
+  const consumerRun = /^ZAR1018_USE_([A-Z]{1,4})[A-Z0-9]{5}$/.exec(pair.consumer)?.[1];
+  if (!run || consumerRun !== run) throw new ProbeError('ownership');
   for (const name of [...pair.attempts, ...pair.conflicts, ...Object.keys(pair.cleanup)]) {
     if (name !== pair.root && name !== pair.consumer) throw new ProbeError('ownership');
   }
+}
+
+export function registerPair(state: Manifest, root: string, consumer: string): Pair {
+  if (state.pairs.length) throw new ProbeError('ownership');
+  const pair: Pair = {
+    root,
+    consumer,
+    absentBeforeCreate: false,
+    attempts: [],
+    conflicts: [],
+    outcome: 'setup',
+    cleanup: {},
+  };
+  validatePair(pair);
+  state.pairs.push(pair);
+  writeJson(MANIFEST, state);
+  return pair;
 }
 
 function checkMutationScope(client: AdtClient): void {
@@ -173,19 +191,13 @@ export async function createOwned(
   await call(client, 'SAPActivate', { type: 'CLAS', name });
 }
 
-export function selectRetention(state: Manifest, pair: Pair): void {
-  if (!pair.activatedAt || pair.activeSourcesMatch === false) return;
-  if (pair.outcome === 'passed' && (!pair.indexOk || !pair.activeSourcesMatch)) return;
-  const role =
-    pair.outcome === 'passed' ? 'control' : pair.outcome === 'ordinary-scoped-failure' ? 'failure' : undefined;
-  if (role && !state.pairs.some((other) => other !== pair && other.retain === role)) pair.retain = role;
-}
-
 /** Cleanup uses the same package-gated tool as creation. Never delete an explicit conflict. */
 export async function cleanupPair(client: AdtClient, state: Manifest, pair: Pair, retryMs = 180_000): Promise<boolean> {
   validatePair(pair);
   checkMutationScope(client);
   if (!pair.absentBeforeCreate) return pair.attempts.length === 0;
+  pair.phase = 'cleanup';
+  writeJson(MANIFEST, state);
   let ok = true;
   const deadline = Date.now() + retryMs;
   for (const name of [...new Set(pair.attempts)].reverse()) {
@@ -336,4 +348,88 @@ export async function snapshotIndex(client: AdtClient, pair: Pair, label: string
       reads,
     });
   }
+}
+
+/** Read index state before source: opening source may itself affect SAP's compiler/index state. */
+export async function snapshotPair(
+  client: AdtClient,
+  state: Manifest,
+  pair: Pair,
+  sources: readonly (readonly [string, string])[],
+): Promise<void> {
+  validatePair(pair);
+  if (sources.length !== 2 || sources[0]?.[0] !== pair.root || sources[1]?.[0] !== pair.consumer)
+    throw new ProbeError('ownership');
+  pair.phase = 'index';
+  try {
+    await snapshotIndex(client, pair, 'original');
+    pair.indexOk = true;
+  } catch (error) {
+    pair.indexOk = false;
+    state.stop = 'index';
+    recordError(state, 'index', error);
+  }
+  pair.phase = 'active-source';
+  try {
+    await withReadDeadline(client, 15_000, async () => {
+      const active = [];
+      for (const [name, source] of sources) {
+        const result = await client.getClass(name, undefined, { version: 'active' });
+        const metadata = await client.http.get(`/sap/bc/adt/oo/classes/${name.toLowerCase()}`);
+        const owner = /\b(?:\w+:)?(?:responsible|createdBy)="([^"]*)"/.exec(metadata.body)?.[1];
+        const normalize = (value: string) => value.replace(/\s+/g, '').toUpperCase();
+        active.push({
+          name,
+          sourceMatches: normalize(source) === normalize(result.source),
+          metadataUserMatchesCiUser: owner === undefined ? null : owner === process.env.TEST_SAP_USER,
+        });
+      }
+      pair.activeSourcesMatch = active.every((row) => row.sourceMatches);
+      writeJson(`${PUBLIC_DIR}/${pair.root}-active.json`, { active });
+      if (!pair.activeSourcesMatch) {
+        pair.retain = undefined;
+        state.stop = 'setup';
+      }
+    });
+  } catch (error) {
+    state.stop = 'index';
+    recordError(state, 'active-source', error);
+  }
+  writeJson(MANIFEST, state);
+}
+
+/** Persist retention before reads or Vitest bail, and never replace the original assertion error. */
+export async function captureReferenceFailure(
+  client: AdtClient,
+  state: Manifest,
+  pair: Pair,
+  sources: readonly (readonly [string, string])[],
+  originalError: unknown,
+  testStartedAt: number,
+): Promise<never> {
+  if (!pair.activatedAt || pair.phase === 'cleanup') throw originalError;
+  try {
+    if (Date.now() - testStartedAt >= 90_000) {
+      pair.outcome = 'other-failure';
+      pair.phase = 'assertion-after-test-deadline';
+      recordError(state, 'assertion-after-test-deadline', originalError);
+    } else {
+      pair.outcome = 'ordinary-scoped-failure';
+      pair.retain = 'failure';
+      pair.phase = 'failure-captured';
+      writeJson(MANIFEST, state);
+      // Keep the original 90s test deadline, including a margin for this bounded 40s capture.
+      if (Date.now() - testStartedAt >= 45_000) {
+        pair.phase = 'immediate-capture-skipped-time-budget';
+        writeJson(MANIFEST, state);
+      } else await snapshotPair(client, state, pair, sources);
+    }
+  } catch (error) {
+    try {
+      recordError(state, 'failure-capture', error);
+    } catch {
+      // A diagnostic filesystem failure must not replace the original assertion.
+    }
+  }
+  throw originalError;
 }

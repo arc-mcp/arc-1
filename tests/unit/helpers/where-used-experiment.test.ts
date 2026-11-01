@@ -4,30 +4,41 @@ import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import {
   BASELINE,
   call,
+  captureReferenceFailure,
   checkTarget,
   cleanupPair,
   createOwned,
+  MANIFEST,
   type Manifest,
   type Pair,
   preparePair,
+  readManifest,
   recordDescriptions,
   recordError,
-  selectRetention,
+  registerPair,
   snapshotIndex,
+  snapshotPair,
+  validatePair,
 } from '../../helpers/where-used-experiment.js';
+import { generateUniqueName } from '../../integration/crud-harness.js';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), write: vi.fn(), rename: vi.fn() }));
+const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), write: vi.fn(), rename: vi.fn(), read: vi.fn() }));
 vi.mock('../../../src/handlers/dispatch.js', () => ({ handleToolCall: mocks.dispatch }));
-vi.mock('node:fs', async (original) => ({
-  ...(await original<typeof import('node:fs')>()),
-  mkdirSync: vi.fn(),
-  writeFileSync: mocks.write,
-  renameSync: mocks.rename,
-}));
-function pair(suffix = 'EXAMPLE01'): Pair {
+vi.mock('node:fs', async (original) => {
+  const actual = await original<typeof import('node:fs')>();
   return {
-    root: `ZAR1057_ROOT_${suffix}`,
-    consumer: `ZAR1057_USE_${suffix}`,
+    ...actual,
+    readFileSync: (...args: Parameters<typeof actual.readFileSync>) =>
+      mocks.read(...args) ?? actual.readFileSync(...args),
+    mkdirSync: vi.fn(),
+    writeFileSync: mocks.write,
+    renameSync: mocks.rename,
+  };
+});
+function pair(suffix = 'AB12345'): Pair {
+  return {
+    root: `ZAR1018_ROOT_${suffix}`,
+    consumer: `ZAR1018_USE_${suffix}`,
     absentBeforeCreate: false,
     attempts: [],
     conflicts: [],
@@ -36,7 +47,7 @@ function pair(suffix = 'EXAMPLE01'): Pair {
   };
 }
 function state(value: Pair): Manifest {
-  return { baseline: BASELINE, startedUtc: '2026-11-01T00:00:00Z', pairs: [value], trialFailures: 0 };
+  return { baseline: BASELINE, startedUtc: '2026-11-01T00:00:00Z', pairs: [value], suiteExitCode: 0 };
 }
 function fakeClient() {
   return {
@@ -44,6 +55,7 @@ function fakeClient() {
     http: { get: vi.fn().mockRejectedValue({ statusCode: 404 }), post: vi.fn() },
     getInstalledComponents: vi.fn(),
     runTableQuery: vi.fn(),
+    getClass: vi.fn(),
   } as unknown as AdtClient;
 }
 
@@ -150,34 +162,98 @@ describe('bounded owned-pair research lifecycle', () => {
     expect(mocks.dispatch).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(mocks.write.mock.calls)).not.toContain('private backend error');
   });
-  it('retains only one passing and one matching failing pair', () => {
-    const first = pair();
-    const s = state(first);
-    const cases = [first, pair('EXAMPLE02'), pair('EXAMPLE03'), pair('EXAMPLE04')];
-    s.pairs = cases;
-    for (const [index, p] of cases.entries()) {
-      p.activatedAt = 1;
-      p.indexOk = true;
-      p.activeSourcesMatch = true;
-      p.outcome = index < 2 ? 'passed' : index === 2 ? 'ordinary-scoped-failure' : 'other-failure';
-      selectRetention(s, p);
-    }
-    expect(cases.map((p) => p.retain)).toEqual(['control', undefined, 'failure', undefined]);
+  it('registers only one original-name pair with independent suffixes and the same run ID', () => {
+    const s = state(pair());
+    s.pairs = [];
+    const p = registerPair(s, 'ZAR1018_ROOT_AB12345', 'ZAR1018_USE_AB67890');
+    expect(s.pairs).toEqual([p]);
+    expect(() => registerPair(s, p.root, p.consumer)).toThrow();
+    expect(() => validatePair({ ...p, consumer: 'ZAR1018_USE_CD67890' })).toThrow();
+    expect(() => validatePair({ ...p, root: 'CL_STANDARD' })).toThrow();
+    mocks.read.mockReturnValueOnce(JSON.stringify({ ...s, pairs: [p, p] }));
+    expect(() => readManifest()).toThrow();
   });
-  it('preserves an activated failure despite missing diagnostics but rejects unexpected source', () => {
+  it('accepts actual original fixture names produced by the shared generator', () => {
+    const p = { ...pair(), root: generateUniqueName('ZAR1018_ROOT'), consumer: generateUniqueName('ZAR1018_USE') };
+    expect(() => validatePair(p)).not.toThrow();
+  });
+  function captureSetup() {
     const p = pair();
-    const s = state(p);
-    p.outcome = 'ordinary-scoped-failure';
-    selectRetention(s, p);
-    expect(p.retain).toBeUndefined();
     p.activatedAt = 1;
-    p.indexOk = false;
-    selectRetention(s, p);
+    const s = state(p);
+    const client = fakeClient();
+    vi.mocked(client.runTableQuery).mockResolvedValue({ columns: [], rows: [] });
+    vi.mocked(client.http.get).mockResolvedValue({ body: '<class/>' } as never);
+    vi.mocked(client.getClass).mockImplementation(async (name) => ({ source: name }) as never);
+    const sources: [string, string][] = [
+      [p.root, p.root],
+      [p.consumer, p.consumer],
+    ];
+    return { p, s, client, sources, error: new Error('original assertion') };
+  }
+  it('persists retention before any index/source read and rethrows the same assertion', async () => {
+    const { p, s, client, sources, error } = captureSetup();
+    vi.mocked(client.runTableQuery).mockImplementation(async () => {
+      const saved = JSON.parse(mocks.write.mock.calls.findLast(([path]) => path === `${MANIFEST}.tmp`)![1]);
+      expect(saved.pairs[0]).toMatchObject({ retain: 'failure', outcome: 'ordinary-scoped-failure' });
+      expect(mocks.rename).toHaveBeenCalledWith(`${MANIFEST}.tmp`, MANIFEST);
+      expect(client.getClass).not.toHaveBeenCalled();
+      return { columns: [], rows: [] };
+    });
+    await expect(captureReferenceFailure(client, s, p, sources, error, Date.now())).rejects.toBe(error);
+    expect(p).toMatchObject({ retain: 'failure', indexOk: true, activeSourcesMatch: true });
+  });
+  it('keeps a failed pair despite unavailable diagnostic reads', async () => {
+    const { p, s, client, sources, error } = captureSetup();
+    vi.mocked(client.runTableQuery).mockRejectedValue(new Error('private index error'));
+    vi.mocked(client.getClass).mockRejectedValue(new Error('private source error'));
+    await expect(captureReferenceFailure(client, s, p, sources, error, Date.now())).rejects.toBe(error);
     expect(p.retain).toBe('failure');
-    p.retain = undefined;
-    p.indexOk = true;
-    p.activeSourcesMatch = false;
-    selectRetention(s, p);
+    expect(p.activeSourcesMatch).toBeUndefined();
+    expect(s.stop).toBe('index');
+    expect(JSON.stringify(mocks.write.mock.calls)).not.toContain('private');
+  });
+  it('clears retention on a proven active-source mismatch, preserving the assertion error', async () => {
+    const { p, s, client, sources, error } = captureSetup();
+    vi.mocked(client.getClass).mockResolvedValue({ source: 'different source' } as never);
+    await expect(captureReferenceFailure(client, s, p, sources, error, Date.now())).rejects.toBe(error);
+    expect(p.retain).toBeUndefined();
+    expect(p.activeSourcesMatch).toBe(false);
+    expect(s.stop).toBe('setup');
+  });
+  it('retains a late failure without exceeding the original test budget with extra reads', async () => {
+    const { p, s, client, sources, error } = captureSetup();
+    await expect(captureReferenceFailure(client, s, p, sources, error, Date.now() - 45_000)).rejects.toBe(error);
+    expect(p).toMatchObject({ retain: 'failure', phase: 'immediate-capture-skipped-time-budget' });
+    expect(client.runTableQuery).not.toHaveBeenCalled();
+    expect(client.getClass).not.toHaveBeenCalled();
+  });
+  it('never starts retention after cleanup or before activation', async () => {
+    const { p, s, client, sources, error } = captureSetup();
+    p.phase = 'cleanup';
+    await expect(captureReferenceFailure(client, s, p, sources, error, Date.now())).rejects.toBe(error);
+    expect(p.retain).toBeUndefined();
+    p.phase = 'setup';
+    p.activatedAt = undefined;
+    await expect(captureReferenceFailure(client, s, p, sources, error, Date.now())).rejects.toBe(error);
+    expect(p.retain).toBeUndefined();
+    expect(client.runTableQuery).not.toHaveBeenCalled();
+  });
+  it('does not classify an assertion arriving after the test deadline as a qualifying failure', async () => {
+    const { p, s, client, sources, error } = captureSetup();
+    await expect(captureReferenceFailure(client, s, p, sources, error, Date.now() - 90_000)).rejects.toBe(error);
+    expect(p).toMatchObject({ outcome: 'other-failure', phase: 'assertion-after-test-deadline' });
+    expect(p.retain).toBeUndefined();
+    expect(client.runTableQuery).not.toHaveBeenCalled();
+    expect(s.errors).toEqual([
+      { phase: 'assertion-after-test-deadline', kind: 'unexpected', status: null, category: null },
+    ]);
+  });
+  it('records a passing source/index check without retaining a passing control', async () => {
+    const { p, s, client, sources } = captureSetup();
+    p.outcome = 'passed';
+    await snapshotPair(client, s, p, sources);
+    expect(p).toMatchObject({ outcome: 'passed', indexOk: true, activeSourcesMatch: true });
     expect(p.retain).toBeUndefined();
   });
   it('rejects the wrong configured target before a native request', async () => {
