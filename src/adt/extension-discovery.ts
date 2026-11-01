@@ -2,7 +2,7 @@
 import { isActionDenied } from '../server/deny-actions.js';
 import { logger } from '../server/logger.js';
 import { DataResponseBudget } from './data-result-context.js';
-import { AdtApiError, AdtResponseLimitError, AdtSafetyError } from './errors.js';
+import { AdtApiError, AdtCsrfBootstrapError, AdtResponseLimitError, AdtSafetyError } from './errors.js';
 import { type AdtRequestOptions, type RequestDeadlineOptions, throwIfRequestCancelled } from './http-deadline.js';
 import { AdtRequestBudgetError, RequestAttemptBudget } from './request-attempt-budget.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
@@ -44,6 +44,8 @@ export interface ExtensionEdge {
   attribute?: string | null;
   suffix?: string;
   location?: string;
+  /** Version of the relation/source observation, distinct from the referenced node's identity. */
+  observationVersion?: string;
 }
 export interface ExtensionSource {
   identity: ExtensionIdentity;
@@ -139,16 +141,30 @@ export class ExtensionDiscoverySession {
     try {
       throwIfRequestCancelled(this.options);
       assertExtensionReadAllowed(this.safety, type);
-      return await operation(this.options);
+      const result = await operation(this.options);
+      // A completed data operation proves that its auth/CSRF retries recovered.
+      // Malformed provider data is still rejected by the adapter's protocol boundary.
+      this.options.attemptBudget!.authorizationFailureObserved = false;
+      return result;
     } catch (error) {
       if (this.options.signal?.aborted) throw error;
+      // A final non-auth HTTP response settles an intermediate auth/CSRF retry even
+      // when the provider is unavailable. Network failures retain unresolved evidence.
+      if (
+        error instanceof AdtApiError &&
+        !(error instanceof AdtCsrfBootstrapError) &&
+        error.statusCode >= 400 &&
+        ![401, 403].includes(error.statusCode)
+      )
+        this.options.attemptBudget!.authorizationFailureObserved = false;
       // A failed provider cannot turn into alternate-route evidence after these failures.
       if (
         error instanceof AdtSafetyError ||
         error instanceof AdtResponseLimitError ||
         error instanceof AdtRequestBudgetError ||
         error instanceof ExtensionProtocolError ||
-        (error instanceof AdtApiError && [401, 403, 429].includes(error.statusCode)) ||
+        (error instanceof AdtApiError &&
+          ([401, 403, 429].includes(error.statusCode) || (error.statusCode >= 300 && error.statusCode < 400))) ||
         Date.now() >= this.options.deadline! ||
         this.options.attemptBudget?.authorizationFailureObserved
       ) {
@@ -237,6 +253,7 @@ export class ExtensionDiscoverySession {
       return 'deadline';
     }
     if (error instanceof ExtensionProtocolError) return 'invalid_provider_response';
+    if (error instanceof AdtCsrfBootstrapError) return 'csrf_bootstrap_failed';
     if (error instanceof AdtSafetyError) return 'hidden_read_denied';
     if (error instanceof AdtApiError) return `http_${error.statusCode}`;
     if (error instanceof ExtensionStoppedError) return 'optional_phase_stopped';
@@ -249,10 +266,19 @@ export function renderExtensionDiscovery(result: ExtensionDiscoveryResult): Arra
   result = structuredClone(result);
   const cap = EXTENSION_LIMITS[result.mode].outputBytes;
   const shown = result.nodes.slice(0, 8);
+  const distinctIssues = [...new Set(result.issues)];
+  let shownIssues = Math.min(4, distinctIssues.length);
+  const issues = () => [
+    ...distinctIssues
+      .slice(0, shownIssues)
+      .map((issue) => (Buffer.byteLength(issue) > 160 ? truncateUtf8(issue, 160, '…') : issue)),
+    ...(distinctIssues.length > shownIssues ? [`issues_omitted:${distinctIssues.length - shownIssues}`] : []),
+  ];
   if (result.nodes.length > shown.length) result.omissions.output = result.nodes.length - shown.length;
   const summary = () =>
     `[extensions] ${JSON.stringify({
       root: result.root,
+      ...(result.context ? { context: result.context } : {}),
       scope: result.scope,
       providers: compactProviders(result.providers),
       identities: shown.map(({ type, name, version, provider, family, switch: sw }) => ({
@@ -264,9 +290,9 @@ export function renderExtensionDiscovery(result: ExtensionDiscoveryResult): Arra
         ...(sw ? { switch: sw } : {}),
       })),
       applicability: 'unknown',
-      issues: result.issues,
       omissions: result.omissions,
       consumed: result.consumed,
+      issues: issues(),
     })}`;
   const blocks: Array<{ type: 'text'; text: string }> = [];
   // Reserve a full summary allowance so later omission counts cannot overrun the cap.
@@ -295,12 +321,44 @@ export function renderExtensionDiscovery(result: ExtensionDiscoveryResult): Arra
     }
   }
   let text = summary();
+  while (Buffer.byteLength(text) > 2048 && shownIssues) {
+    shownIssues--;
+    text = summary();
+  }
   while (Buffer.byteLength(text) > 2048 && shown.length) {
     shown.pop();
     result.omissions.output = (result.omissions.output ?? 0) + 1;
     text = summary();
   }
-  if (Buffer.byteLength(text) > 2048) text = truncateUtf8(text, 2048, '\n[extension summary truncated]');
+  if (Buffer.byteLength(text) > 2048) {
+    result.omissions.output = (result.omissions.output ?? 0) + 1;
+    // Even invalid caller identities must fit, including JSON's control-character expansion.
+    const field = (value: string) =>
+      Buffer.byteLength(JSON.stringify(value)) <= 128 ? value : '[identity field omitted: output cap]';
+    const essential = {
+      root: { type: field(result.root.type), name: field(result.root.name), version: field(result.root.version) },
+      ...(result.context ? { context: { type: field(result.context.type), name: field(result.context.name) } } : {}),
+      scope: 'summary_metadata_output_limit',
+      providers: compactProviders(result.providers).map(({ id, family, status, coverage }) => ({
+        id,
+        family,
+        status,
+        coverage,
+      })),
+      identities: [],
+      applicability: 'unknown',
+      omissions: result.omissions,
+      consumed: result.consumed,
+      issues: ['summary_metadata_omitted'],
+    };
+    const serialize = () => `[extensions] ${JSON.stringify(essential)}`;
+    text = serialize();
+    while (Buffer.byteLength(text) > 2048 && essential.providers.length) {
+      essential.providers.pop();
+      result.omissions.output++;
+      text = serialize();
+    }
+  }
   return [{ type: 'text', text }, ...blocks];
 }
 

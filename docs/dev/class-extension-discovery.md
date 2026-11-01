@@ -45,7 +45,14 @@ source hook fixtures in tests/fixtures/extensions/source. Live qualification is 
 The 2026-10-31 test-gap audit and BTP results are in that directory's `test-gap-audit.md` and
 `btp-public.json`; the latter contains hashes and provider observations, never source bodies.
 
-Integration dependencies: shared contract commit 67e570344 and the source plug-in adapter/parser
-from stage 2. PR #1124 was open at ab5d58b48 when inspected; its original patch is retained as a
-local predecessor, followed by the strict helper changes. This branch is not a claim that #1124
-has merged or that 750 supports native class identity discovery.
+Integration dependencies: DDIC PR #1143 and source plug-in PR #1158 are merged into main.
+The 2026-11-01 integration retains their final budget, CSRF-recovery, provider-status, parser and
+renderer fixes. The class stage adds only its independent providers, strict generated-source
+helper and selected-section routing. Existing source-context/filter labels remain intact.
+
+This PR incorporates and supersedes the routing/fallback work from #1124, inspected at
+ab5d58b48. Its original authored patch is retained as commit 707e474eb in the branch history,
+followed by the stricter identity, active-revision, URI, deny-rule and budget checks required
+by the approved class-discovery plan. #1124 remains open until this replacement is merged;
+it is not an additional runtime dependency to merge first. This does not qualify native
+class identity discovery on 750.

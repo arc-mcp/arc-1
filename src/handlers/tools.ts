@@ -93,6 +93,7 @@ function isBtpMode(config: ServerConfig): boolean {
 
 const SAPREAD_DESC_ONPREM =
   'Read SAP ABAP source/metadata. DDIC metadata: omit format. ' +
+  'SHLP: active partial interface metadata; missing headers/assignments/appends are explicit. No drafts or source formats. ' +
   'For specs, reviews or pre-change context, prefer SAPContext first. ' +
   'TABLE_QUERY: data preview required; CDS needs SAP_BASIS 752+. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
   'SYNTAX: read-only check (objectType+name, optional source). Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers.';
@@ -106,13 +107,14 @@ const SAPREAD_DESC_BTP =
 // ─── SAPContext Types ───────────────────────────────────────────────
 
 const SAPCONTEXT_DESC_ONPREM =
+  'SHLP: default/deps returns active partial interface metadata, as SAPRead; no KTD or dependency traversal. ' +
   'Primary tool for understanding ABAP/CDS objects. KTD when available, then dependency contracts. Use SAPRead after SAPContext for exact source/methods/grep/drafts.\n\n' +
   "Decision rule — pick the action from the user's question:\n" +
   '- "What breaks if I change <CDS>?" / "Who consumes <I_*>?" / "Blast radius" → action="impact" (DDLS only).\n' +
   '- "Which includes/appends extend <TABL>?" → action="structure", type="TABL".\n' +
   '- "What does <object> do?" / "Explain" / "deps before editing" → action="deps" (default); type+name required.\n' +
   '- "Find all callers of <object>" → action="usages" (live SAP where-used lookup).\n\n' +
-  'impact (CDS blast-radius): upstream AST deps + downstream where-used, classified into RAP buckets (projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls, metadataExtensions, abapConsumers, documentation, tables, other) + sibling-consistency hints. Use this instead of text-scanning DDDDLSRC/ACMDCLSRC with SAPQuery (it filters the noise). Optional includeIndirect, siblingCheck, siblingMaxCandidates.\n' +
+  'impact: upstream CDS dependencies, downstream where-used in RAP buckets, and sibling-consistency hints. Prefer it to SQL source scans. See action/options below.\n' +
   'deps: target KTD when available + selected dependency contracts, derived from source (not SAP-native relationships or a complete inventory). Counts distinguish root candidates from recursive attempts. Standard helper names are filtered. For CDS, includes dependency DDL/field catalogs for cl_cds_test_environment.\n' +
   'structure (TABL only): the DDIC include/append tree.';
 
@@ -442,9 +444,14 @@ export function getToolDefinitions(
           method: {
             type: 'string',
             description:
-              'For CLAS: read a method (e.g., "get_name", "zif_order~process", "lhc_travel~accept") or use "*" to list methods. Without include=, lhc_*/lcl_* use implementations, ltc_* uses testclasses, and others use MAIN; explicit include= wins. ' +
-              (btp ? '' : 'For SOBJ: BOR method name to read. If omitted, returns the full BOR method catalog. ') +
-              'Not used with other types.',
+              'CLAS: method body; "*" lists methods. Without include, lhc_x~m/lcl_x~m use implementations, ltc_x~m testclasses, others MAIN. Explicit include wins. ' +
+              (btp ? '' : 'SOBJ: method implementation; omit for catalog.'),
+          },
+          methodView: {
+            type: 'string',
+            enum: ['signature'],
+            description:
+              'CLAS: own MAIN declaration with parameters/exceptions. Bare method only; no locals, interfaces, inheritance or other selectors. Omit for body.',
           },
           grep: {
             type: 'string',
@@ -483,7 +490,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['text', 'structured', 'editable'],
             description:
-              'Default text; DEVC returns array then listing metadata, diff a patch. structured: CLAS metadata+includes, DEVC {objects,listing}, diff JSON. editable: fresh {source,sourceHash} for guarded SAPWrite; omit version/method/grep, select CLAS include.',
+              'Default text. structured: CLAS metadata+includes (omit method), DEVC {objects,listing}, diff JSON. editable: fresh {source,sourceHash} for guarded SAPWrite; omit version/method/grep, select CLAS include.',
           },
           version: {
             type: 'string',
@@ -808,7 +815,7 @@ export function getToolDefinitions(
                 type: {
                   type: 'string',
                   description:
-                    'ABAP type, e.g. STRING, I, BAPIRET2. TABLES includes TYPE/LIKE, e.g. TYPE STANDARD TABLE OF X or LIKE DOKHL-OBJECT. Ignored for exceptions/raising.',
+                    'Required except exceptions/raising. Bare STRING or REF TO CL_X, explicit TYPE STRING or TYPE REF TO CL_X, or LIKE ICON-NAME (obsolete).',
                 },
                 byValue: {
                   type: 'boolean',

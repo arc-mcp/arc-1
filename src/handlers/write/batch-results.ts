@@ -1,4 +1,4 @@
-import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
+import { AdtApiError, AdtError, AdtSafetyError } from '../../adt/errors.js';
 import { type ToolResult, textResult, toolJson } from '../shared.js';
 
 export const BATCH_CREATE_MAX_OBJECTS = 100;
@@ -34,11 +34,15 @@ export function batchEntryResult(index: number, type: string, name: string, pack
 
 /** Runtime failures may wrap a SAP exception, so minimal mode also hides ordinary Error messages. */
 export function batchFailureMessage(error: unknown, minimalErrors: boolean): string {
+  let detail: string;
   if (minimalErrors && !(error instanceof AdtSafetyError)) {
     const status = error instanceof AdtApiError ? ` (HTTP ${error.statusCode})` : '';
-    return `SAP operation failed${status}. Details hidden because ARC1_MINIMAL_ERRORS=true; use the request ID and server-side logs.`;
+    detail = `SAP operation failed${status}. Details hidden because ARC1_MINIMAL_ERRORS=true; use the request ID and server-side logs.`;
+  } else {
+    detail = error instanceof Error ? error.message : String(error);
   }
-  const message = error instanceof Error ? error.message : String(error);
+  // Keep handler-owned recovery guidance visible even when long diagnostics are truncated.
+  const message = [error instanceof AdtError ? error.extraHint : undefined, detail].filter(Boolean).join('\n\n');
   return message.length > 2000 ? `${message.slice(0, 2000)}… [diagnostic truncated]` : message;
 }
 

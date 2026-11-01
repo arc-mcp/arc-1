@@ -936,14 +936,19 @@ export async function enforceAllowedPackageForObjectUrl(
   objectUrl: string,
   label: string,
   accept?: string,
-  options?: import('../adt/http.js').AdtRequestOptions,
+  options?: import('../adt/http.js').AdtRequestOptions & { includeGroupHint?: boolean },
 ): Promise<string | undefined> {
   if (client.safety.allowedPackages.length === 0 && !client.safety.multiTargetWrite) return undefined;
-  const pkg = await client.resolveObjectPackage(objectUrl, accept, options);
+  const { includeGroupHint, ...requestOptions } = options ?? {};
+  const pkg = await client.resolveObjectPackage(objectUrl, accept, options ? requestOptions : undefined);
   if (!pkg) {
+    const hint =
+      includeGroupHint && objectUrl.startsWith('/sap/bc/adt/programs/includes/')
+        ? ' For a function-group include, pass group=<FUGR> to SAPWrite or SAPActivate.'
+        : '';
     throw new AdtSafetyError(
       `${label} blocked: ARC-1 could not determine the object's package from ADT metadata ` +
-        `(no adtcore:packageRef/containerRef). Fail-closed because allowedPackages is restricted.`,
+        `(no adtcore:packageRef/containerRef). Fail-closed: cannot authorize this operation without a verified package.${hint}`,
     );
   }
   await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());

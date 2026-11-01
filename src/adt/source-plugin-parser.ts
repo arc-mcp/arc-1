@@ -109,7 +109,11 @@ export function parseSourcePluginElements(xml: string, options: PluginParseOptio
         if (!next) invalid();
         current = next;
       } else {
-        if (!same(parent.uri, options.mainObjectUri) && !same(parent.uri, options.selectedObjectUri ?? '')) invalid();
+        if (
+          !same(parent.uri, options.mainObjectUri) &&
+          !(options.selectedObjectUri && same(parent.uri, options.selectedObjectUri))
+        )
+          invalid();
         const expectedName = decodeURIComponent(parent.uri.split('/').at(-1) ?? '');
         const expectedType = parent.uri.includes('/programs/includes/')
           ? 'PROG/I'
@@ -142,8 +146,10 @@ export function parseSourcePluginElements(xml: string, options: PluginParseOptio
       const option = row(row(p.option).sourceCodePluginOption);
       if (option.position) {
         const position = attr(row(option.position), 'uri');
+        if (position.split('#').length !== 2) invalid();
         const [pathAndQuery, fragment] = position.split('#');
         if (!fragment || !/^start=\d+,\d+$/.test(fragment)) invalid();
+        if (pathAndQuery!.split('?').length > 2) invalid();
         const [path, query] = pathAndQuery!.split('?');
         const parent = reference(impl.enhancedObject);
         if (parent.type.startsWith('ENHO/')) pluginUri(`${path}#${fragment}`, parent.name);

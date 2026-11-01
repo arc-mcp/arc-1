@@ -7,12 +7,18 @@ import { AdtApiError } from './errors.js';
 import {
   type ExtensionDiscoverySession,
   ExtensionProtocolError,
+  type ExtensionProvider,
   type ExtensionRequest,
   extensionKey,
 } from './extension-discovery.js';
 import { expandsInclude, findIncludeStatements } from './include-expansion.js';
 import { type PluginGraph, parseSourcePluginElements, parseSourcePluginIdentities } from './source-plugin-parser.js';
-import { type SourcePluginUnit, sourcePluginObjectUri, sourcePluginResources } from './source-plugin-resources.js';
+import {
+  type SourcePluginUnit,
+  sourcePluginFunctionName,
+  sourcePluginObjectUri,
+  sourcePluginResources,
+} from './source-plugin-resources.js';
 
 export interface SourcePluginSelection {
   unit: SourcePluginUnit;
@@ -34,7 +40,7 @@ export async function discoverSourcePlugins(
   request: ExtensionRequest,
   selection: SourcePluginSelection,
 ): Promise<void> {
-  const provider = {
+  const provider: ExtensionProvider = {
     id: 'source_plugins',
     family: 'source_plugin',
     status: 'returned' as const,
@@ -65,6 +71,11 @@ export async function discoverSourcePlugins(
     let occurrences = 0;
     let unavailable = false;
     let legacy = false;
+    let checkedProviders = 0;
+    let missingOnly = true;
+    const issue = (value: string) => {
+      if (!session.result.issues.includes(value)) session.result.issues.push(value);
+    };
     while (pending.length && !session.stopped) {
       const current = pending.shift()!;
       const { unit, depth } = current;
@@ -72,6 +83,8 @@ export async function discoverSourcePlugins(
       if (seen.has(key)) continue;
       if (seen.size + session.result.nodes.length >= session.limits.nodes && depth > 0) {
         session.omit('nodes', pending.length + 1);
+        unavailable = true;
+        missingOnly = false;
         Object.assign(provider, { status: 'incomplete', reason: 'source_unit_node_limit' });
         break;
       }
@@ -95,13 +108,11 @@ export async function discoverSourcePlugins(
             return response.body;
           });
         let selectedFunctionSourceUri: string | undefined;
-        if (session.mode === 'sources' && unit.type === 'INCL' && mainUnit.type === 'FUGR') {
+        if (unit.type === 'INCL' && mainUnit.type === 'FUGR') {
           source ??= await readSource();
           // A structural Uxx include's location uses its function's public ADT source route.
           // Bind that alias to the first real FUNCTION header in this actually-read include.
-          const first =
-            source.length <= 256 * 1024 ? source.replace(/^\*[^\r\n]*|^\s*"[^\r\n]*/gm, '').trimStart() : '';
-          const functionName = /^FUNCTION\s+((?:\/[A-Z0-9_]+\/)?[A-Z0-9_]+)(?=[\s.])/i.exec(first)?.[1];
+          const functionName = sourcePluginFunctionName(source);
           if (functionName)
             selectedFunctionSourceUri = protocol(
               () => `${sourcePluginObjectUri({ type: 'FUNC', name: functionName, group: mainUnit.name })}/source/main`,
@@ -110,6 +121,7 @@ export async function discoverSourcePlugins(
         if (session.mode === 'summary' && resources.identities) {
           Object.assign(provider, {
             coverage: 'direct_identities',
+            nested: 'not_expanded',
             reason: 'HOOK_IMPL outer/specific identities; nested expansion not performed',
           });
           await session.read('ENHO', async (options) => {
@@ -153,17 +165,20 @@ export async function discoverSourcePlugins(
             );
           });
           recordGraph(session, graph, key, emittedSources, provider.id, depth);
+          provider.nested = 'bounded';
+          checkedProviders++;
         } else {
           unavailable = true;
-          session.result.issues.push(`enhancement_relation_not_advertised:${unit.type}:${unit.name}`);
+          issue(`enhancement_relation_not_advertised:${unit.type}:${unit.name}`);
         }
-        if (session.mode !== 'sources') return;
+        if (session.mode !== 'sources') break;
         source ??= await readSource();
         session.sourceCache.set(key, source);
         if (Buffer.byteLength(source) > 256 * 1024) {
           session.omit('sources');
           unavailable = true;
-          session.result.issues.push(`source_scan_byte_limit:${unit.type}:${unit.name}`);
+          missingOnly = false;
+          issue(`source_scan_byte_limit:${unit.type}:${unit.name}`);
           continue;
         }
         if (unit.type === 'INCL' && isEnhancementIncludeName(unit.name)) {
@@ -171,53 +186,81 @@ export async function discoverSourcePlugins(
           if (references.length) {
             session.omit('sources', references.length);
             unavailable = true;
-            session.result.issues.push('generated_include_references_unqualified');
+            missingOnly = false;
+            issue('generated_include_references_unqualified');
           }
           continue;
         }
         for (const include of findIncludeStatements(source)) {
           if (++occurrences > 200) {
             session.omit('nodes');
+            unavailable = true;
+            missingOnly = false;
             Object.assign(provider, { status: 'incomplete', reason: 'include_occurrence_limit' });
             break;
           }
           const child = { type: 'INCL' as const, name: include.name };
           const childKey = extensionKey({ ...child, version: 'active' });
-          session.addEdge({ from: key, to: childKey, kind: 'include', location: `line ${include.line}` });
+          session.addEdge({
+            from: key,
+            to: childKey,
+            kind: 'include',
+            observationVersion: 'active',
+            location: `line ${include.line}`,
+          });
           if (seen.has(childKey)) continue;
           if (depth >= session.limits.depth) {
             session.omit('depth');
+            unavailable = true;
+            missingOnly = false;
+            Object.assign(provider, { status: 'incomplete', reason: 'include_depth_limit' });
             continue;
           }
           if (!expandsInclude(include.name, mainUnit.name)) {
-            session.result.issues.push(`include_ownership_skipped:${include.name}`);
+            issue(`include_ownership_skipped:${include.name}`);
             unavailable = true;
+            missingOnly = false;
+            continue;
+          }
+          try {
+            sourcePluginObjectUri(child);
+          } catch {
+            issue(`include_name_not_supported:${include.name}`);
+            unavailable = true;
+            missingOnly = false;
             continue;
           }
           pending.push({ unit: child, depth: depth + 1 });
         }
       } catch (error) {
-        if (error instanceof ExtensionProtocolError)
-          session.result.issues.push(`invalid_source_unit:${unit.type}:${unit.name}`);
-        session.result.issues.push(
+        missingOnly = false;
+        if (error instanceof ExtensionProtocolError) issue(`invalid_source_unit:${unit.type}:${unit.name}`);
+        issue(
           `source_unit_unreadable:${unit.type}:${unit.name}:${error instanceof AdtApiError ? error.statusCode : 'read_failed'}`,
         );
         if (session.stopped) {
           session.omit('sources', pending.length + 1);
-          for (const left of pending.slice(0, 20))
-            session.result.issues.push(`source_unit_not_checked:${left.unit.type}:${left.unit.name}`);
+          for (const left of pending.slice(0, 20)) issue(`source_unit_not_checked:${left.unit.type}:${left.unit.name}`);
         }
         if (session.stopped || session.options.signal?.aborted) throw error;
         unavailable = true;
         if (depth === 0) throw error;
       }
     }
-    if (unavailable)
-      Object.assign(provider, { status: 'incomplete', reason: 'source_units_unavailable_or_not_advertised' });
-    else if (session.mode === 'sources')
+    if (unavailable && provider.status === 'returned')
+      Object.assign(
+        provider,
+        checkedProviders === 0 && missingOnly
+          ? {
+              status: 'not_advertised',
+              coverage: seen.size === 1 ? 'selected_source' : 'bounded_traversal',
+              reason: 'enhancement_provider_not_advertised',
+            }
+          : { status: 'incomplete', reason: 'source_units_unavailable_or_not_advertised' },
+      );
+    else if (session.mode === 'sources' && provider.status === 'returned')
       provider.reason = 'bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown';
     if (legacy) provider.reason += '; qualified 750 unadvertised source provider';
-    if (session.mode === 'summary' && unavailable) Object.assign(provider, { status: 'unsupported' });
   });
 }
 
@@ -230,6 +273,7 @@ function recordGraph(
   sourceDepth: number,
 ): void {
   const keys = new Map(graph.implementations.map((i) => [i.name, extensionKey(i)]));
+  const parents = new Map(graph.implementations.map((i) => [i.name, i.parent]));
   session.omit('nodes', graph.omittedImplementations);
   session.omit('sources', graph.omittedSources);
   for (const impl of graph.implementations) {
@@ -262,6 +306,7 @@ function recordGraph(
         from: sourceKey,
         to: extensionKey(impl),
         kind: 'attachment',
+        observationVersion: 'provider_current',
         attribute: plugin.id,
         location: `${plugin.fullName} ${plugin.position ?? ''}`,
         suffix: plugin.mode,
@@ -280,11 +325,16 @@ function recordGraph(
       }
     }
   }
-  for (const edge of graph.edges)
+  for (const edge of graph.edges) {
+    const parent = parents.get(edge.from)!;
+    const parentType =
+      parent.type === 'PROG/I' ? 'INCL' : parent.type.startsWith('ENHO/') ? parent.type : parent.type.split('/')[0]!;
     session.addEdge({
-      from: keys.get(edge.from) ?? edge.from,
-      to: keys.get(edge.to) ?? edge.to,
+      from: keys.get(edge.from)!,
+      to: keys.get(edge.to) ?? extensionKey({ type: parentType, name: edge.to, version: 'active' }),
       kind: edge.kind,
+      observationVersion: 'provider_current',
       ...(edge.attachment ? { location: edge.attachment } : {}),
     });
+  }
 }

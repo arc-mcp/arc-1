@@ -1,5 +1,4 @@
 /** One handler boundary for optional family adapters; legacy base content is never rewritten. */
-
 import { discoverClassExtensions } from '../adt/class-extensions.js';
 import type { AdtClient } from '../adt/client.js';
 import { ddicExtensionAdapter } from '../adt/ddic-extension-adapter.js';
@@ -49,9 +48,10 @@ export async function appendReadExtensions(
     name = String(args.name);
   const partial =
     args.method || args.grep || args.lineStart !== undefined || args.lineEnd !== undefined || args.include;
+  const context = args.enhancementContext as ExtensionRequest['context'];
   const request: ExtensionRequest = {
     root: { type, name, version: args.format === 'structured' ? 'provider_current' : version },
-    scope: `${type} ${name}${type === 'FUNC' ? ` selected function (group=${args.group})` : partial ? ` owning object/source (base filtered${args.include ? `; section=${args.include}` : ''})` : ' full root source'}`,
+    scope: `${type} ${name}${type === 'FUNC' ? ` selected function (group=${args.group})` : ''}${partial ? ` owning object/source (base filtered${args.include ? `; section=${args.include}` : ''})` : type === 'FUNC' ? '' : ' full root source'}${context ? ` (context=${context.type} ${context.name})` : ''}`,
     ...(args.enhancementContext ? { context: args.enhancementContext as ExtensionRequest['context'] } : {}),
   };
   const session = new ExtensionDiscoverySession(mode, request, client.safety, { signal: getCurrentContext()?.signal });
