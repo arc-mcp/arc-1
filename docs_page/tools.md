@@ -88,8 +88,8 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. With `method=`, an explicit include selects that exact source (including `main`) before method extraction. For DDLS: `elements` (extract CDS view elements). For TEXT_ELEMENTS: `symbols`, `selections`, or `headings` — one part of the text pool; omit for the whole PROG/FUGR pool or CLAS symbols. |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. For FUGR, `grep` implies `expand_includes` and searches each include on its own: matches are grouped under `=== <include> ===` with line numbers counted within that include. For PROG and INCL, `grep` searches the object itself unless `expand_includes=true`; the response then names the includes that the expansion would also search. Falls back to a literal search when the pattern is not valid regex. |
-| `extensions` | string | No | `none`, `summary`, or `sources`. Full TABL source reads default to a bounded append summary; partial reads default to none. Sources adds separate labelled append/include bodies. Other listed families currently return explicit unsupported coverage. See [Extension discovery](#extension-discovery). |
-| `enhancementContext` | object | No | Standalone INCL only: `{type: "PROG"\|"FUGR"\|"CLAS", name: "..."}` identifies the owning main object. The current stage reports unsupported for source plug-in families; this reserves their shared request contract. |
+| `extensions` | string | No | `none`, `summary`, or `sources`. Full TABL, PROG, INCL, FUNC and FUGR reads default to a bounded summary; partial reads default to none. Sources adds separate labelled extension bodies and a bounded graph. See [Extension discovery](#extension-discovery). |
+| `enhancementContext` | object | No | Standalone INCL only: `{type: "PROG"\|"FUGR"\|"CLAS", name: "..."}` identifies the owning main object. Required for standalone include plug-in discovery; actual child includes inherit their root context. |
 | `lineStart` | integer | No | First source line (1-based, inclusive); requires `lineEnd`. Supports PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, DDLX and TABL. CLAS `include` selects one source section. Plain text only: do not combine with grep, method, diff, structured/editable output, signature or element extraction. Draft/version notices precede the numbered source. |
 | `lineEnd` | integer | No | Last source line (inclusive); requires `lineStart`. Clamped to the source end; a start beyond the source is an error. |
 | `expand_includes` | boolean | No | For FUGR: expand include source inline, up to 80 source blocks (including main) and five include levels. `grep` implies this expansion; see [Function-group source search](#function-group-source-search). For PROG and INCL: read the program with every include it names, recursively, in one bounded call, or search them all with `grep`; see [Program include expansion](#program-include-expansion). |
@@ -120,14 +120,18 @@ their original contents. Use `arc1-cli call SAPRead --json '{"type":"TABL","name
 for extension context through the CLI.
 
 The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02, 758 SP02, and BTP ABAP
-Environment 920 SP05 with a developer's browser OAuth identity. The public
-contract also accepts PROG, INCL, FUNC, FUGR, CLAS, INTF and BDEF, but explicit requests for those
-families currently report `unsupported`; their adapters are separate implementation stages.
-Other releases and live principal propagation remain unqualified. CDS/DDLX extensions and BAdIs
-are outside this feature.
+Environment 920 SP05 with a developer's browser OAuth identity. Source plug-in XML is qualified
+on 750 and 758. Live positive coverage includes PROG on 750 and INCL, FUNC and FUGR on 758;
+other family/release combinations remain unqualified. CLAS, INTF and BDEF public integration
+remains in later stages and explicit requests currently report `unsupported`.
+Read-only BTP ABAP 920 checks cover FUNC `RFC_SYSTEM_INFO` (provider not advertised) and FUGR
+`SRFC` (empty root identities and bounded source traversal). These establish contract behavior,
+not positive BTP plug-in source coverage. PROG/INCL remain excluded from the BTP public schema;
+other BTP objects, releases and live principal propagation remain unqualified. CDS/DDLX extensions
+and BAdIs are outside this feature.
 
 Method, grep, line-window and class-include reads default to none. An explicit mode on a partial
-TABL read describes its **owning object/source**, without claiming the extension bodies match the
+read describes its **owning object/source**, without claiming the extension bodies match the
 base filter. Inactive base reads report `unsupported_version` and do not substitute active
 extension sources. An unversioned list is labelled `provider_current`; source bodies explicitly
 read active are labelled active. These are separate SAP observations, not an atomic snapshot.
@@ -151,6 +155,23 @@ retries. Graph, source, request, byte, deadline and output omissions remain visi
 bodies have explicit markers. No source is spliced into editable base text.
 These are simultaneous upper bounds: metadata, fallback and CSRF sends can exhaust the request
 budget before traversal reaches the node limit.
+
+Source plug-in summaries use an advertised HOOK_IMPL identity list on a root where available.
+That list covers outer/specific implementations and says nested expansion was not performed.
+Other qualified selected sources use bounded enhancement elements without decoding bodies.
+Sources mode follows actual INCLUDE statements with inherited main-object context, retaining
+individual attachments, nesting, replacement chains and observed implementation versions. It
+labels decoded bodies `representation=rendered_plugin_source` and keeps them separate from the
+base. The 750 program provider may be unadvertised; only an exact 750 grammar marker plus an
+advertised source enables the qualified legacy route, labelled in coverage.
+
+For example, read `SAPRead(type="PROG", name="ENH_NESTED_DEMO", extensions="sources")` on 750,
+or `SAPRead(type="INCL", name="ENH_PROG_INCL_IMPLICIT_OPT", enhancementContext={type:"PROG",
+name:"PROG_ENH_SUBOBJ_CHECK"}, extensions="sources")` on 758. Without context, standalone INCL
+reports `context_required`. An empty function-group main is only that source's observation;
+F01 and other includes can have plug-ins. FUNC examples are SAPBC_GLOBAL_CANCEL_UPDATE in
+SAPBC_GLOBAL_FIS and BDS_CONNECTION_CREATE in BDS_CONNECTIONS: discovery covers the selected
+function and its actual includes, not the whole group. The ordinary FUNC body omits injected code.
 
 `SAPContext(action="structure", type="TABL", name="...")` uses the same dedicated append
 provider. It retains the include tree, key includes and repeated suffixes, adds discovery
