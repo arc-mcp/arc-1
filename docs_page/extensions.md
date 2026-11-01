@@ -8,7 +8,7 @@ and per-user principal propagation. This is the FEAT-61 extension framework.
     The extension API (`arc-1/public`) is **`@experimental`** — it may break in any release. A plugin
     declares a single `apiVersion` integer as the compatibility fuse. No semver guarantee yet.
 
-- **Worked sample:** [`arc-mcp/arc-1-extension-sample`](https://github.com/arc-mcp/arc-1-extension-sample) — ADT + OData reads, a manifest tool, a gated console-class execute, an OData write, and a full LISA custom-ICF integration, **all live-verified against S/4HANA**.
+- **Worked sample:** [`arc-mcp/arc-1-extension-sample`](https://github.com/arc-mcp/arc-1-extension-sample) — ADT + OData reads, a manifest tool, gated class/report execution, an OData write, and a full LISA custom-ICF integration, **all live-verified against S/4HANA**.
 - **Guided setup:** the **`create-arc1-extension`** skill (`.claude/skills/create-arc1-extension/`) walks you through the decisions, scaffolds the plugin, and points out the security implications for your use case.
 - **Design:** `docs/research/2026-06-17-extension-framework-spec.md` (spec) + `extension-framework-deep-research.md` (rationale).
 
@@ -24,7 +24,7 @@ Each row links to a worked, live-verified tool in the [sample repo](https://gith
 | **Custom diagnostics** — SM37 jobs, SLG1 / application logs, gateway logs, ST22 dumps | wrap the relevant ADT/OData/ICF read | (pattern of `Custom_ProgramLineCount`) |
 | **Business-data read/write** — query or create entities in an OData service | `ctx.http.get` / `ctx.http.post` | `Custom_QuerySalesOrders`, `Custom_CreateSalesOrder` |
 | **Drive a custom ABAP HTTP service** — e.g. translation management with [LISA](https://github.com/ClementRingot/LISA) | gated `ctx.http.post` to `/sap/bc/http/sap/<service>` | `Custom_ListLanguages` / `GetTranslation` / `SetTranslation` |
-| **Run ad-hoc ABAP** — execute a console class and return its output | `ctx.run.classRun` | `Custom_RunClass` |
+| **Run ad-hoc ABAP** — execute a console class or classic report and return its output | `ctx.run.classRun` / `ctx.run.programRun` | `Custom_RunClass` / `Custom_RunReport` |
 
 Writes and execution are **off by default** and opt-in per deployment (see [Security & roles](#security-roles-by-use-case)); ADT **object** writes (CLAS/DDLS/…) stay a v2 item.
 
@@ -59,8 +59,8 @@ Both produce a `Custom_*` tool, gated identically.
     non-ADT paths** (OData/ICF) and **only** behind the default-off opt-in `SAP_ALLOW_PLUGIN_RAW_WRITES`
     (see [Writing](#writing-non-adt-odataicf)). Writes to **`/sap/bc/adt/…` object endpoints are always
     refused** — they need `SAP_ALLOWED_PACKAGES` enforcement that a raw path can't provide; those wait
-    for the v2 package-aware `ctx.write` vocabulary. The other privileged op is **executing a console
-    class** (`ctx.run.classRun`, below). Manifest tools stay GET-only.
+    for the v2 package-aware `ctx.write` vocabulary. The other privileged surface is **executing an
+    ABAP class or report** (`ctx.run`, below). Manifest tools stay GET-only.
 
 ---
 
@@ -72,14 +72,14 @@ Clone the sample and adapt it:
 git clone https://github.com/arc-mcp/arc-1-extension-sample
 cd arc-1-extension-sample
 
-# link the local arc-1 build (until arc-1 is published with the public API)
-( cd /path/to/arc-1 && npm link )
-npm install && npm link arc-1 && npm run build
+# Build against the published ARC-1 peer dependency
+npm install
+npm run build
 
 # load into an ARC-1 instance…
-ARC1_PLUGINS=$PWD/dist/index.js  arc1 --transport http-streamable
+ARC1_PLUGINS="$PWD/dist/index.js" npx arc-1@latest  # stdio; uses your SAP connection settings
 # …or drive one call (args are --json, never positional):
-ARC1_PLUGINS=$PWD/dist/index.js  arc1-cli call Custom_ProgramLineCount --json '{"name":"RSPARAM"}'
+ARC1_PLUGINS="$PWD/dist/index.js" npx --package=arc-1@latest arc1-cli call Custom_ProgramLineCount --json '{"name":"RSPARAM"}'
 ```
 
 `ARC1_PLUGINS` is a CSV of **absolute paths**. An entry is either a `.js` code plugin (point at the
@@ -192,20 +192,55 @@ Refused with an `AdtSafetyError` unless **all** hold:
 !!! note "What `SAP_ALLOWED_PACKAGES` does and doesn't cover here"
     The package allowlist gates **ADT object** writes. It does **not** apply to OData/ICF paths (there
     is no ABAP package in them) — those writes are gated by the opt-in + `allowWrites` + scope +
-    `denyActions` + the service's own SAP-side auth (+ Cloud Connector resource allowlist on BTP). The
+    the service's own SAP-side auth (+ Cloud Connector resource allowlist on BTP). The
     custom service's ABAP handler owns its locking/transport.
+
+`ctx.http.post`, `ctx.run.classRun` and `ctx.run.programRun` do not automatically repeat a request
+after a transient 429/503 or database connection error. A network failure or 429/5xx leaves
+completion **unconfirmed**: inspect the service's result or business state before retrying the tool.
+Authentication, any **403** (treated as possible CSRF expiry), and content negotiation can still
+resend a request; this is not an exactly-once guarantee. GET, PUT and DELETE retain their existing
+retry behavior. If your plugin catches errors, rethrow the original error so ARC-1 can render this
+guidance, or handle `error.pluginPostOutcome === 'unknown'` explicitly; returning only `error.message`
+loses the completion warning.
+
+### Parameterized services and read-only POSTs
+
+For reads, prefer a supported [OData function](https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part1-protocol.html#sec_Functions)
+or an SAP-owner-reviewed read-only ICF GET endpoint. These work today with `ctx.http.get` without
+enabling writes; a service exposed only through POST would need a backend change. Business-data
+tools should declare `data` scope; raw GET does not enforce the data-preview/SQL flags (see
+[runtime gates](#security-roles-by-use-case)).
+
+There is no `ctx.run.callFunction` or `ctx.http.postRead`. All raw POSTs require the write gates
+above, including dedicated read endpoints such as the sample's LISA translation reads. Do not
+enable writes on a read-only deployment just to make them work. A URL exception cannot distinguish
+read/write bodies on shared SOAP or `$batch` endpoints; a dedicated read endpoint is a candidate
+for [FEAT-77](roadmap.md#feat-77) once its semantics and request contract are verified.
+
+For SOAP, use an SAP-owner-approved service and its configured **binding WSDL**, with fixed
+operations and endpoint in reviewed plugin code. Do not introduce the deprecated generic SOAP
+6.20 dispatcher as a new integration. See [SAP lifecycle guidance](https://help.sap.com/docs/SAP_NETWEAVER_740/f1cccec432514a3181f2852f2b91d306/c84cb8db0b3b43908ae4e987f3a3ade5.html)
+and [binding WSDL guidance](https://help.sap.com/docs/SUPPORT_CONTENT/abapconn/3354079866.html).
 
 ADT **object** create/update/delete (CLAS, DDLS, …) stay on the roadmap as the package-aware v2
 `ctx.write` vocabulary — see `docs/research/2026-06-17-extension-framework-v2-spec.md`.
 
 ---
 
-## Executing ABAP (console classes)
+## Executing ABAP (classes and reports)
 
-The one privileged operation a v1 plugin can perform is **running an ABAP console class** — a class
-that implements `IF_OO_ADT_CLASSRUN` (the modern replacement for executable reports on ABAP Cloud).
-It runs through **`ctx.run.classRun(name)`**, which returns the class's `out->write( … )` console
-output:
+Report/class execution and direct RFC integrations belong in extensions, as defined by
+[ADR-0009](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0009-abap-execution-and-rfc-belong-in-extensions.md).
+
+`ctx.run` exposes two named execution operations:
+
+- **`classRun(name)`** runs a class implementing `IF_OO_ADT_CLASSRUN` and returns its
+  `out->write( … )` console output. This is the modern, cloud-compatible option.
+- **`programRun(name)`** runs an active classic executable report (`PROG`) and returns its list output
+  as plain text. It uses SAP's native ADT program-run endpoint, so no custom ICF service is needed.
+
+Class example:
 
 ```ts
 export default defineTool({
@@ -220,6 +255,28 @@ export default defineTool({
 });
 ```
 
+Classic report example (on-premise systems):
+
+```ts
+export default defineTool({
+  name: 'Custom_RunReport',
+  description: 'Execute an active classic ABAP report and return SAP list or error text.',
+  schema: z.object({ reportName: z.string().min(1).max(40) }),
+  policy: { scope: 'write', opType: OperationType.Workflow },
+  availableOn: 'onprem',
+  async handler(args, ctx) {
+    const out = await ctx.run.programRun((args as { reportName: string }).reportName);
+    return { content: [{ type: 'text', text: out }] };
+  },
+});
+```
+
+`programRun` is intentionally name-in/text-out. SAP's endpoint does not accept selection-screen
+parameters or a variant, and ARC-1 does not emulate them. Reports that need runtime input should use a
+small purpose-built class implementing `IF_OO_ADT_CLASSRUN` instead. As with `classRun`, SAP can also
+report conditions such as a missing object in the returned text while responding HTTP 200, so ARC-1
+returns that text verbatim for the extension to display.
+
 Executing arbitrary ABAP can mutate anything, so this is the **strictest-gated** capability in the
 framework — **all** of the following must hold, or the call is refused with an `AdtSafetyError`:
 
@@ -230,9 +287,11 @@ framework — **all** of the following must hold, or the call is refused with an
 | tool declares `scope: 'write'` | a `read`-scoped tool can never execute |
 | user has the `write` scope + SAP-side execute auth | the usual `scope ∧ SAP-auth` |
 
-`classRun` is a **named** op (not a raw POST), so a plugin can only run a class **by name** (validated,
-no path injection) — it cannot reach arbitrary endpoints. That's why it has its own dedicated gate,
-distinct from the raw `ctx.http` write surface; ADT **object** writes still wait for the v2 `ctx.write`.
+`classRun` and `programRun` are **named** ops (not raw POSTs), so a plugin can only run a class or
+report **by name** (validated, no path injection) — it cannot reach arbitrary endpoints. That is why
+they have their own dedicated gate, distinct from the raw `ctx.http` write surface; ADT **object**
+writes still wait for the v2 `ctx.write`. Both operations use the [POST retry policy](#writing-non-adt-odataicf)
+above: ambiguous failures require inspection before another execution.
 
 ---
 
@@ -243,7 +302,7 @@ distinct from the raw `ctx.http` write surface; ADT **object** writes still wait
     server**: it can read `process.env` (SAP credentials, the XSUAA `clientsecret`, the DCR signing
     secret), read/write the local filesystem, open outbound network connections, and spawn processes.
     The gated `ctx` (GET/HEAD + opt-in non-ADT writes on `ctx.http`, the blocked `ctx.client`, the
-    `classRun` + raw-write gates) is a **clean API surface** that protects against a *buggy or
+    named `ctx.run` + raw-write gates) is a **clean API surface** that protects against a *buggy or
     over-eager* plugin and honours the admin's posture
     — it is **not** a containment boundary against a *hostile* one (a malicious plugin doesn't need
     `ctx`; it has `child_process`). **Loading a plugin is exactly as much a trust decision as adding a
@@ -255,10 +314,16 @@ distinct from the raw `ctx.http` write surface; ADT **object** writes still wait
     - **Bake into an immutable artifact.** Ship plugins inside the reviewed deploy image / app bits,
       under the same change control as the rest of the server (see [Deploying](#deploying-extensions-btp-cloud-foundry-docker)).
 
-This is the most important part. An extension tool **inherits ARC-1's full safety pipeline** — it is
-gated exactly like a built-in. Two layers must both pass: the **user's scope** (their MCP role/profile)
-**and** the **server's safety ceiling** (the admin's `allow*` flags). Per-user **principal propagation**
-means the tool acts as the calling SAP user, so SAP-side auth (`S_DEVELOP`, package checks) applies too.
+An extension tool must pass the **user's scope** check (their MCP role/profile). Calls through the
+provided `ctx` APIs also enforce the applicable server opt-ins and use the selected SAP identity,
+including per-user identity for PP calls. These are the extension-specific gates below: built-in
+`SAP_DENY_ACTIONS` rules do not support custom tools, and the package allowlist does not cover raw
+OData/ICF writes. SAP still enforces the selected user's authorizations.
+
+`ctx.client` exposes an explicit set of plain-read methods. Internal session factories,
+metadata/text writers, SQL methods and client internals are absent at runtime and in the public
+type. New ARC-1 client methods are not automatically added to this surface. Existing plugins
+that used these unintended methods must use a supported, gated operation instead.
 
 Declare `policy: { scope, opType }` to match the operation your tool performs. The user's scope must
 **cover** it (a `read` user never sees a `write`-scoped tool), and the server ceiling must allow it.
@@ -267,12 +332,12 @@ Declare `policy: { scope, opType }` to match the operation your tool performs. T
 |---|---|---|---|---|
 | Read-only diagnostic (ADT/OData/ICF) | `read` | `R` | — | `read` |
 | **Write to an OData/ICF service** (`ctx.http.post`/`put`/`delete`) | `write` | `C`/`U`/`D` | `SAP_ALLOW_PLUGIN_RAW_WRITES=true` **+** `SAP_ALLOW_WRITES=true` | `write` |
-| Run a console class (`ctx.run.classRun`) | `write` | `W` | `SAP_ALLOW_PLUGIN_EXECUTE=true` **+** `SAP_ALLOW_WRITES=true` | `write` |
+| Run a class/report (`ctx.run.classRun` / `programRun`) | `write` | `W` | `SAP_ALLOW_PLUGIN_EXECUTE=true` **+** `SAP_ALLOW_WRITES=true` | `write` |
 | Create / update / delete an **ADT object** *(v2)* | `write` | `C`/`U`/`D` | `SAP_ALLOW_WRITES=true` **+** target package in `SAP_ALLOWED_PACKAGES` | `write` |
 | Table-content preview *(v2)* | `data` | `Q` | `SAP_ALLOW_DATA_PREVIEW=true` | `data` |
 | Free-style SQL *(v2)* | `sql` | `F` | `SAP_ALLOW_FREE_SQL=true` | `sql` |
 
-Live today: reads, the gated **OData/ICF write**, and `classRun`. The *(v2)* rows — ADT **object**
+Live today: reads, the gated **OData/ICF write**, and named class/report execution. The *(v2)* rows — ADT **object**
 writes, data preview, SQL — wait for the package-aware `ctx.write` surface and scoped `ctx.data`/`ctx.sql`.
 
 Key points:
@@ -280,10 +345,10 @@ Key points:
 - **`custom` scopes are not supported.** Reuse the 7 built-in scopes — XSUAA scopes are deploy-time
   static (`xs-security.json`), so reuse maps cleanly to existing roles. See
   [Authorization & Roles](authorization.md).
-- **Admins keep the kill switch.** `SAP_DENY_ACTIONS=Custom_*` removes all plugin tools;
-  `SAP_DENY_ACTIONS=Custom_Foo` removes one.
-- **Code execution is opt-in + default off.** `ctx.run.classRun` requires `SAP_ALLOW_PLUGIN_EXECUTE=true`
-  **and** `SAP_ALLOW_WRITES=true` **and** a `write`-scoped tool (see [Executing ABAP](#executing-abap-console-classes)).
+- **Disable extensions through configuration.** Remove the path from `ARC1_PLUGINS` and restart to unload it (clear the setting to unload all plugins). `SAP_DENY_ACTIONS` accepts built-in tool names only; `Custom_*` rules fail startup validation.
+- **Code execution is opt-in + default off.** `ctx.run.classRun` and `ctx.run.programRun` require
+  `SAP_ALLOW_PLUGIN_EXECUTE=true` **and** `SAP_ALLOW_WRITES=true` **and** a `write`-scoped tool (see
+  [Executing ABAP](#executing-abap-classes-and-reports)).
 - **System-type visibility.** A tool may declare `availableOn: 'onprem' | 'btp'` (default `all`); it is
   hidden from `tools/list` when the resolved system type is known and differs.
 - **Trust model:** plugins are **trusted in-process code** (see the danger callout above), loaded
@@ -292,7 +357,7 @@ Key points:
 - **`policy.opType` is checked at registration, not per HTTP call.** The declared `scope` must cover
   the `opType`'s required scope (a tool can't claim `read` while declaring a write op, else it
   fails-fast at load). In v1 the *runtime* gates are `ctx.http`'s method + raw-write-opt-in checks and
-  `classRun`'s own checks; `opType` is reused for v2's write gating.
+  `ctx.run`'s own checks; `opType` is reused for v2's write gating.
 
 ---
 
@@ -309,13 +374,21 @@ When the MCP client supports them, `ctx` also offers (capability-detected — `u
 ## Testing
 
 Unit-test a handler with **no live SAP** using `createMockToolContext` from `arc-1/public/testing` — it
-records `ctx.http` calls and returns a configured body:
+records `ctx.http`, `ctx.run.classRun`, and `ctx.run.programRun` calls and returns configured output:
 
 ```ts
 import { createMockToolContext } from 'arc-1/public/testing';
 const ctx = createMockToolContext({ responseBody: 'REPORT ZX.\nWRITE 1.' });
 const res = await myTool.handler({ name: 'ZX' }, ctx);
 expect(ctx.httpCalls[0].path).toContain('/programs/ZX/');
+```
+
+For a report tool:
+
+```ts
+const ctx = createMockToolContext({ programRunOutput: 'Report output' });
+const res = await myReportTool.handler({ reportName: 'ZREPORT' }, ctx);
+expect(ctx.programRunCalls).toEqual(['ZREPORT']);
 ```
 
 ---
@@ -364,7 +437,7 @@ the plugin path.
 - **Per-user principal propagation still applies** — a plugin's `ctx` carries the per-user (PP) SAP
   client, so its calls run as the calling SAP user, same as built-in tools.
 - **Execution is per-deployment opt-in.** `SAP_ALLOW_PLUGIN_EXECUTE` / `SAP_ALLOW_WRITES` are server
-  env (`cf set-env` / MTA) — set them only where you intend plugins to run classes.
+  env (`cf set-env` / MTA) — set them only where you intend plugins to run classes or reports.
 - **Trust = supply chain.** Plugins are baked into the deploy artifact and reviewed with it; there is
   no runtime upload. Keep `ARC1_PLUGINS` under the same change control as the rest of the app.
 
@@ -372,7 +445,7 @@ the plugin path.
 
 ## Roadmap (v2)
 
-v1 ships **reads**, gated **non-ADT (OData/ICF) writes**, and **`classRun`**. The biggest remaining v2
+v1 ships **reads**, gated **non-ADT (OData/ICF) writes**, and named **class/report execution**. The biggest remaining v2
 item is the **package-aware ADT *object* write surface** — a `ctx.write` vocabulary that routes
 CLAS/DDLS/… writes through the same package-allowlist gate built-in `SAPWrite` uses (so a plugin still
 can't write outside `SAP_ALLOWED_PACKAGES`). Also planned: a safe per-user `ctx.cache`, directory +

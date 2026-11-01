@@ -48,3 +48,22 @@ Live evidence: `objectType=INTF/OI` search returns `adtcore:type="INTF/OI"` refe
 - Keep as-is.
 - **Breaking change**: none.
 - **Test gap to close**: covered by the same `normalize-types` test suggested for CLAS.
+
+
+## Relation Explorer identity evidence — SAP_BASIS 758 (2026-09-10)
+
+This dated section concerns read-only relationship roots, not new SAPRead operations, writes, or a global slash alias. The metadata root and `adtcore:type` attribute below were retained from an actual metadata **GET**, not a create template. Namespace prefixes are preserved. Authors, descriptions and unrelated fields were removed; identity values were not invented or rewritten.
+
+### INTF/OI
+
+- Observed object: `ZIF_SSI_IMPORTER`; GET `/sap/bc/adt/oo/interfaces/zif_ssi_importer`.
+- Recorded: 2026-09-09T22:07:49.315Z; metadata QName: `intf:abapInterface`.
+- [Sanitized wire fixture](../../../../tests/fixtures/relations/intf-oi.json) also preserves one observed ENV edge and original-body SHA-256 values. It is a projection, not a complete network.
+
+```xml
+<intf:abapInterface adtcore:name="ZIF_SSI_IMPORTER" adtcore:type="INTF/OI" adtcore:version="active" xmlns:intf="http://www.sap.com/adt/oo/interfaces" xmlns:abapoo="http://www.sap.com/adt/oo" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core">
+<adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/zssi_importer" adtcore:type="DEVC/K" adtcore:name="ZSSI_IMPORTER"/>
+</intf:abapInterface>
+```
+
+Qualification and limitations: [per-type research](../../2026-09-10-live-relations-types.md). CI binds every qualified native identity to this document and replays the independent recorded fixtures. This proves the observed 758 shapes, not support on other releases or relationship completeness.

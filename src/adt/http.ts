@@ -1,41 +1,21 @@
 /**
- * ADT HTTP Transport for ARC-1.
- *
- * Handles all HTTP communication with SAP ADT REST API:
- * - CSRF token lifecycle (fetch, cache, refresh on 403)
- * - Cookie-based and Basic auth
- * - Stateful sessions (lock → modify → unlock must share session)
- * - Automatic retry on session expiry
- *
- * Design decisions:
- *
- * 1. CSRF token fetch uses HEAD /sap/bc/adt/core/discovery with "X-CSRF-Token: fetch".
- *    HEAD is ~5s vs ~56s for GET on slow systems (learned from Go version benchmarks).
- *
- * 2. Modifying requests (POST/PUT/DELETE/PATCH) auto-include CSRF token.
- *    On 403, token is refreshed and request is retried once.
- *    (Pattern from both abap-adt-api and fr0ster implementations.)
- *
- * 3. Stateful sessions use "X-sap-adt-sessiontype: stateful" header.
- *    Lock/modify/unlock must use the same session cookies.
- *    withStatefulSession() ensures session isolation.
- *
- * 4. sap-client and sap-language are added to every request as query params.
- *    This is an SAP convention, not ADT-specific.
- *
- * 5. Uses native fetch() with undici dispatchers for proxy and TLS configuration.
- *    No external HTTP dependencies — undici ships with Node.js 22+.
+ * SAP ADT HTTP transport: authentication, cookies, CSRF and bounded retries.
+ * Modifying requests fetch a token when needed and refresh it once on HTTP 403.
+ * Stateful writes share cookies and one proxy connection through lock/save/unlock,
+ * then close their SAP context. Requests carry the configured client and language.
+ * Uses undici dispatchers for direct, proxy and custom-TLS connections.
  */
 
 import type { BTPProxyConfig } from '@arc-mcp/xsuaa-auth/btp';
-import { Agent, Client, type Dispatcher, fetch as undiciFetch } from 'undici';
+import { Agent, Client, type Dispatcher } from 'undici';
 import { getCurrentContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
 import { traceHeaders } from '../server/trace-context.js';
-import { capResponseBody, connectivityProxyResponse } from './bounded-response.js';
+import { acceptFallback } from './accept-fallback.js';
+import { connectivityProxyResponse, prepareBoundedResponse } from './bounded-response.js';
 import { resolveCookies } from './cookies.js';
 import { resolveAcceptType, resolveContentType } from './discovery.js';
-import { AdtApiError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
+import { AdtApiError, AdtCsrfBootstrapError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
 import {
   type AdtRequestOptions,
   awaitWithinRequestBudget,
@@ -45,10 +25,16 @@ import {
   throwIfRequestCancelled,
   withoutResponseBudget,
 } from './http-deadline.js';
+import { parseRetryAfter } from './http-retry-after.js';
 import { prepareDataPreviewWireBody } from './http-wire-body.js';
+import { legacyContentHandlerFallback, rejectEmptyAdtHtmlResponse } from './legacy-content-handler.js';
+import { fetchWithAttemptBudget } from './request-attempt-budget.js';
+import { hasSecuritySessionCookie, SecuritySessionGate } from './security-session-gate.js';
 import type { Semaphore } from './semaphore.js';
+import { resolveSapUserAgent } from './user-agent.js';
 
 export type { AdtRequestOptions } from './http-deadline.js';
+export { parseRetryAfter } from './http-retry-after.js';
 
 /**
  * Opt-in wire-level debug logging.
@@ -66,6 +52,7 @@ const HTTP_DEBUG_REDACT_HEADERS = new Set([
   'cookie',
   'set-cookie',
   'x-csrf-token',
+  'sap-contextid',
   'sap-connectivity-authentication',
   'proxy-authorization',
   'password', // abapGit bridge credential header (base64 is not encryption)
@@ -124,6 +111,7 @@ export interface AdtHttpConfig {
   password?: string;
   client?: string;
   language?: string;
+  userAgent?: string;
   insecure?: boolean;
   /** Gzip non-empty data-preview POST bodies for approved WAF compatibility. */
   gzipDataPreviewBody?: boolean;
@@ -188,9 +176,13 @@ interface AuthenticationAttemptState {
 export class AdtHttpClient {
   private discoveryMap: Map<string, string[]> = new Map();
   private negotiatedHeaders: Map<string, { accept?: string; contentType?: string }> = new Map();
+  private readonly userAgent: string;
   private csrfToken = '';
   private dispatcher: Dispatcher | undefined;
   private longOperationDispatcher: Dispatcher | undefined;
+  private statefulProxyClient: Client | undefined;
+  // Owned only by a withStatefulSession clone, including its final stateless close request.
+  private reuseStatefulProxyClient = false;
   private config: AdtHttpConfig;
   /**
    * Cookie jar — stores Set-Cookie headers from responses and sends them back.
@@ -208,10 +200,13 @@ export class AdtHttpClient {
   private dbRetryInProgress = false;
   /** Set after a 401 clears stale cookies — triggers file reload on the next request */
   private cookiesCleared = false;
+  /** Keeps a cold client at one SAP security session (see security-session-gate.ts). */
+  private readonly securitySessionGate = new SecuritySessionGate();
   /** Shared by stateful clones so one rejected Basic credential cannot fan out internally. */
   private readonly authenticationAttemptState: AuthenticationAttemptState;
   constructor(config: AdtHttpConfig, authenticationAttemptState?: AuthenticationAttemptState) {
     this.config = config;
+    this.userAgent = resolveSapUserAgent(config.userAgent);
     this.authenticationAttemptState = authenticationAttemptState ?? { rejected: false, tail: Promise.resolve() };
 
     // Set up undici dispatcher for TLS configuration (non-proxy mode only).
@@ -231,6 +226,16 @@ export class AdtHttpClient {
   /** True once ADT discovery has been loaded — lets callers distinguish "capability absent" from "unknown". */
   hasDiscoveryData(): boolean {
     return this.discoveryMap.size > 0;
+  }
+
+  /** Exact collection presence; no Accept entries still means present. Undefined means discovery is unknown. */
+  hasDiscoveryCollection(path: string): boolean | undefined {
+    return this.hasDiscoveryData() ? this.discoveryMap.has(path) : undefined;
+  }
+
+  /** Requested SAP language; the response may still contain fallback translations. */
+  get language(): string | undefined {
+    return this.config.language;
   }
 
   /** The Accept media type ADT discovery advertises for a collection path, or undefined. Used for capability gating. */
@@ -286,10 +291,13 @@ export class AdtHttpClient {
    * Execute a function within an isolated stateful session.
    * Ensures lock/modify/unlock share the same SAP session cookies.
    *
-   * Creates a new client instance with stateful session header,
-   * shares CSRF token with the main client.
+   * Creates a new client instance with the stateful session header,
+   * shares the main client's request state, and closes the backend context.
    */
-  async withStatefulSession<T>(fn: (client: AdtHttpClient) => Promise<T>): Promise<T> {
+  async withStatefulSession<T>(
+    fn: (client: AdtHttpClient) => Promise<T>,
+    cleanup?: { timeoutMs: number; noReplay: boolean; onClose: (closed: boolean | undefined) => void },
+  ): Promise<T> {
     const sessionConfig: AdtHttpConfig = {
       ...this.config,
       sessionType: 'stateful',
@@ -298,9 +306,64 @@ export class AdtHttpClient {
     // Share CSRF token and cookies so we don't need to re-fetch
     sessionClient.csrfToken = this.csrfToken;
     sessionClient.cookieJar = new Map(this.cookieJar);
+    sessionClient.cookieJar.delete('sap-contextid'); // A new write must open its own application context.
     sessionClient.discoveryMap = this.discoveryMap;
     sessionClient.negotiatedHeaders = new Map(this.negotiatedHeaders);
-    return fn(sessionClient);
+    sessionClient.reuseStatefulProxyClient = true;
+
+    try {
+      return await fn(sessionClient);
+    } finally {
+      const closed = await sessionClient.closeStatefulSession(
+        cleanup
+          ? {
+              deadline: Date.now() + cleanup.timeoutMs,
+              retryTransientErrors: false,
+              noReplay: cleanup.noReplay,
+            }
+          : undefined,
+      );
+      cleanup?.onClose(closed);
+      try {
+        await sessionClient.statefulProxyClient?.close();
+      } catch {
+        logger.warn('Failed to close stateful Connectivity proxy client.');
+      }
+    }
+  }
+
+  /** Close the SAP application context without changing the completed operation's result. */
+  private async closeStatefulSession(options?: AdtRequestOptions): Promise<boolean | undefined> {
+    const contextId = this.cookieJar.get('sap-contextid');
+    if (!contextId || contextId === '0') return;
+
+    // Eclipse ADT changes the same context to stateless while sending its dedicated close request.
+    // This client belongs only to withStatefulSession(), so it is not reused after the transition.
+    this.config.sessionType = 'stateless';
+    try {
+      try {
+        await this.get(
+          '/sap/bc/adt/core/http/sessions',
+          { Accept: '*/*', 'sap-adt-purpose': 'close-session', 'sap-contextid': contextId },
+          { probe: true, ...options },
+        );
+        return true;
+      } catch (error) {
+        if (!(error instanceof AdtApiError && error.statusCode === 404)) throw error;
+      }
+
+      // NW 7.50 lacks the close resource; its stateful-header backport closes on discovery instead.
+      await this.head('/sap/bc/adt/core/discovery', { Accept: '*/*' }, { probe: true, ...options });
+      return true;
+    } catch (error) {
+      // NW 7.50 can return 400 after closing. The reset cookie confirms that cleanup succeeded.
+      if (this.cookieJar.get('sap-contextid') === '0') return true;
+      // Preserve the write result/error and keep SAP response text out of cleanup warnings.
+      logger.warn('Failed to close stateful ADT session.', {
+        statusCode: error instanceof AdtApiError ? error.statusCode : undefined,
+      });
+      return false;
+    }
   }
 
   /** Core request method — wraps requestInner with optional concurrency limiter */
@@ -331,6 +394,7 @@ export class AdtHttpClient {
           throw error;
         }
         if (!options?.signal && options?.deadline === undefined) throw error;
+        if (options?.signal?.aborted) throwIfRequestCancelled(options);
         const cause = error instanceof Error ? error : new Error(String(error));
         throw new AdtNetworkError(cause.message, cause);
       }
@@ -380,6 +444,7 @@ export class AdtHttpClient {
     options?: AdtRequestOptions,
   ): Promise<AdtResponse> {
     throwIfRequestCancelled(options);
+    const expectBody = method !== 'HEAD';
     // Auto-fetch CSRF token for modifying requests
     if (isModifyingMethod(method) && !this.csrfToken) {
       await this.fetchCsrfToken(withoutResponseBudget(options));
@@ -418,8 +483,8 @@ export class AdtHttpClient {
       headers['X-SAP-SAML2'] = 'disabled';
     }
 
-    if (this.config.sessionType === 'stateful') {
-      headers['X-sap-adt-sessiontype'] = 'stateful';
+    if (this.config.sessionType) {
+      headers['X-sap-adt-sessiontype'] = this.config.sessionType;
     }
 
     if (contentType) {
@@ -469,28 +534,45 @@ export class AdtHttpClient {
     if (this.config.sapConnectivityAuth && !this.config.ppProxyAuth) {
       headers['SAP-Connectivity-Authentication'] = this.config.sapConnectivityAuth;
     }
-
-    const url = this.buildUrl(path);
+    // Quick-fix lookup includes queries (#993); old revision feeds append source paths to them. Use context headers.
+    const sapContextInHeaders =
+      (method === 'POST' && path.startsWith('/sap/bc/adt/quickfixes/proposals/')) ||
+      (method === 'GET' && /^\/sap\/bc\/adt\/[^?#]+\/versions$/.test(path));
+    if (sapContextInHeaders) {
+      if (this.config.client) headers['sap-client'] = this.config.client;
+      if (this.config.language) headers['sap-language'] = this.config.language;
+    }
+    const url = this.buildUrl(path, sapContextInHeaders);
     const httpStart = Date.now();
 
     // Per-request guards to prevent infinite retry loops
+    const retryTransientErrors = options?.noReplay !== true && options?.retryTransientErrors !== false;
     let negotiationRetried = false;
     let authRetried = false;
     let retried429 = false;
 
     try {
-      let response = await this.doFetch(url, method, headers, wireBody, options);
+      let response = await this.doFetch(
+        url,
+        method,
+        headers,
+        wireBody,
+        options,
+        this.config.retryUnauthorized !== false && options?.noReplay !== true,
+      );
       let responseBody = await response.text();
-
-      // Persist any Set-Cookie headers from the response
-      this.storeCookies(response);
 
       // Detect broken DB connection on the assigned work process.
       // SAP's ICM routes all requests with the same session cookie to the same
       // work process. If that WP has a broken HANA connection, every request fails
       // with "database connection is not open". Fix: clear the session to force
       // ICM to assign a different work process on retry.
-      if (response.status === 500 && this.isDbConnectionError(responseBody) && !this.dbRetryInProgress) {
+      if (
+        retryTransientErrors &&
+        response.status === 500 &&
+        this.isDbConnectionError(responseBody) &&
+        !this.dbRetryInProgress
+      ) {
         this.dbRetryInProgress = true;
         try {
           logger.emitAudit({
@@ -526,8 +608,7 @@ export class AdtHttpClient {
 
           const retryResp = await this.doFetch(url, method, headers, wireBody, options);
           const retryBody = await retryResp.text();
-          this.storeCookies(retryResp);
-          const retryResult = this.handleResponse(retryResp.status, retryResp.headers, retryBody, path);
+          const retryResult = this.handleResponse(retryResp.status, retryResp.headers, retryBody, path, expectBody);
 
           logger.emitAudit({
             timestamp: new Date().toISOString(),
@@ -547,11 +628,9 @@ export class AdtHttpClient {
       }
 
       // Handle 503 Service Unavailable — ICM thread/MPI exhaustion or WP overload.
-      // Retry ALL methods: a 503 means ICM rejected the request before it reached a work
-      // process, so the operation never executed — retrying is safe even for POST/PUT/DELETE.
+      // Legacy retries remain the default; ambiguous mutations can disable transient replay.
       // Retry happens INSIDE the semaphore slot to avoid increasing load on an overloaded system.
-      // Honors RFC 7231 Retry-After header when present; falls back to 1-2 s jitter otherwise.
-      if (response.status === 503) {
+      if (response.status === 503 && retryTransientErrors) {
         const { delayMs: jitterMs, source } = parseRetryAfter(
           response.headers.get('retry-after'),
           1000 + Math.random() * 1000,
@@ -569,9 +648,9 @@ export class AdtHttpClient {
 
         await sleepWithinRequestBudget(jitterMs, options);
 
+        this.refreshSessionHeaders(method, headers);
         const retryResp = await this.doFetch(url, method, headers, wireBody, options);
         const retryBody = await retryResp.text();
-        this.storeCookies(retryResp);
 
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -584,17 +663,13 @@ export class AdtHttpClient {
           errorBody: `503 retry completed (${retryResp.status})`,
         });
 
-        return this.handleResponse(retryResp.status, retryResp.headers, retryBody, path);
+        return this.handleResponse(retryResp.status, retryResp.headers, retryBody, path, expectBody);
       }
 
       // Handle 429 Too Many Requests — emitted by SAP Web Dispatcher, BTP API
-      // Management, or any upstream gateway throttling us. Like 503, the request did
-      // not reach a SAP work process, so retrying ALL methods is safe (gateway-level
-      // rejection, never partial execution). Honors RFC 7231 Retry-After when present;
-      // falls back to 1-2 s jitter. Single retry only — per-request `retried429` guard
-      // prevents loops. If the upstream is still throttling on the second attempt, we
-      // surface the 429 to the caller for them to back off at the agent/LLM layer.
-      if (response.status === 429 && !retried429) {
+      // Management, or any upstream gateway throttling us. Honors Retry-After when present;
+      // otherwise wait 1-2 s. Surface a repeated 429 without a third attempt.
+      if (response.status === 429 && !retried429 && retryTransientErrors) {
         retried429 = true;
         const { delayMs: jitterMs, source } = parseRetryAfter(
           response.headers.get('retry-after'),
@@ -613,9 +688,9 @@ export class AdtHttpClient {
 
         await sleepWithinRequestBudget(jitterMs, options);
 
+        this.refreshSessionHeaders(method, headers);
         const retryResp = await this.doFetch(url, method, headers, wireBody, options);
         const retryBody = await retryResp.text();
-        this.storeCookies(retryResp);
 
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -628,14 +703,19 @@ export class AdtHttpClient {
           errorBody: `429 retry completed (${retryResp.status})`,
         });
 
-        return this.handleResponse(retryResp.status, retryResp.headers, retryBody, path);
+        return this.handleResponse(retryResp.status, retryResp.headers, retryBody, path, expectBody);
       }
 
       // Handle 401 session timeout — reset session and retry once.
       // Uses per-request guard (not instance-level) so concurrent requests each get their own retry.
       // On success, reassigns response/responseBody and falls through to downstream handlers
       // (403 CSRF, 406/415 negotiation) so combined-failure recovery works.
-      if (response.status === 401 && !authRetried && this.config.retryUnauthorized !== false) {
+      if (
+        response.status === 401 &&
+        !authRetried &&
+        this.config.retryUnauthorized !== false &&
+        options?.noReplay !== true
+      ) {
         authRetried = true;
 
         logger.emitAudit({
@@ -648,9 +728,6 @@ export class AdtHttpClient {
           durationMs: Date.now() - httpStart,
           errorBody: '401 session expired — resetting session and retrying',
         });
-
-        // Clear session to force fresh authentication
-        this.resetSession();
 
         // Pick up an out-of-band rotated cookie file so the call that observes the
         // expiry can recover; the lazy `cookiesCleared` reload stays the fallback.
@@ -683,7 +760,6 @@ export class AdtHttpClient {
 
         response = await this.doFetch(url, method, headers, wireBody, options);
         responseBody = await response.text();
-        this.storeCookies(response);
 
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -707,7 +783,7 @@ export class AdtHttpClient {
       }
 
       // Handle CSRF token refresh on 403 (modifying requests only)
-      if (response.status === 403 && isModifyingMethod(method)) {
+      if (options?.noReplay !== true && response.status === 403 && isModifyingMethod(method)) {
         await this.fetchCsrfToken(withoutResponseBudget(options));
         headers['X-CSRF-Token'] = this.csrfToken;
         // Update cookie header after CSRF fetch may have set new cookies. Use the
@@ -717,51 +793,38 @@ export class AdtHttpClient {
         if (csrfRefreshedCookieHeader) {
           headers.Cookie = csrfRefreshedCookieHeader;
         }
-        const retryResponse = await this.doFetch(url, method, headers, wireBody, options);
-        const retryBody = await retryResponse.text();
-        this.storeCookies(retryResponse);
-        const result = this.handleResponse(retryResponse.status, retryResponse.headers, retryBody, path);
-
-        logger.emitAudit({
-          timestamp: new Date().toISOString(),
-          level: 'info',
-          event: 'http_request',
-          method,
-          path,
-          statusCode: retryResponse.status,
-          durationMs: Date.now() - httpStart,
-        });
-
-        return result;
+        response = await this.doFetch(url, method, headers, wireBody, options);
+        responseBody = await response.text();
+        // A refreshed session can still need legacy content negotiation below (#996).
       }
 
-      // Handle 406/415 content negotiation failure — retry once with fallback headers
-      if ((response.status === 406 || response.status === 415) && !negotiationRetried) {
+      // Retry negotiation once, including the narrowly matched NW 7.40 handler error.
+      const legacyFallback = legacyContentHandlerFallback(
+        response.status,
+        responseBody,
+        method,
+        negotiationKey,
+        headers,
+      );
+      if (
+        options?.noReplay !== true &&
+        (response.status === 406 || response.status === 415 || legacyFallback) &&
+        !negotiationRetried
+      ) {
         negotiationRetried = true;
         const fallbackHeaders = { ...headers };
 
         let headersChanged = false;
 
-        if (response.status === 406) {
-          // Server rejected our Accept header — try fallback
-          const inferred = inferAcceptFromError(responseBody);
-          if (inferred && inferred !== fallbackHeaders.Accept) {
-            fallbackHeaders.Accept = inferred;
-            headersChanged = true;
-          } else if (
-            fallbackHeaders.Accept &&
-            fallbackHeaders.Accept !== '*/*' &&
-            fallbackHeaders.Accept !== 'application/xml'
-          ) {
-            // Fall back to generic XML first
-            fallbackHeaders.Accept = 'application/xml';
-            headersChanged = true;
-          } else if (fallbackHeaders.Accept === 'application/xml') {
-            // application/xml was already rejected — fall back to wildcard
-            fallbackHeaders.Accept = '*/*';
+        if (legacyFallback) {
+          Object.assign(fallbackHeaders, legacyFallback);
+          headersChanged = true;
+        } else if (response.status === 406) {
+          const fallback = acceptFallback(responseBody, fallbackHeaders.Accept, method, negotiationKey);
+          if (fallback) {
+            fallbackHeaders.Accept = fallback;
             headersChanged = true;
           }
-          // If Accept is already */* and no inferred type, no useful fallback — skip retry
         } else {
           // 415: Server rejected our Content-Type — try fallbacks:
           // 1. Specific type → application/xml (common for vendor-type mismatches)
@@ -792,17 +855,11 @@ export class AdtHttpClient {
             errorBody: `Content negotiation ${response.status} — retrying with fallback headers`,
           });
 
+          this.refreshSessionHeaders(method, fallbackHeaders);
           const retryResp = await this.doFetch(url, method, fallbackHeaders, wireBody, options);
           const retryBody = await retryResp.text();
-          this.storeCookies(retryResp);
 
-          // Store CSRF token from retry response
-          const retryToken = retryResp.headers.get('x-csrf-token');
-          if (retryToken && retryToken !== 'Required') {
-            this.csrfToken = retryToken;
-          }
-
-          const retryResult = this.handleResponse(retryResp.status, retryResp.headers, retryBody, path);
+          const retryResult = this.handleResponse(retryResp.status, retryResp.headers, retryBody, path, expectBody);
 
           const currentContentType = contentType ?? headers['Content-Type'];
           const negotiated: { accept?: string; contentType?: string } = {};
@@ -812,7 +869,8 @@ export class AdtHttpClient {
           if (retryContentType !== currentContentType) {
             negotiated.contentType = retryContentType;
           }
-          if (negotiated.accept || negotiated.contentType) {
+          // Keep the #907 legacy fallback uncached; only successful 406/415 results are reusable.
+          if (!legacyFallback && (negotiated.accept || negotiated.contentType)) {
             this.negotiatedHeaders.set(negotiationKey, negotiated);
           }
 
@@ -832,13 +890,7 @@ export class AdtHttpClient {
         // No meaningful header change — fall through to normal error handling
       }
 
-      // Store CSRF token from response
-      const responseToken = response.headers.get('x-csrf-token');
-      if (responseToken && responseToken !== 'Required') {
-        this.csrfToken = responseToken;
-      }
-
-      const result = this.handleResponse(response.status, response.headers, responseBody, path);
+      const result = this.handleResponse(response.status, response.headers, responseBody, path, expectBody);
 
       logger.emitAudit({
         timestamp: new Date().toISOString(),
@@ -889,6 +941,7 @@ export class AdtHttpClient {
       }
 
       if (err instanceof AdtNetworkError || err instanceof AdtResponseLimitError) throw err;
+      if (options?.signal?.aborted) throwIfRequestCancelled(options);
 
       const message = err instanceof Error ? err.message : String(err);
       throw new AdtNetworkError(message, err instanceof Error ? err : undefined);
@@ -902,21 +955,12 @@ export class AdtHttpClient {
     return withoutQuery.endsWith('/') && withoutQuery.length > 1 ? withoutQuery.slice(0, -1) : withoutQuery;
   }
 
+  /**
+   * Negotiated headers apply only to the exact normalized resource. Metadata media types must not
+   * override source, structure or version resources, which use their own negotiation or discovery.
+   */
   private resolveNegotiatedHeaders(path: string): { accept?: string; contentType?: string } | undefined {
-    let matched: { accept?: string; contentType?: string } | undefined;
-    let matchedPathLength = -1;
-
-    for (const [prefix, headers] of this.negotiatedHeaders.entries()) {
-      const isExact = path === prefix;
-      const isChild = path.startsWith(`${prefix}/`);
-      if (!isExact && !isChild) continue;
-      if (prefix.length > matchedPathLength) {
-        matched = headers;
-        matchedPathLength = prefix.length;
-      }
-    }
-
-    return matched;
+    return this.negotiatedHeaders.get(path);
   }
 
   private notifyUnauthorized(path: string): void {
@@ -931,13 +975,13 @@ export class AdtHttpClient {
   }
 
   /** Handle response: throw on error status, return normalized response */
-  private handleResponse(status: number, headers: Headers, body: string, path: string): AdtResponse {
+  private handleResponse(status: number, headers: Headers, body: string, path: string, expectBody = true): AdtResponse {
     const contentType = headers.get('content-type')?.toLowerCase();
-    const isCoreDiscovery = path.split('?', 1)[0] === '/sap/bc/adt/core/discovery';
+    const isDiscovery = ['/sap/bc/adt/core/discovery', '/sap/bc/adt/discovery'].includes(path.split('?', 1)[0]!);
     if (
       status === 200 &&
       path.startsWith('/sap/bc/adt/') &&
-      (contentType?.startsWith('text/html') || isCoreDiscovery) &&
+      (contentType?.startsWith('text/html') || isDiscovery) &&
       looksLikeLoginPage(body)
     ) {
       if (this.isCookieAuthMode()) {
@@ -951,6 +995,8 @@ export class AdtHttpClient {
         body.slice(0, 500),
       );
     }
+
+    if (expectBody) rejectEmptyAdtHtmlResponse(status, contentType, body, path);
 
     if (status >= 400) {
       if (status === 401) {
@@ -974,18 +1020,19 @@ export class AdtHttpClient {
 
   /**
    * Fetch CSRF token from SAP.
-   * Uses HEAD /sap/bc/adt/core/discovery for speed.
+   * Uses core discovery first, then legacy discovery when the core resource is unavailable.
+   * Returns the endpoint that supplied the token for startup diagnostics.
    */
-  async fetchCsrfToken(options?: AdtRequestOptions): Promise<void> {
+  async fetchCsrfToken(options?: AdtRequestOptions): Promise<string> {
     throwIfRequestCancelled(options);
-    const url = this.buildUrl('/sap/bc/adt/core/discovery');
+    let path = '/sap/bc/adt/core/discovery';
     const headers: Record<string, string> = {
       'X-CSRF-Token': 'fetch',
       Accept: '*/*',
     };
 
-    if (this.config.sessionType === 'stateful') {
-      headers['X-sap-adt-sessiontype'] = 'stateful';
+    if (this.config.sessionType) {
+      headers['X-sap-adt-sessiontype'] = this.config.sessionType;
     }
 
     if (this.config.disableSaml) {
@@ -1014,98 +1061,105 @@ export class AdtHttpClient {
       this.reloadCookiesFromSource();
     }
 
-    // Include existing cookies (config + jar, jar wins) so the session is maintained.
-    const cookieHeader = this.composeCookieHeader();
-    if (cookieHeader) {
-      headers.Cookie = cookieHeader;
-    }
+    // Every probe keeps the same identity, current cookies and caller's request budget.
+    const probe = async (method: 'HEAD' | 'GET'): Promise<Response> => {
+      const cookieHeader = this.composeCookieHeader();
+      if (cookieHeader) headers.Cookie = cookieHeader;
+      else delete headers.Cookie;
+      const started = Date.now();
+      const response = await this.doFetch(this.buildUrl(path), method, headers, undefined, options);
+      logger.emitAudit({
+        timestamp: new Date().toISOString(),
+        level: 'debug',
+        event: 'http_csrf_fetch',
+        method,
+        path,
+        statusCode: response.status,
+        durationMs: Date.now() - started,
+        success: !!usableCsrfToken(response),
+        adtMode:
+          headers['X-sap-adt-sessiontype'] === undefined ? 'unspecified' : (this.config.sessionType ?? 'unspecified'),
+        hasContext: /(?:^|;\s*)sap-contextid=/.test(headers.Cookie ?? ''),
+      });
+      if (method === 'GET' && response.status === 200 && !usableCsrfToken(response)) {
+        // Check login pages, but preserve the header-only legacy discovery fallback.
+        this.handleResponse(response.status, response.headers, await response.text(), path, false);
+      }
+      // Optional analyses account for control bodies in the same streamed allowance.
+      if (options?.responseBudget?.countAllResponses && !response.bodyUsed) await response.arrayBuffer();
+      // Other callers need headers only; release GET bodies before a fallback or return.
+      if (!response.bodyUsed) await response.body?.cancel();
+      return response;
+    };
 
     try {
-      let response = await this.doFetch(url, 'HEAD', headers, undefined, options);
+      // HEAD avoids downloading discovery when supported; refused HEADs fall back to GET below.
+      let response = await probe('HEAD');
 
-      // Retry once on 503 — ICM may be temporarily overloaded (thread/MPI exhaustion)
-      if (response.status === 503) {
+      // Retry once on 503 — ICM may be temporarily overloaded (thread/MPI exhaustion).
+      if (response.status === 503 && options?.retryTransientErrors !== false) {
         const jitterMs = 1000 + Math.random() * 1000;
         logger.emitAudit({
           timestamp: new Date().toISOString(),
           level: 'warn',
           event: 'http_request',
           method: 'HEAD',
-          path: '/sap/bc/adt/core/discovery',
+          path,
           statusCode: 503,
           durationMs: 0,
           errorBody: `CSRF fetch got 503 — retrying in ${Math.round(jitterMs)}ms`,
         });
         await sleepWithinRequestBudget(jitterMs, options);
-        response = await this.doFetch(url, 'HEAD', headers, undefined, options);
+        response = await probe('HEAD');
       }
 
-      // Preserve any session established by HEAD before deciding whether GET is needed.
-      // The fallback request must use the same SAP session as the eventual write.
-      this.storeCookies(response);
-
-      const headToken = response.headers.get('x-csrf-token');
-      const headSucceededWithoutToken = response.ok && (!headToken || headToken.toLowerCase() === 'required');
-
-      // Some systems reject HEAD with 403; others accept it but omit the token. In both
-      // cases retry with GET, which is the broadly supported CSRF bootstrap method and
-      // also exposes a real authentication failure instead of a misleading HTTP 200 error.
-      if (response.status === 403 || headSucceededWithoutToken) {
-        const fallbackCookieHeader = this.composeCookieHeader();
-        if (fallbackCookieHeader) {
-          headers.Cookie = fallbackCookieHeader;
-        } else {
-          delete headers.Cookie;
-        }
-        logger.emitAudit({
-          timestamp: new Date().toISOString(),
-          level: response.status === 403 ? 'warn' : 'debug',
-          event: 'http_request',
-          method: 'HEAD',
-          path: '/sap/bc/adt/core/discovery',
-          statusCode: response.status,
-          durationMs: 0,
-          errorBody:
-            response.status === 403
-              ? 'CSRF HEAD returned 403 — retrying with GET (S/4HANA Public Cloud compat)'
-              : 'CSRF HEAD returned no usable token — retrying with GET',
-        });
-        response = await this.doFetch(url, 'GET', headers, undefined, options);
+      // The tested 7.50/7.58/8.16 systems returned HEAD 400 with a token; GET returned 200.
+      // Retry these HEAD refusals or a successful response without a token on the same path.
+      // A successful HEAD with a usable token remains the one-request fast path.
+      const headStatus = response.status;
+      if ([400, 403, 405].includes(response.status) || (response.ok && !usableCsrfToken(response))) {
+        response = await probe('GET');
       }
 
-      // Store cookies from the final CSRF response — critical for session correlation.
-      this.storeCookies(response);
+      // Both stateful discovery probes can fail on affected routes (#1044). Bootstrap once
+      // without that header; keep identity/cookies and subsequent lock/write requests stateful.
+      if (this.config.sessionType === 'stateful' && headStatus === 400 && response.status === 400) {
+        delete headers['X-sap-adt-sessiontype'];
+        response = await probe('GET');
+      }
 
-      const token = response.headers.get('x-csrf-token');
-      if (!token || token === 'Required') {
+      // Older ADT handlers may return an empty 200 for a missing core resource (#817).
+      // A real auth/server failure must not be hidden by trying another endpoint.
+      if (response.status === 404 || response.status === 405 || (response.ok && !usableCsrfToken(response))) {
+        path = '/sap/bc/adt/discovery';
+        response = await probe('GET');
+      }
+
+      const token = usableCsrfToken(response);
+      if (!token) {
         if (response.status === 401) {
-          if (this.isCookieAuthMode()) {
-            this.clearCookiesAndMark();
-          }
-          this.notifyUnauthorized('/sap/bc/adt/core/discovery');
+          if (this.isCookieAuthMode()) this.clearCookiesAndMark();
+          this.notifyUnauthorized(path);
           throw new AdtApiError(
             `Authentication failed (401) using sap-client=${this.config.client ?? '100'}. Check SAP_CLIENT, SAP_USER, and SAP_PASSWORD.`,
             401,
-            '/sap/bc/adt/core/discovery',
+            path,
           );
         }
         if (response.status === 403) {
           throw new AdtApiError(
             `Access forbidden (403) using sap-client=${this.config.client ?? '100'}. Check user authorizations.`,
             403,
-            '/sap/bc/adt/core/discovery',
+            path,
           );
         }
-        throw new AdtApiError(
-          `No CSRF token in response (HTTP ${response.status})`,
-          response.status,
-          '/sap/bc/adt/core/discovery',
-        );
+        throw new AdtCsrfBootstrapError(`No CSRF token in response (HTTP ${response.status})`, response.status, path);
       }
 
-      this.csrfToken = token;
+      return path;
     } catch (err) {
       if (err instanceof AdtApiError || err instanceof AdtNetworkError) throw err;
+      if (options?.signal?.aborted) throwIfRequestCancelled(options);
       const message = err instanceof Error ? err.message : String(err);
       throw new AdtNetworkError(`CSRF token fetch failed: ${message}`, err instanceof Error ? err : undefined);
     }
@@ -1147,8 +1201,7 @@ export class AdtHttpClient {
    */
   private clearCookiesAndMark(): void {
     this.config.cookies = {};
-    this.cookieJar.clear();
-    this.csrfToken = '';
+    this.resetSession();
     this.cookiesCleared = true;
   }
 
@@ -1197,6 +1250,7 @@ export class AdtHttpClient {
   private resetSession(): void {
     this.cookieJar.clear();
     this.csrfToken = '';
+    this.securitySessionGate.reset();
   }
 
   /**
@@ -1230,11 +1284,16 @@ export class AdtHttpClient {
     return Array.from(merged, ([name, value]) => `${name}=${value}`).join('; ');
   }
 
-  private storeCookies(response: Response): void {
-    const setCookieHeaders = response.headers.getSetCookie();
-    if (!setCookieHeaders || setCookieHeaders.length === 0) return;
+  /** Read the current pair together after a wait or a response that can rotate the session. */
+  private refreshSessionHeaders(method: string, headers: Record<string, string>): void {
+    const cookie = this.composeCookieHeader();
+    if (cookie) headers.Cookie = cookie;
+    else delete headers.Cookie;
+    if (isModifyingMethod(method)) headers['X-CSRF-Token'] = this.csrfToken;
+  }
 
-    for (const cookie of setCookieHeaders) {
+  private storeCookies(response: Response): void {
+    for (const cookie of response.headers.getSetCookie() ?? []) {
       // Set-Cookie: name=value; Path=/; HttpOnly; ...
       const nameValue = cookie.split(';')[0];
       if (!nameValue) continue;
@@ -1246,19 +1305,19 @@ export class AdtHttpClient {
     }
   }
 
-  /** Build full URL with sap-client and sap-language query params */
-  private buildUrl(path: string): string {
+  /** Add SAP context query params unless the caller sends that context in headers. */
+  private buildUrl(path: string, sapContextInHeaders = false): string {
     const base = this.config.baseUrl.replace(/\/$/, '');
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     const url = new URL(base + normalizedPath);
 
-    if (this.config.client) {
+    if (this.config.client && !sapContextInHeaders) {
       url.searchParams.set('sap-client', this.config.client);
     }
-    if (this.config.language) {
+    if (this.config.language && !sapContextInHeaders) {
       url.searchParams.set('sap-language', this.config.language);
     }
-    if (this.config.disableSaml) {
+    if (this.config.disableSaml && !sapContextInHeaders) {
       url.searchParams.set('saml2', 'disabled');
     }
 
@@ -1306,13 +1365,52 @@ export class AdtHttpClient {
     headers: Record<string, string>,
     body?: string | Buffer,
     options?: AdtRequestOptions,
+    resetOnUnauthorized = false,
+  ): Promise<Response> {
+    const cookieNames = () => [...this.cookieJar.keys(), ...Object.keys(this.config.cookies ?? {})];
+    const response = await this.securitySessionGate.run(
+      () => hasSecuritySessionCookie(cookieNames()),
+      async (waited) => {
+        const generation = this.securitySessionGate.generation;
+        if (waited) {
+          // A preceding response may have replaced both fields while this send waited.
+          // Keep the refreshed pair for this logical request's negotiation/retry paths too.
+          this.refreshSessionHeaders(method, headers);
+        }
+        const response = await this.sendRequest(url, method, headers, body, options);
+        const fetchingCsrf = headers['X-CSRF-Token']?.toLowerCase() === 'fetch';
+        if (generation === this.securitySessionGate.generation) {
+          // Store once at the headers boundary, before releasing the bootstrap owner.
+          this.storeCookies(response);
+          // Ordinary responses (including 404) can carry a token without proving a Fetch probe succeeded.
+          const token = fetchingCsrf ? usableCsrfToken(response) : response.headers.get('x-csrf-token');
+          if (token && token !== 'Required') this.csrfToken = token;
+          // Reset before releasing waiters; a slow 401 body must not clear their new session.
+          if (resetOnUnauthorized && response.status === 401) this.resetSession();
+        } else if (fetchingCsrf) {
+          await response.body?.cancel();
+          throw new AdtNetworkError('SAP session changed during CSRF bootstrap. Retry the request.');
+        }
+        return response;
+      },
+      options,
+    );
+    return prepareBoundedResponse(response, url, options);
+  }
+
+  private async sendRequest(
+    url: string,
+    method: string,
+    headers: Record<string, string>,
+    body?: string | Buffer,
+    options?: AdtRequestOptions,
   ): Promise<Response> {
     throwIfRequestCancelled(options);
     // Forward the caller's W3C trace context to SAP so one trace spans agent → ARC-1 → SAP.
     // Empty unless the MCP client sent a valid `traceparent`; ARC-1 never originates a trace.
     // Injected here because doFetch is the single outbound choke point (the proxy branch below
     // spreads these headers too).
-    const outbound = { ...headers, ...traceHeaders(getCurrentContext()) };
+    const outbound = { ...headers, 'User-Agent': this.userAgent, ...traceHeaders(getCurrentContext()) };
 
     let response: Response;
     if (this.config.btpProxy) {
@@ -1324,15 +1422,21 @@ export class AdtHttpClient {
         (options?.fetchTimeoutMs === undefined
           ? undefined
           : (this.longOperationDispatcher ??= new Agent({ headersTimeout: 0, bodyTimeout: 0 })));
-      response = (await undiciFetch(url, {
-        method,
-        headers: outbound,
-        body,
-        signal: requestSignal(options),
-        ...(dispatcher ? { dispatcher } : {}),
-      })) as Response;
+      response = (await fetchWithAttemptBudget(
+        url,
+        {
+          method,
+          headers: outbound,
+          body,
+          signal: requestSignal(options),
+          // Automatic redirects would create uncounted sends outside the caller's allowance.
+          ...(options?.attemptBudget ? { redirect: 'manual' as const } : {}),
+          ...(dispatcher ? { dispatcher } : {}),
+        },
+        options?.attemptBudget,
+      )) as Response;
     }
-    return options?.responseBudget ? await capResponseBody(response, options.responseBudget) : response;
+    return response;
   }
 
   /**
@@ -1393,11 +1497,14 @@ export class AdtHttpClient {
       proxyHeaders['SAP-Connectivity-SCC-Location_ID'] = proxy.locationId;
     }
 
-    const clientOptions = options?.fetchTimeoutMs === undefined ? undefined : { headersTimeout: 0, bodyTimeout: 0 };
-    const client = new Client(proxyOrigin, clientOptions);
+    // Streaming/discard adapters own their client and may close or destroy it.
+    const reuseProxyClient =
+      this.reuseStatefulProxyClient && options?.responseBudget === undefined && !options?.discardResponseBody;
+    const client = reuseProxyClient ? (this.statefulProxyClient ??= new Client(proxyOrigin)) : new Client(proxyOrigin);
     let responseOwnsClient = false;
     try {
       const signal = requestSignal(options);
+      options?.attemptBudget?.consume();
       const resp = await client.request({
         method: method as Dispatcher.HttpMethod,
         // Full URL as path — standard HTTP proxy protocol
@@ -1405,13 +1512,23 @@ export class AdtHttpClient {
         headers: proxyHeaders,
         body: body ?? undefined,
         signal,
+        // A reused client's first request must not determine later requests' parser timeouts.
+        // The per-request abort signal still enforces fetchTimeoutMs and the caller deadline.
+        ...(options?.fetchTimeoutMs === undefined ? {} : { headersTimeout: 0, bodyTimeout: 0 }),
       });
 
       const isNullBodyStatus = resp.statusCode === 204 || resp.statusCode === 205 || resp.statusCode === 304;
-      responseOwnsClient = options?.responseBudget !== undefined && !isNullBodyStatus;
-      return await connectivityProxyResponse(resp, client, signal, options?.responseBudget !== undefined);
+      responseOwnsClient =
+        !!options?.discardResponseBody || (options?.responseBudget !== undefined && !isNullBodyStatus);
+      return await connectivityProxyResponse(
+        resp,
+        client,
+        signal,
+        options?.responseBudget !== undefined,
+        options?.discardResponseBody,
+      );
     } finally {
-      if (!responseOwnsClient) await client.close();
+      if (!reuseProxyClient && !responseOwnsClient) await client.close();
     }
   }
 }
@@ -1421,56 +1538,10 @@ function isModifyingMethod(method: string): boolean {
   return ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method.toUpperCase());
 }
 
-/**
- * Parse RFC 7231 `Retry-After` header into a delay in milliseconds.
- *
- * Accepts both forms allowed by the spec:
- * - delta-seconds (e.g. `"5"`)
- * - HTTP-date (e.g. `"Wed, 12 May 2026 14:30:00 GMT"`)
- *
- * On missing, NaN, malformed, past-date, or negative input, falls back to `fallbackMs`.
- * Always clamps to `[0, 60_000]` ms so a misbehaving gateway can't stall us indefinitely
- * and a too-small/past value can't degenerate into a hot retry loop.
- *
- * Returns `{ delayMs, source }` — `source: 'header' | 'fallback'` lets audit events
- * record whether the delay came from the server or from our jitter floor (useful for
- * capacity tuning).
- */
-export function parseRetryAfter(
-  header: string | null | undefined,
-  fallbackMs: number,
-): { delayMs: number; source: 'header' | 'fallback' } {
-  const clamp = (ms: number): number => Math.max(0, Math.min(60_000, ms));
-  if (header == null || header === '') {
-    return { delayMs: clamp(fallbackMs), source: 'fallback' };
-  }
-  const trimmed = header.trim();
-  // delta-seconds form: integer (and only digits, optionally signed)
-  if (/^-?\d+$/.test(trimmed)) {
-    const seconds = Number.parseInt(trimmed, 10);
-    if (Number.isFinite(seconds)) {
-      return { delayMs: clamp(seconds * 1000), source: 'header' };
-    }
-    return { delayMs: clamp(fallbackMs), source: 'fallback' };
-  }
-  // HTTP-date form
-  const epochMs = Date.parse(trimmed);
-  if (Number.isFinite(epochMs)) {
-    return { delayMs: clamp(epochMs - Date.now()), source: 'header' };
-  }
-  return { delayMs: clamp(fallbackMs), source: 'fallback' };
-}
-
-/**
- * Try to extract an accepted media type from a SAP 406 error response body.
- *
- * SAP sometimes includes the expected media type in error text, e.g.:
- *   "...expected application/vnd.sap.adt.transportorganizertree.v1+xml..."
- * Returns the extracted media type or undefined if none found.
- */
-function inferAcceptFromError(body: string): string | undefined {
-  const match = body.match(/application\/[\w.+-]+(?:\/[\w.+-]+)?/);
-  return match?.[0];
+/** A token on an unsuccessful response is not proof of authentication. */
+function usableCsrfToken(response: Response): string | undefined {
+  const token = response.headers.get('x-csrf-token')?.trim();
+  return response.ok && token && token.toLowerCase() !== 'required' ? token : undefined;
 }
 
 /**

@@ -67,6 +67,7 @@ function rcLabel(rc: number): string {
 
 /** Convert SAP's UTC YYYYMMDDHHMMSS FIRSTCALL value to ISO-8601. */
 export function parseFirstCallTs(raw: string): string {
+  raw = raw.trim(); // SAP's numeric preview values can include a trailing sign blank.
   if (!/^\d{14}$/.test(raw)) return '';
 
   const year = Number(raw.slice(0, 4));
@@ -110,7 +111,7 @@ export function decodeAuthTraceRows(
 
     const rc = Number(row.RC);
     const program = row.ABAPPROG ?? '';
-    const line = row.ABAPLINE ?? '';
+    const line = (row.ABAPLINE ?? '').trim();
 
     return {
       user: row.USERNAME ?? '',

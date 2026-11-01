@@ -18,6 +18,19 @@ ChatGPT/Codex, and other clients listed by the
 [Agent Plugins project](https://agent-plugins.org/compatible-clients). Component support varies by
 client; ARC-1 uses the two portable 1.0 components, Agent Skills and stdio MCP.
 
+## Optional editor links
+
+The Claude Code plugin and Desktop bundle include per-connection editor preferences. Leave
+**Eclipse links (off, eclipse)** at `off` for ordinary chat or terminal use. To open in Eclipse,
+set `eclipse` and the real
+three-character SAP SID; check the opened project matches your backend when SIDs are duplicated.
+VS Code uses the local SAP ADT MCP resolver instead.
+These settings apply only to that plugin server. The portable Agent Plugin has no client-specific
+settings form; a dedicated MCP entry is available where needed.
+
+This feature needs a build containing [PR #1025](https://github.com/arc-mcp/arc-1/pull/1025).
+See [IDE integration](ide-integration.md) for setup and tested-client limits.
+
 ## Choose The Package For Your Client
 
 | Package | Best fit | Configuration experience |
@@ -57,7 +70,7 @@ In Cursor, install the repository as an Agent Plugin from **Customize**, a team 
 
 ## Test A Checkout Locally
 
-Use a local checkout to validate a branch before installing a published version. Neither setup
+Use a local checkout to validate the plugin metadata and skills from a branch. The MCP entry still runs the published `arc-1@latest` package; to test server changes, follow [Local development](local-development.md#git-clone-contributing-or-running-from-source). Neither setup
 stores SAP credentials in the checkout.
 
 ### VS Code
@@ -181,6 +194,8 @@ copilot plugin list
 copilot mcp list
 copilot mcp get arc-1
 ```
+
+After connecting, ask for the source of a known program or class using `SAPRead` to verify SAP access.
 
 ARC-1 is read-only by default. A successful install does not grant SAP permissions and does not
 enable writes, table-data preview, free SQL, transport mutations, or Git mutations. Those remain

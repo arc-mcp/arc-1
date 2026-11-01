@@ -6,7 +6,6 @@ import {
   expectToolError,
   expectToolSuccess,
   expectToolSuccessOrSkip,
-  skipOnBatchCreateFailure,
   uniqueName,
 } from './helpers.js';
 
@@ -58,10 +57,9 @@ describe('E2E DDIC metadata write tests', () => {
     }
   });
 
-  it('SAPWrite create DTEL (domain-based + predefined)', async (ctx) => {
+  it('SAPWrite create DTEL based on a domain', async (ctx) => {
     const domainName = uniqueName('ZARC1_DMD');
     const dtelDomain = uniqueName('ZARC1_DTD');
-    const dtelPredef = uniqueName('ZARC1_DTP');
 
     const domaResult = await callTool(client, 'SAPWrite', {
       action: 'create',
@@ -71,8 +69,7 @@ describe('E2E DDIC metadata write tests', () => {
       dataType: 'CHAR',
       length: 3,
     });
-    // Skip the whole test if DOMA create isn't supported on this release —
-    // DTEL needs it as a dependency.
+    // Only this domain-based case needs a newly created domain.
     expectToolSuccessOrSkip(ctx, domaResult);
 
     try {
@@ -86,22 +83,9 @@ describe('E2E DDIC metadata write tests', () => {
         shortLabel: 'Ref',
       });
       expectToolSuccessOrSkip(ctx, byDomain);
-
-      const byType = await callTool(client, 'SAPWrite', {
-        action: 'create',
-        type: 'DTEL',
-        name: dtelPredef,
-        package: '$TMP',
-        typeKind: 'predefinedAbapType',
-        dataType: 'CHAR',
-        length: 20,
-        shortLabel: 'Text',
-      });
-      expectToolSuccessOrSkip(ctx, byType);
     } finally {
       for (const [type, name] of [
         ['DTEL', dtelDomain],
-        ['DTEL', dtelPredef],
         ['DOMA', domainName],
       ] as const) {
         try {
@@ -110,6 +94,31 @@ describe('E2E DDIC metadata write tests', () => {
           // best-effort-cleanup
         }
       }
+    }
+  });
+
+  it('SAPWrite create predefined DTEL without a domain', async () => {
+    const name = uniqueName('ZARC1_DTP');
+    try {
+      const created = await callTool(client, 'SAPWrite', {
+        action: 'create',
+        type: 'DTEL',
+        name,
+        package: '$TMP',
+        typeKind: 'predefinedAbapType',
+        dataType: 'CHAR',
+        length: 20,
+        shortLabel: 'Text',
+      });
+      expectToolSuccess(created);
+      const read = await callTool(client, 'SAPRead', { type: 'DTEL', name });
+      const dtel = parsePossiblyCachedJson(expectToolSuccess(read));
+      expect(dtel.name).toBe(name);
+      expect(dtel.dataType).toBe('CHAR');
+      expect(Number(dtel.length)).toBe(20);
+      expect(dtel.shortLabel).toBe('Text');
+    } finally {
+      expectToolSuccess(await callTool(client, 'SAPWrite', { action: 'delete', type: 'DTEL', name }));
     }
   });
 
@@ -225,11 +234,8 @@ describe('E2E DDIC metadata write tests', () => {
         },
       ],
     });
-    // batch_create aggregates per-object errors. The handler surfaces them as
-    // either isError=true (with "Batch created 0/N") or isError=false (success
-    // payload but same "Batch created 0/N" summary). Handle both.
     const batchText = expectToolSuccessOrSkip(ctx, batchResult);
-    if (skipOnBatchCreateFailure(ctx, batchText)) return;
+    expect(batchText).toContain('Batch created 2 objects');
 
     try {
       const readDtel = await callTool(client, 'SAPRead', { type: 'DTEL', name: dtelName });

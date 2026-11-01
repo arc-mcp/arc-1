@@ -18,6 +18,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { VERSION } from '../../../src/version.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -86,6 +87,20 @@ describe('Agent Plugins 1.0 portable package', () => {
 });
 
 describe('Claude Code plugin.json', () => {
+  it('scopes editor preferences to its own server with links off by default and no newer picker requirement', () => {
+    const fields = {
+      ARC1_IDE_LINKS: ['arc1_ide_links', 'off'],
+      ARC1_IDE_SYSTEM_ID: ['arc1_ide_system_id', ''],
+    };
+    for (const [env, [key, defaultValue]] of Object.entries(fields)) {
+      expect(plugin.userConfig[key]).toMatchObject({ type: 'string', default: defaultValue });
+      expect(plugin.userConfig[key].required).not.toBe(true);
+      expect(plugin.userConfig[key].options).toBeUndefined();
+      expect(plugin.mcpServers['arc-1'].env[env]).toBe(placeholder(`user_config.${key}`));
+    }
+    expect(JSON.stringify(plugin.settings ?? {})).not.toContain('ARC1_IDE');
+    expect(JSON.stringify(portableMcp)).not.toContain('ARC1_IDE');
+  });
   it('identifies the plugin as arc-1 with a synced version', () => {
     expect(plugin.name).toBe('arc-1');
     expect(typeof plugin.version).toBe('string');
@@ -189,6 +204,8 @@ describe('config surface parity (plugin ↔ mcpb)', () => {
     'ARC1_UI',
     'ARC1_UI_OPEN',
     'ARC1_UI_ADDR',
+    'ARC1_IDE_LINKS',
+    'ARC1_IDE_SYSTEM_ID',
   ];
 
   const surfaces: Record<string, { env: Record<string, string>; cfg: Record<string, Record<string, unknown>> }> = {
@@ -240,6 +257,7 @@ describe('packaged version sync', () => {
     expect(cursorPlugin.version).toBe(pkg);
     expect(readJson('mcpb-manifest.json').version).toBe(pkg);
     expect(readJson('server.json').version).toBe(pkg);
+    expect(VERSION).toBe(pkg);
   });
 
   it('lets release-please bump every versioned plugin manifest', () => {
@@ -251,6 +269,7 @@ describe('packaged version sync', () => {
       '.cursor-plugin/plugin.json',
       'mcpb-manifest.json',
       'server.json',
+      'src/version.ts',
     ]) {
       expect(paths, path).toContain(path);
     }

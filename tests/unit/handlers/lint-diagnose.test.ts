@@ -619,6 +619,36 @@ ENDCLASS.`;
   });
 
   describe('SAPDiagnose quickfix', () => {
+    it('reports the missing sourceUri owner even with minimal errors enabled', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(404, 'Private SAP error detail'));
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors: true }, 'SAPDiagnose', {
+        action: 'quickfix',
+        type: 'CLAS',
+        name: 'ZCL_OTHER',
+        sourceUri: '/sap/bc/adt/oo/classes/zcl_missing/includes/testclasses',
+        source: 'CLASS ltc_test DEFINITION. ENDCLASS.',
+        line: 1,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Quick-fix request was not sent');
+      expect(result.content[0]?.text).not.toContain('Private SAP error detail');
+      expect(mockFetch).toHaveBeenCalledOnce();
+      expect(String(mockFetch.mock.calls[0]![0])).toContain('/sap/bc/adt/oo/classes/zcl_missing?');
+    });
+
+    it('honors a denied quickfix action before any metadata read', async () => {
+      mockFetch.mockReset();
+      const result = await handleToolCall(
+        createClient(),
+        { ...DEFAULT_CONFIG, denyActions: ['SAPDiagnose.quickfix'] },
+        'SAPDiagnose',
+        { action: 'quickfix', type: 'CLAS', name: 'ZCL_TEST', source: 'source', line: 1 },
+      );
+      expect(result.isError).toBe(true);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('quickfix action calls quickfix evaluation endpoint with encoded source URI and source body', async () => {
       mockFetch.mockReset();
       const calls: Array<{ method: string; url: string; body?: string }> = [];
@@ -1642,7 +1672,8 @@ ENDCLASS.`;
     });
 
     it('junit format returns SAP-native JUnit from the public API through the dispatcher', async () => {
-      const junit = '<testsuites tests="4" failures="0" errors="0" skipped="0"/>';
+      const junit =
+        '<testsuites tests="4" failures="0" errors="0" skipped="0"><testsuite><testcase name="a"/><testcase name="b"/><testcase name="c"/><testcase name="d"/></testsuite></testsuites>';
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
         const method = opts?.method ?? 'GET';

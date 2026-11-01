@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { RELATION_ROOT_TYPES } from '../../../src/adt/relation-objects.js';
+import { RELATIONS_MIME, RELATIONS_PATH } from '../../../src/adt/repository-relations.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { features, fullConfig } from './handler-test-config.js';
 
@@ -28,9 +30,9 @@ function normalizeTableCell(cell: string): string {
     .trim();
 }
 
-function parameterRows(section: string): Map<string, string> | undefined {
+function parameterRows(section: string, label = 'Parameters'): Map<string, string> | undefined {
   const lines = section.split(/\r?\n/);
-  const marker = lines.findIndex((line) => /^(?:\*\*)?Parameters:?(?:\*\*)?\s*$/i.test(line.trim()));
+  const marker = lines.findIndex((line) => normalizeTableCell(line).replace(/:$/, '') === label);
   if (marker === -1) return undefined;
 
   const header = lines.findIndex((line, index) => {
@@ -60,40 +62,90 @@ function containsToken(text: string, token: string): boolean {
   return new RegExp(`(?:^|[^A-Za-z0-9_])${escapeRegExp(token)}(?:$|[^A-Za-z0-9_])`).test(text);
 }
 
-describe('docs_page/tools.md public-schema parity', () => {
-  it('documents every top-level parameter and every advertised action', () => {
-    const definitions = getToolDefinitions(fullConfig(false), true, features());
-    const gaps: string[] = [];
+function documentationGaps(markdown: string, relationsAllowed: boolean): string[] {
+  const definitions = getToolDefinitions(
+    { ...fullConfig(false), denyActions: relationsAllowed ? [] : ['SAPNavigate.relations'] },
+    true,
+    features(),
+    {
+      discoveryMap: new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]),
+    },
+  );
+  const gaps: string[] = [];
 
-    for (const definition of definitions) {
-      const section = toolSection(TOOLS_DOC, definition.name);
-      if (!section) {
-        gaps.push(`${definition.name}: missing level-2 tool section`);
-        continue;
-      }
-
-      const rows = parameterRows(section);
-      if (!rows) {
-        gaps.push(`${definition.name}: missing Parameters table`);
-        continue;
-      }
-
-      const properties = (definition.inputSchema as Record<string, any>).properties as Record<string, any>;
-      const schemaParams = Object.keys(properties);
-      const documentedParams = [...rows.keys()];
-      const missingParams = schemaParams.filter((name) => !rows.has(name));
-      const staleParams = documentedParams.filter((name) => !(name in properties));
-      if (missingParams.length > 0) gaps.push(`${definition.name} missing params: ${missingParams.join(', ')}`);
-      if (staleParams.length > 0) gaps.push(`${definition.name} stale params: ${staleParams.join(', ')}`);
-
-      const actions = properties.action?.enum as string[] | undefined;
-      if (actions) {
-        const actionRow = rows.get('action') ?? '';
-        const missingActions = actions.filter((action) => !containsToken(actionRow, action));
-        if (missingActions.length > 0) gaps.push(`${definition.name} missing actions: ${missingActions.join(', ')}`);
-      }
+  for (const definition of definitions) {
+    const section = toolSection(markdown, definition.name);
+    if (!section) {
+      gaps.push(`${definition.name}: missing level-2 tool section`);
+      continue;
     }
 
+    const rows = parameterRows(section);
+    if (!rows) {
+      gaps.push(`${definition.name}: missing Parameters table`);
+      continue;
+    }
+
+    if (definition.name === 'SAPNavigate' && relationsAllowed) {
+      const optionalRows = parameterRows(section, 'Experimental relations parameters (when available)');
+      if (!optionalRows) gaps.push('SAPNavigate: missing experimental Parameters table');
+      for (const [name, row] of optionalRows ?? []) rows.set(name, row);
+      const types = [...(optionalRows?.get('type') ?? '').matchAll(/`([A-Z]+)`/g)].map((match) => match[1]);
+      if (types.sort().join() !== [...RELATION_ROOT_TYPES].sort().join())
+        gaps.push('SAPNavigate: qualified relation types differ');
+    }
+
+    const properties = (definition.inputSchema as Record<string, any>).properties as Record<string, any>;
+    const schemaParams = Object.keys(properties);
+    const documentedParams = [...rows.keys()];
+    const missingParams = schemaParams.filter((name) => !rows.has(name));
+    const staleParams = documentedParams.filter((name) => !(name in properties));
+    if (missingParams.length > 0) gaps.push(`${definition.name} missing params: ${missingParams.join(', ')}`);
+    if (staleParams.length > 0) gaps.push(`${definition.name} stale params: ${staleParams.join(', ')}`);
+
+    const actions = properties.action?.enum as string[] | undefined;
+    if (actions) {
+      const actionRow = rows.get('action') ?? '';
+      const missingActions = actions.filter((action) => !containsToken(actionRow, action));
+      if (missingActions.length > 0) gaps.push(`${definition.name} missing actions: ${missingActions.join(', ')}`);
+    }
+  }
+
+  return gaps;
+}
+
+describe('docs_page/tools.md public-schema parity', () => {
+  it.each([false, true])('documents every parameter and action with relationsAllowed=%s', (relationsAllowed) => {
+    const gaps = documentationGaps(TOOLS_DOC, relationsAllowed);
     expect(gaps, `docs_page/tools.md drifted from the full on-prem public schema:\n${gaps.join('\n')}`).toEqual([]);
+  });
+
+  it.each(['direction', 'depth', 'expandPackages'])(
+    'detects undocumented conditional %s without changing default parity',
+    (name) => {
+      const changed = TOOLS_DOC.replace(new RegExp(`^\\| \x60${name}\x60[^\\n]*\\n`, 'm'), '');
+      expect(documentationGaps(changed, true)).toContain(`SAPNavigate missing params: ${name}`);
+      expect(documentationGaps(changed, false)).toEqual([]);
+    },
+  );
+
+  it('detects an undocumented relations action', () => {
+    const changed = TOOLS_DOC.replace('`relations` (when available)', '`omitted` (when available)');
+    expect(documentationGaps(changed, true)).toContain('SAPNavigate missing actions: relations');
+  });
+
+  it.each(['missing', 'stale'])('detects %s relation types in prose', (mode) => {
+    const changed = TOOLS_DOC.replace('`EVTB`, `DSFD`.', mode === 'missing' ? '`EVTB`.' : '`EVTB`, `DSFD`, `SOBJ`.');
+    expect(changed).not.toBe(TOOLS_DOC);
+    expect(documentationGaps(changed, true)).toContain('SAPNavigate: qualified relation types differ');
+    expect(documentationGaps(changed, false)).toEqual([]);
+  });
+
+  it('rejects conditional fields in the default table', () => {
+    const changed = TOOLS_DOC.replace(
+      '| `uri` | string | No | Source URI',
+      '| `depth` | integer | No | Optional depth |\n| `uri` | string | No | Source URI',
+    );
+    expect(documentationGaps(changed, false)).toContain('SAPNavigate stale params: depth');
   });
 });

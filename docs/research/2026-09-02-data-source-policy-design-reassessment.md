@@ -175,7 +175,7 @@ resolution is ambiguous, the active policy denies rather than guessing.
 - Each raw trimmed token must be 1–128 ASCII characters, contain at least one ASCII letter or digit, and
   use only `A-Z`, `a-z`, `0-9`, `_`, `/`, or `$`; its normalized stored form is uppercase ASCII.
 - The same canonicalizer must be used for caller roots, decoded repository identities, dependency-graph
-  names/aliases, and replacement annotations. A value from SAP metadata is evidence, not trusted input;
+  names/aliases, and replacement catalog identities. A value from SAP metadata is evidence, not trusted input;
   if it cannot be canonicalized without Unicode folding or lossy rewriting, lineage is unresolved.
 - Exact names only in v1. Do not add glob, prefix, regex, negation, type-prefix, quoting, escaping, or
   policy-file syntax until their matching behavior is separately designed and tested.
@@ -365,8 +365,12 @@ When it is on, one logical caller request should follow this pipeline exactly on
 4. Resolve unblocked roots through exact repository metadata.
 5. For CDS roots, request SAP's active SQL Dependency Graph without metrics and traverse only the SQL
    dependency portion of the response.
-6. For transparent tables, inspect `@AbapCatalog.replacementObject` and recursively evaluate the
-   replacement lineage.
+6. For transparent tables, resolve active replacement metadata with the fixed DD02L/DDLDEPENDENCY
+   query under the caller's SAP identity and shared response budget; recursively evaluate the
+   mapped SQL-view/DDLS lineage. Missing, ambiguous or unsupported metadata fails closed. CDS
+   view-entity replacements remain unsupported. For pooled/clustered tables, require
+   empty replacement metadata and a valid `SQLTAB` physical container; check that
+   terminal container against the blocklist without treating it as another logical table.
 7. Deduplicate all roots and dependencies, enforce depth/node/body limits, and deny on incomplete,
    unknown, cyclic, ambiguous, or unsupported lineage.
 8. Record the decision and only then submit the original query.
@@ -567,6 +571,7 @@ Security-relevant uncertainty should deny only when the feature is enabled. Stab
 should distinguish at least:
 
 - `DATA_SOURCE_BLOCKED`: a configured name matched; query was not sent;
+- `DATA_POLICY_UNAVAILABLE`: the target cannot expose metadata required to enforce the policy safely;
 - `DATA_LINEAGE_UNRESOLVED`: ARC-1 could not establish complete supported lineage; query was not sent;
 - `DATA_SQL_UNSUPPORTED`: the statement falls outside the strict parser subset; query was not sent.
 
@@ -582,7 +587,7 @@ call/node counts — regardless of the flag. An operator investigating a denial 
 it fully from the audit trail even when the model was told almost nothing.
 
 One honest limitation must be documented rather than overstated: minimal mode redacts **names and paths**,
-but the three stable codes remain distinct on purpose, because a model that cannot tell "blocked by
+but the four stable codes remain distinct on purpose, because a model that cannot tell "blocked by
 policy" from "SQL unsupported" cannot self-correct. Retaining a distinguishable `DATA_SOURCE_BLOCKED`
 therefore still permits coarse membership inference by probing. That is a deliberate, documented trade in
 favour of useful model feedback. Do not claim minimal mode eliminates membership inference.

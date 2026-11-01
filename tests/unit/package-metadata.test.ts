@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 type PackageJson = {
   name: string;
   bin?: Record<string, string>;
+  scripts?: Record<string, string>;
 };
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -20,5 +21,14 @@ describe('package metadata', () => {
   it('keeps the explicit CLI binary aliases', () => {
     expect(packageJson.bin?.arc1).toBe('./bin/arc1.js');
     expect(packageJson.bin?.['arc1-cli']).toBe('./bin/arc1-cli.js');
+  });
+
+  it.each([
+    ['test:relations:smoke', 'npm run build && tsx scripts/smoke-live-relations.ts'],
+    ['bench:context-parsing', 'tsx scripts/bench-context-parsing.ts'],
+  ])('exposes the maintained validation command %s with lint coverage', (name, command) => {
+    expect(packageJson.scripts?.[name]).toBe(command);
+    const biome = JSON.parse(readFileSync(resolve(repoRoot, 'biome.json'), 'utf8'));
+    expect(biome.files.includes).toContain(command.split(' ').at(-1));
   });
 });

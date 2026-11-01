@@ -5,8 +5,8 @@
 ARC-1 follows the **one instance per SAP backend** pattern by default. This is the recommended model
 for writes and for hard security/capacity isolation, and matches Eclipse ADT, SAP Business
 Application Studio, and SAP GUI. A separate [experimental multi-target mode](multi-target-setup.md)
-offers mutation-free access to many BTP subaccount destinations when application sprawl is the
-larger operational risk.
+offers reads across BTP subaccount destinations and opt-in [scoped pinned PP writes](multi-target-writes.md)
+when application sprawl is the larger operational risk. Separate instances retain stronger operational isolation.
 
 ### Why one-per-system?
 
@@ -14,7 +14,7 @@ larger operational risk.
 |---------|---------------|----------------------|
 | **Security** | Blast radius = one system | One breach = all systems |
 | **Auth** | Clean: one auth flow per instance | N destinations + N auth flows |
-| **Safety gates** | Per-system: `allowWrites`, `allowedPackages`, `denyActions` | Multi-target writes are unavailable; data/SQL can narrow per destination but the instance remains the ceiling |
+| **Safety gates** | Per-system: `allowWrites`, `allowedPackages`, `denyActions` | Scoped pinned PP writes require exact user grants; destination restrictions narrow the instance ceiling |
 | **Tool descriptions** | Tailored to system type (BTP vs on-premise) | Must be generic for all |
 | **Audit trail** | Clear per-system logs | Mixed across systems |
 | **Scaling** | Scale independently | Heavy-use system affects all |
@@ -53,7 +53,7 @@ raising it is safe, but four things are **per-process**, so they divide (or brea
 |---|---|---|
 | `ARC1_RATE_LIMIT` (Layer 2, per-user) and `ARC1_MCP_HTTP_RATE_LIMIT` (per-IP) | Each instance counts independently → the effective limit is **N×** the configured value | Divide the configured value by N, or enforce the real ceiling at the router/API gateway |
 | `ARC1_MAX_CONCURRENT` (Layer 3 SAP semaphore) | Same — total concurrent SAP requests is **N×** the value | Size `N × ARC1_MAX_CONCURRENT` against `rdisp/wp_no_dia`, not the single-instance number |
-| Feature probe + source/ETag cache (`ARC1_CACHE=auto` → in-memory) | Cold per instance; a user's cache hit rate drops roughly 1/N, and each instance runs its own startup probe | Accept it, or use `ARC1_CACHE=sqlite` on a shared volume — but note that stores SAP source unencrypted at rest, so use an encrypted volume |
+| Feature probe + source/ETag cache (`ARC1_CACHE=auto` → in-memory) | Cold per instance; a user's cache hit rate drops roughly 1/N, and each instance runs its own startup probe | Accept per-instance caches. SQLite persistence is instance-local; a shared filesystem is not a distributed cache |
 | ADR-0007 shared-Basic multi-target guard | **Hard requirement: exactly one instance.** The generation/lockout guard that prevents a shared technical user from being locked out is process-local | Do not scale out. This mode is single-instance by contract |
 
 Scale **up** (memory/CPU per instance) before scaling out unless you have measured that one instance
@@ -75,8 +75,10 @@ not alert. Wire these into your APM/log platform:
 
 ### Trace context and agent attribution
 
-Aligned with the SAP Architecture Center guidance for
-[third-party MCP access](https://architecture.learning.sap.com/docs/ref-arch/137800):
+These capabilities support SAP's guidance for
+[third-party MCP access](https://architecture.learning.sap.com/docs/ref-arch/137800).
+See [the control assessment](sap-api-policy-and-architecture.md#current-control-assessment) for
+requirements that remain partial or deployment-dependent:
 
 - **W3C trace context passes through.** A valid `traceparent` (and its `tracestate`) on an inbound
   MCP request is forwarded verbatim on every outbound SAP call, so one trace spans agent → ARC-1 →
@@ -88,10 +90,12 @@ Aligned with the SAP Architecture Center guidance for
   (`name/version`); over HTTP the transport is stateless, so it is the `User-Agent` — best-effort,
   caller-controlled, and never an authorization input. It sits next to `clientId` (the registered
   OAuth client) on every audit event and in the BTP Audit Log.
-- **SAP still sees the human, not the agent.** Principal propagation exchanges the user token for a
-  scoped per-user SAP credential (RFC 8693 via the Destination Service), and ABAP has no claim slot
-  for an agent identity — so SAP-side logs (SM20, transport owner, `adtcore:changedBy`) attribute
-  the *user*. Agent attribution lives in ARC-1's audit trail; correlate on `requestId`/`traceparent`.
+- **Registered agent identity remains a gap.** ARC-1's supported principal-propagation flow obtains
+  a per-user SAP credential through a destination-dependent exchange. `clientAgent` is only an
+  ARC-1 audit label; it does not establish the registered Cloud Identity Services agent identity
+  SAP's architecture requires in the downstream credential. Tool scopes also do not prove that
+  the SAP credential is narrowed separately for each tool. Validate the tenant-supported identity
+  flow; correlate current user/client audit records through `requestId`/`traceparent`.
 
 ### Example: enterprise with multiple SAP systems
 
@@ -104,9 +108,11 @@ cp mta-overrides.mtaext.example mta-ecc-prod.mtaext  # edit: read-only
 # Build once
 mbt build
 
+# Target the DEV CF space first; reusing the same MTA ID in one space updates the existing app
 # Deploy to dev — writes enabled
 cf deploy mta_archives/arc1-mcp_*.mtar -e mta-ecc-dev.mtaext
 
+# Target the separate PROD CF space before this command
 # Deploy to prod — read-only
 cf deploy mta_archives/arc1-mcp_*.mtar -e mta-ecc-prod.mtaext
 ```
@@ -137,22 +143,26 @@ MCP client config for developers:
 {
   "mcpServers": {
     "sap-ecc-dev": {
+      "type": "http",
       "url": "https://arc1-ecc-dev.cfapps.us10.hana.ondemand.com/mcp"
     },
     "sap-ecc-prod": {
+      "type": "http",
       "url": "https://arc1-ecc-prod.cfapps.us10.hana.ondemand.com/mcp"
     },
     "sap-s4-dev": {
+      "type": "http",
       "url": "https://arc1-s4-dev.cfapps.us10.hana.ondemand.com/mcp"
     },
     "sap-btp": {
+      "type": "http",
       "url": "https://arc1-btp-dev.cfapps.us10.hana.ondemand.com/mcp"
     }
   }
 }
 ```
 
-The LLM sees separate tool sets from each server and picks the right one.
+The LLM sees separate tool sets from each server. Identify the intended target explicitly; a model can choose the wrong connection.
 
 > **Identify each direct-connect instance:** every ARC-1 advertises the server name `arc-1` in the MCP `initialize` handshake by default. Clients such as VS Code derive tool prefixes from that announced name and add numeric suffixes when several servers announce the same value. Set a unique [`ARC1_SERVER_NAME`](configuration-reference.md#server-runtime) per instance (`arc1-ecc-dev`, `arc1-ecc-prod`, …) in each `.mtaext` so the tool prefix identifies the target system. Some remote-connector clients replace that name with an opaque ID; for those, also set [`ARC1_SYSTEM_LABEL`](configuration-reference.md#server-runtime) (for example `ERP production (read-only)`) so the same identity is visible in the model-facing server instructions. This is the direct-connect alternative to [native multi-target mode](multi-target-setup.md), which exposes pinned and aggregate routes from one ARC-1 deployment and ignores the single-target label.
 
@@ -304,7 +314,7 @@ If you deploy ARC-1 behind a reverse proxy (nginx, Envoy, etc.) outside of Cloud
 | `manifest-btp-abap.yml` | CF deployment manifest (BTP ABAP via per-user destination) | Yes — set the destination name and safety flags; do not mount the ABAP service key into ARC-1 |
 | `Dockerfile` | Multi-stage Alpine build, all env vars documented | Rarely — use env vars for config |
 | `.env.example` | Template for local `.env` file | Yes — copy to `.env` and fill in |
-| `xs-security.json` | XSUAA scopes, roles, redirect URIs | Yes — add redirect URIs for your MCP clients |
+| `xs-security.json` | XSUAA scopes, roles, and localhost development callback | Manual deployments: copy it to a landscape-specific file and register its exact public `/oauth/callback` and `/oauth/logged-out` URLs. MTA injects these for the default route; [custom routes need an override](xsuaa-setup.md#custom-public-url). MCP client callbacks are enforced separately at runtime/DCR. |
 | `bin/arc1.js` | npm global CLI entry point | No |
 
 ## Deploying Without Docker

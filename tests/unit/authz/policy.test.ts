@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-
 import { OperationType, type OperationTypeCode } from '../../../src/adt/safety.js';
 import {
   ACTION_POLICY,
@@ -9,13 +8,16 @@ import {
   hasRequiredScope,
   invocationPolicyKey,
 } from '../../../src/authz/policy.js';
+import { validateDenyActions } from '../../../src/server/deny-actions.js';
 
 describe('ACTION_POLICY matrix', () => {
   it('derives one canonical policy key for dispatch and multi-target preflight', () => {
     expect(invocationPolicyKey('SAPRead', { type: 'table_contents' })).toBe('TABLE_CONTENTS');
     expect(invocationPolicyKey('SAPSearch', { searchType: 'tadir_lookup', source: 'DB' })).toBe('tadir_lookup_db');
     expect(invocationPolicyKey('SAPDiagnose', { action: 'atc' })).toBe('atc');
-    expect(invocationPolicyKey('SAPQuery', {})).toBeUndefined();
+    expect(invocationPolicyKey('SAPQuery', {})).toBe('sql');
+    expect(invocationPolicyKey('SAPQuery', { action: 'sql' })).toBe('sql');
+    expect(invocationPolicyKey('SAPQuery', { action: 'long_text' })).toBe('long_text');
   });
 
   it('includes tool-level defaults for every top-level tool', () => {
@@ -39,6 +41,11 @@ describe('ACTION_POLICY matrix', () => {
     }
   });
 
+  it('registers add_unit as an individually deniable update', () => {
+    expect(ACTION_POLICY['SAPWrite.add_unit']).toEqual({ scope: 'write', opType: OperationType.Update });
+    expect(() => validateDenyActions(['SAPWrite.add_unit'])).not.toThrow();
+  });
+
   it('SAPRead.TABLE_CONTENTS requires data scope (not read)', () => {
     const policy = getActionPolicy('SAPRead', 'TABLE_CONTENTS');
     expect(policy?.scope).toBe('data');
@@ -55,6 +62,18 @@ describe('ACTION_POLICY matrix', () => {
     const policy = getActionPolicy('SAPDiagnose', 'atc_variants');
     expect(policy?.scope).toBe('read');
     expect(policy?.opType).toBe(OperationType.Read);
+  });
+
+  it('SAPDiagnose.atc_ci is a workload-producing read', () => {
+    const policy = getActionPolicy('SAPDiagnose', 'atc_ci');
+    expect(policy?.scope).toBe('read');
+    expect(policy?.opType).toBe(OperationType.Read);
+  });
+
+  it('SAPDiagnose.unittest_ci is a workload-producing test read', () => {
+    const policy = getActionPolicy('SAPDiagnose', 'unittest_ci');
+    expect(policy?.scope).toBe('read');
+    expect(policy?.opType).toBe(OperationType.Test);
   });
 
   it('CLASSIFICATION FIX: SAPLint.set_formatter_settings requires write scope', () => {
@@ -82,6 +101,7 @@ describe('ACTION_POLICY matrix', () => {
     expect(getActionPolicy('SAPTransport', 'history')?.scope).toBe('read');
     expect(getActionPolicy('SAPTransport', 'list')?.scope).toBe('read');
     expect(getActionPolicy('SAPTransport', 'get')?.scope).toBe('read');
+    expect(getActionPolicy('SAPTransport', 'diff')?.scope).toBe('read');
   });
 
   it('SAPTransport mutations require transports scope', () => {

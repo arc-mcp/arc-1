@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reduced from a read-only SAP_BASIS 758/816 response; authors, dates and unrelated links omitted. -->
+<enho:enhancement xmlns:enho="http://www.sap.com/adt/enhancements/enho" xmlns:adtcore="http://www.sap.com/adt/core" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:atom="http://www.w3.org/2005/Atom" adtcore:name="/MFND/CORE_UPD_BDS_CONNECTION" adtcore:type="ENHO/XHH" adtcore:version="active" adtcore:description="EFI Insertion - BDS Connection Create" abapsource:sourceUri="./%2Fmfnd%2Fcore_upd_bds_connection/source/main">
+  <adtcore:packageRef adtcore:name="/MFND/EFI_CA"/>
+  <enho:contentCommon enho:toolType="HOOK_IMPL"/>
+  <enho:contentSpecific>
+    <enho:hookTechnology enho:nextId="2">
+      <enho:enhancedObject adtcore:uri="/sap/bc/adt/functions/groups/bds_connections" adtcore:type="FUGR/F" adtcore:name="BDS_CONNECTIONS"/>
+      <enho:hookImplementation enho:id="1" enho:spotname="" enho:programname="SAPLBDS_CONNECTIONS" enho:overwrite="" enho:method="" enho:enhmode="D" enho:full_name="\FU:BDS_CONNECTION_CREATE\SE:END\EI" enho:full_description=" Function Module BDS_CONNECTION_CREATE, End">
+        <atom:link href="/sap/bc/adt/functions/groups/bds_connections/fmodules/bds_connection_create/source/main#start=134,0" rel="enclosure"/>
+      </enho:hookImplementation>
+    </enho:hookTechnology>
+  </enho:contentSpecific>
+</enho:enhancement>

@@ -87,3 +87,22 @@ the Eclipse ADT plugin, the local probe catalog, and live-system fixtures.
   SAP Note 3567464/support-package status before changing ARC-1's create metadata.
 - **Breaking change**: no
 - **Tests**: pin both extension filename forms, the SAP-domain hint, and the LLM-visible tool guidance.
+
+
+## Relation Explorer identity evidence — SAP_BASIS 758 (2026-09-10)
+
+This dated section concerns read-only relationship roots, not new SAPRead operations, writes, or a global slash alias. The metadata root and `adtcore:type` attribute below were retained from an actual metadata **GET**, not a create template. Namespace prefixes are preserved. Authors, descriptions and unrelated fields were removed; identity values were not invented or rewritten.
+
+### DDLS/DF
+
+- Observed object: `ZDEMO_C_SALESORDER_TP_D`; GET `/sap/bc/adt/ddic/ddl/sources/zdemo_c_salesorder_tp_d`.
+- Recorded: 2026-09-09T22:07:49.315Z; metadata QName: `ddl:ddlSource`.
+- [Sanitized wire fixture](../../../../tests/fixtures/relations/ddls-df.json) also preserves one observed ENV edge and original-body SHA-256 values. It is a projection, not a complete network.
+
+```xml
+<ddl:ddlSource adtcore:name="ZDEMO_C_SALESORDER_TP_D" adtcore:type="DDLS/DF" adtcore:version="active" xmlns:ddl="http://www.sap.com/adt/ddic/ddlsources" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core">
+<adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/%24demo_soi_draft" adtcore:type="DEVC/K" adtcore:name="$DEMO_SOI_DRAFT" adtcore:packageName="$DEMO_SOI_DRAFT"/>
+</ddl:ddlSource>
+```
+
+Qualification and limitations: [per-type research](../../2026-09-10-live-relations-types.md). CI binds every qualified native identity to this document and replays the independent recorded fixtures. This proves the observed 758 shapes, not support on other releases or relationship completeness.

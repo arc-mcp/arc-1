@@ -32,6 +32,7 @@ import { AdtClient, mockFetch } from './setup-undici-mock.js';
 /** Minimal valid SAPRead input per type — shared by the Zod-accept and dispatch-coverage blocks. */
 function readArgs(type: string): Record<string, unknown> {
   const base: Record<string, unknown> = { type, name: 'ZARC1_X' };
+  if (type === 'SYNTAX') return { type, objectType: 'CLAS', name: 'ZCL_TEST' };
   if (type === 'VERSION_SOURCE') {
     base.versionUri = '/sap/bc/adt/programs/programs/ZTEST/source/main/versions/1/00000/content';
   }
@@ -44,7 +45,7 @@ const { resetCachedFeatures } = await import('../../../src/handlers/feature-cach
 
 // allowWrites registers SAPWrite (the BTP/onprem type matrix this file checks); the other gate
 // flags don't affect the type enums, so they're left at their defaults.
-const onpremFull: ServerConfig = onprem({ allowWrites: true });
+const onpremFull: ServerConfig = onprem({ allowWrites: true, allowDataPreview: true });
 const btpFull: ServerConfig = btp({ allowWrites: true });
 
 function typeEnum(config: ServerConfig, toolName: string): string[] {
@@ -121,7 +122,13 @@ describe('registry sync — Zod enums accept every registry type and reject bogu
   });
 
   it('SAPWrite onprem + btp', () => {
-    const wargs = (type: string) => ({ action: 'create', type, name: 'ZARC1_X', source: 'x', package: '$TMP' });
+    const wargs = (type: string) => ({
+      action: type === 'TABL/DTT' ? 'update' : 'create',
+      type,
+      name: 'ZARC1_X',
+      source: 'x',
+      package: '$TMP',
+    });
     for (const t of SAPWRITE_TYPES_ONPREM) {
       expect(getToolSchema('SAPWrite', false)!.safeParse(wargs(t)).success, `onprem accepts ${t}`).toBe(true);
     }

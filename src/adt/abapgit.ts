@@ -20,6 +20,7 @@ import type {
   AbapGitStagingObject,
   AbapGitUser,
 } from './types.js';
+import { decodeXmlEntities } from './xml-entities.js';
 import { escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 
 const ABAPGIT_BASE = '/sap/bc/adt/abapgit';
@@ -148,15 +149,70 @@ function redactGitText(value: string): string {
   return boundAbapGitString(redacted, value.length);
 }
 
+const OMITTED_GIT_DIAGNOSTICS = 'abapGit error details omitted because they may contain credentials.';
+const MAX_GIT_ERROR_BODY = 65_536;
+
+/** Inspect the whole diagnostic before extraction/truncation can separate a secret from its label.
+ * Omit credential-bearing responses together: SAP repeats and splits credentials across fields.
+ * Credential-related words (even object names) trigger omission. This is deliberately conservative.
+ */
+function safeGitErrorBody(body: string): string {
+  // Keep the known bridge namespace so checkRepo still returns {ok:false}; never echo arbitrary IDs.
+  const prefix = body.slice(0, MAX_GIT_ERROR_BODY);
+  const knownNamespace = /<(?:\w+:)?namespace\b[^>]*(?:\bid=["']org\.abapgit\.adt["']|>org\.abapgit\.adt<)/i.test(
+    prefix,
+  );
+  const omitted = knownNamespace
+    ? `<exception><namespace id="org.abapgit.adt"/><message>${OMITTED_GIT_DIAGNOSTICS}</message></exception>`
+    : OMITTED_GIT_DIAGNOSTICS;
+  if (body.length > MAX_GIT_ERROR_BODY || Buffer.byteLength(body, 'utf8') > MAX_GIT_ERROR_BODY) return omitted;
+  const entries = AdtApiError.extractPropertyEntries(body);
+  const properties = Object.fromEntries(entries);
+  // Ambiguous duplicates must not hide earlier T100 fragments from inspection.
+  if (entries.length !== Object.keys(properties).length) return omitted;
+  // SAP can cut the credential label itself across T100 variables, not just its value.
+  const variables = [1, 2, 3, 4].map((n) => properties[`T100KEY-V${n}`] ?? '').join('');
+  let decoded = `${body}\n${variables}`;
+  // Detection only: inspect mixed XML, JSON and URL encodings without changing returned text.
+  for (let layer = 0; layer < 3; layer++) {
+    decoded = normalizeEscapedUrlSlashes(decodeXmlEntities(decoded)).replace(/%([\da-f]{2})/gi, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
+  }
+  const sensitive =
+    /password|passwd|passphrase|\bpwd\b|token|secret|api[_-]?key|authorization|credential|access[_-]?key|private[_-]?key|ssh[_-]?key|signature|cookie|session|auth[_-]?(?:pwd|user)|remote[_-]?user|\b(?:bearer|basic)\s/i.test(
+      decoded,
+    ) ||
+    /&(?:#|amp;|lt;|gt;|quot;|apos;)|\\u[\da-f]{4}|%[\da-f]{2}/i.test(decoded) ||
+    [...decoded.matchAll(/https?:\/\/[^\s<>"']+/gi)].some(([url]) => urlCarriesCredentials(url));
+  return sensitive ? omitted : body;
+}
+
+/** Redaction changes the URL beyond WHATWG normalization (`https://Host` → `https://host/`). */
+function urlCarriesCredentials(url: string): boolean {
+  // redactGitUrl inspects only a prefix; a longer URL could hide a credential key behind the cut.
+  if (url.length > ABAPGIT_REDACTION_MAX_STRING_LENGTH) return true;
+  try {
+    return redactGitUrl(url) !== new URL(normalizeEscapedUrlSlashes(url)).toString();
+  } catch {
+    return true;
+  }
+}
+
 function sanitizedAbapGitApiError(err: AdtApiError, path: string): AdtApiError {
-  const parsed = classifyAbapgitError(err.responseBody ?? '');
+  const rawBody = err.responseBody || err.message;
+  const body = safeGitErrorBody(rawBody);
+  const parsed = classifyAbapgitError(body);
   const detail = [parsed.namespace ? `[${parsed.namespace}]` : undefined, parsed.message].filter(Boolean).join(' ');
-  return new AdtApiError(
+  const sanitized = new AdtApiError(
     redactGitText(detail || err.message),
     err.statusCode,
     redactGitText(err.path || path),
-    redactGitText(err.responseBody ?? ''),
+    redactGitText(body),
+    { plainText: true },
   );
+  sanitized.diagnosticsOmitted = body !== rawBody;
+  return sanitized;
 }
 
 function literalHostIsPrivate(hostname: string): boolean {
@@ -497,11 +553,18 @@ function assertSuccessfulObjectMessages(objects: AbapGitObject[], path: string, 
       return `${object.msgType}${identity ? ` ${identity}` : ''}${object.msgText ? `: ${object.msgText}` : ''}`;
     })
     .join('; ');
+  const safeBody = safeGitErrorBody(responseBody);
+  if (safeBody !== responseBody) {
+    const error = new AdtApiError(OMITTED_GIT_DIAGNOSTICS, 500, path, undefined, { plainText: true });
+    error.diagnosticsOmitted = true;
+    throw error;
+  }
   throw new AdtApiError(
     redactGitText(`abapGit reported rejecting object messages: ${details}`),
     500,
     path,
     redactGitText(responseBody),
+    { plainText: true },
   );
 }
 
@@ -878,11 +941,12 @@ export async function checkRepo(
     });
   } catch (err) {
     if (err instanceof AdtApiError) {
-      const parsed = classifyAbapgitError(err.responseBody ?? '');
+      const safeBody = safeGitErrorBody(err.responseBody || err.message);
+      const parsed = classifyAbapgitError(safeBody);
       if (parsed.namespace === 'org.abapgit.adt') {
         return {
           ok: false,
-          message: redactGitText(parsed.message ?? AdtApiError.extractCleanMessage(err.responseBody ?? '')),
+          message: redactGitText(parsed.message ?? AdtApiError.extractCleanMessage(safeBody)),
         };
       }
       throw sanitizedAbapGitApiError(err, link.href);
@@ -894,10 +958,11 @@ export async function checkRepo(
     return { ok: true, message: null };
   }
 
-  const parsed = classifyAbapgitError(resp.body);
+  const safeBody = safeGitErrorBody(resp.body);
+  const parsed = classifyAbapgitError(safeBody);
   return {
     ok: false,
-    message: redactGitText(parsed.message ?? AdtApiError.extractCleanMessage(resp.body)),
+    message: redactGitText(parsed.message ?? AdtApiError.extractCleanMessage(safeBody)),
   };
 }
 

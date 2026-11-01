@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T22:07:49.315Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/ddic/dataelements/%2fbobf%2fconf_change_mode",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "4c8d18c045433da02d8085fd64556a9a735773bcde8d2f74aeba135a0dea0036",
+    "networkSha256": "b8ea691c4ec766bb2e0c63f3ef8dbd8610a5ca74fc3287a77af01d7ddf6fa397",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 2,
+    "observedEdges": 1
+  },
+  "type": "DTEL",
+  "native": "DTEL/DE",
+  "name": "/BOBF/CONF_CHANGE_MODE",
+  "uri": "/sap/bc/adt/ddic/dataelements/%2fbobf%2fconf_change_mode",
+  "metadataRootQName": "blue:wbobj",
+  "context": "ENV",
+  "metadataXml": "<blue:wbobj adtcore:name=\"/BOBF/CONF_CHANGE_MODE\" adtcore:type=\"DTEL/DE\" adtcore:version=\"active\" xmlns:blue=\"http://www.sap.com/wbobj/dictionary/dtel\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/%2fbobf%2fconfiguration\" adtcore:type=\"DEVC/K\" adtcore:name=\"/BOBF/CONFIGURATION\"/>\n</blue:wbobj>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>ENV</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/ddic/domains/%2fbobf%2fconf_change_mode\" adtcore:type=\"DOMA/DD\" adtcore:name=\"/BOBF/CONF_CHANGE_MODE\" adtcore:packageName=\"/BOBF/CONFIGURATION\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/ddic/dataelements/%2fbobf%2fconf_change_mode\" adtcore:type=\"DTEL/DE\" adtcore:name=\"/BOBF/CONF_CHANGE_MODE\" adtcore:packageName=\"/BOBF/CONFIGURATION\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/ddic/dataelements/%2fbobf%2fconf_change_mode</oro:object1><oro:object2>/sap/bc/adt/ddic/domains/%2fbobf%2fconf_change_mode</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

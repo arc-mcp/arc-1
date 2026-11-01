@@ -24,6 +24,20 @@
 
 import type { ClassStructure, MethodStructure } from './types.js';
 
+// Bare names and interface-qualified names, including a registered namespace.
+const METHOD_NAME = '(?:/[A-Z0-9_]+/)?[A-Z_][A-Z0-9_]*(?:~(?:/[A-Z0-9_]+/)?[A-Z_][A-Z0-9_]*)?';
+
+function stripDeclarationComments(source: string): string {
+  return source.replace(/^[ \t]*\*.*$/gm, '').replace(/"[^\n]*$/gm, '');
+}
+
+/** A qualified method can be declared in a subclass as an inherited redefinition. */
+export function isMethodRedefinition(clause: string): boolean {
+  return new RegExp(`^METHODS\\s+${METHOD_NAME}\\s+(?:FINAL\\s+)?REDEFINITION\\s*\\.?$`, 'i').test(
+    stripDeclarationComments(clause).trim(),
+  );
+}
+
 // ─── Line-ending helpers ───────────────────────────────────────────────
 
 /**
@@ -115,6 +129,23 @@ export function insertBeforeLine(source: string, lineNo: number, text: string): 
   return joinLines([...before, ...insertLines, ...after], eol);
 }
 
+// SAP declaration ranges exclude attached ABAP Doc. Stop at blank lines and
+// ordinary comments so documentation belonging to another declaration stays put.
+function attachedAbapDocStart(lines: string[], declarationRow: number): number {
+  let start = declarationRow;
+  while (start > 1 && /^[ \t]*"!/.test(lines[start - 2]!)) start--;
+  return start;
+}
+
+function replacementStart(source: string, declarationRow: number, replacement: string): number {
+  const lines = splitLines(replacement);
+  const firstCodeLine = lines.findIndex((line) => !/^[ \t]*(?:["*]|$)/.test(line));
+  // Only documentation attached to the first declaration replaces the old doc;
+  // e.g. method documentation inside a new class definition does not qualify.
+  const hasAttachedDoc = firstCodeLine > 0 && /^[ \t]*"!/.test(lines[firstCodeLine - 1]!);
+  return hasAttachedDoc ? attachedAbapDocStart(splitLines(source), declarationRow) : declarationRow;
+}
+
 // ─── Splice helpers backed by ClassStructure ───────────────────────────
 
 /**
@@ -124,7 +155,7 @@ export function insertBeforeLine(source: string, lineNo: number, text: string): 
  */
 export function spliceClassDefinition(source: string, structure: ClassStructure, newDefBlock: string): string {
   const r = structure.classDefinitionBlock;
-  return spliceLines(source, r.sr, r.er, newDefBlock);
+  return spliceLines(source, replacementStart(source, r.sr, newDefBlock), r.er, newDefBlock);
 }
 
 /**
@@ -138,7 +169,7 @@ export function spliceMethodSignature(source: string, method: MethodStructure, n
     throw new Error(`spliceMethodSignature: method ${method.name} has no definition range`);
   }
   const r = method.definition;
-  return spliceLines(source, r.sr, r.er, ensureClauseTerminator(newSig));
+  return spliceLines(source, replacementStart(source, r.sr, newSig), r.er, ensureClauseTerminator(newSig));
 }
 
 // ─── insertMethodPair: atomic DEFINITION + IMPLEMENTATION add ──────────
@@ -200,7 +231,8 @@ export function insertMethodPair(source: string, structure: ClassStructure, opts
     const newImplEndLine = structure.classImplementationBlock.er + insertedCount;
     const indent = opts.implIndent ?? '  ';
     const stub = `${indent}METHOD ${opts.methodName.toLowerCase()}.\n${indent}ENDMETHOD.`;
-    next = insertBeforeLine(next, newImplEndLine, stub);
+    const needsSeparator = splitLines(next)[newImplEndLine - 2]?.trim() !== '';
+    next = insertBeforeLine(next, newImplEndLine, `${needsSeparator ? '\n' : ''}${stub}`);
   }
 
   return next;
@@ -217,17 +249,32 @@ export function insertMethodPair(source: string, structure: ClassStructure, opts
 export function removeMethodPair(source: string, method: MethodStructure): string {
   let next = source;
   if (method.implementation) {
-    next = spliceLines(next, method.implementation.sr, method.implementation.er, '');
+    next = removeLinesAndJoinSpacing(next, method.implementation.sr, method.implementation.er);
   }
-  next = spliceLines(next, method.definition.sr, method.definition.er, '');
+  const lines = splitLines(next);
+  const start = attachedAbapDocStart(lines, method.definition.sr);
+  next = removeLinesAndJoinSpacing(next, start, method.definition.er);
   return next;
+}
+
+/** Only collapse the blank run touching this deletion; leave unrelated spacing intact. */
+function removeLinesAndJoinSpacing(source: string, sr: number, er: number): string {
+  const next = spliceLines(source, sr, er, '');
+  const lines = splitLines(next);
+  let start = sr - 1;
+  let end = start;
+  while (start > 0 && lines[start - 1]!.trim() === '') start--;
+  while (end < lines.length && lines[end]!.trim() === '') end++;
+  if (end - start > 1) lines.splice(start + 1, end - start - 1);
+  return joinLines(lines, detectEol(source));
 }
 
 // ─── moveMethodDefinition: DEFINITION-only section move ────────────────
 
 /**
  * Move a method's METHODS clause from its current visibility section to a new
- * location in the DEFINITION block, leaving the IMPLEMENTATION block UNTOUCHED.
+ * location in the DEFINITION block, including attached ABAP Doc and leaving the
+ * IMPLEMENTATION block UNTOUCHED.
  *
  * This is the body-preserving primitive behind `change_method_visibility`
  * (issue #303 follow-up). Contrast with `delete_method` + `add_method`, which
@@ -255,14 +302,18 @@ export function moveMethodDefinition(source: string, method: MethodStructure, ta
   if (!method.definition) {
     throw new Error(`moveMethodDefinition: method ${method.name} has no definition range`);
   }
-  const { sr, er } = method.definition;
+  const lines = splitLines(source);
+  const { er } = method.definition;
+  let sr = method.definition.sr;
+  // SAP excludes attached ABAP Doc from the declaration range. Move it with
+  // the method without crossing blank lines or ordinary comments.
+  while (sr > 1 && /^[ \t]*"!/.test(lines[sr - 2]!)) sr--;
   if (targetAfterLine >= sr && targetAfterLine <= er) {
     throw new RangeError(
       `moveMethodDefinition: targetAfterLine ${targetAfterLine} is inside the moved method's definition range [${sr}, ${er}]`,
     );
   }
   const eol = detectEol(source);
-  const lines = splitLines(source);
   const clause = lines.slice(sr - 1, er);
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
@@ -333,8 +384,8 @@ export interface MethodDiff {
 
 /**
  * Diff the method set declared in a NEW DEFINITION block against the current
- * `structure.methods`. Uses abaplint's `Structures.ClassDefinition` AST to
- * enumerate METHODS/CLASS-METHODS/EVENTS/INTERFACES/ALIASES declarations.
+ * `structure.methods`. Enumerates METHODS/CLASS-METHODS/EVENTS/INTERFACES/ALIASES
+ * declarations in the submitted block.
  *
  * Returns added/removed by name (UPPERCASE). The handler's refuse-policy then
  * exempts ABSTRACT METHODS, EVENTS, INTERFACES, ALIASES from the symmetry
@@ -350,7 +401,7 @@ export function diffMethodSets(structure: ClassStructure, newDefBlock: string): 
   return { added, removed };
 }
 
-// ─── DEFINITION-block declaration parser (abaplint primary, regex fallback) ─
+// ─── DEFINITION-block declaration parser ──────────────────────────────
 
 /**
  * Enumerate METHODS / CLASS-METHODS / EVENTS / INTERFACES / ALIASES
@@ -374,25 +425,25 @@ export function parseDefinitionBlockDeclarations(defBlock: string): DeclaredMeth
 function parseWithRegex(defBlock: string): DeclaredMethod[] {
   const out: DeclaredMethod[] = [];
   // Strip block + line comments before scanning so commented-out METHODS don't count.
-  const stripped = defBlock.replace(/^\s*\*.*$/gm, '').replace(/"[^\n]*$/gm, '');
+  const stripped = stripDeclarationComments(defBlock);
   // METHODS / CLASS-METHODS <name> — multi-line clauses span until the period.
   // We only need the NAME, so the regex looks at the start of each clause.
-  const methodRe = /^\s*(CLASS-METHODS|METHODS)\s+([A-Z_][A-Z0-9_]*)([^.]*)\./gim;
+  const methodRe = new RegExp(`^[ \\t]*(CLASS-METHODS|METHODS)\\s+(${METHOD_NAME})(?=\\s|\\.)([^.]*)\\.`, 'gim');
   for (const m of stripped.matchAll(methodRe)) {
     const name = m[2]!.toUpperCase();
     const tail = m[3] ?? '';
     const isAbstract = /\bABSTRACT\b/i.test(tail);
     out.push({ name, isAbstract, isEvent: false, isInterface: false, isAlias: false });
   }
-  const eventRe = /^\s*(CLASS-EVENTS|EVENTS)\s+([A-Z_][A-Z0-9_]*)/gim;
+  const eventRe = /^[ \t]*(CLASS-EVENTS|EVENTS)\s+([A-Z_][A-Z0-9_]*)/gim;
   for (const m of stripped.matchAll(eventRe)) {
     out.push({ name: m[2]!.toUpperCase(), isAbstract: false, isEvent: true, isInterface: false, isAlias: false });
   }
-  const ifaceRe = /^\s*INTERFACES\s+([A-Z_][A-Z0-9_]*)/gim;
+  const ifaceRe = /^[ \t]*INTERFACES\s+([A-Z_][A-Z0-9_]*)/gim;
   for (const m of stripped.matchAll(ifaceRe)) {
     out.push({ name: m[1]!.toUpperCase(), isAbstract: false, isEvent: false, isInterface: true, isAlias: false });
   }
-  const aliasRe = /^\s*ALIASES\s+([A-Z_][A-Z0-9_]*)/gim;
+  const aliasRe = /^[ \t]*ALIASES\s+([A-Z_][A-Z0-9_]*)/gim;
   for (const m of stripped.matchAll(aliasRe)) {
     out.push({ name: m[1]!.toUpperCase(), isAbstract: false, isEvent: false, isInterface: false, isAlias: true });
   }
@@ -416,7 +467,7 @@ export function extractMethodNameFromClause(clause: string): string | null {
   for (const raw of lines) {
     const line = raw.replace(/"[^\n]*$/, '').trim();
     if (!line || line.startsWith('*')) continue;
-    const m = line.match(/^(?:CLASS-METHODS|METHODS)\s+([A-Z_][A-Z0-9_~]*)/i);
+    const m = line.match(new RegExp(`^(?:CLASS-METHODS|METHODS)\\s+(${METHOD_NAME})(?=\\s|\\.|$)`, 'i'));
     if (m) return m[1]!.toUpperCase();
     // First non-comment line that isn't a METHODS keyword — bail.
     return null;

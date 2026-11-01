@@ -5,10 +5,9 @@
  * - MemoryCache: fast, ephemeral (default/auto)
  * - SqliteCache: persistent, cross-session (explicit opt-in; stores source bodies at rest)
  *
- * Cache stores four types of data:
+ * Cache stores three types of data:
  * - APIs: Released API objects (for clean core checks)
  * - Sources: Raw source code keyed by (type, name, version) with content hash
- * - Contracts: Compressed dependency contracts keyed by source hash
  * - Function groups: Function-module to function-group mappings
  */
 
@@ -27,6 +26,7 @@ export interface CacheApi {
 export interface CacheStats {
   apiCount: number;
   sourceCount: number;
+  /** Legacy SQLite aggregate row count; payloads are never loaded or added. */
   contractCount: number;
 }
 
@@ -70,28 +70,6 @@ export interface CachedSource {
   cachedAt: string;
 }
 
-// ─── Contract Cache Types ────────────────────────────────────────────
-
-/** Serializable contract for cache storage (matches context/types.ts Contract) */
-export interface CachedContract {
-  name: string;
-  type: string;
-  methodCount: number;
-  source: string;
-  fullSource?: string;
-  success: boolean;
-  error?: string;
-}
-
-/** Cached dependency resolution result */
-export interface CachedDepGraph {
-  sourceHash: string;
-  objectName: string;
-  objectType: string;
-  contracts: CachedContract[];
-  cachedAt: string;
-}
-
 // ─── Cache Interface ────────────────────────────────────────────────
 
 /** Cache interface — both MemoryCache and SqliteCache implement this */
@@ -111,10 +89,6 @@ export interface Cache {
   listSources(query?: CacheListSourcesQuery): CacheListSourcesResult;
   invalidateSource(objectType: string, objectName: string, version?: 'active' | 'inactive' | 'all'): void;
 
-  // Dependency contract cache (keyed by source hash)
-  putDepGraph(graph: CachedDepGraph): void;
-  getDepGraph(sourceHash: string): CachedDepGraph | null;
-
   // Function group resolution cache
   putFuncGroup(funcName: string, groupName: string): void;
   getFuncGroup(funcName: string): string | null;
@@ -127,7 +101,7 @@ export interface Cache {
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-/** Compute SHA-256 hash of source code (used as dep graph cache key) */
+/** Compute SHA-256 for source identity and pure parse memoization. */
 export function hashSource(source: string): string {
   return createHash('sha256').update(source).digest('hex');
 }

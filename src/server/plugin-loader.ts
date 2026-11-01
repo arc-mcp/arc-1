@@ -96,9 +96,7 @@ function makePluginInvoke(def: PluginToolDefinition): (ctx: ToolDispatchContext)
       };
     }
     const publicCtx: ToolContext = {
-      // `client` is a runtime read-only Proxy (escape hatches `.http`/`.safety`/`withSafety` blocked,
-      // not just type-hidden); `http` is the gated read-only surface — the only sanctioned low-level
-      // HTTP path. Both close review B1. See safe-http-client.ts.
+      // Explicit plain-read facade; the HTTP and execution surfaces have separate gates.
       client: createReadOnlyAdtClient(dispatchCtx.client),
       http: createSafeHttpClient(
         dispatchCtx.client.http,

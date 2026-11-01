@@ -26,10 +26,14 @@ import {
 import { getMetadataWriteProperties } from '../../../src/handlers/write-helpers.js';
 
 describe('SAPReadSchema', () => {
-  it('accepts valid on-prem input', () => {
+  it('accepts valid on-prem input without materializing the handler-owned version default', () => {
     const result = SAPReadSchema.safeParse({ type: 'PROG', name: 'ZTEST' });
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.version).toBe('active');
+    if (result.success) expect(result.data.version).toBeUndefined();
+
+    const btpResult = SAPReadSchemaBtp.safeParse({ type: 'CLAS', name: 'ZCL_TEST' });
+    expect(btpResult.success).toBe(true);
+    if (btpResult.success) expect(btpResult.data.version).toBeUndefined();
   });
 
   it('accepts diff display labels', () => {
@@ -87,7 +91,7 @@ describe('SAPReadSchema', () => {
       version: 'inactive',
       force_refresh: true,
       maxRows: 50,
-      sqlFilter: "MANDT = '100'",
+      sqlFilter: '',
     });
     expect(result.success).toBe(true);
   });
@@ -228,6 +232,58 @@ describe('SAPReadSchema', () => {
     if (!result.success) {
       expect(result.error.issues[0]?.message).toContain('no semicolons');
     }
+  });
+
+  it('rejects sqlFilter on TABLE_QUERY and points to where', () => {
+    const result = SAPReadSchema.safeParse({ type: 'TABLE_QUERY', name: 'T000', sqlFilter: "MANDT = '000'" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['sqlFilter']);
+      expect(result.error.issues[0]?.message).toContain('Use where');
+    }
+  });
+
+  it('rejects sqlFilter on types other than TABLE_CONTENTS', () => {
+    const result = SAPReadSchema.safeParse({ type: 'PROG', name: 'ZPROG', sqlFilter: "MANDT = '000'" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toContain('only supported for type=TABLE_CONTENTS');
+    }
+  });
+
+  it.each([
+    ['where', [{ field: 'MANDT', op: '=', value: '000' }]],
+    ['columns', ['MANDT']],
+  ])('rejects %s on TABLE_CONTENTS and points to TABLE_QUERY', (key, value) => {
+    const result = SAPReadSchema.safeParse({ type: 'TABLE_CONTENTS', name: 'T000', [key]: value });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual([key]);
+      expect(result.error.issues[0]?.message).toContain('Use type=TABLE_QUERY');
+    }
+  });
+
+  it('rejects where on types other than TABLE_QUERY', () => {
+    const result = SAPReadSchema.safeParse({
+      type: 'PROG',
+      name: 'ZPROG',
+      where: [{ field: 'MANDT', op: '=', value: '000' }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts empty filter filler from strict-mode clients on every data type', () => {
+    const filler = { sqlFilter: '', columns: [], where: [] };
+    expect(SAPReadSchema.safeParse({ type: 'TABLE_QUERY', name: 'T000', ...filler, sqlFilter: '  ' }).success).toBe(
+      true,
+    );
+    expect(SAPReadSchema.safeParse({ type: 'TABLE_CONTENTS', name: 'T000', ...filler }).success).toBe(true);
+    expect(SAPReadSchema.safeParse({ type: 'PROG', name: 'ZPROG', ...filler }).success).toBe(true);
+    expect(SAPReadSchemaBtp.safeParse({ type: 'TABLE_QUERY', name: 'T000', ...filler }).success).toBe(true);
+  });
+
+  it('rejects sqlFilter on TABLE_QUERY in the BTP schema too', () => {
+    expect(SAPReadSchemaBtp.safeParse({ type: 'TABLE_QUERY', name: 'ZTAB', sqlFilter: "A = '1'" }).success).toBe(false);
   });
 
   it('coerces boolean expand_includes from string', () => {
@@ -443,7 +499,8 @@ describe('SAPReadSchemaBtp', () => {
     expect(SAPReadSchemaBtp.safeParse({ type: 'VARIANTS' }).success).toBe(false);
     expect(SAPReadSchemaBtp.safeParse({ type: 'AUTH' }).success).toBe(false);
     expect(SAPReadSchemaBtp.safeParse({ type: 'FTG2' }).success).toBe(false);
-    expect(SAPReadSchemaBtp.safeParse({ type: 'ENHO' }).success).toBe(false);
+    // ENHO (BAdI implementations) is a BTP type too.
+    expect(SAPReadSchemaBtp.safeParse({ type: 'ENHO', name: 'ZMY_ENH' }).success).toBe(true);
   });
 
   it('rejects expand_includes — the field is on-prem only', () => {
@@ -458,6 +515,11 @@ describe('SAPReadSchemaBtp', () => {
 });
 
 describe('SAPSearchSchema', () => {
+  it.each([SAPSearchSchema, SAPSearchSchemaNoSource])('bounds the type filter in both tool variants', (schema) => {
+    expect(schema.safeParse({ query: '*', objectType: 'CLAS/OC' }).success).toBe(true);
+    expect(schema.safeParse({ query: '*', objectType: 'X'.repeat(65) }).success).toBe(false);
+  });
+
   it('accepts valid input with query', () => {
     const result = SAPSearchSchema.safeParse({ query: 'ZCL_*' });
     expect(result.success).toBe(true);
@@ -814,11 +876,60 @@ describe('SAPWriteSchema', () => {
       typeKind: 'domain',
       typeName: 'ZDOMAIN',
       shortLabel: 'Status',
+      shortLength: '10',
+      mediumLength: 20,
+      longLength: 40,
+      headingLength: 55,
+      deactivateInputHistory: 'true',
       changeDocument: 'true',
     });
     expect(dtel.success).toBe(true);
     if (dtel.success) {
       expect(dtel.data.changeDocument).toBe(true);
+      expect(dtel.data.shortLength).toBe(10);
+      expect(dtel.data.deactivateInputHistory).toBe(true);
+    }
+  });
+
+  it('keeps valid DTEL label metadata in every write schema and rejects invalid lengths', () => {
+    const fields = {
+      shortLength: 0,
+      mediumLength: 20,
+      longLength: 40,
+      headingLength: 55,
+      deactivateInputHistory: 'false',
+    };
+    const inputs = [
+      { schema: SAPWriteSchema, value: { action: 'create', type: 'DTEL', name: 'ZDTEL', ...fields } },
+      { schema: SAPWriteSchemaBtp, value: { action: 'create', type: 'DTEL', name: 'ZDTEL', ...fields } },
+      {
+        schema: SAPWriteSchema,
+        value: { action: 'batch_create', objects: [{ type: 'DTEL', name: 'ZDTEL', ...fields }] },
+      },
+      {
+        schema: SAPWriteSchemaBtp,
+        value: { action: 'batch_create', objects: [{ type: 'DTEL', name: 'ZDTEL', ...fields }] },
+      },
+    ];
+
+    for (const { schema, value } of inputs) {
+      const result = schema.safeParse(value);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        const parsed = 'objects' in result.data ? result.data.objects?.[0] : result.data;
+        expect(parsed).toMatchObject({ ...fields, deactivateInputHistory: false });
+      }
+    }
+
+    for (const [field, value] of [
+      ['shortLength', 11],
+      ['mediumLength', -1],
+      ['longLength', 40.5],
+      ['headingLength', 56],
+    ] as const) {
+      expect(SAPWriteSchema.safeParse({ action: 'create', type: 'DTEL', name: 'ZDTEL', [field]: value }).success).toBe(
+        false,
+      );
     }
   });
 
@@ -910,23 +1021,23 @@ describe('SAPWriteSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('exposes edit_unit only for on-prem PROG/INCL writes', () => {
+  it.each(['edit_unit', 'add_unit'])('exposes %s only for on-prem PROG/INCL writes', (action) => {
     const program = SAPWriteSchema.safeParse({
-      action: 'edit_unit',
+      action,
       type: 'PROG',
       name: 'ZUNIT_TEST',
       unit: 'PROCESS_ORDERS',
       source: 'FORM process_orders.\nENDFORM.',
     });
     const include = SAPWriteSchema.safeParse({
-      action: 'edit_unit',
+      action,
       type: 'INCL',
       name: 'ZUNIT_INCLUDE',
       unit: 'STATUS_0100',
       source: 'MODULE status_0100 OUTPUT.\nENDMODULE.',
     });
     const btp = SAPWriteSchemaBtp.safeParse({
-      action: 'edit_unit',
+      action,
       type: 'CLAS',
       name: 'ZCL_TEST',
       unit: 'PROCESS_ORDERS',
@@ -1573,12 +1684,12 @@ describe('SAPDiagnoseSchema', () => {
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', type }).success).toBe(false);
   });
 
-  it('accepts loose includeSubpackages only for DEVC unittest scope', () => {
+  it('accepts false includeSubpackages outside DEVC unittest scope but restricts true', () => {
     expect(
       SAPDiagnoseSchema.safeParse({ action: 'unittest', type: 'DEVC', includeSubpackages: 'false' }).data,
     ).toMatchObject({ includeSubpackages: false });
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', type: 'CLAS', includeSubpackages: false }).success).toBe(
-      false,
+      true,
     );
     expect(SAPDiagnoseSchema.safeParse({ action: 'atc', type: 'DEVC', includeSubpackages: true }).success).toBe(false);
   });
@@ -1587,6 +1698,10 @@ describe('SAPDiagnoseSchema', () => {
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', timeoutSeconds: 1 }).success).toBe(true);
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', timeoutSeconds: 3601 }).success).toBe(false);
     expect(SAPDiagnoseSchema.safeParse({ action: 'atc', timeoutSeconds: 30 }).success).toBe(true);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'atc_ci', packages: ['Z'], timeoutSeconds: 600 }).success).toBe(true);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest_ci', packages: ['Z'], timeoutSeconds: 600 }).success).toBe(
+      true,
+    );
     expect(SAPDiagnoseSchema.safeParse({ action: 'syntax', timeoutSeconds: 30 }).success).toBe(false);
   });
 

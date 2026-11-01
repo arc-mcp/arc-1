@@ -135,12 +135,69 @@ ENDCLASS.`;
       );
     });
 
+    it.each([
+      [
+        'a block-comment header',
+        "/****\n* Header\n****/\n@EndUserText.label: 'x'\ndefine view entity ZX as select from t { key a }",
+      ],
+      ['a line-comment header', "// Header\n@EndUserText.label: 'x'\ndefine view entity ZX as select from t { key a }"],
+      [
+        'an obsolete -- comment header',
+        "-- Header\n@EndUserText.label: 'x'\ndefine view entity ZX as select from t { key a }",
+      ],
+      [
+        'a comment between annotations',
+        "@EndUserText.label: 'x'\n// note\ndefine custom entity ZX { key a : abap.char(1); }",
+      ],
+      ['define custom entity', 'define custom entity ZX { key a : abap.char(1); }'],
+      ['define root custom entity', 'define root custom entity ZX { key a : abap.char(1); }'],
+      ['define abstract entity', 'define abstract entity ZX { a : abap.char(1); }'],
+      [
+        'define transient view entity',
+        'define transient view entity ZX provider contract analytical_query as projection on ZY { a }',
+      ],
+      [
+        'define hierarchy',
+        'define hierarchy ZX as parent child hierarchy( source ZY child to parent association _p ) { a }',
+      ],
+      [
+        'define table function',
+        'define table function ZX returns { key a : abap.char(1); } implemented by method zcl_x=>m;',
+      ],
+      ['extend custom entity', 'extend custom entity ZY with { b : abap.char(1); }'],
+      ['extend abstract entity', 'extend abstract entity ZY with { b : abap.char(1); }'],
+    ])('detects CDS with %s as .ddls.asddls', (_label, source) => {
+      expect(detectFilename(source, 'ZX')).toBe('zx.ddls.asddls');
+    });
+
+    it('keeps define table (without function) as .tabl.astabl', () => {
+      expect(detectFilename('define table ztable { key f1 : abap.char(10); }', 'ZTABLE')).toBe('ztable.tabl.astabl');
+    });
+
+    it('still strips ABAP comment lines before a CLASS header', () => {
+      expect(detectFilename('* header\n"! doc\nCLASS zcl_x DEFINITION.', 'ZCL_X')).toBe('zcl_x.clas.abap');
+    });
+
     it('defaults to .clas.abap for unknown', () => {
       expect(detectFilename('DATA lv_test TYPE string.', 'UNKNOWN')).toBe('unknown.clas.abap');
     });
   });
 
   describe('CDS Lint', () => {
+    it('detects and validates a raw table function instead of silently skipping it as TABL', () => {
+      const source = `/* header */
+@EndUserText.label: 'Table function'
+// comment after annotation
+define table function Z_TEST returns { key f1 : abap.char(10); } implemented by method zcl_x=>m;`;
+      const filename = detectFilename(source, 'Z_TEST');
+      const options = { systemType: 'onprem' as const, abapRelease: '758' };
+      expect(filename).toBe('z_test.ddls.asddls');
+      expect(validateBeforeWrite(source, filename, options).pass).toBe(true);
+      const invalid = validateBeforeWrite(source.replace('f1 :', 'f1 INVALID :'), filename, options);
+      expect(invalid.pass).toBe(false);
+      expect(invalid.errors.some((issue) => issue.rule === 'cds_parser_error')).toBe(true);
+    });
+
     it('returns no cds_parser_error for valid CDS view', () => {
       const source = `define view entity ZI_TEST as select from ztable {
   key field1,
@@ -207,10 +264,23 @@ define view ZI_TEST as select from ztable {
       expect(legacyErrors.length).toBeGreaterThan(0);
     });
 
-    it('returns no issues for BDEF source (abaplint does not parse BDEF)', () => {
-      const source = 'this is total garbage that abaplint silently ignores for BDEF';
+    it('reports parser errors for malformed BDEF source', () => {
+      const source = 'this is not a behavior definition';
       const results = lintAbapSource(source, 'zi_test.bdef.asbdef');
-      expect(results).toHaveLength(0);
+      expect(results).toEqual(
+        expect.arrayContaining([expect.objectContaining({ rule: 'bdef_parser_error', severity: 'error' })]),
+      );
+    });
+
+    it('parses valid BDEF source while retaining missing-entity diagnostics', () => {
+      const source = 'projection;\ndefine behavior for ZI_TEST { use create; }';
+      const results = lintAbapSource(source, 'zi_test.bdef.asbdef');
+      expect(results.some((result) => result.rule === 'bdef_parser_error')).toBe(false);
+      expect(results).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ rule: 'bdef_check_syntax', message: 'Entity "ZI_TEST" not found' }),
+        ]),
+      );
     });
   });
 

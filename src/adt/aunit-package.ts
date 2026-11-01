@@ -1,5 +1,6 @@
 /** Bounded package selection for whole-package ABAP Unit runs. */
 
+import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
 import { ADT_ROOT_PATH, canonicalHostRelativeAdtPath } from './path-safety.js';
@@ -49,7 +50,15 @@ export async function resolveAunitPackageSelection(
 
   // Distinguish an existing empty package from an unknown package before treating zero rows as a
   // sound empty selection. The package metadata read is also authorization evidence for the scope.
-  await http.get(`/sap/bc/adt/packages/${encodeURIComponent(normalizedPackage)}`, undefined, requestOptions);
+  try {
+    await http.get(`/sap/bc/adt/packages/${encodeURIComponent(normalizedPackage)}`, undefined, requestOptions);
+  } catch (error) {
+    if (error instanceof AdtApiError && error.statusCode === 404)
+      throw new Error(
+        `ABAP Unit package ${normalizedPackage} could not be verified: it may be missing/inaccessible, or the package metadata API may be unavailable.`,
+      );
+    throw error;
+  }
   const response = await http.get(
     `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=*&packageName=${encodeURIComponent(normalizedPackage)}&maxResults=${AUNIT_PACKAGE_SEARCH_LIMIT}`,
     undefined,

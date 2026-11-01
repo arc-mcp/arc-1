@@ -486,7 +486,7 @@ Authorization Object: S_TABU_NAM
 **PFCG setup:**
 1. Create role `ZARC1_TECH_AUTH` in PFCG
 2. Add auth object `S_TABU_NAM` with `ACTVT=03`, `TABLE=AGR_USERS`
-3. Add auth object `S_ADT_RES` with `ACTVT=01,02` (ADT access — needed for POST endpoints)
+3. Add auth object `S_ADT_RES` with `URI` coverage for the ADT resources used (all HTTP methods; this object has no `ACTVT` field)
 4. Do NOT grant `S_TABU_NAM` for any other table
 5. Assign role to technical user
 

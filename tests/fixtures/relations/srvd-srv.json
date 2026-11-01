@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T22:07:49.315Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/ddic/srvd/sources/ztest_mcp_sd_flight",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "722a7f37e2d38af59a91274a647e6597c80e84f999c2ceeff233f0f7a9de6fe6",
+    "networkSha256": "a6e6b5298f0a1671822a773559657297d73ad882337556b25a9a77fda0f4a805",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 2,
+    "observedEdges": 1
+  },
+  "type": "SRVD",
+  "native": "SRVD/SRV",
+  "name": "ZTEST_MCP_SD_FLIGHT",
+  "uri": "/sap/bc/adt/ddic/srvd/sources/ztest_mcp_sd_flight",
+  "metadataRootQName": "srvd:srvdSource",
+  "context": "WUL",
+  "metadataXml": "<srvd:srvdSource adtcore:name=\"ZTEST_MCP_SD_FLIGHT\" adtcore:type=\"SRVD/SRV\" adtcore:version=\"active\" xmlns:srvd=\"http://www.sap.com/adt/ddic/srvdsources\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/%24tmp\" adtcore:type=\"DEVC/K\" adtcore:name=\"$TMP\"/>\n</srvd:srvdSource>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>WUL</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/businessservices/bindings/ztest_mcp_sb_flight\" adtcore:type=\"SRVB/SVB\" adtcore:name=\"ZTEST_MCP_SB_FLIGHT\" adtcore:packageName=\"$TMP\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/ddic/srvd/sources/ztest_mcp_sd_flight\" adtcore:type=\"SRVD/SRV\" adtcore:name=\"ZTEST_MCP_SD_FLIGHT\" adtcore:packageName=\"$TMP\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/ddic/srvd/sources/ztest_mcp_sd_flight</oro:object1><oro:object2>/sap/bc/adt/businessservices/bindings/ztest_mcp_sb_flight</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

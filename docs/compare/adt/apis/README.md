@@ -96,7 +96,7 @@ Each numbered report includes **SAP ABAP-side: implementation & relevant objects
 ## Global: SAP ICF and authorization
 
 - **ICF:** ADT services live under **`/sap/bc/adt/`** in **SICF** (`default_host` → `sap` → `bc` → `adt`). Sub-nodes must be **active** for the corresponding API to respond (404 if inactive).
-- **SAP auth:** Developers typically need **`S_ADT_RES`** (and often **`S_DEVELOP`**) with activities appropriate for read vs POST-heavy “reads”. Transport objects add **`S_TRANSPRT`**. Exact requirements are **system-dependent**; validate with SU53 on failure.
+- **SAP auth:** **`S_ADT_RES`** permits URI prefixes and has no activity field; POST is also used for reads. Endpoint checks such as **`S_DEVELOP`** or **`S_TRANSPRT`** are separate. Exact requirements are **system-dependent**; trace the effective SAP user with STAUTHTRACE and inspect SU53 after a failure.
 - **Principal propagation (PP):** When enabled, the **same URLs** are called but the HTTP client adds **`SAP-Connectivity-Authentication`** (or related proxy auth). **ICF on the ABAP side is unchanged**; effective SAP user comes from the mapped identity. Test with the **same PP user** you use in production.
 
 ## Global: ARC-1 HTTP errors and negotiation

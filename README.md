@@ -25,7 +25,7 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 - **Safe by default** — read-only, no free SQL, no table preview, no transport writes, no Git writes. Enable each capability with explicit `SAP_ALLOW_*` flags
 - **Action deny list** — block specific tool actions with `SAP_DENY_ACTIONS` (for example `SAPWrite.delete`), without exposing low-level operation codes to admins
 - **Package restrictions** — limit AI write operations (create, update, delete) to specific packages with wildcards (`--allowed-packages "Z*,$TMP"`). Read operations are not restricted by package — use SAP's native authorization for read-level access control
-- **Data access control (off by default)** — `SAPRead(type=TABLE_CONTENTS)` and `SAPQuery` are gated behind explicit env vars (`SAP_ALLOW_DATA_PREVIEW=true`, `SAP_ALLOW_FREE_SQL=true`). These capabilities can expose application data or run ad-hoc SQL, so they are intentionally separated from the default development-tooling surface. They can be enabled for governed use cases, but should be reviewed against the [SAP API Policy](docs_page/sap-api-policy-and-architecture.md), your SAP agreement, and internal data-governance rules
+- **Data access control (off by default)** — table previews, saved SAPscript texts and SLG1 messages require `SAP_ALLOW_DATA_PREVIEW=true`; freestyle SQL separately requires `SAP_ALLOW_FREE_SQL=true`. Review enabled uses against the [SAP API Policy](docs_page/sap-api-policy-and-architecture.md), your SAP agreement, and internal data-governance rules.
 - **Experimental data-source emergency brake** — approved data/SQL deployments can set `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002`. ARC-1 then parses each SQL request and resolves active CDS plus replacement-object lineage before execution, denying direct or transitive exact-name matches and failing closed when lineage is unsupported or cannot be proven. The empty default adds no metadata calls. This denylist is defense in depth, not a production allowlist or replacement for SAP authorization/CDS DCL; see [Authorization & Roles](docs_page/authorization.md#experimental-data-source-blocklist).
 - **Transport safety** — transport reads are available for review, while transport mutations require both `--allow-writes` and `--allow-transport-writes`. Update/delete operations auto-use the lock correction number when no explicit transport is provided
 - **Git workflow safety** — Git operations are disabled by default. Enable explicitly with `--allow-git-writes` / `SAP_ALLOW_GIT_WRITES=true`
@@ -49,10 +49,14 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 Deploy ARC-1 as a Cloud Foundry app on SAP BTP with full platform integration:
 
 - **Destination Service** — connect to SAP systems via managed destinations
-- **Experimental multi-target mode** — the default-off, mutation-free BTP mode discovers
-  destinations marked `arc1.enabled=true` and exposes pinned SID/client plus aggregate endpoints
+- **Experimental multi-target mode** — the default-off BTP mode discovers
+  destinations marked `arc1.enabled=true` and exposes pinned SID/client plus read-only aggregate endpoints;
+  [scoped pinned PP writes](docs_page/multi-target-writes.md) require separate destination/IAM opt-ins
   ([setup](docs_page/multi-target-setup.md),
   [administration](docs_page/multi-target-administration.md))
+- **Optional target filtering** — for shared multi-system gateways where teams need different target
+  lists. [Assign systems/clients through XSUAA roles](docs_page/multi-target-authorization.md);
+  IAS changes are optional. This filters IAM-assigned targets, not automatically discovered SAP accounts.
 - **Cloud Connector** — reach on-premise systems through the connectivity proxy
 - **Per-user destinations** — user identity forwarded end-to-end via X.509 certificates for on-premise SAP, or exchanged for an ABAP bearer token for BTP ABAP Environment
 - **XSUAA OAuth proxy** — MCP clients authenticate via standard OAuth, ARC-1 handles the BTP token exchange
@@ -62,13 +66,13 @@ Deploy ARC-1 as a Cloud Foundry app on SAP BTP with full platform integration:
 
 - **12 intent-based tools** instead of 200+ individual tools — keeps tool selection simple, with the schema payload guarded by CI budgets and a hyperfocused 1-tool mode for tight context windows
 - **Method-level read/edit** — read or update a single class method, not the whole source (up to 20x fewer tokens)
-- **Context-first understanding** — `SAPContext(action="deps")` is the first call for "what does this object do?": it returns the object's Knowledge Transfer Document (`SKTD`/`KTD`) when available plus public API contracts of dependencies in one call (7-30x compression)
+- **Focused source and dependency context** — use targeted `SAPRead` for exact implementation behavior. For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)` for available Knowledge Transfer Documents (`SKTD`/`KTD`) and dependency contracts, then compare requirements with source. Without documented requirements, intent is unverified.
 
 ### Built-in Object Caching
 
 - **Server-validated source caching** — every SAP object read is cached in memory (stdio) or SQLite (http-streamable). Repeated reads use `If-None-Match`/ETag conditional GET, so unchanged objects return from cache after SAP confirms `304 Not Modified`.
-- **Dependency graph caching** — `SAPContext` dep resolution keyed by source hash; unchanged objects skip all ADT calls on subsequent runs.
-- **KTD-aware context** — Knowledge Transfer Documents are cached as source entries and composed into `SAPContext(action="deps")` separately from the dependency graph, so cached dependency context can still include revalidated documentation.
+- **Dependency parsing reuse** — unchanged, authorized source can reuse parsed dependencies and contracts in memory. Aggregate dependency graphs are not cached; SAP authorization and source validation still apply.
+- **KTD-aware context** — Knowledge Transfer Documents use the source cache and are revalidated when composed into `SAPContext(action="deps")`.
 - **Live where-used** — `SAPContext(action="usages")` and CDS impact analysis query SAP's current repository index with the caller's identity; no startup repository scan is required.
 - **Active/inactive source views** — `SAPRead` accepts `version="active" | "inactive" | "auto"` and warns when the active source has an unactivated draft.
 - **Write invalidation** — when `SAPWrite` or `SAPActivate` mutates an object, both active and inactive source cache entries are dropped; next read revalidates or fetches fresh source.
@@ -91,15 +95,15 @@ The 12 tools are designed from real LLM interaction feedback:
 
 | Tool | What it does |
 |------|-------------|
-| **SAPRead** | Read exact ABAP source, method bodies, grep matches, table data, CDS views, access controls (`DCLS`), metadata extensions (`DDLX`), service bindings (`SRVB`), knowledge-transfer docs (`SKTD` or friendly alias `KTD`), message classes (`MSAG`), revision history (`VERSIONS`/`VERSION_SOURCE`), inactive object state, BOR objects, deployed UI5/Fiori apps (BSP, BSP_DEPLOY), and ABAP Platform 2025 server-driven objects (`DESD`, `EVTB`, `EVTO`, `DTSC`, `CSNM`, `COTA`). For "what does this object do?" use `SAPContext` first, then `SAPRead` for precise source. On-prem metadata reads include authorization fields (`AUTH`), feature toggles (`FEATURE_TOGGLE`), and enhancement implementations (`ENHO`). Structured format for classes returns metadata + decomposed includes as JSON. Optional `grep` regex returns only matching source lines (+context, method-annotated for classes) for token-efficient search. (Deprecated aliases `MESSAGES`/`FTG2` accepted for one minor.) |
+| **SAPRead** | Read exact ABAP source, method bodies, grep matches, table data, CDS views, access controls (`DCLS`), metadata extensions (`DDLX`), service bindings (`SRVB`), knowledge-transfer docs (`SKTD` or friendly alias `KTD`), message classes (`MSAG`), revision history (`VERSIONS`/`VERSION_SOURCE`), inactive object state, BOR objects, deployed UI5/Fiori apps (BSP, BSP_DEPLOY), and ABAP Platform 2025 server-driven objects (`DESD`, `EVTB`, `EVTO`, `DTSC`, `CSNM`, `COTA`). For "what does this object do?" use `SAPContext` first, then `SAPRead` for precise source. Enhancement implementations (`ENHO`) are readable on-prem and on BTP; authorization fields (`AUTH`) and feature toggles (`FEATURE_TOGGLE`) are on-prem only. Structured format for classes returns metadata + decomposed includes as JSON. Optional `grep` regex returns only matching source lines (+context, method-annotated for classes) for token-efficient search. (Deprecated aliases `MESSAGES`/`FTG2` accepted for one minor.) |
 | **SAPSearch** | Object search + full-text source code search across the system |
 | **SAPWrite** | Create/update/delete ABAP source and DDIC metadata with automatic lock/unlock (PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, DOMA, DTEL, MSAG; availability adapts for BTP). Class updates can target local includes (`definitions`, `implementations`, `macros`, `testclasses`); class-section surgery (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) lets an LLM edit a global class signature without re-sending `/source/main`; RAP behavior-pool scaffolding can auto-create `lhc_*` skeletons before injecting signatures/stubs. Batch creation supports terminal activation for interdependent multi-object workflows (e.g., RAP stack or domain+data element in one call) |
 | **SAPActivate** | Activate ABAP objects — single or batch (essential for RAP stacks), with guarded retry for the S/4HANA ED064 batch quirk. Publish/unpublish OData service bindings (SRVB) |
 | **SAPNavigate** | Go-to-definition, find references, code completion |
-| **SAPQuery** | Execute ABAP SQL with table-not-found suggestions and automatic chunking for simple long literal `IN (...)` lists |
+| **SAPQuery** | Read saved SAPscript long texts or execute ABAP SQL; each path requires its own opt-in |
 | **SAPTransport** | CTS transport management (list/get/create/release/delete/reassign/release-recursive), transport layer/target lookup, package transport requirement checks, and reverse lookup history (`action="history"`) |
 | **SAPGit** | Git-based ABAP workflows across gCTS and abapGit (list/clone/pull/push/commit/branch/unlink) with backend auto-selection and safety gating (`--allow-git-writes`) |
-| **SAPContext** | Context-first object understanding (`action="deps"`): prepends the object's KTD when available and returns compressed dependency contracts. Also supports reverse dependency lookup (`action="usages"`) and CDS upstream/downstream impact analysis (`action="impact"` for DDLS) |
+| **SAPContext** | Dependency APIs (`action="deps"`): optional KTD plus bounded source-derived contracts, not a complete relationship inventory. Also supports live where-used (`action="usages"`), CDS impact (`action="impact"`), and TABL includes/appends (`action="structure"`) |
 | **SAPLint** | Local ABAP lint (system/release-aware presets, auto-fix, pre-write validation) + ADT PrettyPrint (server-side formatting) |
 | **SAPDiagnose** | Syntax check, ABAP Unit tests, ATC code quality, CDS test-case suggestions, active/inactive object-state comparison, generic ADT quickfix proposals/application deltas, gateway/system message diagnostics, short dumps, profiler traces, and the on-prem authorization trace (`SUAUTHVALTRC`, data-preview gated) |
 | **SAPManage** | Feature probing, cache statistics, package lifecycle/change-package operations, and FLP catalog/group/tile helpers |
@@ -118,23 +122,26 @@ ARC-1 probes the SAP system at startup and adapts its behavior:
 
 ## ADT API Status and Strategy
 
-ARC-1 is a governed development-tooling proxy around ADT behavior — code checks, build/activate,
-transport management, AI-assisted ABAP authoring, Git workflows — not a bulk data-extraction product.
-It runs with real user identity, respects SAP authorization, and keeps audit and rate controls in place.
+For a custom MCP server such as ARC-1, SAP's
+[Third-Party MCP Access reference architecture](https://architecture.learning.sap.com/docs/ref-arch/137800)
+is the primary design and control baseline we recommend. For a shared service, start with BTP Cloud
+Foundry, XSUAA and strict principal propagation. SAP's API Policy FAQ Q56 allows custom MCP servers
+under conditions; Q32 confirms that Integration Suite is not mandatory.
 
-**Where this stands under SAP's API Policy is covered in full in
-[SAP API Policy & Architecture Alignment](docs_page/sap-api-policy-and-architecture.md)** — what
-[API Policy v.4.2026a](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) says
-clause by clause, why the ADT question is more nuanced than "undocumented API", where ARC-1 sits against
-SAP's reference architecture for third-party MCP access, and the specific questions to put to your SAP
-contact. Short version: **usable at your own risk, and worth asking SAP before production.**
+**[SAP API Policy & Architecture Alignment](docs_page/sap-api-policy-and-architecture.md)** explains
+that path, the controls ARC-1 already supports, and the remaining gaps. FAQ Q33 classifies ADT APIs
+as internal and limits them to endorsed development channels; ARC-1's direct TypeScript ADT client
+is not specifically identified as one. Clarify that channel and the intended AI-assisted development
+use with SAP before adoption, including dev/test. BTP hosting and security controls alone do not
+establish full policy adherence. Per-user SAP identity applies to PP; shared Basic modes retain a
+shared SAP identity.
 
 Two ARC-1 capabilities can expose business data or execute ad-hoc SQL. Both are **off by default** and require explicit opt-in env vars, so the operator makes a deliberate decision before they are reachable:
 
 | Capability | Env var | Default | Policy note |
 | ---------- | ------- | ------- | ----------- |
-| Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
-| Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
+| Table previews (`SAPRead(type=TABLE_CONTENTS/TABLE_QUERY)`), [saved SAPscript texts](docs_page/tools.md#stored-sapscript-long-texts) and [SLG1 messages](docs_page/tools.md#saved-application-logs-actionapplication_log) (`SAPQuery` actions `long_text` / `application_log`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Reads application data; authenticated callers also need `data` scope. |
+| Freestyle ABAP SQL (`SAPQuery(action=sql)`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; authenticated callers also need `sql` scope. |
 | Exact source blocklist (experimental) | `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` | empty (off) | Denies exact direct/transitive table or CDS dependencies; active mode is deliberately fail-closed and slower. |
 
 When either capability is enabled, successful data-preview bodies are limited cumulatively per tool
@@ -143,9 +150,13 @@ and serialization. `SAPQuery.maxRows` is separately clamped to 10,000, but wide 
 byte limit much earlier. See [Configuration](docs_page/configuration-reference.md) before tuning
 `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` or `ARC1_MAX_CONCURRENT_DATA_RESULTS`.
 
-With both flags at their defaults, ARC-1's data/sql rows are unreachable. Turning either flag on is a valid operational choice for approved scenarios, but it should be deliberate: check the current SAP API Policy, the customer's SAP agreement, SAP authorizations, and internal data-protection rules before enabling it on a productive system.
+With both flags at their defaults, ARC-1's data/sql rows are unreachable. FAQ Q33 excludes application-table
+reads, business-data export and backend SQL from ADT's intended development-tooling scope. Keep these
+flags off unless the specific use has a documented allowance or SAP authorization under the applicable
+agreements; internal approval or a technical opt-in alone is insufficient. Use Published business APIs
+for business-data integration.
 
-ARC-1's strategy is to stay close to documented and discoverable ADT behavior, probe system capabilities before exposing tools, keep conservative security defaults (writes off, data preview off, free SQL off, package allowlist `$TMP`), and continuously review SAP's guidance as it evolves. This README is not a compliance decision for any specific customer landscape, but the default posture is intended to support normal governed development use rather than block it.
+ARC-1 combines capability discovery with conservative defaults and centralized authorization. Discovery establishes technical availability, not API-policy permission. Follow the reference architecture and verify both the API-specific allowance and the deployed controls.
 
 ## Versioning & Stability
 
@@ -218,12 +229,12 @@ Full documentation is available at **[docs.arc-1-mcp.com](https://docs.arc-1-mcp
 | [SAP BTP: Start Here](https://docs.arc-1-mcp.com/btp-overview/) | Choose the BTP topology and follow the correct deployment, auth, destination, and operations guides |
 | [BTP Cloud Foundry](https://docs.arc-1-mcp.com/btp-cloud-foundry-deployment/) | MTA deployment, topology decision, role handoffs, and safe acceptance |
 | [BTP Administration](https://docs.arc-1-mcp.com/btp-administration/) | Changes, roles, secrets, scaling, upgrades, rollback, and customer handover |
-| [Multi-System Setup](https://docs.arc-1-mcp.com/multi-target-setup/) | Experimental read-only BTP multi-target deployment, destinations, roles, and client configuration |
+| [Multi-System Setup](https://docs.arc-1-mcp.com/multi-target-setup/) | BTP multi-target deployment, destinations, roles, and scoped pinned PP writes |
 | [Configuration](https://docs.arc-1-mcp.com/configuration-reference/) | Every flag and env var, one table |
 | [Updating](https://docs.arc-1-mcp.com/updating/) | Update procedures per install method |
 | [Enterprise Auth](https://docs.arc-1-mcp.com/enterprise-auth/) | Layer A / Layer B auth internals, coexistence matrix |
 | [Tool Reference](https://docs.arc-1-mcp.com/tools/) | Complete reference for all 12 tools |
-| [Extensions (Custom Tools)](https://docs.arc-1-mcp.com/extensions/) | Add your own `Custom_*` tools without forking (FEAT-61) — reads, gated non-ADT writes, console-class execute |
+| [Extensions (Custom Tools)](https://docs.arc-1-mcp.com/extensions/) | Add your own `Custom_*` tools without forking (FEAT-61) — reads, gated non-ADT writes, class/report execute |
 | [Architecture](https://docs.arc-1-mcp.com/architecture/) | System architecture with diagrams |
 | [AI Usage Patterns](https://docs.arc-1-mcp.com/mcp-usage/) | Agent workflow patterns and best practices |
 | [Skills](https://docs.arc-1-mcp.com/skills/) | Reusable ARC-1 agent skills, including GitHub Copilot in Eclipse and VS Code ADT setup |

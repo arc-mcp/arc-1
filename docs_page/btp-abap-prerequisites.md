@@ -32,7 +32,7 @@ Without a customer account, SAP's trial track ends at the same place:
     to the standard plan without data loss. Free-tier systems are **stopped every night** and must be
     restarted by hand from the **Landscape Portal** — to ARC-1 a stopped system looks like a
     connectivity failure (`ECONNREFUSED` / timeouts), not an auth problem. Current limits:
-    [Service Plans and Metering](https://help.sap.com/docs/btp/sap-business-technology-platform/commercial-information).
+    [Service Plans and Metering](https://help.sap.com/docs/sap-btp-abap-environment/abap-environment/commercial-information).
 
 ## 2. Run the booster
 
@@ -65,8 +65,9 @@ Create it on the ABAP instance in the cockpit and download the JSON. ARC-1 reads
 [local browser login](btp-abap-environment.md#local-development-service-key-browser-login) or as the
 OAuth client of a [per-user destination](btp-abap-environment.md#recommended-btp-deployment-with-a-per-user-destination).
 
-!!! danger "A service key is a full-access SAP credential"
-    `uaa.clientid` + `uaa.clientsecret` + `url` grant OAuth access to the whole ABAP system. Keep it
+!!! danger "Protect the service key"
+    The key contains an OAuth client secret. ARC-1’s ADT flow also requires interactive user authentication
+    and that user’s SAP authorizations; the secret alone is not unrestricted ABAP access. Keep it
     outside the repository (e.g. `~/.config/arc-1/`) and never commit it. ARC-1's `.gitignore` /
     `.dockerignore` / `.cfignore` match `*service-key*.json` as a backstop only.
 

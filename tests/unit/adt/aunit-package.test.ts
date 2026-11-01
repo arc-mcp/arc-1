@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AUNIT_PACKAGE_SEARCH_LIMIT, resolveAunitPackageSelection } from '../../../src/adt/aunit-package.js';
+import { AdtApiError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 
@@ -22,6 +23,29 @@ function httpFor(xml: string): AdtHttpClient {
 }
 
 describe('AUnit package selection', () => {
+  it('refuses ambiguous package metadata 404s without searching', async () => {
+    const get = vi.fn().mockRejectedValue(new AdtApiError('No suitable resource found', 404, '/packages/SABP_UNIT'));
+    const selection = resolveAunitPackageSelection(
+      { get } as unknown as AdtHttpClient,
+      unrestrictedSafetyConfig(),
+      'SABP_UNIT',
+      true,
+    );
+    await expect(selection).rejects.toThrow('package metadata API may be unavailable');
+    // Selection is also rechecked after execution, so its error cannot claim no run occurred.
+    await expect(selection).rejects.not.toThrow('No run was started');
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves authorization failures without searching', async () => {
+    const denied = new AdtApiError('Forbidden', 403, '/packages/ZROOT');
+    const get = vi.fn().mockRejectedValue(denied);
+    await expect(
+      resolveAunitPackageSelection({ get } as unknown as AdtHttpClient, unrestrictedSafetyConfig(), 'ZROOT', false),
+    ).rejects.toBe(denied);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
   const rows = [
     {
       type: 'CLAS/OC',

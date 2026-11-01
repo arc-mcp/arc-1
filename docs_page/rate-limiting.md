@@ -15,14 +15,15 @@ Three layers gate this traffic, each addressing a distinct threat:
 | **Protects against** | OAuth brute-force / `/mcp` probing | One developer monopolizing slots | SAP work-process exhaustion |
 | **Keyed on** | Source IP | Authenticated user (`userName`/`clientId`) | (global) |
 | **Mechanism** | `express-rate-limit` fixed-window counter | `rate-limiter-flexible` token bucket | FIFO `Semaphore` |
-| **On hit** | HTTP `429` + `Retry-After` | MCP tool error with `retryAfter` | Queue wait (no rejection) |
+| **On hit** | HTTP `429` + `Retry-After` | MCP tool error with `retryAfter` | Queue wait; cancellation/deadline only when supplied by the operation |
 | **Audit event** | `auth_rate_limited` | `mcp_rate_limited` | `http_request` status 429/503 |
 | **Env var** | `ARC1_AUTH_RATE_LIMIT` (OAuth) + optional `ARC1_MCP_HTTP_RATE_LIMIT` (MCP) | `ARC1_RATE_LIMIT` | `ARC1_MAX_CONCURRENT` |
 
 ```
    ┌──────────────────────────────────────────────────────────┐
    │ Layer 1 — HTTP edge (per-IP)                             │
-   │   OAuth: /register /authorize /token /revoke             │
+   │   OAuth: /register /authorize /token /revoke              │
+   │          /oauth/callback                                 │
    │   MCP: /mcp, pinned, aggregate, Copilot path             │
    │   ARC1_AUTH_RATE_LIMIT + ARC1_MCP_HTTP_RATE_LIMIT        │
    └──────────────────────────────────────────────────────────┘
@@ -47,11 +48,11 @@ Three layers gate this traffic, each addressing a distinct threat:
 
 These are all the knobs you have. Set values via env vars, CLI flags, or `.env`.
 
-**Defaults are deliberately asymmetric.** Layer 1 and Layer 3 are ON by default — Layer 1 because it closes a CodeQL HIGH alert and protects the OAuth surface from brute-force without affecting normal traffic, Layer 3 because it's the bug fix that started this whole feature (per-PP-user semaphore multiplication). **Layer 2 is OFF by default** because it's the only layer that can fail user-visible work (MCP tool errors), and single-user deployments don't need it. Operators with multi-user setups opt in by setting `ARC1_RATE_LIMIT>0`. See [ADR-0004](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md).
+**Defaults are deliberately asymmetric.** Layer 1 and Layer 3 are ON by default — Layer 1 because it closes a CodeQL HIGH alert and protects the OAuth surface from brute-force without affecting normal traffic, Layer 3 because it's the bug fix that started this whole feature (per-PP-user semaphore multiplication). **Layer 2 is OFF by default** because per-user quotas are an operator choice for shared deployments. Layer 1 can also interrupt work with HTTP 429. Queue cancellation depends on the operation, as described below. Operators with multi-user setups opt in by setting `ARC1_RATE_LIMIT>0`. See [ADR-0004](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md).
 
 ### `ARC1_AUTH_RATE_LIMIT` — Layer 1 (default `20`)
 
-**What it caps.** Requests per minute, per source IP, to the OAuth endpoints (`/register`, `/authorize`, `/token`, `/revoke`). When `ARC1_MCP_HTTP_RATE_LIMIT` is unset, MCP HTTP traffic keeps its historical separately-derived cap (`max(value × 30, 600)/min/IP`).
+**What it caps.** Requests per minute, per source IP, to the OAuth endpoints (`/register`, `/authorize`, `/token`, `/revoke`, `/oauth/callback`). When `ARC1_MCP_HTTP_RATE_LIMIT` is unset, MCP HTTP traffic keeps its historical separately-derived cap (`max(value × 30, 600)/min/IP`).
 
 **Copilot Studio note.** Copilot Studio POSTs MCP JSON-RPC bodies to `/authorize` instead of `/mcp` (a documented quirk of that client). Those requests skip the low OAuth bucket and consume the same process-wide MCP bucket as single-target `/mcp`, pinned routes, and `/multi/mcp`. Normal OAuth `/authorize` requests continue to use the OAuth cap. Alternating endpoint styles therefore does not multiply an IP's effective MCP allowance.
 
@@ -79,7 +80,7 @@ to disable only the MCP HTTP-edge limiter; OAuth endpoints remain controlled ind
 
 ### `ARC1_RATE_LIMIT` — Layer 2 (default `0` — DISABLED)
 
-**Layer 2 ships off by default.** It is the only layer that can fail user-visible work (the others either queue or return HTTP 429 to a consenting client). Single-user stdio deployments don't need it; multi-user PP / OIDC deployments turn it on explicitly with `ARC1_RATE_LIMIT=60` (or whatever quota suits the team — see the sizing presets below). See [ADR-0004](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md) for the rationale.
+**Layer 2 ships off by default.** It returns an MCP tool error when a user exceeds the quota. Single-user stdio deployments don't need it; multi-user PP / OIDC deployments turn it on explicitly with `ARC1_RATE_LIMIT=60` (or whatever quota suits the team — see the sizing presets below). See [ADR-0004](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md) for the rationale.
 
 **What it caps when enabled.** MCP tool calls per minute, per authenticated user. Stdio mode (no
 `authInfo`) is exempt entirely — there's no user identity to key on, and stdio is
@@ -112,11 +113,11 @@ or SAP request.
 
 ### `ARC1_MAX_CONCURRENT` — Layer 3 (default `10`)
 
-**What it caps.** Concurrent in-flight SAP HTTP requests, **server-wide across all users**. Excess requests wait in a FIFO queue — no rejection. With principal propagation, one shared semaphore enforces the cap across all per-user clients, NOT `10` per user.
+**What it caps.** Concurrent in-flight SAP HTTP requests, **server-wide across all users**. Excess requests wait in a FIFO queue. Cancellation or a deadline applies only when the operation supplies it (for example, bounded data preview and ATC/AUnit). Ordinary source reads and writes have no queue timeout; their fetch timeout starts after a slot is granted. With principal propagation, one shared semaphore enforces the cap across all per-user clients, NOT `10` per user.
 
 **What happens on hit.** New requests wait. No 429 is emitted. Wait time depends on how fast in-flight requests release the slot.
 
-**Retry-After honoring.** When SAP or an upstream gateway (Web Dispatcher, BTP API Management) returns `429`/`503` with a `Retry-After` header, ARC-1 waits the indicated duration (clamped to `[0, 60_000]` ms) and retries once. The audit event includes `source: header` or `source: fallback` so you can see whether the wait came from the server or our jitter floor.
+**Retry-After honoring.** For operations eligible for automatic replay, when SAP or an upstream gateway (Web Dispatcher, BTP API Management) returns `429`/`503` with a `Retry-After` header, ARC-1 waits the indicated duration (clamped to `[0, 60_000]` ms) and retries once. The audit event includes `source: header` or `source: fallback` so you can see whether the wait came from the server or our jitter floor. Creation and execution paths that forbid replay do not retry an ambiguous failure; inspect state before repeating those operations.
 
 **When to tune.** Use the sizing math below.
 
@@ -149,9 +150,9 @@ ARC1_MAX_CONCURRENT = floor(0.6 × wp_no_dia / N_instances)
 ARC1_MAX_CONCURRENT = floor(0.6 × 40 / 2) = 12 per instance
 ```
 
-Total ARC-1 fleet uses ≤ 24 dialog WPs out of 40, leaving 16 (40%) for everyone else.
+This caps the fleet at 24 concurrent SAP HTTP requests. It does not reserve work processes: sessions, asynchronous checks, and other clients can consume additional capacity. Validate the allocation with Basis under representative load.
 
-**BTP ABAP Environment / Steampunk.** The platform enforces its own quotas (BTP API Management policies and platform-side throttling). Start with `ARC1_MAX_CONCURRENT=20` per instance and watch for `http_request` audit events with `statusCode=429` and `source: header` — those are the gateway actively throttling you. Lower the cap until they stop.
+**BTP ABAP Environment / Steampunk.** The platform enforces its own quotas (BTP API Management policies and platform-side throttling). Start with the default `ARC1_MAX_CONCURRENT=10` or a lower Basis-approved value per instance and watch for `http_request` audit events with `statusCode=429` and `source: header` — those are the gateway actively throttling you. Lower the cap until they stop.
 
 ## 4. Recommended settings by team size
 
@@ -235,8 +236,8 @@ backend protection. Tune all three from audit and latency evidence.
 |-------|-------|---------|------------|
 | `auth_rate_limited` | 1 | An OAuth or MCP HTTP endpoint hit its per-IP cap. | Tune `ARC1_AUTH_RATE_LIMIT` for OAuth or `ARC1_MCP_HTTP_RATE_LIMIT` for MCP traffic after checking the event endpoint. |
 | `mcp_rate_limited` | 2 | A single user hit the per-user quota. Their LLM was in a tight retry loop or doing heavy batch work. | Check user behavior. If legitimate → raise `ARC1_RATE_LIMIT`. If runaway loop → the limit is working as designed. |
-| `http_request` status `429` | 3 | SAP or BTP gateway throttled us; we retried once after honoring `Retry-After`. | If frequent → lower `ARC1_MAX_CONCURRENT`. You're running too hot. |
-| `http_request` status `503` | 3 | SAP overloaded (ICM / work-process exhaustion); we retried. | Same as 429 — lower the concurrency cap. Cross-check with SAP transaction `SM50`. |
+| `http_request` status `429` | 3 | SAP or BTP gateway throttled us; eligible requests retry after honoring `Retry-After`. | If frequent → lower `ARC1_MAX_CONCURRENT`. You're running too hot. |
+| `http_request` status `503` | 3 | SAP unavailable or overloaded; only replay-eligible requests retry. | Same as 429 — lower the concurrency cap. Cross-check with SAP transaction `SM50`. |
 | `data_response_limited` | Data-result memory admission | One tool call crossed the configured data-preview response ceiling; no partial rows were returned. | Reduce rows/columns or use restrictive non-overlapping key ranges. Raise the byte ceiling only after peak-RSS testing, normally with lower data-result concurrency. |
 
 **`requestId` correlation note.** Layer 2 (`mcp_rate_limited`) and Layer 3 (`http_request`) events include a `requestId` field so you can join them against the full tool-call lifecycle (`tool_call_start` / `tool_call_end`) in your audit log. Layer 1 (`auth_rate_limited`) fires at the Express middleware layer **before** any MCP request context exists, so it does NOT carry a `requestId` — correlate Layer 1 events by `ip` + timestamp instead.
@@ -279,7 +280,7 @@ No `Retry-After` header — gateway returned a bare 429. Same action as `source:
 
 All three layers use **per-instance, in-memory state** — no Redis, no shared store. With `N` instances behind a load balancer:
 
-- **Layer 1**: effective ceiling is `N × ARC1_AUTH_RATE_LIMIT` per IP. Plenty of room for normal OAuth flows; multi-instance attackers cost `N × limit`.
+- **Layer 1**: the fleet can admit up to N times each process-local bucket. OAuth paths have their endpoint-specific caps; MCP uses `ARC1_MCP_HTTP_RATE_LIMIT` or its derived value. This is not a coordinated global limit.
 - **Layer 2**: effective ceiling is `N × ARC1_RATE_LIMIT` per user, **only when the load balancer is not sticky**. If sticky, each user is pinned to one instance and the per-instance cap is the effective cap.
 - **Layer 3**: each instance has its own cap. Size as `floor(target / N)` per instance using the sizing math.
 

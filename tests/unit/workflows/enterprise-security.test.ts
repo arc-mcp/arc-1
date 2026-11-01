@@ -54,7 +54,7 @@ describe('enterprise security workflow boundaries', () => {
     const license = data.jobs['dependency-licenses'].steps.at(-1);
     expect(license.with['vulnerability-check']).toBe(false);
     expect(license.with['deny-licenses']).toContain('AGPL-3.0');
-    expect(license.with['allow-dependencies-licenses']).toBe('pkg:npm/node-forge@1.4.0');
+    expect(license.with['allow-dependencies-licenses']).toBe('pkg:npm/node-forge@1.4.2');
   });
 
   it('preserves built-in release authentication and the existing publication gate', () => {

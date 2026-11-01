@@ -57,6 +57,9 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   // ── SAPRead ──────────────────────────────────────────────────────
   // Tool-level default — applies to all SAP object reads (PROG, CLAS, etc.)
   SAPRead: { scope: 'read', opType: OperationType.Read },
+  // Explicit row lets administrators configure the include-read denial enforced by expansion handlers.
+  'SAPRead.INCL': { scope: 'read', opType: OperationType.Read },
+  'SAPRead.SYNTAX': { scope: 'read', opType: OperationType.Read },
   // Per-type overrides
   'SAPRead.TABLE_CONTENTS': { scope: 'data', opType: OperationType.Query },
   // TABLE_QUERY builds the SELECT server-side (no user SQL injection) — same gate as TABLE_CONTENTS.
@@ -74,8 +77,11 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPSearch.tadir_lookup_db': { scope: 'sql', opType: OperationType.FreeSQL },
   'SAPSearch.tadir_lookup_both': { scope: 'sql', opType: OperationType.FreeSQL },
 
-  // ── SAPQuery (freestyle SQL) ─────────────────────────────────────
+  // ── SAPQuery: bounded business-data actions and separately gated freestyle SQL ──
   SAPQuery: { scope: 'sql', opType: OperationType.FreeSQL },
+  'SAPQuery.sql': { scope: 'sql', opType: OperationType.FreeSQL },
+  'SAPQuery.application_log': { scope: 'data', opType: OperationType.Query },
+  'SAPQuery.long_text': { scope: 'data', opType: OperationType.Query },
 
   // ── SAPWrite ─────────────────────────────────────────────────────
   SAPWrite: { scope: 'write', opType: OperationType.Update },
@@ -83,6 +89,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPWrite.update': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.delete': { scope: 'write', opType: OperationType.Delete },
   'SAPWrite.edit_method': { scope: 'write', opType: OperationType.Update },
+  'SAPWrite.add_unit': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.edit_unit': { scope: 'write', opType: OperationType.Update },
   // Class-section surgery actions (issue #303) — all run on type=CLAS and write
   // back to /source/main (or /includes/<inc> when include= is provided). Same
@@ -93,7 +100,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPWrite.edit_method_signature': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.delete_method': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.change_method_visibility': { scope: 'write', opType: OperationType.Update },
-  // edit_text_symbols writes a class's text pool (textelements service). Explicit entry so admins can
+  // edit_text_symbols writes a CLAS/PROG/FUGR text-pool part. Explicit entry so admins can
   // target it with SAP_DENY_ACTIONS (validateDenyActions derives valid patterns from ACTION_POLICY —
   // without a row, "SAPWrite.edit_text_symbols" would be rejected at startup as matching no action).
   'SAPWrite.edit_text_symbols': { scope: 'write', opType: OperationType.Update },
@@ -124,6 +131,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   SAPNavigate: { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.definition': { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.references': { scope: 'read', opType: OperationType.Intelligence },
+  'SAPNavigate.relations': { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.completion': { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.hierarchy': { scope: 'read', opType: OperationType.Intelligence },
 
@@ -141,10 +149,13 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   SAPDiagnose: { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.syntax': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.unittest': { scope: 'read', opType: OperationType.Test },
+  'SAPDiagnose.unittest_ci': { scope: 'read', opType: OperationType.Test },
   'SAPDiagnose.atc': { scope: 'read', opType: OperationType.Read },
+  'SAPDiagnose.atc_ci': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.atc_variants': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.cds_testcases': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.dumps': { scope: 'read', opType: OperationType.Read },
+  'SAPDiagnose.feed_schema': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.traces': { scope: 'read', opType: OperationType.Read },
   // Arming/cancelling a trace request mutates server state → write; listing armed requests is read-only.
   'SAPDiagnose.trace_start': { scope: 'write', opType: OperationType.Update },
@@ -232,7 +243,8 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   SAP: { scope: 'read', opType: OperationType.Read },
   'SAP.read': { scope: 'read', opType: OperationType.Read },
   'SAP.search': { scope: 'read', opType: OperationType.Search },
-  'SAP.query': { scope: 'sql', opType: OperationType.FreeSQL },
+  // Mixed delegator: the concrete SAPQuery action enforces data or sql downstream.
+  'SAP.query': { scope: 'data', opType: OperationType.Query },
   'SAP.navigate': { scope: 'read', opType: OperationType.Intelligence },
   'SAP.context': { scope: 'read', opType: OperationType.Intelligence },
   'SAP.lint': { scope: 'read', opType: OperationType.Intelligence },
@@ -267,6 +279,8 @@ export function getActionPolicy(tool: string, action?: string): ActionPolicy | u
  * dispatch from applying different policy rules to the same invocation.
  */
 export function invocationPolicyKey(tool: string, args: Record<string, unknown>): string | undefined {
+  // SQL predates action routing. Its implicit form must obey the same deny rule as action=sql.
+  if (tool === 'SAPQuery' && (args.action === undefined || args.action === null || args.action === '')) return 'sql';
   if (
     tool === 'SAPSearch' &&
     args.searchType === 'tadir_lookup' &&

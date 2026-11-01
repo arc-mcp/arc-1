@@ -1,7 +1,7 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { describe, expect, it, vi } from 'vitest';
 import { PERSISTENT_OBJECTS, readFixture } from '../../e2e/fixtures.js';
-import { syncPersistentFixtures } from '../../e2e/setup.js';
+import { classifyFixtureError, syncPersistentFixtures } from '../../e2e/setup.js';
 
 interface FakeToolResult {
   content: Array<{ type: string; text: string }>;
@@ -29,6 +29,56 @@ function fixtureFor(name: string) {
 }
 
 describe('E2E fixture setup', () => {
+  it('skips dependents of an unavailable table without touching them, while checking independent fixtures', async () => {
+    const client = fakeClient((name, args) => {
+      if (String(args.query ?? args.name).startsWith('ZI_ARC1_I33')) {
+        throw new Error('Dependent fixtures must not be searched, read, deleted or created');
+      }
+      if (name === 'SAPSearch') {
+        const fixture = fixtureFor(String(args.query));
+        return textResult(
+          JSON.stringify(fixture.type === 'TABL' ? [] : [{ objectName: fixture.name, objectType: fixture.type }]),
+        );
+      }
+      if (name === 'SAPWrite')
+        return errorResult(
+          'Transparent table writes via ADT REST are not available on this system (/sap/bc/adt/ddic/tables/ is not exposed — NW7.50/7.51 ship DDIC structures only).',
+        );
+      if (name === 'SAPRead' && args.type === 'INACTIVE_OBJECTS')
+        return textResult(JSON.stringify({ count: 0, objects: [] }));
+      if (name === 'SAPRead') return textResult(readFixture(fixtureFor(String(args.name)).fixture));
+      throw new Error(`Unexpected tool call: ${name}`);
+    });
+    const summary = await syncPersistentFixtures(client);
+    expect(summary.skipped).toEqual([
+      { label: 'TABL ZTABL_ARC1_I33', reason: '/ddic/tables collection not available on this release' },
+      {
+        label: 'DDLS ZI_ARC1_I33_ROOT',
+        reason:
+          'Required fixture TABL ZTABL_ARC1_I33 was skipped: /ddic/tables collection not available on this release',
+      },
+      {
+        label: 'DDLS ZI_ARC1_I33_PROJ',
+        reason:
+          'Required fixture DDLS ZI_ARC1_I33_ROOT was skipped: Required fixture TABL ZTABL_ARC1_I33 was skipped: /ddic/tables collection not available on this release',
+      },
+    ]);
+    expect(summary.unchanged).toEqual(
+      PERSISTENT_OBJECTS.filter((fixture) => fixture.type !== 'TABL' && fixture.type !== 'DDLS').map(
+        (fixture) => `${fixture.type} ${fixture.name}`,
+      ),
+    );
+    expect(summary.created).toEqual([]);
+    expect(summary.deleted).toEqual([]);
+  });
+
+  it.each([
+    'ADT API error: status 500 at /sap/bc/adt/ddic/tables/: Internal Server Error',
+    'ADT API error: status 403 at /sap/bc/adt/ddic/tables/: Authorization failed',
+  ])('does not turn an unexpected table failure into a fixture skip: %s', (message) => {
+    expect(classifyFixtureError(message)).toBeNull();
+  });
+
   it('fails fixture sync when activation returns an error result', async () => {
     const client = fakeClient((name) => {
       if (name === 'SAPSearch') return textResult('[]');

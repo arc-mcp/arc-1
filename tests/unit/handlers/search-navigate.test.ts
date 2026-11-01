@@ -12,9 +12,12 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { featuresOff } from './handler-test-config.js';
 import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
+// Dynamic like every other src import here: server-driven.ts pulls in http.ts (undici), which must
+// not load before setup-undici-mock has installed the mock.
+const { SDO_REGISTRY, SDO_TYPES } = await import('../../../src/adt/server-driven.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
-const { transliterateQuery, looksLikeFieldName } = await import('../../../src/handlers/search.js');
+const { handleSAPSearch, transliterateQuery, looksLikeFieldName } = await import('../../../src/handlers/search.js');
 
 function dataPreviewXml(column: string, values: string[]): string {
   return `<abap><values><COLUMNS><COLUMN><METADATA name="${column}"/><DATASET>${values
@@ -44,6 +47,57 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
   });
 
   describe('SAPSearch', () => {
+    it.each([
+      ['clas/oc', 'CLAS/OC'],
+      ['ddls/df', 'DDLS/DF'],
+      ['ktd', 'SKTD'],
+      ['uiac', 'UIAC'],
+    ])('preserves real search subtypes and translates friendly aliases: %s', async (objectType, expected) => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', { query: '*', objectType });
+      expect(new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams.get('objectType')).toBe(expected);
+    });
+
+    it.each([false, true])('explains a rejected filter without retrying (minimalErrors=%s)', async (minimalErrors) => {
+      mockFetch.mockResolvedValue(mockResponse(406, 'private SAP diagnostic'));
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPSearch', {
+        query: '*',
+        objectType: 'NOSUCH',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('SAP rejected the object search with objectType="NOSUCH"');
+      expect(result.content[0].text).not.toContain('private SAP diagnostic');
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['NOSUCH', undefined])('gives appropriate empty-result guidance for filter %s', async (objectType) => {
+      mockFetch.mockResolvedValue(mockResponse(200, '<objectReferences/>'));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', { query: '*', objectType });
+      expect(result.isError).toBeUndefined();
+      if (objectType) {
+        expect(result.content[0].text).toContain('objectType="NOSUCH" was applied; omit it to search all types.');
+      } else {
+        expect(result.content[0].text).toContain('try Z* or Y*');
+      }
+    });
+
+    it('preserves authorization errors instead of misclassifying them as rejected filters', async () => {
+      const client = createClient();
+      const error = new AdtApiError('Forbidden', 403, '/sap/bc/adt/repository/informationsystem/search');
+      vi.spyOn(client, 'searchObject').mockRejectedValue(error);
+      await expect(handleSAPSearch(client, { query: '*', objectType: 'CLAS' }, false)).rejects.toBe(error);
+    });
+
+    it('preserves and encodes a slash type without injecting query parameters', async () => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
+        query: '*',
+        objectType: 'clas/oc&maxResults=999',
+        maxResults: 2,
+      });
+      const params = new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams;
+      expect(params.get('objectType')).toBe('CLAS/OC&MAXRESULTS=999');
+      expect(params.getAll('maxResults')).toEqual(['2']);
+    });
+
     it('executes search', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
         query: 'ZCL_*',
@@ -610,6 +664,30 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(parsed.rows).toHaveLength(2);
     });
 
+    it('preserves a scalar COUNT row when SAP reports zero input matches', async () => {
+      // Values observed on A4H 758 SP02/001, 2026-10-17 (#1009); XML envelope synthesized.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview"><dataPreview:totalRows>0</dataPreview:totalRows><dataPreview:columns><dataPreview:metadata dataPreview:name="N"/><dataPreview:dataSet><dataPreview:data>0 </dataPreview:data></dataPreview:dataSet></dataPreview:columns></dataPreview:tableData>',
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
+        sql: 'SELECT COUNT( * ) AS N FROM /DMO/FLIGHT WHERE seats_occupied < 0',
+        maxRows: 20,
+      });
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]!.text)).toEqual({
+        totalRows: 0,
+        rowsReturned: 1,
+        columns: ['N'],
+        rows: [{ N: '0 ' }],
+      });
+      expect(freestylePostCalls()).toHaveLength(1);
+    });
+
     it('reports when an oversized maxRows value is clamped at the freestyle sink', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
@@ -647,6 +725,29 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(text).not.toContain('SAP Note 3605050');
       expect(text).not.toContain('single-table');
     });
+
+    it.each([false, true])(
+      'applies minimalErrors=%s to classified query results through dispatch',
+      async (minimalErrors) => {
+        const diagnostic = 'Private SAP diagnostic\n\nHint: private backend details';
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+        mockFetch.mockResolvedValueOnce(mockResponse(400, diagnostic));
+
+        const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPQuery', {
+          sql: 'SELECT mandt FROM t000 ORDER BY mandt DESC',
+        });
+        const text = result.content[0]?.text ?? '';
+
+        expect(result.isError).toBe(true);
+        expect(text).toContain('ASCENDING or DESCENDING');
+        expect(text.includes('Private SAP diagnostic')).toBe(!minimalErrors);
+        expect(text.includes('private backend details')).toBe(!minimalErrors);
+        expect(text.includes('/sap/bc/adt/datapreview/freestyle')).toBe(!minimalErrors);
+        if (minimalErrors) expect(text).toMatch(/^ADT API error: status 400\.\n\nHint: Use the ABAP SQL/);
+        expect(freestylePostCalls()).toHaveLength(1);
+      },
+    );
 
     it('does not false-flag tilde JOIN with an INTO clause as dot-notation; gives the target-clause hint', async () => {
       mockFetch.mockReset();
@@ -1195,7 +1296,131 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
     });
   });
 
+  describe('SAPNavigate completion', () => {
+    const answer = (...identifiers: string[]) =>
+      `<?xml version="1.0" encoding="utf-8"?><asx:abap version="1.0" xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA>${identifiers
+        .map((id) => `<SCC_COMPLETION><KIND>2</KIND><IDENTIFIER>${id}</IDENTIFIER></SCC_COMPLETION>`)
+        .join('')}</DATA></asx:values></asx:abap>`;
+    const complete = async (args: Record<string, unknown>, body = answer('DATA')) => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, body));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'completion',
+        ...args,
+      });
+      const call = mockFetch.mock.calls.find((c) => String(c[0]).includes('codecompletion'));
+      return { result, url: call ? new URL(String(call[0])) : undefined };
+    };
+    const valid = {
+      uri: '/sap/bc/adt/programs/programs/ztest/source/main',
+      line: 2,
+      column: 3,
+      source: 'REPORT ztest.\nDAT',
+    };
+
+    it('posts the cursor in the uri fragment and returns the proposals', async () => {
+      const { result, url } = await complete(valid);
+      expect(result.isError).toBeUndefined();
+      expect(url?.pathname).toBe('/sap/bc/adt/abapsource/codecompletion/proposal');
+      expect(url?.searchParams.get('uri')).toBe('/sap/bc/adt/programs/programs/ztest/source/main#start=2,3');
+      expect(JSON.parse(result.content[0]?.text as string)).toEqual({
+        proposals: [{ text: 'DATA' }],
+        complete: true,
+      });
+    });
+
+    it('reports unconfirmed completeness without claiming more matches exist', async () => {
+      const { result } = await complete(valid, answer('CL_A', 'CL_B', '@end'));
+      const parsed = JSON.parse(result.content[0]?.text as string);
+      expect(parsed.proposals).toEqual([{ text: 'CL_A' }, { text: 'CL_B' }]);
+      expect(parsed.complete).toBe(false);
+      expect(parsed.hint).toContain('did not confirm a complete result');
+    });
+
+    it('respects an explicit completion denial before contacting SAP', async () => {
+      mockFetch.mockReset();
+      const result = await handleToolCall(
+        createClient(),
+        { ...DEFAULT_CONFIG, denyActions: ['SAPNavigate.completion'] },
+        'SAPNavigate',
+        { action: 'completion', ...valid },
+      );
+      expect(result.isError).toBe(true);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it.each([0, '0'])('accepts zero-based cursor column %s', async (column) => {
+      const { result, url } = await complete({ ...valid, column });
+      expect(result.isError).toBeUndefined();
+      expect(url?.searchParams.get('uri')).toContain('#start=2,0');
+    });
+
+    it.each(['PROG', 'FUNC', 'TABL'])('requires a source URI instead of resolving symbolic %s', async (type) => {
+      const { result } = await complete({ ...valid, uri: undefined, type, name: 'ZTEST' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Provide uri');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['with a fractional line', { ...valid, line: 1.5 }, 'Completion needs line, column and source'],
+      ['with a fractional column', { ...valid, column: 2.5 }, 'Completion needs line, column and source'],
+      ['without uri', { ...valid, uri: undefined }, 'Provide uri'],
+      ['without line', { ...valid, line: undefined }, 'Completion needs line, column and source'],
+      ['without column', { ...valid, column: undefined }, 'Completion needs line, column and source'],
+      ['without source', { ...valid, source: '  ' }, 'Completion needs line, column and source'],
+      ['with a line below 1', { ...valid, line: 0 }, 'Completion needs line, column and source'],
+      ['with a negative column', { ...valid, column: -1 }, 'Completion needs line, column and source'],
+    ])('refuses a call %s before contacting SAP', async (_label, args, message) => {
+      const { result, url } = await complete(args);
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain(message);
+      expect(url).toBeUndefined();
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
   describe('SAPNavigate symbolic references', () => {
+    // Exercise every registry entry and a namespace through the public tool dispatch.
+    it.each([
+      ...SDO_TYPES.map((type) => ({
+        type,
+        name: type === 'TABL/DTI' ? 'ZTEST_OBJECT~001' : 'ZTEST_OBJECT',
+        expectedUri: `${SDO_REGISTRY[type].href}/${type === 'TABL/DTI' ? 'ztest_object~001' : 'ZTEST_OBJECT'}`,
+      })),
+      { type: 'dsfd', name: '/arc/test', expectedUri: '/sap/bc/adt/ddic/dsfd/sources/%2FARC%2FTEST' },
+    ])('resolves server-driven $type $name to its own collection URI', async ({ type, name, expectedUri }) => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="UTF-8"?>
+<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
+  <usageReferences:referencedObjects>
+    <usageReferences:referencedObject uri="/sap/bc/adt/oo/classes/zcl_consumer" isResult="true" canHaveChildren="false">
+      <usageReferences:adtObject adtcore:name="ZCL_CONSUMER" adtcore:type="CLAS/OC" xmlns:adtcore="http://www.sap.com/adt/core"/>
+    </usageReferences:referencedObject>
+  </usageReferences:referencedObjects>
+</usageReferences:usageReferenceResult>`,
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'references',
+        type,
+        name,
+      });
+      expect(result.isError).toBeUndefined();
+      const whereUsedCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('usageReferences'));
+      expect(whereUsedCall).toBeDefined();
+      const requestedUri = new URL(String(whereUsedCall?.[0])).searchParams.get('uri');
+      expect(requestedUri).toBe(expectedUri);
+      expect(requestedUri).not.toContain('/programs/programs/');
+      const parsed = JSON.parse(result.content[0]?.text);
+      expect(parsed.total).toBe(1);
+    });
+
     it('resolves type+name to URI for references action (scope-based Where-Used fails, falls back to simple)', async () => {
       mockFetch.mockReset();
       // First call: CSRF token fetch for the POST
@@ -1310,6 +1535,96 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(parsed.references[0].name).toBe('ZPROG1');
       expect(parsed.references[0].packageName).toBe('$TMP');
       expect(parsed.references[0].objectDescription).toBe('Test Program');
+    });
+
+    describe('references at a position', () => {
+      const scopedResult = (description: string) => `<?xml version="1.0" encoding="utf-8"?>
+<usagereferences:usageReferenceResult numberOfResults="1" resultDescription="${description}" xmlns:usagereferences="http://www.sap.com/adt/ris/usageReferences">
+  <usagereferences:referencedObjects>
+    <usagereferences:referencedObject uri="/sap/bc/adt/programs/programs/zcaller" isResult="true">
+      <usagereferences:adtObject adtcore:name="ZCALLER" adtcore:type="PROG/P" xmlns:adtcore="http://www.sap.com/adt/core"/>
+    </usagereferences:referencedObject>
+  </usagereferences:referencedObjects>
+</usagereferences:usageReferenceResult>`;
+
+      const navigate = async (
+        args: Record<string, unknown>,
+        description = 'References for: ZCL_TEST - RUN (Method) [SID]',
+      ) => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        mockFetch.mockResolvedValueOnce(mockResponse(200, scopedResult(description)));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+          action: 'references',
+          ...args,
+        });
+        const call = mockFetch.mock.calls.find((c) => String(c[0]).includes('usageReferences'));
+        return {
+          result,
+          requestedUri: call ? new URL(String(call[0])).searchParams.get('uri') : undefined,
+          body: call ? String((call[1] as { body?: unknown })?.body ?? '') : undefined,
+        };
+      };
+
+      it('sends line/column as the URI fragment and reports what SAP searched', async () => {
+        const { result, requestedUri, body } = await navigate({
+          uri: '/sap/bc/adt/oo/classes/zcl_test',
+          line: 12,
+          column: 10,
+        });
+        expect(result.isError).toBeUndefined();
+        expect(requestedUri).toBe('/sap/bc/adt/oo/classes/zcl_test#start=12,10');
+        expect(body).toContain('uri="/sap/bc/adt/oo/classes/zcl_test#start=12,10"');
+        const parsed = JSON.parse(result.content[0]?.text as string);
+        expect(parsed.searchedFor).toBe('References for: ZCL_TEST - RUN (Method) [SID]');
+        expect(parsed.total).toBe(1);
+      });
+
+      it('applies the position to a type+name root', async () => {
+        const { requestedUri } = await navigate({ type: 'CLAS', name: 'ZCL_TEST', line: 3, column: 0 });
+        expect(requestedUri).toMatch(/^\/sap\/bc\/adt\/oo\/classes\/[^#]+#start=3,0$/);
+      });
+
+      it('replaces a fragment already in the uri', async () => {
+        const { requestedUri } = await navigate({
+          uri: '/sap/bc/adt/oo/classes/zcl_test/source/main#start=1,1',
+          line: 12,
+          column: 10,
+        });
+        expect(requestedUri).toBe('/sap/bc/adt/oo/classes/zcl_test/source/main#start=12,10');
+      });
+
+      it('keeps a fragment passed in the uri and reports what SAP searched', async () => {
+        const { result, requestedUri } = await navigate({ uri: '/sap/bc/adt/oo/classes/zcl_test#start=12,10' });
+        expect(requestedUri).toBe('/sap/bc/adt/oo/classes/zcl_test#start=12,10');
+        expect(JSON.parse(result.content[0]?.text as string).searchedFor).toBe(
+          'References for: ZCL_TEST - RUN (Method) [SID]',
+        );
+      });
+
+      it('reports SAP’s explanation for whole-object searches too', async () => {
+        const { result, requestedUri } = await navigate(
+          { uri: '/sap/bc/adt/oo/classes/zcl_test' },
+          'References for: ZCL_TEST (Class) [SID]',
+        );
+        expect(requestedUri).toBe('/sap/bc/adt/oo/classes/zcl_test');
+        expect(JSON.parse(result.content[0]?.text as string).searchedFor).toBe(
+          'References for: ZCL_TEST (Class) [SID]',
+        );
+      });
+
+      it.each([
+        [{ line: 12 }],
+        [{ column: 10 }],
+        [{ line: 0, column: 10 }],
+        [{ line: 12, column: -1 }],
+        [{ line: 1.5, column: 10 }],
+      ])('rejects an incomplete or invalid position %j before calling SAP', async (position) => {
+        const { result, requestedUri } = await navigate({ uri: '/sap/bc/adt/oo/classes/zcl_test', ...position });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('need both line and column');
+        expect(requestedUri).toBeUndefined();
+      });
     });
 
     /** usageReferences result with `count` PROG/P entries plus one CLAS/OC entry. */
@@ -1483,6 +1798,64 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('Provide uri');
+    });
+
+    it.each([0, '0'])('accepts zero-based cursor column %s for definition', async (column) => {
+      const uri = '/sap/bc/adt/programs/programs/ztest/source/main';
+      const target = '/sap/bc/adt/oo/classes/zcl_target/source/main#start=2,0';
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          `<adtcore:objectReference xmlns:adtcore="http://www.sap.com/adt/core" adtcore:uri="${target}"/>`,
+          {
+            'x-csrf-token': 'mock-csrf-token',
+          },
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'definition',
+        uri,
+        line: 2,
+        column,
+        source: 'REPORT ztest.\nzcl_target=>run( ).',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]?.text)).toMatchObject({ uri: target, line: 2, column: 0 });
+      expect(String(mockFetch.mock.calls.at(-1)?.[0])).toContain(encodeURIComponent(`${uri}#start=2,0`));
+    });
+
+    it.each([
+      ['line', { column: 5, source: 'REPORT ztest.' }],
+      ['column', { line: 1, source: 'REPORT ztest.' }],
+      ['source', { line: 1, column: 5 }],
+      ['positive line', { line: 0, column: 5, source: 'REPORT ztest.' }],
+      ['non-negative column', { line: 1, column: -1, source: 'REPORT ztest.' }],
+      ['integer line', { line: 1.5, column: 5, source: 'REPORT ztest.' }],
+      ['integer column', { line: 1, column: 5.5, source: 'REPORT ztest.' }],
+      ['non-blank source', { line: 1, column: 5, source: ' \n\t' }],
+    ])('returns error without %s for definition instead of asking SAP', async (_missing, extra) => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'definition',
+        uri: '/sap/bc/adt/programs/programs/ztest/source/main',
+        ...extra,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('line, column and source');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('requires a source URI instead of resolving type+name to object metadata', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'definition',
+        type: 'FUNC',
+        name: 'ZFUNCTION',
+        line: 1,
+        column: 10,
+        source: 'FUNCTION zfunction.',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Provide uri');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 
@@ -1825,6 +2198,10 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.content[0]?.text).toContain('data access permissions');
       expect(result.content[0]?.text).toContain('SAP_ALLOW_FREE_SQL=true');
       expect(result.content[0]?.text).toContain('SAP_ALLOW_DATA_PREVIEW=true');
+      expect(result.content[0]?.text).toContain('Without changing permissions');
+      expect(result.content[0]?.text).toContain('class MAIN source');
+      expect(result.content[0]?.text).not.toContain('include="definitions"');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 });

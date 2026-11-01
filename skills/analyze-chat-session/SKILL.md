@@ -276,7 +276,8 @@ Use this reference to assess whether the LLM used the right tools. This is a con
 | DDLS | `include=elements` (field listing) | Field list is essential for understanding CDS views |
 | FUNC | `group=<FUGR>` (required if not cached), `expand_includes=true` (full group source) | Group resolution is a common failure point |
 | SRVB | Returns parsed binding info | Not raw DDL |
-| TABLE_CONTENTS | `maxRows`, `sqlFilter` | Data preview — subject to `blockData` safety |
+| TABLE_QUERY | `columns`, `where`, `maxRows` | Filtered data preview; `sqlFilter` here is refused |
+| TABLE_CONTENTS | `maxRows` | Unfiltered data preview; its `sqlFilter` fails on 758/816 — subject to `blockData` safety |
 
 ### Search (SAPSearch)
 - `searchType=object` — by name/wildcard

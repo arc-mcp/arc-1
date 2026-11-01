@@ -9,7 +9,8 @@ Set the `ARC1_LOG_FILE` environment variable to enable JSON line audit logging:
 ARC1_LOG_FILE=/tmp/arc1-audit.jsonl npm run dev
 
 # Docker
-docker run -v /data/logs:/logs -e ARC1_LOG_FILE=/logs/arc1-audit.jsonl ghcr.io/arc-mcp/arc-1
+docker run --env-file .env -v /data/logs:/logs -e ARC1_LOG_FILE=/logs/arc1-audit.jsonl ghcr.io/arc-mcp/arc-1
+# .env must include SAP connection settings and HTTP authentication, e.g. ARC1_API_KEYS
 
 # BTP Cloud Foundry (in manifest.yml)
 env:
@@ -24,16 +25,24 @@ Logging** for a managed observability stack.
 
 ## Log Levels
 
-Control stderr verbosity with `ARC1_LOG_LEVEL`:
+Set `ARC1_LOG_LEVEL` (or `--log-level`) to `debug`, `info`, `warn` or `error` to select
+the minimum level printed by the logger on stderr. The default is `info`;
+`SAP_VERBOSE=true` / `--verbose` forces `debug` even when another level is set.
+Debug includes HTTP requests and CSRF probes. Set the option on the ARC-1 process
+and restart it; on CF, use an `.mtaext` property for a durable setting.
 
-```bash
-ARC1_LOG_LEVEL=debug  # Show everything (HTTP requests, CSRF fetches)
-ARC1_LOG_LEVEL=info   # Default — tool calls, auth events
-ARC1_LOG_LEVEL=warn   # Only warnings and errors
-ARC1_LOG_LEVEL=error  # Only errors
-```
+At `warn` or `error`, INFO tool-call audit events are hidden on stderr. Keep `info`
+if stderr is your only audit destination, or configure a separate audit sink.
 
-The file sink always receives ALL events regardless of stderr level.
+File audit output is independent of the stderr level; it records emitted audit events,
+not ordinary log messages. E2E runs retain it as `mcp-audit.ndjson` beside `mcp-server.log`
+in the uploaded log directory. CSRF events describe
+each probe: a HEAD 400 followed by GET 200 with a usable token is a healthy fallback.
+If both stateful probes return 400, ARC-1 retries the discovery GET once without the
+session header (`adtMode: unspecified`). Lock and write requests remain stateful;
+this recovery does not repair a lost SAP security session or lock. If the headerless GET
+also returns 400 (`Service cannot be reached`), investigate [#1042](https://github.com/arc-mcp/arc-1/issues/1042)
+and the [SAP_BASIS 816 findings](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-27-sap-816-session-failures.md).
 
 ## Event Types
 
@@ -48,6 +57,11 @@ include:
 | Selected identity | `auth_pp_created`, `auth_shared_created` |
 | Multi-target failure stage | `target_resolution_failed`, `pp_exchange_failed`, `shared_auth_failed`, `cloud_connector_access_denied`, `sap_service_unavailable`, `sap_authentication_failed`, `sap_authorization_failed`, `target_policy_denied` |
 | Server/client protocol | `server_start`, OAuth/DCR, and CORS events |
+
+In the opt-in target-authorization mode, grant denials include `targetAccessMode`, `grantMode`,
+the stable `errorCode`, and `exactGrantCount` for exact grants. These are bounded operator
+diagnostics, not the raw grant list. `targetAccessMode` is deliberately distinct from an
+`Authorization` header; central credential redaction remains unchanged for every sink.
 
 Within a selected multi-target call, use `requestId` to correlate events and `target`, `destination`,
 and `identity` to identify the selected route and identity model. Failure-stage events also carry a
@@ -68,10 +82,14 @@ INFO: ARC-1 starting {"version":"0.9.x","transport":"...","url":"..."}
 INFO: SAP semaphore {"maxConcurrent":10,"scope":"server-wide"}
 INFO: Object cache enabled {"mode":"auto",...}
 INFO: ARC-1 MCP server running on stdio          # (or: "ARC-1 HTTP server started" on BTP)
-INFO: Startup auth preflight succeeded for shared SAP credentials. {"endpoint":"/sap/bc/adt/core/discovery"}
+INFO: Startup authentication/CSRF bootstrap succeeded; each tool still checks authorization. {"endpoint":"/sap/bc/adt/core/discovery"}
 INFO: Authorization probe: object search access is available
 INFO: Authorization probe: transport access is available
 ```
+
+An empty HTTP 200 discovery response does not count as a successful bootstrap. Older backends
+may use `/sap/bc/adt/discovery`; the log records the endpoint that supplied the token.
+If neither path supplies a token, startup reports an inconclusive result and keeps GET reads available.
 
 ### The two green-light signals
 
@@ -80,7 +98,7 @@ INFO: Authorization probe: object search access is available
 INFO: Authorization probe: transport access is available
 ```
 
-**These two lines mean your SAP authorizations are correct.** If you see them, ARC-1 reached SAP,
+**These two lines confirm only the search and transport probes.** If you see them, ARC-1 reached SAP,
 authenticated, and the SAP user can search the repository and read transports — the foundation every
 tool call builds on. (Under principal propagation the preflight is skipped — each user authenticates at
 runtime — so you'll instead see `Skipped startup auth preflight: principal propagation mode is enabled`;
@@ -93,8 +111,11 @@ WARN: Authorization probe: object search access denied — <reason>
 INFO: Authorization probe: transport access is not available — <reason>
 ```
 
-…the SAP **user** is missing an authorization (not an ARC-1 bug). Search/read needs `S_DEVELOP` and
-`S_ADT_RES` (read-only users need `S_ADT_RES` with `ACTVT = 01 AND 02` — several ADT reads are POSTs).
+…investigate authorization, endpoint availability, and the reported status. A probe failure alone does not rule out an ARC-1 or connectivity regression. Search/read needs `S_DEVELOP` and
+`S_ADT_RES`. The latter checks allowed URI prefixes and has no `ACTVT` field. A read
+implemented as HTTP POST does not imply create/change authorization; trace the
+backend checks on `S_DEVELOP` and other objects separately. See the
+[SAP authorization guidance](btp-destination-setup.md#startup-user-authorizations).
 See [Authorization](authorization.md) and [Principal Propagation](principal-propagation-setup.md).
 
 ### "Feature not available" is normal, not an error
@@ -105,7 +126,7 @@ active) or `400` — **this is expected and is recorded as data, not an error.**
 logged at `debug`, so they do **not** appear at the default `info` level. A clean startup has **no
 `WARN` lines** from probing.
 
-If you run with `ARC1_LOG_LEVEL=debug`, you'll see them — and they're still harmless:
+If you run with `SAP_VERBOSE=true`, you'll see them — and they're still harmless:
 
 ```
 DEBUG: [http_request] {"method":"GET","path":"/sap/bc/adt/abapgit/repos","statusCode":404,...}
@@ -124,8 +145,7 @@ the individual probe responses.
 ### OAuth scope errors on the MCP client (not SAP)
 
 A different failure class: the MCP client (Claude, Copilot, …) can't complete OAuth and reports an
-`invalid_scope` / scope error even though your user has the right role collection. This is almost always
-a **stale cache**, not a missing authorization:
+`invalid_scope` / scope error even though your user has the right role collection. Check the requested scopes, current XSUAA configuration, role assignments, and then cached client state:
 
 - Log out of the MCP client's OAuth session and reconnect — or use a fresh/incognito browser window for
   the consent step. A previous deployment's XSUAA/DCR client registration is often cached.
@@ -140,7 +160,7 @@ a **stale cache**, not a missing authorization:
 ### Recent Errors
 
 ```bash
-# All errors in the last hour
+# All error-level audit events in this file (no time filter)
 jq 'select(.level == "error")' arc1-audit.jsonl
 
 # Failed tool calls with error details
@@ -252,18 +272,24 @@ elicitation events remain in stderr/file logs. Forwarded events are categorized 
 - **data-modifications**: tool calls that write data (SAPWrite, SAPManage)
 - **configuration-changes**: transport and activation operations (SAPTransport, SAPActivate)
 
-View these in the BTP cockpit under **Instances and Subscriptions > Audit Log Viewer**.
+View these in the BTP cockpit under **Instances and Subscriptions > Audit Log Viewer**. For
+programmatic verification or scheduled reviews, read the same records through the Audit Log Retrieval
+API; see [Audit Log delivery evidence](btp-administration.md#audit-log-delivery-evidence). Tool-call
+records carry `object.type = "MCP Tool Call"` and, on invocation, redacted arguments in `args` (first 500 characters plus `...`
+when truncated). Completion records carry the outcome.
 
 ## Docker Volume Mount Example
 
 ```bash
-# Run with persistent log file
+# Generate ARC1_LOCAL_KEY with `openssl rand -hex 32` before running.
+# Run with persistent log file; the mounted directory must be writable by the container user.
 docker run -d \
   -v /data/arc1-logs:/logs \
   -e ARC1_LOG_FILE=/logs/audit.jsonl \
   -e SAP_URL=http://sap:50000 \
   -e SAP_USER=admin \
   -e SAP_PASSWORD=secret \
+  -e ARC1_API_KEYS="$ARC1_LOCAL_KEY:admin" \
   ghcr.io/arc-mcp/arc-1
 
 # Tail logs in real-time

@@ -16,6 +16,16 @@ This document is the normative v1 specification together with accepted ADR-0006 
 a code comment, the PR #543 prototype, ADR-0005, or older documentation disagrees with this narrow
 experimental exception, this document and those ADRs win.
 
+For the optional `xsuaa-attribute` mode only, [ADR-0008](../adr/0008-opt-in-xsuaa-target-authorization.md)
+and the [target authorization contract](xsuaa-target-authorization.md) supersede this v1 document's
+no-target-role and paged-catalog rules. They do not change the standard default or mutation boundary.
+
+[ADR-0010](../adr/0010-pinned-pp-multi-target-writes.md) and the
+[pinned write contract](2026-10-22-multi-target-pinned-writes.md) additionally qualify this document's
+mutation-free rules only for scoped pinned strict-PP CLAS/INTF writes and whole-owner activation.
+The global switch, destination opt-in/restrictions, raw write scope, read access and exact write grant
+must all agree. Aggregate/Copilot and Basic remain mutation-free; broader write parity is not included.
+
 ## Outcome
 
 One ARC-1 CF application can discover explicitly marked BTP subaccount destinations at startup and
@@ -68,7 +78,7 @@ authorized caller and therefore is not a per-user SAP authorization boundary.
 | Target policy | Read by default; `arc1.allow_data_preview` and `arc1.allow_free_sql` are explicit per-target opt-ins. |
 | Writes | Impossible on multi-target routes in v1. Do not document or test a multi-target full-write configuration. |
 | Cache | `ARC1_CACHE=none` while the mode is enabled. |
-| Tool surface | Standard mode only; no hyperfocused alias, plugins, or optional UI. Explicit additions are offline `SAPLint.lint|lint_and_fix|list_rules`, read-only `SAPTransport.list|get|check|history`, and `SAPDiagnose.atc|unittest`; all other actions remain governed by the structural ceiling and explicit allowlists. |
+| Tool surface | Standard mode only; no hyperfocused alias, plugins, or optional UI. Explicit additions are offline `SAPLint.lint|lint_and_fix|list_rules`, read-only `SAPTransport.list|get|diff|check|history`, and `SAPDiagnose.atc|unittest`; all other actions remain governed by the structural ceiling and explicit allowlists. |
 | Catalog | No standalone HTTP catalog. Aggregate-only `SAPTargets` is read-scoped: readers see it only with more than one active target and receive compact target/description/identity rows; admins see it at zero, one, or many targets and during registry failure, with secret-safe diagnostics and passive shared-auth health. Pinned endpoints never expose it. |
 | Target discovery | Aggregate schemas use exact target enums through 16 targets and a syntax pattern from 17–256; `SAPTargets` supplies IDs and descriptions without probing SAP user availability. |
 | User availability | Never guessed, probed in bulk, persisted, or negatively cached. A failed target call may be retried immediately. |
@@ -484,7 +494,7 @@ destination per target is sufficient for v1. PP is recommended because it retain
 identity. Basic is explicitly shared: every scoped XSUAA user reaches SAP as the destination's
 technical user, so human attribution requires ARC-1 audit correlation. No target uses a technical
 startup probe; the first authorized call may pay feature-probe/canary latency, and feature
-availability must never be inferred from an unauthorized user's response.
+availability must never be inferred from an unauthorized user's response. Retain conclusive backend facts per target; omit authorization-limited fields rather than discarding the entire probe. Unknown fields must not hide tools, and per-user authorization results remain request-local.
 
 ## Endpoint Contract
 
@@ -584,9 +594,10 @@ Target input normalization is separate from general LLM empty-value stripping:
 
 The validated `target` key is removed before existing handler Zod validation.
 
-`SAPQuery` is listed only if at least one target is effectively SQL-enabled and the caller has SQL
-scope. Its target field follows the same all-target enum/pattern rule as other tools; do not reveal
-the SQL-enabled subset through a narrowed schema. Selected-target policy produces
+`SAPQuery` is listed if at least one target enables an action the caller may use: `sql` requires
+free SQL and SQL scope; `long_text` requires data preview and data scope. Its target field follows
+the same all-target enum/pattern rule as other tools; do not reveal the enabled subset through a
+narrowed target schema. Selected-target policy produces
 `TARGET_POLICY_DENIED` at runtime. Data-specific `SAPRead` variants follow the same rule.
 
 Do not mutate aggregate or pinned tool schemas after one user's feature probe. Discovered target
@@ -596,6 +607,14 @@ sessions stable.
 
 Multi-target dispatch rejects the hidden hyperfocused `SAP` alias and any plugin/custom tool name,
 even if a client calls an unlisted tool directly.
+
+Reviewed ATC selection extension (#770/#772): `SAPDiagnose.atc objects[]` is permitted on
+pinned and aggregate routes with at most 20 input entries and at most two worklists sharing
+one deadline. Every entry uses the call's one selected target and SAP identity; nested target
+selection is forbidden. This is covered by the existing ATC workload decision, including Basic
+targets under ADR-0007. It adds no repository mutation, parallel per-object jobs, or identity
+fallback. SAP authorization, global request/rate limits and `SAP_DENY_ACTIONS` still apply;
+the semaphore limits concurrent HTTP requests, not total ATC findings or SAP job duration.
 
 For 17–256 targets, the model obtains exact IDs and meaningful labels from `SAPTargets`; descriptions
 are deliberately not duplicated into every SAP-contacting tool schema. There is no standalone HTTP
@@ -828,7 +847,7 @@ logs so one successful call does not create several billable BTP Audit Log recor
   It becomes stale when SAP access changes and does not survive deployment. A target list is a config
   inventory, not an entitlement inventory.
 - Offline `SAPLint.lint|lint_and_fix|list_rules`, read-only
-  `SAPTransport.list|get|check|history`, and the reviewed mutation-free `SAPDiagnose` actions are
+  `SAPTransport.list|get|diff|check|history`, and the reviewed mutation-free `SAPDiagnose` actions are
   exposed through explicit action allowlists. ATC and ABAP Unit execute SAP workloads, retain the
   existing `read` scope, and remain subject to SAP authorization, global concurrency/rate limits,
   and `SAP_DENY_ACTIONS`.
@@ -914,8 +933,8 @@ multi-target is enabled; deployment must also avoid rolling/blue-green overlap.
 
 - Add proposed ADR-0006, qualify ADR-0005, and add ADR-0007 for the explicit shared Basic identity
   exception; reflect both boundaries in the auto-loaded `AGENTS.md` rule.
-- Update the old evaluation/hub pages that still describe target-bound XSUAA roles or one instance
-  per system as the only permitted design.
+- Update the old evaluation and deployment pages that still describe target-bound XSUAA roles or
+  one instance per system as the only permitted design.
 - Commit this plan, ADR, administration page, and documentation qualification before starting code
   or asking Wouter to review the new PR. An uncommitted working-tree plan is not a reviewable spec.
 - Record the exact PR #543 merge-base/commits in the new PR description.
@@ -1065,9 +1084,9 @@ Work:
   SQL/data paths such as `SAPSearch.tadir_lookup_db|both` and
   `SAPDiagnose.odata_perf|authorization_trace` cannot bypass target consent.
 - Add `SAPLint` and `SAPTransport` only through explicit action allowlists:
-  `lint|lint_and_fix|list_rules` and `list|get|check|history`. Permit the following `SAPDiagnose`
+  `lint|lint_and_fix|list_rules` and `list|get|diff|check|history`. Permit the following `SAPDiagnose`
   actions through a separate exact allowlist: `syntax`, `unittest`, `atc`, `atc_variants`,
-  `cds_testcases`, `dumps`, `traces`, `trace_requests`, `system_messages`, `gateway_errors`,
+  `cds_testcases`, `dumps`, `feed_schema`, `traces`, `trace_requests`, `system_messages`, `gateway_errors`,
   `object_state`, `quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `sql_trace_directory`, and
   `authorization_trace`. The existing data gates still control `odata_perf` and
   `authorization_trace`. Reject every omitted action at both list time and call time.
@@ -1186,7 +1205,6 @@ Files:
 - `docs_page/principal-propagation-setup.md`
 - `docs_page/architecture.md`
 - `docs/multi-destination-evaluation.md`
-- External `arc-mcp/mcp-hub` documentation: <https://github.com/arc-mcp/mcp-hub>
 - `docs_page/index.md`, `docs_page/roadmap.md`, `docs/compare/00-feature-matrix.md`
 - `mkdocs.yml`
 

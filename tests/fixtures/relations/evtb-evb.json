@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T23:02:36.586Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/businessservices/evtbevb/businessuser_created",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "de241043c1e0468a1ec7912a1d56381b4efde6ec440ed5bb015ff0582c43d636",
+    "networkSha256": "262b71fa17cb3601d3bec3dcc4bde21fbfce96b655ca9795fe9a8849342d9683",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 4,
+    "observedEdges": 3
+  },
+  "type": "EVTB",
+  "native": "EVTB/EVB",
+  "name": "BUSINESSUSER_CREATED",
+  "uri": "/sap/bc/adt/businessservices/evtbevb/businessuser_created",
+  "metadataRootQName": "blue:blueSource",
+  "context": "ENV",
+  "metadataXml": "<blue:blueSource adtcore:name=\"BUSINESSUSER_CREATED\" adtcore:type=\"EVTB/EVB\" adtcore:version=\"active\" xmlns:blue=\"http://www.sap.com/wbobj/blue\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/s_bupa_bpu\" adtcore:type=\"DEVC/K\" adtcore:name=\"S_BUPA_BPU\"/>\n</blue:blueSource>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>ENV</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/bo/behaviordefinitions/c_businessuserevent\" adtcore:type=\"BDEF/BDO\" adtcore:name=\"C_BUSINESSUSEREVENT\" adtcore:packageName=\"S_BUPA_BPU\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/businessservices/evtbevb/businessuser_created\" adtcore:type=\"EVTB/EVB\" adtcore:name=\"BUSINESSUSER_CREATED\" adtcore:packageName=\"S_BUPA_BPU\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/businessservices/evtbevb/businessuser_created</oro:object1><oro:object2>/sap/bc/adt/bo/behaviordefinitions/c_businessuserevent</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

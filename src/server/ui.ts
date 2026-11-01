@@ -323,8 +323,6 @@ function safeRedactedCacheActivityDetail(
     case 'source_store':
     case 'source_refresh':
     case 'source_evict':
-    case 'depgraph_hit':
-    case 'depgraph_store':
       return item.detail;
     default:
       return undefined;

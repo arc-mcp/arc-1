@@ -9,7 +9,7 @@
  *   const response = await provider.chat(messages, tools);
  */
 
-import type { LLMProvider, LLMResponse, LLMToolCall, Message, ToolDefinitionForLLM } from '../types.js';
+import type { LLMChatOptions, LLMProvider, LLMResponse, LLMToolCall, Message, ToolDefinitionForLLM } from '../types.js';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 
@@ -36,28 +36,25 @@ function toAnthropicMessages(messages: Message[]): {
     }
 
     if (msg.role === 'tool') {
-      apiMessages.push({
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: msg.toolCallId ?? 'call_0',
-            content: msg.content ?? '',
-          },
-        ],
-      });
+      const result = { type: 'tool_result', tool_use_id: msg.toolCallId, content: msg.content ?? '' };
+      const previous = apiMessages.at(-1);
+      if (previous?.role === 'user' && Array.isArray(previous.content)) {
+        previous.content.push(result);
+      } else {
+        apiMessages.push({ role: 'user', content: [result] });
+      }
       continue;
     }
 
     if (msg.role === 'assistant' && msg.toolCalls?.length) {
       const content: Array<Record<string, unknown>> = [];
-      if (msg.content) {
+      if (msg.content?.trim()) {
         content.push({ type: 'text', text: msg.content });
       }
       for (const tc of msg.toolCalls) {
         content.push({
           type: 'tool_use',
-          id: `toolu_${Math.random().toString(36).slice(2, 10)}`,
+          id: tc.id,
           name: tc.name,
           input: tc.arguments,
         });
@@ -89,7 +86,8 @@ export function createAnthropicProvider(model: string): LLMProvider {
     name: 'anthropic',
     model,
 
-    async chat(messages: Message[], tools: ToolDefinitionForLLM[]): Promise<LLMResponse> {
+    async chat(messages: Message[], tools: ToolDefinitionForLLM[], options?: LLMChatOptions): Promise<LLMResponse> {
+      options?.signal?.throwIfAborted();
       const apiKey = getAnthropicApiKey();
       if (!apiKey) {
         throw new Error('ANTHROPIC_API_KEY not set (add it to .env)');
@@ -113,6 +111,7 @@ export function createAnthropicProvider(model: string): LLMProvider {
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify(body),
+        ...(options?.signal ? { signal: options.signal } : {}),
       });
 
       if (!resp.ok) {
@@ -134,6 +133,7 @@ export function createAnthropicProvider(model: string): LLMProvider {
           content = (content ?? '') + block.text;
         } else if (block.type === 'tool_use' && block.name && block.input) {
           toolCalls.push({
+            id: block.id,
             name: block.name,
             arguments: block.input,
           });

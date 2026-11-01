@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T22:07:49.315Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/ddic/tabletypes/%2fbobf%2ft_frw_change",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "3f278c666fca4a0f7cdab169bd63b64ceed6a6200f8f11466682772295d6b162",
+    "networkSha256": "f2ffd22f685a32e3ed3db370e882b4e0dbc54631c20d2e02f10097bb866f2c7c",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 2,
+    "observedEdges": 1
+  },
+  "type": "TTYP",
+  "native": "TTYP/DA",
+  "name": "/BOBF/T_FRW_CHANGE",
+  "uri": "/sap/bc/adt/ddic/tabletypes/%2fbobf%2ft_frw_change",
+  "metadataRootQName": "ttyp:tableType",
+  "context": "ENV",
+  "metadataXml": "<ttyp:tableType adtcore:name=\"/BOBF/T_FRW_CHANGE\" adtcore:type=\"TTYP/DA\" adtcore:version=\"active\" xmlns:ttyp=\"http://www.sap.com/dictionary/tabletype\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/%2fbobf%2fframework\" adtcore:type=\"DEVC/K\" adtcore:name=\"/BOBF/FRAMEWORK\"/>\n</ttyp:tableType>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>ENV</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/ddic/structures/%2fbobf%2fs_frw_change\" adtcore:type=\"TABL/DS\" adtcore:name=\"/BOBF/S_FRW_CHANGE\" adtcore:packageName=\"/BOBF/FRAMEWORK\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/ddic/tabletypes/%2fbobf%2ft_frw_change\" adtcore:type=\"TTYP/DA\" adtcore:name=\"/BOBF/T_FRW_CHANGE\" adtcore:packageName=\"/BOBF/FRAMEWORK\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/ddic/tabletypes/%2fbobf%2ft_frw_change</oro:object1><oro:object2>/sap/bc/adt/ddic/structures/%2fbobf%2fs_frw_change</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

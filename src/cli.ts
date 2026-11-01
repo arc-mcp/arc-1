@@ -21,6 +21,7 @@ import {
   assertAtcPriority,
   assertPercent,
   atcToCheckstyle,
+  diagnoseCiQualityFailed,
   evaluateAtc,
   evaluateAunit,
   evaluateDiff,
@@ -32,8 +33,11 @@ import {
   lintToCheckstyle,
   type StructuredDiffResult,
 } from './cli-checks.js';
+import { registerIdeConfigCommand } from './cli-ide.js';
 import { getToolRegistry, handleToolCall } from './handlers/dispatch.js';
+import { EXTENSION_READ_TYPES } from './handlers/extension-read.js';
 import { setCachedDiscovery, setCachedFeatures } from './handlers/feature-cache.js';
+import { normalizeObjectType } from './handlers/object-types.js';
 import { errorResult, type ToolResult } from './handlers/shared.js';
 import type { LintResult } from './lint/lint.js';
 import { sanitizeArgs } from './server/audit.js';
@@ -353,7 +357,7 @@ function createRuntime(argv: readonly string[], state: CliExecutionState, overri
     if (!runtimeState.resolvedConfig) {
       runtimeState.resolvedConfig = deps.resolveConfiguration(configArgv(argv));
       const serverConfig = runtimeState.resolvedConfig.config;
-      initLogger(serverConfig.logFormat, serverConfig.verbose);
+      initLogger(serverConfig.logFormat, serverConfig.logLevel);
     }
     return runtimeState.resolvedConfig;
   };
@@ -481,7 +485,10 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
       .option('--source-version <version>', 'Source version: active, inactive, or auto'),
   ).action(async (type: string, name: string, opts: { flat?: boolean; sourceVersion?: string; output: OutputMode }) => {
     const args: Record<string, unknown> = { type: type.toUpperCase(), name };
-    if (opts.flat) args.format = 'text';
+    if (opts.flat) {
+      args.format = 'text';
+      if (EXTENSION_READ_TYPES.has(normalizeObjectType(type))) args.extensions = 'none';
+    }
     if (opts.sourceVersion) args.version = opts.sourceVersion;
     runtime.state.exitCode = await runToolCall(runtime, 'SAPRead', args, opts.output);
   });
@@ -491,7 +498,12 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
       runtime.state.exitCode = await runToolCall(
         runtime,
         'SAPRead',
-        { type: type.toUpperCase(), name, format: 'text' },
+        {
+          type: type.toUpperCase(),
+          name,
+          format: 'text',
+          ...(EXTENSION_READ_TYPES.has(normalizeObjectType(type)) ? { extensions: 'none' } : {}),
+        },
         opts.output,
       );
     },
@@ -788,6 +800,7 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
     .action(() => console.log(`ARC-1 v${VERSION}`));
 
   const configCommand = program.command('config').description('Configuration inspection');
+  registerIdeConfigCommand(configCommand);
   configCommand
     .command('show')
     .description('Show the resolved effective safety policy with source attribution')
@@ -906,7 +919,8 @@ export async function executeCliToolCall(
   try {
     const result = await runtime.deps.dispatchToolCall(
       direct.client,
-      config,
+      // IDE links are MCP presentation, never part of CLI source/JSON exports (including .env opt-in).
+      { ...config, ideLinks: 'off' },
       toolName,
       args,
       undefined,
@@ -931,7 +945,9 @@ async function runToolCall(
     if (outcome.knownTools) console.error(`Known tools: ${outcome.knownTools.join(', ')}`);
     return 2;
   }
-  return renderToolResult(outcome.result, outputMode);
+  const exitCode = renderToolResult(outcome.result, outputMode);
+  if (toolName === 'SAPDiagnose' && diagnoseCiQualityFailed(args, outcome.result)) return 1;
+  return exitCode;
 }
 
 type CliProgramWithLifecycle = Command & {
@@ -968,5 +984,8 @@ export async function main(
 
 // Keep `npm run cli -- ...` working without making imports execute a command.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = await main(process.argv.slice(2));
+  // No top-level await: the single-executable bundle is CommonJS, which cannot contain one.
+  void main(process.argv.slice(2)).then((code) => {
+    process.exitCode = code;
+  });
 }

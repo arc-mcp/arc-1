@@ -30,8 +30,8 @@ ARC-1 stores four kinds of request-derived data:
 
 | Data | Key | Freshness |
 |---|---|---|
-| Source | Object type, name, and `active`/`inactive` version | Revalidated with SAP `ETag` on every hit when available |
-| Dependency graph | Source hash | Rebuilt automatically when the source changes |
+| Source | Object type, name, and `active`/`inactive` version | Normally revalidated with SAP `ETag` when available; see the post-activation exception below |
+| Parsed ABAP contracts/dependencies (memory only) | Source content hash, object identity and parser language version | Consulted after source retrieval under the normal cache/auth policy; no aggregate reuse |
 | Released API metadata | Object name and type | Populated on demand |
 | Function-group mapping | Function module name | Populated on demand; mappings rarely change |
 
@@ -49,12 +49,12 @@ If-None-Match: <etag>
 
 | SAP response | ARC-1 behavior |
 |---|---|
-| `304 Not Modified` | Return the cached source with `[cached:revalidated]` |
+| `304 Not Modified` | Return the cached source with `[cached:revalidated]` (SRVB JSON: a `"cached": "revalidated"` field) |
 | `200 OK` | Replace the body and `ETag`, then return the fresh source |
 | `200 OK` without `ETag` | Store the body; the next read performs a normal GET |
 | `404` or `410` | Evict the entry and surface the ADT error |
 
-There is no source TTL. SAP validates freshness on each cached source read.
+There is no general source TTL. Normally SAP validates each cached source read. After successful activation on an instance without principal propagation, ARC-1 can serve the captured draft as active for up to 120 seconds without a GET to avoid SAP read-after-activation lag. With `SAP_PP_ENABLED=true`, every activation invalidates instead of promoting a draft, including API-key calls through the shared client, so mixed PP/API-key instances never enter the window. `force_refresh=true` bypasses it for an individual read.
 
 ### Active and inactive source
 
@@ -70,12 +70,33 @@ Source-bearing `SAPRead` operations accept `version`:
 
 ## Dependency context
 
-`SAPContext(action="deps")` hashes the revalidated source and uses that hash as the dependency-cache key. An unchanged hash can safely reuse the compressed dependency graph.
+`SAPContext(action="deps")` rebuilds its dependency context on each call. An unchanged root
+does not prove that its dependencies or their public contracts stayed unchanged, and different
+`depth`/`maxDeps` options must not reuse an earlier aggregate.
 
-The two cache markers have different meanings:
+Normal dependency-source caching remains: conditional GETs reuse unchanged bodies after SAP
+returns `304`. Under principal propagation the existing dependency-payload cache bypass remains.
+The retired aggregate read/write APIs and in-memory graph store have been removed. Existing SQLite
+aggregate rows/schema remain untouched for compatibility and cache statistics; they never enter
+context results. No cache reset or database migration is required.
+`SAPRead` uses `[cached:revalidated]` for a source body revalidated by SAP; SRVB JSON carries
+`"cached": "revalidated"` instead.
 
-- `[cached:revalidated]`: SAP returned `304`, so ARC-1 reused the source body.
-- `[cached]`: the source hash matched a cached dependency graph.
+Unchanged ABAP source does not need repeated CPU-heavy parsing. ARC-1 memoizes public contract
+extraction and dependency-name extraction by source content hash, object name/type and ABAP parser
+language version. Each source-cache owner has a memory-only LRU capped at 128 entries and 4 MiB of
+serialized keys/results (not an exact process-memory bound). Oversized results bypass it. The
+installed parser library version is fixed for the process, and nothing is persisted to SQLite.
+Returned contracts are independent copies; the separate full-source working field and ASTs are not
+retained. Public interface contracts can themselves contain the complete interface declaration.
+
+This saves parsing, **not SAP authorization or freshness checks**. Existing source-cache behavior,
+including the short post-activation consistency window, is unchanged. Principal-propagation
+dependency calls and `ARC1_CACHE=none` bypass this memoization. Changed content, object identity or
+parser language version uses a new key. No additional setup or flag is required.
+
+[Experimental live relations](live-relations.md) are independent: they query metadata on demand,
+retain no shared relationship results, and require no cache or graph database.
 
 ## Live usage lookup
 
@@ -87,13 +108,16 @@ For CDS blast-radius analysis, prefer `SAPContext(action="impact", type="DDLS", 
 
 ## Invalidation
 
-`SAPWrite` and `SAPActivate` invalidate active and inactive source entries for affected objects and refresh the inactive-object state. Edits made outside ARC-1 are detected by the next conditional GET.
+`SAPWrite` and `SAPActivate` invalidate active and inactive source entries for affected objects and refresh the inactive-object state. Edits made outside ARC-1 are detected by the next conditional GET; during the post-activation window, use `force_refresh=true` to check immediately.
 
 ## Security
 
 `ARC1_CACHE=sqlite` stores full SAP source in cleartext. ARC-1 creates the database with owner-only permissions (`0600`), but that is not encryption. Use memory/none for sensitive landscapes, or put SQLite on an encrypted volume with restricted backup access.
 
-Under principal propagation, source cache hits are revalidated through the current per-user SAP client before a body is served. Live usage lookup likewise uses the current caller rather than a shared prebuilt index.
+Ordinary source cache hits are revalidated through the current caller's SAP client. The
+post-activation window is the exception: it has no per-reader identity check, so ARC-1 never opens
+it while `SAP_PP_ENABLED=true`, including on mixed PP/API-key instances. Live usage lookup uses the
+current caller rather than a shared prebuilt index.
 
 ## Statistics and UI
 
@@ -113,6 +137,8 @@ Under principal propagation, source cache hits are revalidated through the curre
 ```
 
 The read-only web UI adds backend mode, persistence, source inventory summaries, and bounded sanitized activity counters. It never returns cached source bodies.
+`contractCount` counts retained legacy aggregate rows, not the new memory-only parse memoization.
+Fresh caches normally report zero; current dependency calls do not populate that legacy table.
 
 ## Migration from startup warmup
 

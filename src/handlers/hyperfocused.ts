@@ -12,6 +12,7 @@
 import type { ResolvedFeatures } from '../adt/types.js';
 import { getActionPolicy } from '../authz/policy.js';
 import type { ServerConfig } from '../server/types.js';
+import { createQueryDefinition } from './query-tool.js';
 import { isGitToolVisible } from './tool-registry.js';
 import type { ToolDefinition } from './tools.js';
 
@@ -71,7 +72,7 @@ export function expandHyperfocusedArgs(args: Record<string, unknown>):
   // Copy standard top-level fields
   if (args.type !== undefined) expandedArgs.type = args.type;
   if (args.name !== undefined) expandedArgs.name = args.name;
-  if (args.version !== undefined) expandedArgs.version = args.version;
+  if (args.version !== undefined && toolName === 'SAPRead') expandedArgs.version = args.version;
 
   // For write/activate, copy action from params if not already set
   // (the real SAPWrite has its own "action" field like "create"/"update"/"delete")
@@ -87,7 +88,7 @@ export function expandHyperfocusedArgs(args: Record<string, unknown>):
  */
 export function getHyperfocusedToolDefinition(
   config: ServerConfig,
-  resolvedFeatures?: ResolvedFeatures,
+  resolvedFeatures?: Partial<ResolvedFeatures>,
 ): ToolDefinition {
   const gitAvailable = isGitToolVisible(config, resolvedFeatures);
   // Mixed delegators stay visible when their read sub-actions are usable.
@@ -95,7 +96,7 @@ export function getHyperfocusedToolDefinition(
   const readActions = [
     'read',
     'search',
-    ...(config.allowFreeSQL ? ['query'] : []),
+    ...(createQueryDefinition(config, resolvedFeatures) ? ['query'] : []),
     'navigate',
     'context',
     'lint',
@@ -126,7 +127,7 @@ export function getHyperfocusedToolDefinition(
         version: {
           type: 'string',
           enum: ['active', 'inactive', 'auto'],
-          description: 'For read action: source version (active, inactive, auto)',
+          description: 'For read action: object version (active, inactive, auto)',
         },
         params: {
           type: 'object',

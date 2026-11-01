@@ -1,3 +1,4 @@
+import type { AdtRequestOptions } from './http-deadline.js';
 /**
  * Code intelligence for SAP ADT.
  *
@@ -10,7 +11,7 @@ import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 
-/** Definition navigation result */
+/** Definition target with ADT coordinates: 1-based line, 0-based cursor column. */
 export interface DefinitionResult {
   uri: string;
   type: string;
@@ -28,23 +29,16 @@ export interface ReferenceResult {
   column: number;
 }
 
-/** Completion proposal */
+/** Completion proposal: an identifier or keyword SAP offers at the cursor. */
 export interface CompletionProposal {
   text: string;
-  description: string;
-  type: string;
 }
 
-/** Available object type from Where-Used scope discovery */
-export interface WhereUsedScopeEntry {
-  objectType: string;
-  objectTypeDescription: string;
-  count: number;
-}
-
-/** Where-Used scope — available object types and their counts */
-export interface WhereUsedScope {
-  entries: WhereUsedScopeEntry[];
+/** Completion proposals at a cursor. */
+export interface CompletionResult {
+  proposals: CompletionProposal[];
+  /** SAP confirmed completeness (no `@end` marker). False does not prove more matches exist. */
+  complete: boolean;
 }
 
 /** Detailed Where-Used result with additional fields (line, snippet, package) */
@@ -57,6 +51,8 @@ export interface WhereUsedResult {
   packageName: string;
   snippet: string;
   objectDescription: string;
+  /** Opaque native expansion token; omitted from ordinary object-list responses. */
+  objectIdentifier?: string;
   parentUri?: string;
   isResult?: boolean;
   canHaveChildren?: boolean;
@@ -78,22 +74,29 @@ export async function findDefinition(
 ): Promise<DefinitionResult | null> {
   checkOperation(safety, OperationType.Intelligence, 'FindDefinition');
 
+  // ADT reads the cursor from the URI fragment (`#start=<line>,<column>`). Separate
+  // `line`/`column` query parameters are rejected with 400 "I::000".
+  const target = `${sourceUrl.split('#')[0]}#start=${line},${column}`;
   const resp = await http.post(
-    `/sap/bc/adt/navigation/target?uri=${encodeURIComponent(sourceUrl)}&line=${line}&column=${column}`,
+    `/sap/bc/adt/navigation/target?uri=${encodeURIComponent(target)}&filter=definition`,
     source,
     'text/plain',
     { Accept: 'application/xml' },
   );
 
+  // ADT answers `<adtcore:objectReference adtcore:uri="…/source/main#start=30,16"/>`;
+  // `navigation` is kept as a fallback.
   const parsed = parseXml(resp.body);
-  const nodes = findDeepNodes(parsed, 'navigation');
-  const nav = nodes[0] ?? (parsed.navigation as Record<string, unknown> | undefined);
+  const nav = findDeepNodes(parsed, 'objectReference')[0] ?? findDeepNodes(parsed, 'navigation')[0];
   if (!nav?.['@_uri']) return null;
 
+  const uri = String(nav['@_uri']);
+  const start = /#start=(\d+),(\d+)/.exec(uri);
   return {
-    uri: String(nav['@_uri']),
+    uri,
     type: String(nav['@_type'] ?? ''),
     name: String(nav['@_name'] ?? ''),
+    ...(start ? { line: Number(start[1]), column: Number(start[2]) } : {}),
   };
 }
 
@@ -122,50 +125,6 @@ export async function findReferences(
 }
 
 /**
- * Get available object types for Where-Used analysis (scope discovery).
- *
- * Step 1 of the 2-step scope-based Where-Used API:
- * POST to .../usageReferences/scope with the object URI in the request body.
- * Returns available object types and their reference counts.
- */
-export async function getWhereUsedScope(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  objectUrl: string,
-): Promise<WhereUsedScope> {
-  checkOperation(safety, OperationType.Intelligence, 'FindWhereUsed');
-
-  const body = [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<usageReferences:scopeRequest xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">',
-    `  <usageReferences:objectReference uri="${escapeXmlAttr(objectUrl)}"/>`,
-    '</usageReferences:scopeRequest>',
-  ].join('\n');
-
-  const resp = await http.post(
-    '/sap/bc/adt/repository/informationsystem/usageReferences/scope',
-    body,
-    'application/xml',
-    { Accept: 'application/xml' },
-  );
-
-  const parsed = parseXml(resp.body);
-  const entries: WhereUsedScopeEntry[] = [];
-
-  // Scope response has objectType entries with type, description, and count
-  const scopeNodes = findDeepNodes(parsed, 'objectType');
-  for (const node of scopeNodes) {
-    entries.push({
-      objectType: String(node['@_type'] ?? node['@_name'] ?? ''),
-      objectTypeDescription: String(node['@_description'] ?? ''),
-      count: Number(node['@_count'] ?? node['@_numberOfResults'] ?? 0),
-    });
-  }
-
-  return { entries };
-}
-
-/**
  * Find Where-Used references via the ADT usageReferences endpoint.
  *
  * POST to .../usageReferences with the object URI as both a query parameter
@@ -174,14 +133,43 @@ export async function getWhereUsedScope(
  * - Accept: application/vnd.sap.adt.repository.usagereferences.result.v1+xml
  *
  * The response uses a tree structure with `referencedObject` > `adtObject` elements.
- * If objectType is provided, it's included in the request body as a filter.
+ * The legacy objectType body field is ignored by tested SAP systems; callers must filter results themselves.
  */
 export async function findWhereUsed(
   http: AdtHttpClient,
   safety: SafetyConfig,
   objectUrl: string,
   objectType?: string,
+  options?: AdtRequestOptions,
+  validateResponse?: (xml: string) => void,
 ): Promise<WhereUsedResult[]> {
+  return (await findWhereUsedWithScope(http, safety, objectUrl, objectType, options, validateResponse)).results;
+}
+
+/** Where-used results plus the symbol SAP actually searched for. */
+export interface WhereUsedLookup {
+  results: WhereUsedResult[];
+  /** SAP's `resultDescription`, verbatim; absent when SAP omits it. It can name the symbol or explain an unsupported search, e.g.
+   *  "References for: /SCWM/CL_TM - CLEANUP (Method) [SID]" (7.57) or
+   *  "[A4H] Where-Used List: /DMO/BOOKING_DATA (Structure)" (8.16). */
+  searchedFor?: string;
+  /** Empty can mean the original object or an unsupported search; it alone does not prove a search ran. */
+  referencedObjectIdentifier?: string;
+}
+
+/**
+ * {@link findWhereUsed} that also reports SAP's search scope. With a cursor in the URI fragment
+ * (`#start=<line>,<column>`) SAP searches the symbol at that position, and falls back to the whole
+ * object when the cursor is not on an identifier; the result description is what tells the two apart.
+ */
+export async function findWhereUsedWithScope(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  objectUrl: string,
+  objectType?: string,
+  options?: AdtRequestOptions,
+  validateResponse?: (xml: string) => void,
+): Promise<WhereUsedLookup> {
   checkOperation(safety, OperationType.Intelligence, 'FindWhereUsed');
 
   const typeFilter = objectType ? `\n  <usageReferences:objectTypeFilter value="${escapeXmlAttr(objectType)}"/>` : '';
@@ -194,11 +182,25 @@ export async function findWhereUsed(
   ].join('\n');
 
   const url = `/sap/bc/adt/repository/informationsystem/usageReferences?uri=${encodeURIComponent(objectUrl)}`;
-  const resp = await http.post(url, body, 'application/vnd.sap.adt.repository.usagereferences.request.v1+xml', {
-    Accept: 'application/vnd.sap.adt.repository.usagereferences.result.v1+xml',
-  });
+  const resp = await http.post(
+    url,
+    body,
+    'application/vnd.sap.adt.repository.usagereferences.request.v1+xml',
+    {
+      Accept: 'application/vnd.sap.adt.repository.usagereferences.result.v1+xml',
+    },
+    options,
+  );
 
-  const parsed = parseXml(resp.body);
+  validateResponse?.(resp.body);
+  return parseWhereUsedResponse(resp.body);
+}
+
+/** Shared native response parser; expansion tokens stay opt-in. */
+export function parseWhereUsedResponse(xml: string, includeIdentifiers = false): WhereUsedLookup {
+  const parsed = parseXml(xml);
+  const scope = findDeepNodes(parsed, 'usageReferenceResult')[0];
+  if (includeIdentifiers && !scope) throw new Error('SAP returned an invalid where-used response.');
   const results: WhereUsedResult[] = [];
 
   // Response uses referencedObject > adtObject tree structure
@@ -220,6 +222,9 @@ export async function findWhereUsed(
       packageName: String(pkgRef['@_name'] ?? ''),
       snippet: '',
       objectDescription: String(adtObj['@_description'] ?? ''),
+      ...(includeIdentifiers && typeof ref.objectIdentifier === 'string'
+        ? { objectIdentifier: ref.objectIdentifier }
+        : {}),
       parentUri: asOptionalString(ref['@_parentUri']),
       isResult: parseOptionalBoolean(ref['@_isResult']),
       canHaveChildren: parseOptionalBoolean(ref['@_canHaveChildren']),
@@ -234,7 +239,13 @@ export async function findWhereUsed(
     });
   }
 
-  return results;
+  const searchedFor = asOptionalString(scope?.['@_resultDescription']);
+  const referencedObjectIdentifier = scope?.['@_referencedObjectIdentifier'];
+  return {
+    results,
+    ...(searchedFor ? { searchedFor } : {}),
+    ...(typeof referencedObjectIdentifier === 'string' ? { referencedObjectIdentifier } : {}),
+  };
 }
 
 /**
@@ -244,8 +255,8 @@ export async function findWhereUsed(
  * SAP's scope-based usageReferences endpoint sometimes does NOT surface
  * interface→implementing-class links directly — the implementations sit
  * inside a `canHaveChildren="true"` Interface Section node, and the snippet
- * expansion endpoint (`/usageReferences/snippets`) returns 404 on every
- * release we've probed (NW 7.50, S/4HANA 2023). The where-used XML response
+ * expansion requires the separate `/usageSnippets` request. Ordinary object-only
+ * lookups do not expand those nodes. The where-used XML response
  * shows `numberOfResults="1"` but with no `isResult="true"` entry. Verified
  * live on `a4h.marianzeis.de` against ZIF_ARC1_TEST → ZCL_ARC1_TEST.
  *
@@ -294,7 +305,15 @@ function parseOptionalBoolean(value: unknown): boolean | undefined {
   return undefined;
 }
 
-/** Get code completion proposals */
+/**
+ * Get code completion proposals at an ADT cursor (1-based line, 0-based column) in `source`.
+ *
+ * ADT reads the cursor from the URI fragment (`#start=<line>,<column>`), as for definition, and
+ * answers with `asx:abap` / `SCC_COMPLETION` records in `application/vnd.sap.as+xml` (the only type
+ * it accepts; `application/xml` is refused with 406). With `signalCompleteness=true` SAP appends an
+ * `@end` record for incomplete results. Older backends also emit it for empty lists or invalid
+ * positions, so it means completeness is unconfirmed, not necessarily that matches were cut off.
+ */
 export async function getCompletion(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -302,21 +321,29 @@ export async function getCompletion(
   line: number,
   column: number,
   source: string,
-): Promise<CompletionProposal[]> {
+): Promise<CompletionResult> {
   checkOperation(safety, OperationType.Intelligence, 'GetCompletion');
 
+  const target = `${sourceUrl.split('#')[0]}#start=${line},${column}`;
   const resp = await http.post(
-    `/sap/bc/adt/abapsource/codecompletion/proposals?uri=${encodeURIComponent(sourceUrl)}&line=${line}&column=${column}`,
+    `/sap/bc/adt/abapsource/codecompletion/proposal?uri=${encodeURIComponent(target)}&signalCompleteness=true`,
     source,
     'text/plain',
-    { Accept: 'application/xml' },
+    { Accept: 'application/vnd.sap.as+xml' },
   );
 
-  const parsed = parseXml(resp.body);
-  const nodes = findDeepNodes(parsed, 'proposal');
-  return nodes.map((node) => ({
-    text: String(node['@_text'] ?? ''),
-    description: String(node['@_description'] ?? ''),
-    type: String(node['@_type'] ?? ''),
-  }));
+  // SAP_BASIS 758 returns HTTP 200 with no body (or content type) when no proposals match.
+  if (resp.statusCode === 200 && resp.body.length === 0) return { proposals: [], complete: true };
+
+  const abap = parseXml(resp.body).abap as { values?: { DATA?: unknown } } | undefined;
+  if (!Array.isArray(abap?.values?.DATA)) {
+    throw new Error('Unexpected completion response: expected ABAP XML values/DATA.');
+  }
+  const identifiers = findDeepNodes(abap.values.DATA, 'SCC_COMPLETION')
+    .map((node) => String(node.IDENTIFIER ?? ''))
+    .filter((identifier) => identifier.length > 0);
+  return {
+    proposals: identifiers.filter((identifier) => identifier !== '@end').map((text) => ({ text })),
+    complete: !identifiers.includes('@end'),
+  };
 }

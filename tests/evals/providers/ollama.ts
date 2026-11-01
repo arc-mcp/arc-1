@@ -12,7 +12,7 @@
  *   const response = await provider.chat(messages, tools);
  */
 
-import type { LLMProvider, LLMResponse, LLMToolCall, Message, ToolDefinitionForLLM } from '../types.js';
+import type { LLMChatOptions, LLMProvider, LLMResponse, LLMToolCall, Message, ToolDefinitionForLLM } from '../types.js';
 
 /** Default model. Chosen for tool-calling quality / latency balance. */
 export const DEFAULT_OLLAMA_MODEL = 'qwen3.5:9b';
@@ -29,7 +29,7 @@ function toOpenAIMessages(messages: Message[]): Array<Record<string, unknown>> {
       return {
         role: 'tool',
         content: msg.content ?? '',
-        tool_call_id: msg.toolCallId ?? 'call_0',
+        tool_call_id: msg.toolCallId,
       };
     }
 
@@ -37,8 +37,8 @@ function toOpenAIMessages(messages: Message[]): Array<Record<string, unknown>> {
       return {
         role: 'assistant',
         content: msg.content ?? null,
-        tool_calls: msg.toolCalls.map((tc, i) => ({
-          id: `call_${i}`,
+        tool_calls: msg.toolCalls.map((tc) => ({
+          id: tc.id,
           type: 'function',
           function: {
             name: tc.name,
@@ -63,6 +63,7 @@ function parseToolCalls(
   if (!toolCalls?.length) return undefined;
 
   return toolCalls.map((tc) => ({
+    id: tc.id,
     name: tc.function.name,
     arguments: JSON.parse(tc.function.arguments),
   }));
@@ -73,7 +74,8 @@ export function createOllamaProvider(model: string): LLMProvider {
     name: 'ollama',
     model,
 
-    async chat(messages: Message[], tools: ToolDefinitionForLLM[]): Promise<LLMResponse> {
+    async chat(messages: Message[], tools: ToolDefinitionForLLM[], options?: LLMChatOptions): Promise<LLMResponse> {
+      options?.signal?.throwIfAborted();
       const body = {
         model,
         messages: toOpenAIMessages(messages),
@@ -85,6 +87,7 @@ export function createOllamaProvider(model: string): LLMProvider {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        ...(options?.signal ? { signal: options.signal } : {}),
       });
 
       if (!resp.ok) {

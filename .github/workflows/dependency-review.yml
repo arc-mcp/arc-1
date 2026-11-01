@@ -43,7 +43,15 @@ jobs:
           vulnerability-check: false
           license-check: true
           comment-summary-in-pr: never
-          # Preserve existing policy separately from vulnerability gating.
+          # Block copyleft licenses that would contaminate the MIT-
+          # licensed npm package. The action requires choosing EITHER
+          # allow-licenses OR deny-licenses — not both — so we deny the
+          # known-incompatible set rather than maintaining a positive
+          # allowlist that breaks every time a new MIT-compatible
+          # license appears in the ecosystem.
           deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.1, LGPL-3.0
-          # This version is used under its BSD-3-Clause dual-license option.
-          allow-dependencies-licenses: pkg:npm/node-forge@1.4.0
+          # The SAP Cloud SDK depends on node-forge, whose SPDX expression is
+          # BSD-3-Clause OR GPL-2.0-only. ARC-1 uses it under the BSD-3-Clause
+          # option; keep the exception version-pinned so future changes are
+          # reviewed again.
+          allow-dependencies-licenses: pkg:npm/node-forge@1.4.2

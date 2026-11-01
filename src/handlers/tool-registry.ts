@@ -27,6 +27,7 @@
  * same literal set, in table order.
  */
 
+import { ATC_BATCH_TYPES } from '../adt/atc-batch.js';
 import { SDO_TYPES } from '../adt/server-driven.js';
 import type { ResolvedFeatures } from '../adt/types.js';
 import type { ServerConfig } from '../server/types.js';
@@ -70,15 +71,20 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'BDEF', btp: true },
   { type: 'SRVD', btp: true },
   { type: 'SRVB', btp: true },
+  { type: 'SMBC', btp: true },
   { type: 'SKTD', btp: true },
   // Friendly alias for Knowledge Transfer Documents; normalized to canonical SKTD at dispatch.
   { type: 'KTD', btp: true },
   { type: 'TABL', btp: true },
+  { type: 'TABL/DTT', btp: true },
   { type: 'VIEW', btp: false },
   { type: 'DOMA', btp: true },
   { type: 'DTEL', btp: true },
+  { type: 'SHLP', btp: false },
   { type: 'TRAN', btp: false },
-  { type: 'TTYP', btp: false },
+  { type: 'TTYP', btp: true },
+  // DDIC lock objects: one XML metadata document, returned as JSON. Live-verified on-prem 8.16 + BTP trial.
+  { type: 'ENQU', btp: true },
   { type: 'TABLE_CONTENTS', btp: true },
   { type: 'TABLE_QUERY', btp: true },
   { type: 'DEVC', btp: true },
@@ -96,12 +102,13 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'BSP_DEPLOY', btp: true },
   { type: 'API_STATE', btp: true },
   { type: 'INACTIVE_OBJECTS', btp: true },
+  { type: 'SYNTAX', btp: true },
   { type: 'AUTH', btp: false },
   // FTG2 is an ARC-1-private invented identifier (see docs/research/abap-types/types/ftg2.md).
   // FEATURE_TOGGLE is the new canonical name; FTG2 stays as deprecated alias for one minor.
   { type: 'FEATURE_TOGGLE', btp: false },
   { type: 'FTG2', btp: false },
-  { type: 'ENHO', btp: false },
+  { type: 'ENHO', btp: true },
   { type: 'VERSIONS', btp: false },
   { type: 'VERSION_SOURCE', btp: false },
   // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+) — generic AFF read path,
@@ -115,6 +122,12 @@ const sapReadTypes = deriveTypeArrays(SAPREAD_TYPE_TABLE);
 export const SAPREAD_TYPES_ONPREM = sapReadTypes.onprem;
 /** SAPRead types available on BTP ABAP Environment (the `btp: true` rows). */
 export const SAPREAD_TYPES_BTP = sapReadTypes.btp;
+
+// ATC selects repository objects from the same BTP availability matrix as reads.
+// Derive the subset instead of maintaining a second PROG/INCL exclusion list.
+export const ATC_BATCH_TYPES_BTP = ATC_BATCH_TYPES.filter((type) =>
+  SAPREAD_TYPES_BTP.some((candidate) => candidate === type),
+);
 
 // ─── SAPWrite ───────────────────────────────────────────────────────
 
@@ -135,13 +148,17 @@ const SAPWRITE_TYPE_TABLE = [
   // Friendly alias for Knowledge Transfer Documents; normalized to canonical SKTD at dispatch.
   { type: 'KTD', btp: true },
   { type: 'TABL', btp: true },
+  { type: 'TABL/DTT', btp: true },
   // Subtype routing for create — see docs/plans/completed/2026-05-27-fix-tabl-ds-create-routing.md.
   { type: 'TABL/DT', btp: true },
   { type: 'TABL/DS', btp: true },
   { type: 'DOMA', btp: true },
   { type: 'DTEL', btp: true },
   { type: 'MSAG', btp: true },
-  { type: 'TTYP', btp: false },
+  { type: 'TTYP', btp: true },
+  { type: 'ENQU', btp: true },
+  // BAdI implementations (ENHO/XHB) only; on BTP only for BAdIs released for cloud development (C1).
+  { type: 'ENHO', btp: true },
   // Server-driven objects (8.16+) — write via the generic blue:blueSource + AFF JSON engine.
   // Rows derive from SDO_TYPES exactly like the SAPRead table above.
   ...SDO_TYPES.map((t) => ({ type: t, btp: true }) as const),
@@ -155,6 +172,7 @@ export const SAPWRITE_TYPES_BTP = sapWriteTypes.btp;
 // ─── SAPContext ─────────────────────────────────────────────────────
 
 const SAPCONTEXT_TYPE_TABLE = [
+  { type: 'SHLP', btp: false },
   { type: 'CLAS', btp: true },
   { type: 'INTF', btp: true },
   { type: 'PROG', btp: false },
@@ -183,12 +201,12 @@ export const SAPCONTEXT_TYPES_BTP = sapContextTypes.btp;
  */
 export function isGitToolVisible(
   config: Pick<ServerConfig, 'featureAbapGit' | 'featureGcts'>,
-  resolvedFeatures: Pick<ResolvedFeatures, 'gcts' | 'abapGit'> | undefined,
+  resolvedFeatures: Partial<Pick<ResolvedFeatures, 'gcts' | 'abapGit'>> | undefined,
 ): boolean {
-  if (resolvedFeatures === undefined) {
-    return config.featureAbapGit !== 'off' || config.featureGcts !== 'off';
-  }
-  return !!(resolvedFeatures.gcts?.available || resolvedFeatures.abapGit?.available);
+  return (
+    (resolvedFeatures?.gcts?.available ?? config.featureGcts !== 'off') ||
+    (resolvedFeatures?.abapGit?.available ?? config.featureAbapGit !== 'off')
+  );
 }
 
 // ─── Derived union types ────────────────────────────────────────────

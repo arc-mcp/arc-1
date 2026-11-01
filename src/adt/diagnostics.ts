@@ -10,6 +10,7 @@
 
 import { createHash } from 'node:crypto';
 import { AdtApiError } from './errors.js';
+import { type FeedFilter, prepareDumpFilterQuery } from './feed-schema.js';
 import type { AdtHttpClient } from './http.js';
 import { assertCanonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
@@ -47,18 +48,28 @@ const DEFAULT_SYSTEM_MESSAGE_MAX_RESULTS = 50;
 const DEFAULT_GATEWAY_ERROR_MAX_RESULTS = 50;
 const MAX_RESULTS_CAP = 200;
 
-export interface ListDumpsOptions {
+/** SAP serves at most 100 dump entries per request; `$top` only narrows this, never raises it. */
+const DUMP_PAGE_SIZE = 100;
+/** Dumps page via the `to` cursor, so they allow a higher ceiling than the single-shot feeds. */
+const MAX_DUMP_RESULTS_CAP = 500;
+/** Stop runaway paging if SAP ever serves very short pages: 500 results need 6 pages. */
+const MAX_DUMP_PAGES = 10;
+
+export interface FeedQueryOptions {
   /** Filter by SAP user (uppercase) */
   user?: string;
-  /** Maximum number of dumps to return (default 50) */
+  /** Maximum number of entries to return (default 50) */
   maxResults?: number;
+  /** Inclusive lower time bound */
+  from?: string;
+  /** Inclusive upper time bound */
+  to?: string;
 }
 
-interface FeedQueryOptions {
-  user?: string;
-  maxResults?: number;
-  from?: string;
-  to?: string;
+export interface ListDumpsOptions extends FeedQueryOptions {
+  filters?: FeedFilter[];
+  /** Receives the first page's raw feed, whose `atom:updated` is the clock SAP bounded the list with. */
+  onFirstPage?: (body: string) => void;
 }
 
 export interface ListSystemMessagesOptions extends FeedQueryOptions {}
@@ -163,11 +174,61 @@ function appendQueryParam(path: string, key: string, value: string): string {
   return `${base}${queryString ? `?${queryString}` : ''}${fragment ? `#${fragment}` : ''}`;
 }
 
+/** The feed publishes UTC, and SAP compares bounds against those same values. */
+export function toSapStamp(date: Date): string {
+  return date.toISOString().replace(/[-:T]/g, '').slice(0, 14);
+}
+
+/** Inverse of {@link toSapStamp}; the caller has already checked the 14-digit shape. */
+export function sapStampToDate(stamp: string): Date {
+  const date = `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}`;
+  const time = `${stamp.slice(8, 10)}:${stamp.slice(10, 12)}:${stamp.slice(12, 14)}`;
+  return new Date(`${date}T${time}Z`);
+}
+
 /**
- * List ABAP short dumps (ST22 equivalent).
+ * Normalize a feed time bound to SAP's `YYYYMMDDHHMMSS`.
  *
- * Endpoint: GET /sap/bc/adt/runtime/dumps
- * Returns an Atom feed with dump entries.
+ * SAP ignores a bound it cannot parse and answers with the whole feed, so anything not
+ * understood here has to fail rather than silently widen the query. Date-only is one of the
+ * forms SAP drops, hence the pad to midnight.
+ */
+export function normalizeFeedTimestamp(value: string | undefined, field: string): string | undefined {
+  const raw = String(value ?? '').trim();
+  if (!raw) return undefined;
+
+  const invalid = () =>
+    new Error(
+      `Invalid ${field} timestamp "${raw}". Use YYYYMMDDHHMMSS, YYYY-MM-DD, or an ISO timestamp such as 2026-09-15T00:00:00Z.`,
+    );
+
+  // A trailing UTC offset is applied after the calendar check, so the check sees plain components.
+  // Its own range is enforced here: +02:60 or +24:00 would otherwise shift the query silently.
+  const offset = raw.match(/([+-])([01]\d|2[0-3]):?([0-5]\d)$/);
+  const wallClock = offset ? raw.slice(0, offset.index) : raw;
+
+  // Drop fractional seconds: toISOString() emits them and SAP takes whole seconds.
+  const digits = wallClock.replace(/\.\d+/, '').replace(/[-:TZ\s]/g, '');
+  const stamp = /^\d{8}$/.test(digits) ? `${digits}000000` : digits;
+  if (!/^\d{14}$/.test(stamp)) throw invalid();
+
+  // Date rolls impossible dates over (2026-02-30 becomes 2026-03-02), so compare the parse back:
+  // a digit count alone would let a typo return a different day's dumps as a success.
+  const parsed = sapStampToDate(stamp);
+  if (Number.isNaN(parsed.getTime()) || toSapStamp(parsed) !== stamp) throw invalid();
+
+  if (!offset) return stamp;
+  const offsetMinutes = (Number(offset[2]) * 60 + Number(offset[3])) * (offset[1] === '+' ? -1 : 1);
+  return toSapStamp(new Date(parsed.getTime() + offsetMinutes * 60_000));
+}
+
+/**
+ * List ABAP short dumps (ST22 equivalent) from the newest-first Atom feed at
+ * GET /sap/bc/adt/runtime/dumps.
+ *
+ * SAP serves at most 100 entries per request and ignores `$skip`, so more than that is
+ * assembled by re-querying with `to` set to the oldest entry seen. That bound is inclusive
+ * and so repeats the boundary entry, which keying by dump id drops.
  */
 export async function listDumps(
   http: AdtHttpClient,
@@ -176,12 +237,47 @@ export async function listDumps(
 ): Promise<DumpEntry[]> {
   checkOperation(safety, OperationType.Read, 'ListDumps');
 
-  const queryString = buildFeedQueryString(options, DEFAULT_DUMP_MAX_RESULTS, 'user');
-  const resp = await http.get(`/sap/bc/adt/runtime/dumps${queryString}`, {
-    Accept: 'application/atom+xml;type=feed',
-  });
+  const wanted = clampMaxResults(options?.maxResults, DEFAULT_DUMP_MAX_RESULTS, MAX_DUMP_RESULTS_CAP);
+  const from = normalizeFeedTimestamp(options?.from, 'from');
+  let to = normalizeFeedTimestamp(options?.to, 'to');
+  const { query, request } = await prepareDumpFilterQuery(http, safety, options?.filters, options?.user);
 
-  return parseDumpList(resp.body);
+  const pageSize = Math.min(wanted, DUMP_PAGE_SIZE);
+  const byId = new Map<string, DumpEntry>();
+  for (let page = 0; page < MAX_DUMP_PAGES && byId.size < wanted; page++) {
+    const queryString = buildFeedQueryString(
+      { ...options, from, to, maxResults: pageSize },
+      DEFAULT_DUMP_MAX_RESULTS,
+      'user',
+      query,
+    );
+    const path = `/sap/bc/adt/runtime/dumps${queryString}`;
+    const headers = { Accept: 'application/atom+xml;type=feed' };
+    const resp = request ? await http.get(path, headers, request) : await http.get(path, headers);
+    if (page === 0) options?.onFirstPage?.(resp.body);
+    const entries = parseDumpList(resp.body);
+    const before = byId.size;
+    for (const entry of entries) byId.set(entry.id, entry);
+
+    // A page short of the requested size means SAP has nothing older left.
+    if (entries.length < pageSize) break;
+
+    // A full page of ids already seen means at least pageSize dumps share the cursor second.
+    // No time bound splits them and SAP reports no total, so whether any remain is unknowable —
+    // say so instead of returning the short list as though it were the whole answer. Only a
+    // caller asking for more than one page can get here.
+    if (byId.size === before) {
+      throw new Error(
+        `Cannot page past ${to}: at least ${pageSize} dumps share that second, which is SAP's maximum per request, so older ones are unreachable. Narrow the query with user, or read that second with to=${to}.`,
+      );
+    }
+
+    const oldest = entries.at(-1)?.timestamp;
+    if (!oldest) break;
+    to = normalizeFeedTimestamp(oldest, 'to');
+  }
+
+  return [...byId.values()].slice(0, wanted);
 }
 
 /**
@@ -1346,19 +1442,19 @@ export async function setSqlTraceState(
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
-function buildFeedQueryString(
+export function buildFeedQueryString(
   options: FeedQueryOptions | undefined,
   defaultMaxResults: number,
   userAttribute: string,
+  filterQuery?: string,
 ): string {
   const params: string[] = [];
   const maxResults = clampMaxResults(options?.maxResults, defaultMaxResults);
   params.push(`$top=${maxResults}`);
 
   const user = String(options?.user ?? '').trim();
-  if (user) {
-    params.push(`$query=${encodeURIComponent(`and(equals(${userAttribute},${user}))`)}`);
-  }
+  const query = filterQuery ?? (user ? `and(equals(${userAttribute},${user}))` : undefined);
+  if (query) params.push(`$query=${encodeURIComponent(query)}`);
 
   const from = String(options?.from ?? '').trim();
   if (from) params.push(`from=${encodeURIComponent(from)}`);
@@ -1368,9 +1464,9 @@ function buildFeedQueryString(
   return params.length > 0 ? `?${params.join('&')}` : '';
 }
 
-function clampMaxResults(maxResults: number | undefined, fallback: number): number {
+function clampMaxResults(maxResults: number | undefined, fallback: number, cap = MAX_RESULTS_CAP): number {
   if (!Number.isFinite(maxResults)) return fallback;
-  return Math.max(1, Math.min(MAX_RESULTS_CAP, Math.trunc(maxResults!)));
+  return Math.max(1, Math.min(cap, Math.trunc(maxResults!)));
 }
 
 function toRecordArray(value: unknown): Array<Record<string, unknown>> {
@@ -1390,7 +1486,7 @@ function normalizeLabel(label: string): string {
   return label.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function parseDumpCategories(categories: Array<Record<string, unknown>>): { error: string; program: string } {
+export function parseDumpCategories(categories: Array<Record<string, unknown>>): { error: string; program: string } {
   const normalized = categories
     .map((category) => ({
       term: String(category['@_term'] ?? ''),
@@ -1420,7 +1516,7 @@ function extractSelfLinkHref(links: Array<Record<string, unknown>>): string {
   return String(selfLink?.['@_href'] ?? links[0]?.['@_href'] ?? '');
 }
 
-function extractDumpId(entry: Record<string, unknown>): string {
+export function extractDumpId(entry: Record<string, unknown>): string {
   const links = toRecordArray(entry.link);
   const selfHref = extractSelfLinkHref(links);
   const fromLink = extractIdFromPath(selfHref, ['/runtime/dump/']);
@@ -1636,7 +1732,7 @@ function normalizeAdtPath(rawPath: string): string {
 // resilient to whitespace/attribute variations across releases.
 
 function splitGatewayAtomId(atomId: string): { errorType: string; transactionId: string } {
-  const cleaned = decodeHtmlEntities(String(atomId ?? '')).trim();
+  const cleaned = String(atomId ?? '').trim();
   if (!cleaned) return { errorType: '', transactionId: '' };
 
   const marker = '/sap/bc/adt/gw/errorlog/';
@@ -1668,19 +1764,19 @@ function splitCamelCase(value: string): string {
     .trim();
 }
 
-function extractEntrySummaryHtml(entry: Record<string, unknown>): string {
+export function extractEntrySummaryHtml(entry: Record<string, unknown>): string {
   const summary = entry.summary;
   if (summary == null) return '';
-  if (typeof summary === 'string') return decodeHtmlEntities(summary);
+  if (typeof summary === 'string') return summary; // already HTML: parseXml undid the XML escaping
 
   const summaryNode = toRecordArray(summary)[0];
   if (!summaryNode) return '';
   const text = summaryNode['#text'];
-  if (typeof text === 'string' && text.length > 0) return decodeHtmlEntities(text);
-  return decodeHtmlEntities(String(summaryNode ?? ''));
+  if (typeof text === 'string' && text.length > 0) return text;
+  return String(summaryNode ?? '');
 }
 
-function extractHtmlSection(html: string, anchorId: string): string {
+export function extractHtmlSection(html: string, anchorId: string): string {
   if (!html) return '';
   const startRe = new RegExp(`<h4[^>]*id="${escapeRegex(anchorId)}"[^>]*>`, 'i');
   const start = html.search(startRe);
@@ -1693,10 +1789,7 @@ function extractHtmlSection(html: string, anchorId: string): string {
 function extractHtmlHeaderValue(html: string, label: string): string {
   if (!html || !label) return '';
   const labelPattern = escapeRegex(label).replace(/_/g, '[_\\s]?');
-  const re = new RegExp(
-    `<b[^>]*>\\s*(?:&nbsp;|\\s)*${labelPattern}\\s*</b>\\s*</td>\\s*<td[^>]*>([\\s\\S]*?)</td>`,
-    'i',
-  );
+  const re = new RegExp(`<b[^>]*>(?:&nbsp;|\\s)*${labelPattern}\\s*</b>\\s*</td>\\s*<td[^>]*>([\\s\\S]*?)</td>`, 'i');
   const match = html.match(re);
   if (!match?.[1]) return '';
   return sanitizeHtmlCellValue(match[1]);
@@ -1731,7 +1824,7 @@ function extractGatewayExceptionsFromHtml(contextHtml: string): GatewayException
   return exceptions;
 }
 
-function extractGatewaySourceFromHtml(sourceHtml: string): { lines: GatewaySourceLine[]; errorLine: number } {
+export function extractGatewaySourceFromHtml(sourceHtml: string): { lines: GatewaySourceLine[]; errorLine: number } {
   if (!sourceHtml) return { lines: [], errorLine: 0 };
 
   // Line numbers and current-line markers sit in the first <td id="sourcetablecolumn">.
@@ -1758,7 +1851,7 @@ function extractGatewaySourceFromHtml(sourceHtml: string): { lines: GatewaySourc
     const classes = (match[1] ?? '').trim();
     const isError = /\bhighlight\b/i.test(classes);
     const raw = stripHtmlTags(match[2] ?? '');
-    const content = decodeHtmlEntities(raw).replace(/\s+$/, '');
+    const content = decodeHtmlEntities(raw).trimEnd();
     const assignedNumber = numbers[i];
     const resolvedNumber = typeof assignedNumber === 'number' && assignedNumber > 0 ? assignedNumber : fallback;
     fallback = resolvedNumber + 1;
@@ -1769,7 +1862,7 @@ function extractGatewaySourceFromHtml(sourceHtml: string): { lines: GatewaySourc
   return { lines, errorLine };
 }
 
-function extractGatewayCallStackFromHtml(stackHtml: string): GatewayCallStackEntry[] {
+export function extractGatewayCallStackFromHtml(stackHtml: string): GatewayCallStackEntry[] {
   if (!stackHtml) return [];
   const tableMatch = stackHtml.match(/<table[\s\S]*?<\/table>/i);
   if (!tableMatch) return [];
@@ -1794,7 +1887,7 @@ function extractGatewayCallStackFromHtml(stackHtml: string): GatewayCallStackEnt
   return entries;
 }
 
-function sanitizeHtmlCellValue(raw: string): string {
+export function sanitizeHtmlCellValue(raw: string): string {
   let value = stripHtmlTags(raw);
   value = decodeHtmlEntities(value);
   return value.replace(/\s+/g, ' ').trim();
@@ -1830,7 +1923,7 @@ export function decodeHtmlEntities(text: string): string {
     .replace(/&amp;/gi, '&');
 }
 
-function decodeUriComponentSafe(value: string): string {
+export function decodeUriComponentSafe(value: string): string {
   if (!value?.includes('%')) return value;
   try {
     return decodeURIComponent(value);

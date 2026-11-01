@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "arc-1",
   "displayName": "ARC-1 — SAP ABAP for Claude",
-  "version": "1.2.0",
+  "version": "1.9.0",
   "description": "SAP ABAP development for Claude Code: bundles the ARC-1 MCP server (read/write/search/activate/lint/diagnose ABAP via the ADT REST API) with best-practice skills for RAP services, CDS modelling, ABAP Unit tests, clean-core audits, and UI5 modernization. Read-only by default; opt-in write gates.",
   "author": {
     "name": "Marian Zeis",
@@ -119,6 +119,18 @@
       "title": "UI Loopback Address",
       "description": "Loopback bind address for the local read-only UI.",
       "default": "127.0.0.1:8711"
+    },
+    "arc1_ide_links": {
+      "type": "string",
+      "title": "Eclipse links (off, eclipse)",
+      "description": "Optional Eclipse ADT links for this connection: off or eclipse. VS Code navigation uses SAP ADT MCP instead.",
+      "default": "off"
+    },
+    "arc1_ide_system_id": {
+      "type": "string",
+      "title": "Eclipse SAP system ID",
+      "description": "For eclipse links, the real uppercase three-character SAP SID, for example A4H. Check the opened local project matches the SAP backend; duplicate SIDs may show a chooser. Leave empty for other modes.",
+      "default": ""
     }
   },
   "mcpServers": {
@@ -144,7 +156,9 @@
         "SAP_ALLOW_GIT_WRITES": "${user_config.sap_allow_git_writes}",
         "ARC1_UI": "${user_config.arc1_ui}",
         "ARC1_UI_OPEN": "${user_config.arc1_ui_open}",
-        "ARC1_UI_ADDR": "${user_config.arc1_ui_addr}"
+        "ARC1_UI_ADDR": "${user_config.arc1_ui_addr}",
+        "ARC1_IDE_LINKS": "${user_config.arc1_ide_links}",
+        "ARC1_IDE_SYSTEM_ID": "${user_config.arc1_ide_system_id}"
       }
     }
   }

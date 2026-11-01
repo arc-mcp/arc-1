@@ -36,7 +36,7 @@ function normalizeNewlines(text: string): string {
  *
  * Review-only (opt-in): the ABAP pretty-printer and a save round-trip can flip trailing
  * spaces across a whole include, which renders as a full-file rewrite in a transport
- * review. SAP's own diff compares lines with plain `String.equals` and shows that noise;
+ * review. SAP ADT 1.2 also exposes a whitespace-ignore option;
  * `SAPRead action="diff"` keeps SAP's byte-exact behaviour by default.
  */
 function normalizeCosmetics(text: string): string {
@@ -62,6 +62,7 @@ export function unifiedDiff(
   newLabel: string,
   context = 3,
   ignoreCosmetics = false,
+  work?: { timeout: number; maxEditLength: number },
 ): UnifiedDiffResult {
   const rawA = normalizeNewlines(oldText);
   const rawB = normalizeNewlines(newText);
@@ -72,7 +73,8 @@ export function unifiedDiff(
     // as whitespace-only rather than letting the caller render "no change".
     return { identical: true, diff: '', added: 0, removed: 0, ...(rawA !== rawB ? { cosmeticOnly: true } : {}) };
   }
-  const patch = createTwoFilesPatch(oldLabel, newLabel, a, b, '', '', { context });
+  const patch = createTwoFilesPatch(oldLabel, newLabel, a, b, '', '', { context, ...work });
+  if (patch === undefined) throw new Error('Diff calculation exceeded its work budget; statistics are unavailable.');
   // `---`/`+++` are the two file headers and appear first; skipping by PREFIX would also drop
   // real deletions of lines that start with `--` (the ABAP/CDS comment marker), so anchor on
   // the header position instead. Hunk bodies start after the first `@@`.

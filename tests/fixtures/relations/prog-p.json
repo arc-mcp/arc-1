@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T22:07:49.315Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/programs/programs/zabapgit",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "6fac8d17802f3cbde3bed517439b4b50d5f62b403f8259a7a1b0c61ca6140e4f",
+    "networkSha256": "da31104c7db99efd565ef23dc780b9b68022118e59c316b9eaa6d3fb7e5d62e3",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 60,
+    "observedEdges": 59
+  },
+  "type": "PROG",
+  "native": "PROG/P",
+  "name": "ZABAPGIT",
+  "uri": "/sap/bc/adt/programs/programs/zabapgit",
+  "metadataRootQName": "program:abapProgram",
+  "context": "ENV",
+  "metadataXml": "<program:abapProgram adtcore:name=\"ZABAPGIT\" adtcore:type=\"PROG/P\" adtcore:version=\"active\" xmlns:program=\"http://www.sap.com/adt/programs/programs\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/%24abapgit\" adtcore:type=\"DEVC/K\" adtcore:name=\"$ABAPGIT\"/>\n</program:abapProgram>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>ENV</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/oo/classes/cl_http_utility\" adtcore:type=\"CLAS/OC\" adtcore:name=\"CL_HTTP_UTILITY\" adtcore:packageName=\"SIHTTP\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/programs/programs/zabapgit\" adtcore:type=\"PROG/P\" adtcore:name=\"ZABAPGIT\" adtcore:packageName=\"$ABAPGIT\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/programs/programs/zabapgit</oro:object1><oro:object2>/sap/bc/adt/oo/classes/cl_http_utility</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

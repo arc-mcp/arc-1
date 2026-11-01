@@ -44,10 +44,15 @@ SAP documents this exchange for applications that must call another application 
 
 ### 1. Bind the BTP services
 
+For the manual manifest path below, first prepare the route-specific file in [XSUAA setup](xsuaa-setup.md#step-1-create-xsuaa-service-instance).
+
 ```bash
-cf create-service xsuaa application arc1-xsuaa -c xs-security.json
+cf create-service xsuaa application arc1-xsuaa -c xs-security.landscape.json
 cf create-service destination lite arc1-destination
 ```
+
+If the MTA already manages these services, keep that lifecycle and configure its module
+properties instead of creating them again or switching to the manual manifest.
 
 ### 2. Create the per-user destination
 
@@ -112,7 +117,7 @@ acceptance — see [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.m
 
 ### 5. Verify
 
-With `ARC1_LOG_LEVEL=debug`, make one tool call and check `cf logs arc1-btp-abap --recent`:
+With `SAP_VERBOSE=true`, make one tool call and check `cf logs arc1-btp-abap --recent`:
 
 ```
 BTP destination resolved  destination:ABAP_PP  ppEnabled:true
@@ -120,8 +125,8 @@ PP: using destination-exchanged Bearer token (OAuth2UserTokenExchange)
 [auth_pp_created] success:true  user:<the MCP user>
 ```
 
-`auth_pp_created success:false` means the exchange failed — the message carries the Destination
-service's own error verbatim.
+`auth_pp_created success:false` means PP setup failed. Correlate the request with Destination
+Service diagnostics; client-facing errors and audit logs may redact or omit sensitive details.
 
 ## Local development: service key + browser login
 
@@ -133,7 +138,9 @@ server, because the callback listener binds to loopback.
 
 ```bash
 # Keep the key outside the repo
+mkdir -p ~/.config/arc-1
 cp ~/Downloads/service-key.json ~/.config/arc-1/btp-service-key.json
+chmod 600 ~/.config/arc-1/btp-service-key.json
 
 SAP_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-service-key.json SAP_SYSTEM_TYPE=btp arc1
 ```
@@ -170,17 +177,13 @@ Make any tool call; a browser opens on the BTP login page (IAS, SAP ID service, 
 call completes once you authenticate. ARC-1 runs the Authorization Code flow with PKCE and a `state`
 check against a callback listener bound to `localhost` (`SAP_BTP_OAUTH_CALLBACK_PORT`, auto by
 default), then sends `Authorization: Bearer <token>` on every ADT call — CSRF and cookies behave as
-on-premise. The ~12 h access token is refreshed silently; only an expired refresh token means another
-browser login. When no browser can be launched, the authorization URL goes to stderr — usable only if
+on-premise. Token lifetime is determined by the issuer. ARC-1 refreshes an expired access token when possible;
+a missing or rejected refresh token requires another browser login. When no browser can be launched, the authorization URL goes to stderr — usable only if
 that browser can still reach the loopback callback, which rules out most remote hosts.
 
 ### Smoke test
 
-```bash
-SAP_BTP_SERVICE_KEY_FILE=/path/to/service-key.json SAP_SYSTEM_TYPE=btp arc1 search "ZCL_*" --output json
-```
-
-Browser login, then results as JSON. A `client_credentials` token cannot be used instead: ADT requires
+Start the MCP server with the service-key configuration above, connect a stdio MCP client, and ask it to call `SAPSearch(query="ZCL_*")`. Browser login completes before the result. Direct CLI commands such as `arc1 search` do not support service-key OAuth. A `client_credentials` token cannot be used instead: ADT requires
 a user context and returns 401.
 
 ## System type: `SAP_SYSTEM_TYPE=btp`
@@ -193,13 +196,13 @@ is the default) and the first `tools/list` may still advertise on-premise types.
 
 | Tool | On the ABAP Environment |
 |---|---|
-| `SAPRead` | CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, DOMA, DTEL, MSAG, DEVC, TABLE_CONTENTS, TABLE_QUERY, SYSTEM, COMPONENTS, BSP/BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, plus the discovery-gated server-driven types (DESD, DTSC, CSNM, EVTB, EVTO, COTA, DSFD, DTDC, UIAD). Removed: PROG, INCL, VIEW, TRAN, TTYP, SOBJ, TEXT_ELEMENTS, VARIANTS, AUTH, FEATURE_TOGGLE/FTG2, ENHO, VERSIONS, VERSION_SOURCE. |
-| `SAPWrite` | CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL (+ `TABL/DT`, `TABL/DS`), DOMA, DTEL, MSAG, and the server-driven types. The `edit_unit` and `edit_text_symbols` actions are not offered (no PROG/INCL, no class text pool). ABAP Cloud language version and customer namespaces only. |
+| `SAPRead` | CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SMBC, SKTD/KTD, TABL, [TABL/DTT settings](tools.md#technical-table-settings), TTYP, DOMA, DTEL, ENQU, ENHO, MSAG, DEVC, TABLE_CONTENTS, TABLE_QUERY, SYSTEM, COMPONENTS, BSP/BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, plus the discovery-gated server-driven types (DESD, DTSC, CSNM, EVTB, EVTO, COTA, DSFD, DTDC, UIAD, DRTY, APLO, SAJC, SAJT, [TABL/DTI indexes](tools.md#classic-secondary-indexes)). Removed: PROG, INCL, VIEW, TRAN, SOBJ, TEXT_ELEMENTS, VARIANTS, AUTH, FEATURE_TOGGLE/FTG2, VERSIONS, VERSION_SOURCE. |
+| `SAPWrite` | CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL (+ `TABL/DT`, `TABL/DS`), TABL/DTT (update only), TTYP, DOMA, DTEL, MSAG, ENQU, ENHO (BAdI implementations of C1-released BAdIs), and the server-driven types. `edit_text_symbols` writes class text symbols only; read them with `SAPRead(type="CLAS", include="text_symbols")`. `edit_unit` / `add_unit` are not offered (no PROG/INCL). ABAP Cloud language version and customer namespaces only. |
 | `SAPContext` | CLAS, INTF, DDLS, TABL — `action="impact"` for CDS blast radius. |
 | `SAPSearch` / `SAPNavigate` | Work; scope is released SAP objects plus custom Z/Y objects. Classic programs and includes are not searchable. |
 | `SAPQuery` | Freestyle SQL needs `SAP_ALLOW_FREE_SQL=true` (table/CDS previews need `SAP_ALLOW_DATA_PREVIEW=true`). Custom tables and released CDS entities (`I_LANGUAGE`, `I_COUNTRY`, …) work; SAP standard tables (`MARA`, `TADIR`, `DD02L`, …) are blocked — the error suggests CDS views. |
 | `SAPTransport` | Works, but `release` triggers a gCTS Git push, not a TMS export — the software-component model, see the tutorial [Transport a Software Component Between two Systems](https://developers.sap.com/tutorials/abap-environment-gcts..html). |
-| `SAPActivate` / `SAPLint` | Unchanged (`SAPLint` runs client-side). |
+| `SAPActivate` / `SAPLint` | Unchanged. `SAPLint` linting runs client-side; formatting and formatter settings call SAP. |
 | `SAPDiagnose` | ATC works and uses the system's default check variant (`ABAP_CLOUD_DEVELOPMENT_DEFAULT`) unless you pass `variant`. |
 | `SAPManage` | `probe` reports `systemType: "btp"`. |
 
@@ -215,7 +218,9 @@ the on-premise `adtcore:masterSystem` / `adtcore:responsible` and adds
 | CLAS, INTF, DDIC (DOMA, DTEL, TABL, MSAG) | Live-verified |
 | RAP stack — BDEF, SRVD, SRVB create | Live-verified; SRVB `update` too (a full metadata replace merged over the existing binding, so a description-only edit keeps the bound `serviceDefinition`) |
 | Server-driven objects (DESD, DTSC, CSNM, EVTB, EVTO, COTA) | Live-verified; their minimal `blue:blueSource` body carries no owner/system attributes by construction |
-| DSFD, DTDC | Registered and `btp`-capable, but live-verified only on on-premise 7.58 / 8.16; discovery-gated like every server-driven type |
+| DSFD, DTDC, DRTY | Registered and `btp`-capable, but live-verified only on on-premise 7.58 / 8.16; discovery-gated like every server-driven type |
+| APLO, SAJC, SAJT | Live-tested create/read/update/delete on 920; APLO saves active immediately, SAJC/SAJT require activation. Catalog deletion can return “Publishing in process”; inspect and retry after publishing finishes. One earlier APLO 403 `S_ABPLNGVS` was not reproduced on fresh objects. A deleted catalog left a `SUSH` directory entry in one `ZLOCAL` package, preventing package deletion; a supported SAP repair remains unconfirmed. See the [evidence and cleanup limits](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-28-aplo-sajc-sajt-adt-contract.md). |
+| ENQU (lock objects) | Live-verified on a BTP trial: create, activate, update, read, delete |
 | UIAD (launchpad app descriptor item) | Read in practice — SAP refuses `create` on on-premise ("LADI edits need the ABAP Cloud language version"); writing it on the ABAP Environment is unverified |
 
 Two prerequisites:

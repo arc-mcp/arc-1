@@ -8,6 +8,8 @@ edit_uri: edit/main/docs_page/
 docs_dir: docs_page
 
 validation:
+  nav:
+    omitted_files: warn
   links:
     anchors: warn
 
@@ -61,6 +63,7 @@ nav:
       - BTP Cloud Foundry: btp-cloud-foundry-deployment.md
       - Docker: docker.md
       - Multi-System Setup (Multi-Target): multi-target-setup.md
+      - Pinned PP Writes: multi-target-writes.md
       - Other SAP Environments:
           - BTP ABAP Environment: btp-abap-environment.md
           - BTP ABAP Prerequisites (SAP side): btp-abap-prerequisites.md
@@ -73,6 +76,7 @@ nav:
   - Auth & Permissions:
       - Overview: enterprise-auth.md
       - Authorization & Roles: authorization.md
+      - Restrict System and Client Access: multi-target-authorization.md
       - XSUAA Setup: xsuaa-setup.md
       - Principal Propagation: principal-propagation-setup.md
       - BTP Destination Setup: btp-destination-setup.md
@@ -83,11 +87,14 @@ nav:
       - Tools Reference: tools.md
       - Extensions (Custom Tools): extensions.md
       - MCP Usage Guide: mcp-usage.md
+      - Open Objects in Your Editor: ide-integration.md
+      - SQL Notebook Authoring: sql-notebook-authoring.md
       - Skills: skills.md
       - More:
           - Blog Series: blog-series.md
   - Reference:
       - Release Notes: release-notes.md
+      - Idea Roadmap: roadmap.md
       - Configuration: configuration-reference.md
       - Configuration Precedence: configuration-precedence.md
       - SAP API Policy & Architecture: sap-api-policy-and-architecture.md
@@ -97,15 +104,17 @@ nav:
           - Log Analysis: log-analysis.md
           - Updating: updating.md
           - Caching: caching.md
+          - Live Relations (Experimental): live-relations.md
           - Rate Limiting: rate-limiting.md
   - Development:
       - Local Development: local-development.md
       - Architecture: architecture.md
       - More:
           - CLI Guide: cli-guide.md
+          - Transport reviews: review-workflows.md
+          - Local Files in Codex: codex-file-source.md
           - SAP Trial Setup: sap-trial-setup.md
           - Authentication Test Process: auth-test-process.md
-          - Roadmap: roadmap.md
 
 markdown_extensions:
   - admonition
@@ -128,6 +137,7 @@ plugins:
   - redirects:
       redirect_maps:
         multi-destination.md: multi-target-setup.md
+        # Legacy URL only; the retired project is not a supported deployment option.
         multi-system-hub.md: btp-overview.md
         phase4-btp-deployment.md: btp-cloud-foundry-deployment.md
 

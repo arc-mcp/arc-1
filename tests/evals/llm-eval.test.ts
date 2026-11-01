@@ -34,6 +34,7 @@
  *   test-results/evals/<ISO-timestamp>-<provider>-<model>-<backend>.json
  */
 
+import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { config as loadDotenv } from 'dotenv';
@@ -51,6 +52,7 @@ loadDotenv();
 
 import { getToolDefinitions } from '../../src/handlers/tools.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
+import { completeScenarioScores, recordScenarioOutcome } from './completion.js';
 import { formatResults, runScenario, toOpenAITools } from './harness.js';
 import { checkLiveBackendAvailable, connectLiveBackend, type LiveBackend } from './live-backend.js';
 import { checkAnthropicAvailable, createAnthropicProvider, DEFAULT_ANTHROPIC_MODEL } from './providers/anthropic.js';
@@ -101,6 +103,7 @@ function parseList(value: string | undefined): string[] | undefined {
 }
 
 function matchesFilters(scenario: EvalScenario): boolean {
+  if (scenario.mockOnly && (IS_INTEGRATION_PROVIDER || BACKEND === 'live')) return false;
   if (SCENARIO_FILTER && scenario.id !== SCENARIO_FILTER) return false;
   if (FILE_FILTER) {
     const file = FILE_OF_SCENARIO[scenario.id];
@@ -139,6 +142,40 @@ let provider: LLMProvider | undefined;
 let tools: ToolDefinitionForLLM[];
 let live: LiveBackend | undefined;
 const allScores: ScenarioScore[] = [];
+const requestedScenarios = ALL_SCENARIOS.filter(matchesFilters);
+
+async function getReportedOllamaContextLength(model: string): Promise<number | undefined> {
+  if (PROVIDER_NAME !== 'ollama') return undefined;
+  try {
+    const baseUrl = process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434';
+    const response = await fetch(`${baseUrl}/api/ps`, { signal: AbortSignal.timeout(3000) });
+    if (!response.ok) return undefined;
+    const data = (await response.json()) as {
+      models?: Array<{ name?: string; context_length?: number }>;
+    };
+    return data.models?.find((entry) => entry.name === model)?.context_length;
+  } catch {
+    return undefined;
+  }
+}
+
+async function getReportedOllamaModelParameters(model: string): Promise<string | undefined> {
+  if (PROVIDER_NAME !== 'ollama') return undefined;
+  try {
+    const baseUrl = process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434';
+    const response = await fetch(`${baseUrl}/api/show`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: model }),
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!response.ok) return undefined;
+    const data = (await response.json()) as { parameters?: string };
+    return data.parameters;
+  } catch {
+    return undefined;
+  }
+}
 
 describe(`LLM Eval — ${PROVIDER_NAME}/${MODEL} [${BACKEND}]`, () => {
   beforeAll(async () => {
@@ -196,7 +233,13 @@ describe(`LLM Eval — ${PROVIDER_NAME}/${MODEL} [${BACKEND}]`, () => {
     }
 
     // Tool definitions (same as production MCP server surface)
-    const arcTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, allowFreeSQL: true });
+    const arcTools = getToolDefinitions({
+      ...DEFAULT_CONFIG,
+      systemType: 'onprem',
+      allowDataPreview: true,
+      allowWrites: true,
+      allowFreeSQL: true,
+    });
     tools = toOpenAITools(arcTools);
 
     console.log(`\n  Provider: ${PROVIDER_NAME}/${MODEL}`);
@@ -206,7 +249,7 @@ describe(`LLM Eval — ${PROVIDER_NAME}/${MODEL} [${BACKEND}]`, () => {
     console.log(`  Threshold: ${PASS_THRESHOLD}`);
 
     // Filter summary
-    const filteredCount = ALL_SCENARIOS.filter(matchesFilters).length;
+    const filteredCount = requestedScenarios.length;
     const activeFilters: string[] = [];
     if (SCENARIO_FILTER) activeFilters.push(`scenario=${SCENARIO_FILTER}`);
     if (FILE_FILTER) activeFilters.push(`file=${FILE_FILTER.join(',')}`);
@@ -220,25 +263,41 @@ describe(`LLM Eval — ${PROVIDER_NAME}/${MODEL} [${BACKEND}]`, () => {
   });
 
   afterAll(async () => {
-    if (live) {
-      await live.close().catch(() => undefined);
+    // Vitest can time out an async test while its provider promise remains pending, so
+    // catching exceptions in the test body alone cannot account for every requested case.
+    const scores = completeScenarioScores(requestedScenarios, allScores);
+    if (scores.length === 0) {
+      if (live) await live.close().catch(() => undefined);
+      return;
     }
-    if (allScores.length === 0) return;
 
-    const total = allScores.length;
-    const passed = allScores.filter((s) => s.passed).length;
-    const avgToolSelection = allScores.reduce((sum, s) => sum + s.toolSelectionScore, 0) / total;
-    const avgParameter = allScores.reduce((sum, s) => sum + s.parameterScore, 0) / total;
-    const avgOverall = allScores.reduce((sum, s) => sum + s.overallScore, 0) / total;
-    const avgCalls = allScores.reduce((sum, s) => sum + s.toolCallCount, 0) / total;
-    const avgDuration = allScores.reduce((sum, s) => sum + s.durationMs, 0) / total;
-    const totalTokens = allScores.reduce((sum, s) => sum + (s.totalTokens ?? 0), 0);
+    const total = scores.length;
+    const passed = scores.filter((s) => s.passed).length;
+    const avgToolSelection = scores.reduce((sum, s) => sum + s.toolSelectionScore, 0) / total;
+    const avgParameter = scores.reduce((sum, s) => sum + s.parameterScore, 0) / total;
+    const avgOverall = scores.reduce((sum, s) => sum + s.overallScore, 0) / total;
+    const avgCalls = scores.reduce((sum, s) => sum + s.toolCallCount, 0) / total;
+    const avgDuration = scores.reduce((sum, s) => sum + s.durationMs, 0) / total;
+    const totalTokens = scores.reduce((sum, s) => sum + (s.totalTokens ?? 0), 0);
+    const totalPromptTokens = scores.reduce((sum, s) => sum + (s.promptTokens ?? 0), 0);
+    const totalCompletionTokens = scores.reduce((sum, s) => sum + (s.completionTokens ?? 0), 0);
 
     const result: EvalRunResult = {
       model: MODEL,
       toolMode: 'standard',
       timestamp: new Date().toISOString(),
-      scores: allScores,
+      runMetadata: {
+        provider: PROVIDER_NAME,
+        backend: BACKEND,
+        toolSchemaSha256: createHash('sha256').update(JSON.stringify(tools)).digest('hex'),
+        toolCount: tools.length,
+        toolSchemaBytes: Buffer.byteLength(JSON.stringify(tools)),
+        temperature: 'provider default',
+        requestContextOverride: 'not set',
+        reportedContextLength: await getReportedOllamaContextLength(MODEL),
+        reportedModelParameters: await getReportedOllamaModelParameters(MODEL),
+      },
+      scores,
       summary: {
         totalScenarios: total,
         passed,
@@ -249,6 +308,8 @@ describe(`LLM Eval — ${PROVIDER_NAME}/${MODEL} [${BACKEND}]`, () => {
         avgToolCalls: Math.round(avgCalls * 100) / 100,
         avgDurationMs: Math.round(avgDuration),
         totalTokens,
+        totalPromptTokens,
+        totalCompletionTokens,
       },
     };
 
@@ -256,6 +317,8 @@ describe(`LLM Eval — ${PROVIDER_NAME}/${MODEL} [${BACKEND}]`, () => {
 
     const path = persistResults(result);
     if (path) console.log(`  Results written to: ${path}\n`);
+    // Persist before backend cleanup: a slow close must not suppress completed reporting.
+    if (live) await live.close().catch(() => undefined);
   });
 
   // Generate a test case for each scenario.
@@ -268,26 +331,32 @@ describe(`LLM Eval — ${PROVIDER_NAME}/${MODEL} [${BACKEND}]`, () => {
 
     testFn(
       `[${fileTag}] ${scenario.id}: ${scenario.description}`,
-      async () => {
-        let score: ScenarioScore;
-        if (PROVIDER_NAME === 'claude-code') {
-          score = await runScenarioWithClaudeCode(scenario, {
-            model: MODEL,
-            passThreshold: PASS_THRESHOLD,
-          });
-        } else if (PROVIDER_NAME === 'cursor') {
-          score = await runScenarioWithCursor(scenario, {
-            model: MODEL,
-            passThreshold: PASS_THRESHOLD,
-          });
-        } else {
-          if (!provider) return;
-          score = await runScenario(provider, scenario, tools, {
-            passThreshold: PASS_THRESHOLD,
-            liveExecutor: live?.execute,
-          });
-        }
-        allScores.push(score);
+      async ({ signal }) => {
+        const score = await recordScenarioOutcome(
+          scenario.id,
+          allScores,
+          async () => {
+            if (PROVIDER_NAME === 'claude-code') {
+              return runScenarioWithClaudeCode(scenario, {
+                model: MODEL,
+                passThreshold: PASS_THRESHOLD,
+              });
+            } else if (PROVIDER_NAME === 'cursor') {
+              return runScenarioWithCursor(scenario, {
+                model: MODEL,
+                passThreshold: PASS_THRESHOLD,
+              });
+            } else {
+              if (!provider) throw new Error('Configured eval provider was not initialized');
+              return runScenario(provider, scenario, tools, {
+                passThreshold: PASS_THRESHOLD,
+                liveExecutor: live?.execute,
+                signal,
+              });
+            }
+          },
+          signal,
+        );
 
         const status = score.passed ? '✅' : '❌';
         console.log(

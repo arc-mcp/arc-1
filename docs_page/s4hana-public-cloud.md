@@ -101,8 +101,11 @@ Also enable **Use default JDK truststore** so the public S/4HANA Cloud TLS certi
 ARC-1 needs **XSUAA** (MCP-client login) and **Destination** only — no Connectivity service, because
 there is no Cloud Connector for a cloud-to-cloud call:
 
+For a manual non-MTA deployment, first create the route-specific XSUAA file described in
+[XSUAA setup](xsuaa-setup.md#step-1-create-xsuaa-service-instance).
+
 ```bash
-cf create-service xsuaa application arc1-xsuaa -c xs-security.json
+cf create-service xsuaa application arc1-xsuaa -c xs-security.landscape.json
 cf create-service destination lite arc1-destination
 ```
 
@@ -115,6 +118,7 @@ env:
   SAP_XSUAA_AUTH: "true"                     # MCP clients authenticate via XSUAA OAuth
   SAP_PP_ENABLED: "true"                     # per-user principal propagation
   SAP_PP_STRICT: "true"                      # recommended: keep this instance JWT-only
+  SAP_BTP_DESTINATION: <SYSTEM_ID>_SAML_ASSERTION  # startup target
   SAP_BTP_PP_DESTINATION: <SYSTEM_ID>_SAML_ASSERTION
 services:
   - arc1-xsuaa
@@ -135,19 +139,19 @@ proxy is used only for on-premise destinations.
 
 S/4HANA Public Cloud developer extensibility is **ABAP Cloud** — the same restricted surface as the
 [BTP ABAP Environment](btp-abap-environment.md#constraints-vs-on-premise): released APIs (C1) only,
-ADT-only (no SAP GUI), `Z`/customer namespaces, gCTS-style transports, and SAP standard tables blocked
+ADT-only (no SAP GUI), `Z`/customer namespaces, product-specific transport workflows, and SAP standard tables blocked
 in `SAPQuery` (use released CDS views). Setting `SAP_SYSTEM_TYPE=btp` exposes the ABAP Cloud tool
 definitions from startup; see [BTP ABAP Environment → What to Expect](btp-abap-environment.md#what-to-expect-on-btp-abap).
 
 ## Verification
 
-With `ARC1_LOG_LEVEL=debug`, make any tool call (e.g. "search for ZCL_* classes") and check the
+With `SAP_VERBOSE=true`, make any tool call (e.g. "search for ZCL_* classes") and check the
 ARC-1 logs:
 
 - `Destination Service PP response` — lists the SAML auth-token entry returned by the destination
 - `BTP destination resolved (per-user) … hasSamlAssertion:true`
 - `auth_pp_created … success:true`
-- the `SAPRead` returns data, and S/4HANA Cloud `SM20`/session shows the **individual** user
+- a permitted `SAPRead` returns data; ask the cloud administrator to corroborate the user in the product’s available audit facilities. `SYSTEM.user` is not backend identity evidence
 
 ## Troubleshooting
 
@@ -167,8 +171,7 @@ direct (the connectivity proxy is used only for `OnPremise`); make sure the dest
 is `Internet`.
 
 ### See the raw SAP rejection text
-If the `errorBody`/`errorMessage` audit opt-in is enabled, set `ARC1_LOG_HTTP_DEBUG=true` to surface
-the SAP rejection message instead of `[REDACTED]`. See [Log Analysis](log-analysis.md).
+`ARC1_LOG_HTTP_DEBUG=true` does not expose raw response bodies in audit logs: bodies remain redacted, and 401/403 bodies are omitted. Use the status, failure-stage event, and request ID, then ask the SAP administrator to inspect backend diagnostics. See [Log Analysis](log-analysis.md).
 
 ## References
 

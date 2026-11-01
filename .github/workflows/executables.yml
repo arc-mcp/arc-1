@@ -1,0 +1,102 @@
+name: Executables
+
+# Builds single-file ARC-1 executables (Node.js SEA) for Windows, Linux and macOS.
+#  - workflow_call: used by release.yml; attaches the binaries + SHA256SUMS.txt to the GitHub Release.
+#  - workflow_dispatch / pull_request (build paths only): build + smoke-test, upload as run artifacts.
+# The SEA blob and node binary must match platform and Node version, so each target builds natively.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to build and attach the executables to (for example v1.7.0)
+        required: true
+        type: string
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/executables.yml'
+      - 'scripts/build-sea.mjs'
+      - 'scripts/sea/**'
+      - 'scripts/ci/smoke-sea.mjs'
+      - 'src/cache/sqlite*.ts'
+      - 'src/aff/validator.ts'
+      - 'src/cli.ts'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x64, runner: ubuntu-latest }
+          - { target: linux-arm64, runner: ubuntu-24.04-arm }
+          - { target: macos-arm64, runner: macos-latest }
+          - { target: macos-x64, runner: macos-15-intel }
+          - { target: windows-x64, runner: windows-latest }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          # The executable embeds Node, so do not reuse an older patch from the runner cache.
+          check-latest: true
+          cache: 'npm'
+
+      # Native better-sqlite3 is not needed: the executable uses the node:sqlite built-in.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build
+        run: npm run build
+
+      - name: Build executable
+        run: node scripts/build-sea.mjs
+
+      - name: Smoke test executable
+        run: node scripts/ci/smoke-sea.mjs dist-sea/arc-1-*
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v7
+        with:
+          name: arc-1-${{ matrix.target }}
+          path: dist-sea/arc-1-*
+          if-no-files-found: error
+
+  attach-to-release:
+    name: Attach executables to release
+    needs: build
+    if: ${{ inputs.tag != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: arc-1-*
+          path: executables
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: executables
+        run: sha256sum arc-1-* | tee SHA256SUMS.txt
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: gh release upload "$RELEASE_TAG" executables/* --clobber --repo "$GITHUB_REPOSITORY"

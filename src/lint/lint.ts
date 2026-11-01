@@ -16,7 +16,7 @@
 
 import { type Config, Edits, MemoryFile, Registry, Version } from '@abaplint/core';
 import { getDefaultAbaplintConfig } from './abaplint-config-cache.js';
-import { buildPreWriteConfig, type LintConfigOptions } from './config-builder.js';
+import { buildPreWriteConfig, getLintSyntaxVersion, type LintConfigOptions } from './config-builder.js';
 import { inspectTablSource } from './pre-write-hints.js';
 
 /** Lint result from @abaplint/core */
@@ -44,6 +44,8 @@ export interface LintFixResult {
 
 /** Result of pre-write validation */
 export interface PreWriteResult {
+  /** Syntax from the same config used for validation, after custom overrides. */
+  syntaxVersion: ReturnType<typeof getLintSyntaxVersion>;
   /** Whether the write should proceed */
   pass: boolean;
   /** Errors that block the write */
@@ -162,18 +164,31 @@ export function validateBeforeWrite(
 
   return {
     pass: errors.length === 0,
+    syntaxVersion: getLintSyntaxVersion(config),
     errors,
     warnings,
   };
 }
+
+/** Leading CDS comments: `/* … *\/` blocks, `// …` lines and obsolete `-- …` lines. */
+const LEADING_CDS_COMMENTS = /^(?:\s*(?:\/\*[\s\S]*?\*\/|(?:\/\/|--)[^\n]*))+/;
+
+/** Leading single-line annotations and CDS comments before the first DDL keyword. */
+const LEADING_CDS_PREAMBLE = /^(?:\s*(?:@[^\n]*|\/\*[\s\S]*?\*\/|(?:\/\/|--)[^\n]*))*/;
+
+/** DDL source keywords (upper case, after the preamble) beyond view definitions and extensions. */
+const DDLS_KEYWORDS =
+  /^(?:DEFINE\s+(?:ROOT\s+)?(?:CUSTOM\s+ENTITY|ABSTRACT\s+ENTITY)|DEFINE\s+TRANSIENT\s+VIEW|DEFINE\s+HIERARCHY|DEFINE\s+TABLE\s+FUNCTION|EXTEND\s+(?:CUSTOM|ABSTRACT)\s+ENTITY)\b/;
 
 /**
  * Auto-detect the correct filename for ABAP source based on content.
  * abaplint uses the file extension to determine the object type.
  */
 export function detectFilename(source: string, objectName: string): string {
-  // Strip leading comment lines ("! doc comments, * comments) and blank lines to find the first keyword
-  const stripped = source.replace(/^(\s*(["*!].*)?[\r\n]*)*/m, '');
+  // Strip leading CDS comments (/* … */ blocks, // and -- lines) — no ABAP statement starts with them — then
+  // leading ABAP comment lines ("! doc comments, * comments) and blank lines to find the first keyword
+  const withoutCdsComments = source.replace(LEADING_CDS_COMMENTS, '');
+  const stripped = withoutCdsComments.replace(/^(\s*(["*!].*)?[\r\n]*)*/m, '');
   const upper = stripped.toUpperCase().trimStart();
   const name = objectName.toLowerCase();
 
@@ -183,9 +198,11 @@ export function detectFilename(source: string, objectName: string): string {
   if (upper.startsWith('FUNCTION-POOL') || upper.startsWith('FUNCTION')) return `${name}.fugr.abap`;
   if (upper.startsWith('REPORT') || upper.startsWith('PROGRAM')) return `${name}.prog.abap`;
 
-  // CDS/DDL types — check the first structural keyword (may be preceded by annotations)
-  // Strip leading annotations (@...\n) to find the actual define/extend/annotate keyword
-  const afterAnnotations = upper.replace(/^(\s*@[^\n]*\n)*/m, '').trimStart();
+  // CDS/DDL types — check the first structural keyword (may be preceded by annotations and comments)
+  // Strip leading single-line annotations and CDS comments to find the actual define/extend/annotate keyword
+  const afterAnnotations = upper.replace(LEADING_CDS_PREAMBLE, '').trimStart();
+  // DEFINE TABLE FUNCTION is a DDLS; it must be checked before the TABL keyword DEFINE TABLE
+  if (DDLS_KEYWORDS.test(afterAnnotations)) return `${name}.ddls.asddls`;
   if (afterAnnotations.startsWith('DEFINE TABLE')) return `${name}.tabl.astabl`;
   if (afterAnnotations.startsWith('DEFINE SERVICE')) return `${name}.srvd.asrvd`;
   if (afterAnnotations.startsWith('ANNOTATE VIEW') || afterAnnotations.startsWith('ANNOTATE ENTITY'))

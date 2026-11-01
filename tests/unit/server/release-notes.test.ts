@@ -11,6 +11,8 @@ import { parse } from 'yaml';
  *
  * Annotate ahead of the release (while the release-please PR is open) to keep main green — this
  * test only requires CHANGELOG ⊆ release notes, never the other way round.
+ * PR coverage is checked only for the newest release; older annotations (e.g. 1.1.1) have
+ * historical gaps that can be backfilled separately.
  */
 
 const CHANGELOG_PATH = 'CHANGELOG.md';
@@ -49,6 +51,25 @@ describe('annotated release notes', () => {
     expect(
       missing,
       `Unannotated releases in ${NOTES_PATH}: ${missing.join(', ')}. Run the /release-notes command to write them.`,
+    ).toEqual([]);
+  });
+
+  it('retain every changelog PR in the newest release annotation', async () => {
+    const [changelog, notes] = await Promise.all([readFile(CHANGELOG_PATH, 'utf8'), readFile(NOTES_PATH, 'utf8')]);
+    const version = releasedVersions(changelog)[0];
+    expect(version).toBeDefined();
+    const literal = version.replace(/\./g, String.raw`\.`);
+    const heading = new RegExp(String.raw`^#{2,3} ${literal}(?![\d.]).*$`, 'm').exec(notes);
+    // Missing annotations fail the version check above; historical summary-table rows have no section.
+    if (!heading) return;
+    const notesSection = notes.slice(heading.index + heading[0].length).split(/^#{2,3} \d+\.\d+\.\d+(?![\d.])/m)[0];
+    const changelogSection = changelog.split(/^## \[\d+\.\d+\.\d+\]/m)[1];
+    const pullRequests = (section: string) => new Set([...section.matchAll(/\[#(\d+)\]/g)].map((match) => match[1]));
+    const annotated = pullRequests(notesSection);
+    const missing = [...pullRequests(changelogSection)].filter((pr) => !annotated.has(pr));
+    expect(
+      missing,
+      `Missing PRs in ${NOTES_PATH} for ${version}: ${missing.map((pr) => `#${pr}`).join(', ')}. Run /release-notes.`,
     ).toEqual([]);
   });
 

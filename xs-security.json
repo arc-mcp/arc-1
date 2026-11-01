@@ -31,11 +31,27 @@
       "description": "Administrative access to ARC-1 (implies all other scopes at runtime)"
     }
   ],
+  "attributes": [
+    {
+      "name": "arc1_targets",
+      "description": "Exact ARC-1 public target IDs, or explicit * for all targets",
+      "valueType": "string",
+      "valueRequired": true
+    },
+    {
+      "name": "arc1_write_targets",
+      "description": "Exact ARC-1 public target IDs permitted for pinned PP writes; no wildcard",
+      "valueType": "string",
+      "valueRequired": true
+    }
+  ],
   "role-templates": [
     {
       "name": "MCPViewer",
       "description": "Read-only access to SAP via ARC-1 MCP",
-      "scope-references": ["$XSAPPNAME.read"]
+      "scope-references": [
+        "$XSAPPNAME.read"
+      ]
     },
     {
       "name": "MCPDeveloper",
@@ -50,16 +66,21 @@
     {
       "name": "MCPDataViewer",
       "description": "Preview named table contents via ARC-1 MCP",
-      "scope-references": ["$XSAPPNAME.data"]
+      "scope-references": [
+        "$XSAPPNAME.data"
+      ]
     },
     {
       "name": "MCPSqlUser",
       "description": "Execute freestyle SQL queries via ARC-1 MCP",
-      "scope-references": ["$XSAPPNAME.data", "$XSAPPNAME.sql"]
+      "scope-references": [
+        "$XSAPPNAME.data",
+        "$XSAPPNAME.sql"
+      ]
     },
     {
       "name": "MCPAdmin",
-      "description": "Full administrative access to ARC-1 — admin scope implies all other scopes at runtime",
+      "description": "Full administrative access to ARC-1 \u2014 admin scope implies all other scopes at runtime",
       "scope-references": [
         "$XSAPPNAME.read",
         "$XSAPPNAME.write",
@@ -69,21 +90,55 @@
         "$XSAPPNAME.git",
         "$XSAPPNAME.admin"
       ]
+    },
+    {
+      "name": "MCPTargetReadAccess",
+      "description": "Read-only ARC-1 access to selected SAP targets",
+      "scope-references": [
+        "$XSAPPNAME.read"
+      ],
+      "attribute-references": [
+        "arc1_targets"
+      ]
+    },
+    {
+      "name": "MCPAllTargetReadAccess",
+      "description": "Read-only ARC-1 access to all current and future SAP targets",
+      "scope-references": [
+        "$XSAPPNAME.read"
+      ],
+      "attribute-references": [
+        {
+          "name": "arc1_targets",
+          "default-values": [
+            "*"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "MCPTargetDeveloper",
+      "description": "Application-wide read/write scopes. Target restrictions require ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute; assign only after verifying enforced mode.",
+      "scope-references": [
+        "$XSAPPNAME.read",
+        "$XSAPPNAME.write"
+      ],
+      "attribute-references": [
+        "arc1_targets",
+        "arc1_write_targets"
+      ]
     }
   ],
   "oauth2-configuration": {
     "redirect-uris": [
-      "http://localhost:*/**",
-      "https://*.hana.ondemand.com/**",
-      "https://*.applicationstudio.cloud.sap/**",
-      "https://claude.ai/api/mcp/auth_callback",
-      "https://callback.mistral.ai/v1/integrations_auth/oauth2_callback",
-      "cursor://anysphere.cursor-retrieval/**",
-      "cursor://anysphere.cursor-mcp/**",
-      "vscode://vscode.microsoft-authentication/**",
-      "https://global.consent.azure-apim.net/redirect/**"
+      "http://localhost:*/oauth/callback",
+      "http://localhost:*/oauth/logged-out"
     ],
-    "grant-types": ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"],
+    "grant-types": [
+      "authorization_code",
+      "refresh_token",
+      "urn:ietf:params:oauth:grant-type:jwt-bearer"
+    ],
     "token-validity": 3600,
     "refresh-token-validity": 2592000
   }

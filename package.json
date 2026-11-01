@@ -1,6 +1,6 @@
 {
   "name": "arc-1",
-  "version": "1.2.0",
+  "version": "1.9.0",
   "mcpName": "io.github.arc-mcp/arc-1",
   "description": "ARC-1 — MCP Server for SAP ABAP Systems",
   "author": "Marian Zeis",
@@ -16,7 +16,8 @@
   "bin": {
     "arc-1": "./bin/arc1.js",
     "arc1": "./bin/arc1.js",
-    "arc1-cli": "./bin/arc1-cli.js"
+    "arc1-cli": "./bin/arc1-cli.js",
+    "arc1-source": "./bin/arc1-source.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -60,7 +61,10 @@
     "test:integration:btp:smoke": "vitest run --config vitest.integration.config.ts tests/integration/btp-abap.smoke.integration.test.ts",
     "test:integration:crud": "vitest run --config vitest.integration.config.ts tests/integration/crud.lifecycle.integration.test.ts",
     "test:authz:http": "node scripts/check-authz-http-profiles.mjs",
+    "test:target-auth:harness": "node --test scripts/spikes/pr677-target-authorization/*.test.mjs",
     "test:npx-smoke": "npm run build && node scripts/ci/assert-npx-bin-smoke.mjs",
+    "test:relations:smoke": "npm run build && tsx scripts/smoke-live-relations.ts",
+    "bench:context-parsing": "tsx scripts/bench-context-parsing.ts",
     "test:integration:skip-summary": "vitest run --config vitest.integration.config.ts --reporter=verbose 2>&1 | node scripts/ci/summarize-skips.mjs",
     "test:coverage": "vitest run --coverage",
     "test:coverage-report": "node scripts/ci/coverage-summary.mjs",
@@ -69,6 +73,8 @@
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json && tsc --noEmit -p tsconfig.tests.json",
     "validate:policy": "tsx scripts/validate-action-policy.ts",
+    "build:sea": "node scripts/build-sea.mjs",
+    "test:sea-smoke": "node scripts/ci/smoke-sea.mjs",
     "check:sizes": "node scripts/ci/check-file-sizes.mjs && tsx scripts/ci/check-tool-schema-budget.ts",
     "cli": "tsx src/cli.ts",
     "extract-sap-cookies": "tsx src/extract-sap-cookies.ts",
@@ -91,7 +97,7 @@
     "test:reliability-report": "node scripts/ci/collect-test-reliability.mjs",
     "test:runtime-report": "node scripts/ci/test-runtime-summary.mjs",
     "test:assert-execution": "node scripts/ci/assert-required-test-execution.mjs",
-    "btp:validate": "npx mbt validate && npx mbt validate -e mta-overrides.mtaext.example && npx mbt validate -e mta-overrides.mtaext.example -e mta-ui-approuter.mtaext && npx mbt validate -e examples/btp/single-pp/profile.mtaext && npx mbt validate -e examples/btp/multi-pp/profile.mtaext",
+    "btp:validate": "npx mbt validate && npx mbt validate -e mta-overrides.mtaext.example && npx mbt validate -e mta-overrides.mtaext.example -e mta-ui-approuter.mtaext && npx mbt validate -e examples/btp/single-basic/profile.mtaext && npx mbt validate -e examples/btp/single-pp/profile.mtaext && npx mbt validate -e examples/btp/multi-pp/profile.mtaext && npx mbt validate -e examples/btp/multi-pp/profile.mtaext -e examples/btp/multi-pp/target-authorization.mtaext && node scripts/ci/check-target-authorization-mta.mjs",
     "btp:build": "npx mbt build",
     "btp:build-ui-ext": "npx mbt build -e mta-ui-approuter.mtaext",
     "btp:deploy": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar',{stdio:'inherit'})\"",
@@ -99,12 +105,13 @@
     "btp:deploy-ui-ext": "node scripts/btp/prepare-ui-mtaext.mjs && node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-ui-deploy.mtaext',{stdio:'inherit'})\"",
     "btp:build-deploy": "npm run btp:build && npm run btp:deploy",
     "btp:build-deploy-ext": "npm run btp:build && npm run btp:deploy-ext",
-    "btp:build-deploy-ui-ext": "npm run btp:build-ui-ext && npm run btp:deploy-ui-ext"
+    "btp:build-deploy-ui-ext": "npm run btp:build-ui-ext && npm run btp:deploy-ui-ext",
+    "audit:ci": "audit-ci --config audit-ci.json"
   },
   "dependencies": {
-    "@abaplint/core": "^2.120.42",
-    "@arc-mcp/xsuaa-auth": "^1.0.2",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@abaplint/core": "^2.120.86",
+    "@arc-mcp/xsuaa-auth": "^1.2.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@sap-cloud-sdk/connectivity": "^4.9.1",
     "@sap/xsenv": "^6.2.2",
     "@sap/xssec": "^4.15.0",
@@ -113,18 +120,19 @@
     "commander": "^15.0.0",
     "cors": "2.8.6",
     "diff": "^9.0.0",
-    "dotenv": "^17.3.1",
-    "express": "^5.2.1",
-    "express-rate-limit": "^8.7.0",
-    "fast-xml-parser": "^5.11.1",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
+    "fast-xml-parser": "^5.11.2",
     "helmet": "^8.3.0",
-    "jose": "^6.2.10",
-    "rate-limiter-flexible": "^11.2.0",
-    "undici": "^8.10.1",
-    "zod": "^4.5.4"
+    "jose": "^6.2.13",
+    "on-headers": "^1.1.0",
+    "rate-limiter-flexible": "^11.2.3",
+    "undici": "^8.12.3",
+    "zod": "^4.6.7"
   },
   "overrides": {
-    "@hono/node-server": "2.0.10",
+    "@hono/node-server": "2.1.5",
     "esbuild": "^0.28.1",
     "form-data": "^4.0.6",
     "vite": "^8.0.16"
@@ -133,19 +141,23 @@
     "*.{ts,js,json}": "biome check --write --no-errors-on-unmatched"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.12",
+    "@biomejs/biome": "^2.6.2",
     "@types/better-sqlite3": "^9.6.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
-    "@types/node": "^22.20.1",
+    "@types/node": "^22.20.5",
+    "@types/on-headers": "^1.0.4",
     "@types/supertest": "^7.2.1",
-    "@vitest/coverage-v8": "^5.0.0",
+    "@vitest/coverage-v8": "^5.0.5",
+    "audit-ci": "7.1.0",
+    "esbuild": "^0.28.1",
     "husky": "^9.1.7",
-    "lint-staged": "^17.4.1",
-    "supertest": "^7.2.2",
-    "tsx": "^4.23.13",
+    "lint-staged": "^17.6.0",
+    "postject": "^1.0.0-alpha.6",
+    "supertest": "^7.3.1",
+    "tsx": "^4.23.15",
     "typescript": "~7.0.2",
     "vitest": "^5.0.0",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.1"
   }
 }

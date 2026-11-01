@@ -1,0 +1,299 @@
+{
+  "note": "Read-only adapter verification before public hook integration. A4H 758; NPL 750. Counts include actual transport sends; elapsed time is not an SLA. NPL revision source qualification is separate from unsupported native discovery.",
+  "runs": [
+    {
+      "system": "a4h",
+      "root": {
+        "type": "CLAS",
+        "name": "CL_OO_ADT_ENHANCED_CLASS",
+        "version": "active"
+      },
+      "scope": "owning_object",
+      "mode": "summary",
+      "providers": [
+        {
+          "id": "class_exted_obj",
+          "family": "class_bound_enhancement",
+          "status": "returned",
+          "coverage": "direct_identities",
+          "version": "provider_current",
+          "nested": "not_expanded",
+          "reason": "owning_object_scope; native ENHO types do not identify enhancement technology or switch applicability"
+        }
+      ],
+      "nodes": [
+        {
+          "type": "ENHO/XH",
+          "name": "CL_OO_ADT_ENHANCED_CLASS1",
+          "version": "active",
+          "uri": "/sap/bc/adt/enhancements/enhoxh/cl_oo_adt_enhanced_class1",
+          "provider": "class_exted_obj",
+          "family": "class_bound_enhancement",
+          "applicability": "unknown"
+        }
+      ],
+      "edges": [
+        {
+          "from": "ENHO/XH:CL_OO_ADT_ENHANCED_CLASS1:active",
+          "to": "CLAS:CL_OO_ADT_ENHANCED_CLASS:active",
+          "kind": "extends",
+          "location": "EXTED_OBJ; enhancement_to_base"
+        }
+      ],
+      "issues": [],
+      "omissions": {},
+      "consumed": {
+        "sends": 4,
+        "responseBytes": 12414,
+        "elapsedMs": 1587
+      },
+      "sourceEvidence": []
+    },
+    {
+      "system": "a4h",
+      "root": {
+        "type": "CLAS",
+        "name": "CL_OO_ADT_ENHANCED_CLASS",
+        "version": "active"
+      },
+      "scope": "owning_object",
+      "mode": "sources",
+      "providers": [
+        {
+          "id": "class_exted_obj",
+          "family": "class_bound_enhancement",
+          "status": "returned",
+          "coverage": "direct_identities",
+          "version": "provider_current",
+          "nested": "not_expanded",
+          "reason": "owning_object_scope; native ENHO types do not identify enhancement technology or switch applicability"
+        },
+        {
+          "id": "class_exted_obj_source:CL_OO_ADT_ENHANCED_CLASS1",
+          "family": "class_bound_enhancement",
+          "status": "returned",
+          "coverage": "selected_source",
+          "version": "active",
+          "nested": "bounded",
+          "reason": "generated_include=CL_OO_ADT_ENHANCED_CLASS1=====E; active_revision=00000; implementation names may be absent"
+        }
+      ],
+      "nodes": [
+        {
+          "type": "ENHO/XH",
+          "name": "CL_OO_ADT_ENHANCED_CLASS1",
+          "version": "active",
+          "uri": "/sap/bc/adt/enhancements/enhoxh/cl_oo_adt_enhanced_class1",
+          "provider": "class_exted_obj",
+          "family": "class_bound_enhancement",
+          "applicability": "unknown"
+        },
+        {
+          "type": "INCL",
+          "name": "CL_OO_ADT_ENHANCED_CLASS1=====EM001",
+          "version": "active",
+          "provider": "class_exted_obj_source:CL_OO_ADT_ENHANCED_CLASS1",
+          "family": "class_bound_enhancement"
+        }
+      ],
+      "edges": [
+        {
+          "from": "ENHO/XH:CL_OO_ADT_ENHANCED_CLASS1:active",
+          "to": "CLAS:CL_OO_ADT_ENHANCED_CLASS:active",
+          "kind": "extends",
+          "location": "EXTED_OBJ; enhancement_to_base"
+        },
+        {
+          "from": "ENHO/XH:CL_OO_ADT_ENHANCED_CLASS1:active",
+          "to": "INCL:CL_OO_ADT_ENHANCED_CLASS1=====EM001:active",
+          "kind": "generated_method_include"
+        }
+      ],
+      "issues": [],
+      "omissions": {},
+      "consumed": {
+        "sends": 7,
+        "responseBytes": 13967,
+        "elapsedMs": 2171
+      },
+      "sourceEvidence": [
+        {
+          "identity": {
+            "type": "ENHO/XH",
+            "name": "CL_OO_ADT_ENHANCED_CLASS1",
+            "version": "active",
+            "uri": "/sap/bc/adt/enhancements/enhoxh/cl_oo_adt_enhanced_class1",
+            "provider": "class_exted_obj",
+            "family": "class_bound_enhancement",
+            "applicability": "unknown"
+          },
+          "representation": "generated_include_revision",
+          "bytes": 342,
+          "sha256": "950cb7f1e0e7db26f7a064eabed1b7657f161370cea751820a7228b334ba2327"
+        },
+        {
+          "identity": {
+            "type": "INCL",
+            "name": "CL_OO_ADT_ENHANCED_CLASS1=====EM001",
+            "version": "active"
+          },
+          "representation": "generated_include_revision",
+          "bytes": 31,
+          "sha256": "79e491c979707ef68e6b4cc182f23a11c61d69a3d01d6876379f21300dd55344"
+        }
+      ]
+    },
+    {
+      "system": "a4h",
+      "root": {
+        "type": "INTF",
+        "name": "IF_DSH_ENHANCED_OPTIONS",
+        "version": "active"
+      },
+      "scope": "owning_object",
+      "mode": "summary",
+      "providers": [
+        {
+          "id": "class_exted_obj",
+          "family": "class_bound_enhancement",
+          "status": "unsupported",
+          "coverage": "direct_identities",
+          "version": "provider_current",
+          "nested": "not_expanded",
+          "reason": "unsupported_context"
+        }
+      ],
+      "nodes": [],
+      "edges": [],
+      "issues": [],
+      "omissions": {},
+      "consumed": {
+        "sends": 2,
+        "responseBytes": 6091,
+        "elapsedMs": 1126
+      },
+      "sourceEvidence": []
+    },
+    {
+      "system": "npl",
+      "root": {
+        "type": "CLAS",
+        "name": "CL_OO_ADT_ENHANCED_CLASS",
+        "version": "active"
+      },
+      "scope": "owning_object",
+      "mode": "summary",
+      "providers": [
+        {
+          "id": "class_exted_obj",
+          "family": "class_bound_enhancement",
+          "status": "unsupported",
+          "coverage": "direct_identities",
+          "version": "provider_current",
+          "nested": "not_expanded",
+          "reason": "unsupported_provider"
+        }
+      ],
+      "nodes": [],
+      "edges": [],
+      "issues": [],
+      "omissions": {},
+      "consumed": {
+        "sends": 4,
+        "responseBytes": 7273,
+        "elapsedMs": 1608
+      },
+      "sourceEvidence": []
+    },
+    {
+      "system": "npl",
+      "root": {
+        "type": "CLAS",
+        "name": "CL_OO_ADT_ENHANCED_CLASS",
+        "version": "active"
+      },
+      "scope": "owning_object",
+      "mode": "sources",
+      "providers": [
+        {
+          "id": "class_exted_obj",
+          "family": "class_bound_enhancement",
+          "status": "unsupported",
+          "coverage": "direct_identities",
+          "version": "provider_current",
+          "nested": "not_expanded",
+          "reason": "unsupported_provider"
+        }
+      ],
+      "nodes": [],
+      "edges": [],
+      "issues": [],
+      "omissions": {},
+      "consumed": {
+        "sends": 2,
+        "responseBytes": 7273,
+        "elapsedMs": 269
+      },
+      "sourceEvidence": []
+    },
+    {
+      "system": "npl",
+      "root": {
+        "type": "INTF",
+        "name": "IF_DSH_ENHANCED_OPTIONS",
+        "version": "active"
+      },
+      "scope": "owning_object",
+      "mode": "summary",
+      "providers": [
+        {
+          "id": "class_exted_obj",
+          "family": "class_bound_enhancement",
+          "status": "unsupported",
+          "coverage": "direct_identities",
+          "version": "provider_current",
+          "nested": "not_expanded",
+          "reason": "unsupported_provider"
+        }
+      ],
+      "nodes": [],
+      "edges": [],
+      "issues": [],
+      "omissions": {},
+      "consumed": {
+        "sends": 2,
+        "responseBytes": 2484,
+        "elapsedMs": 370
+      },
+      "sourceEvidence": []
+    }
+  ],
+  "nplKnownRevision": {
+    "include": {
+      "name": "CL_OO_ADT_ENHANCED_CLASS1=====E",
+      "revision": {
+        "id": "00000",
+        "author": "SAP",
+        "timestamp": "2015-09-10T15:35:58Z",
+        "uri": "/sap/bc/adt/programs/includes/CL_OO_ADT_ENHANCED_CLASS1%3D%3D%3D%3D%3DE/source/main/versions/19700101091123/00000/content"
+      }
+    },
+    "children": [
+      {
+        "include": "CL_OO_ADT_ENHANCED_CLASS1=====EM001",
+        "revision": {
+          "id": "00000",
+          "author": "SAP",
+          "timestamp": "2012-10-22T14:04:31Z",
+          "uri": "/sap/bc/adt/programs/includes/CL_OO_ADT_ENHANCED_CLASS1%3D%3D%3D%3D%3DEM001/source/main/versions/19700101091123/00000/content"
+        },
+        "bytes": 31,
+        "sha256": "79e491c979707ef68e6b4cc182f23a11c61d69a3d01d6876379f21300dd55344"
+      }
+    ],
+    "consumed": {
+      "sends": 5,
+      "bytes": 1553
+    }
+  }
+}

@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AdtClient } from '../../../src/adt/client.js';
 import { type CliDependencies, main } from '../../../src/cli.js';
-import { CLI_CONFIG_OPTION_SPECS, type resolveConfig } from '../../../src/server/config.js';
+import { CLI_CONFIG_OPTION_SPECS, resolveConfig } from '../../../src/server/config.js';
+import { appendIdeLinks } from '../../../src/server/ide-links.js';
 import { logger } from '../../../src/server/logger.js';
 import type { StartupAuthPreflightResult } from '../../../src/server/server.js';
 import type { ServerConfig } from '../../../src/server/types.js';
@@ -57,6 +58,132 @@ afterEach(() => {
 });
 
 describe('CLI runtime', () => {
+  it.each(['TABL', 'TABL/DS', 'CLAS', 'DDLS'])('keeps flat %s exports free of extension context', async (type) => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const dispatch = vi.fn(async (_client, _config, _tool, args) => {
+      expect(args.format).toBe('text');
+      expect(args.extensions).toBe(type === 'DDLS' ? undefined : 'none');
+      return successfulToolResult('raw source');
+    });
+    const dependencies = directDependencies(resolved({ url: 'https://sap.example.test' }), {
+      dispatchToolCall: dispatch,
+    });
+    for (const command of [
+      ['source', type, 'ZROOT'],
+      ['read', type, 'ZROOT', '--flat'],
+    ]) {
+      log.mockClear();
+      expect(await main(command, dependencies)).toBe(0);
+      expect(log.mock.calls).toEqual([['raw source']]);
+    }
+  });
+  it.each(['text', 'json'] as const)(
+    'keeps CLI source/search exports unchanged with IDE env opt-in (output=%s)',
+    async (output) => {
+      vi.stubEnv('SAP_URL', 'https://sap.example.test');
+      vi.stubEnv('ARC1_IDE_LINKS', 'eclipse');
+      vi.stubEnv('ARC1_IDE_SYSTEM_ID', 'DEV');
+      const configuration = resolveConfig([]);
+      expect(configuration.config.ideLinks).toBe('eclipse');
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      for (const [command, payload] of [
+        [['source', 'PROG', 'ZHELLO'], 'REPORT zhello.'],
+        [['search', 'Z*'], '[{"objectType":"CLAS/OC","objectName":"ZCL_TEST"}]'],
+      ] as const) {
+        log.mockClear();
+        const original = successfulToolResult(payload);
+        const dependencies = directDependencies(configuration, {
+          dispatchToolCall: vi.fn(async (_client, config, tool, args) => appendIdeLinks(original, tool, args, config)),
+        });
+        expect(await main([...command, '--output', output], dependencies)).toBe(0);
+        const printed = log.mock.calls.map(([line]) => String(line)).join('\n');
+        if (output === 'json') expect(JSON.parse(printed)).toEqual(original);
+        else expect(printed).toBe(payload);
+        expect(configuration.config.ideLinks).toBe('eclipse');
+      }
+    },
+  );
+  it('initializes logging from the resolved level for direct tool calls', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const code = await main(
+      ['call', 'SAPRead', '--json', '{"type":"SYSTEM"}'],
+      directDependencies(resolved({ url: 'https://sap.example.test', logLevel: 'error' }), {
+        dispatchToolCall: vi.fn(async () => {
+          logger.info('level-probe-info');
+          logger.warn('level-probe-warn');
+          logger.error('level-probe-error');
+          return successfulToolResult();
+        }),
+      }),
+    );
+    expect(code).toBe(0);
+    const emitted = stderr.mock.calls.map(([line]) => String(line)).filter((line) => line.includes('level-probe-'));
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toContain('level-probe-error');
+  });
+
+  it.each([
+    ['atc_ci', 'text', '{"status":"completed","fail":false}', 0],
+    ['atc_ci', 'json', '{"status":"completed","fail":true}', 1],
+    ['unittest_ci', 'json', '{"status":"completed","fail":false,"reportXml":"<testsuites/>"}', 0],
+    ['unittest_ci', 'text', '{"status":"completed","fail":true}', 1],
+    ...[
+      'not JSON',
+      '{}',
+      'null',
+      '[]',
+      '{"status":"running","fail":false}',
+      '{"status":"incomplete","fail":false,"summary":{"tests":0}}',
+      '{"status":"completed","fail":"false"}',
+    ].map((text) => ['atc_ci', 'text', text, 1] as const),
+  ] as const)(
+    'routes %s output=%s report=%s to exit %s without changing the report',
+    async (action, output, text, expected) => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const result = successfulToolResult(text);
+      const dispatchToolCall = vi.fn(async () => result);
+      const code = await main(
+        ['call', 'SAPDiagnose', '--json', JSON.stringify({ action, packages: ['ZTEST'] }), '--output', output],
+        directDependencies(resolved({ url: 'https://sap.example.test' }), { dispatchToolCall }),
+      );
+      expect(code).toBe(expected);
+      expect(dispatchToolCall).toHaveBeenCalledOnce();
+      const printed = log.mock.calls.map((call) => call[0]).join('\n');
+      if (output === 'json') expect(JSON.parse(printed)).toEqual(result);
+      else expect(printed).toBe(text);
+      expect(error).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps non-CI results independent of a field named fail', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const code = await main(
+      ['call', 'SAPDiagnose', '--json', '{"action":"syntax"}'],
+      directDependencies(resolved({ url: 'https://sap.example.test' }), {
+        dispatchToolCall: vi.fn(async () => successfulToolResult('{"fail":true}')),
+      }),
+    );
+    expect(code).toBe(0);
+  });
+
+  it.each(['atc_ci', 'unittest_ci'])('retains tool errors and rejects missing %s reports', async (action) => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    for (const result of [{ content: [] }, { ...successfulToolResult('SAP failure'), isError: true }]) {
+      log.mockClear();
+      const code = await main(
+        ['call', 'SAPDiagnose', '--json', JSON.stringify({ action }), '--output', 'json'],
+        directDependencies(resolved({ url: 'https://sap.example.test' }), {
+          dispatchToolCall: vi.fn(async () => result),
+        }),
+      );
+      expect(code).toBe(1);
+      expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual(result);
+    }
+  });
+
   it('keeps commandless, root-option-only startup compatible', async () => {
     const startServer = vi.fn(async () => undefined);
     const flushLogger = vi.fn(async () => undefined);

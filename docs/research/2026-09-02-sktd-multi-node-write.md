@@ -120,6 +120,15 @@ Reproduced by unit test before the fix: 6 failing assertions in
 
 ## 4. The fix
 
+> **Superseded on 2026-09-07 (branch fix/ktd-node-name-routing).** The exact-id-only heading rule
+> below let a body written from the node index — which prints NAMES — resolve no section, so the
+> whole document was folded into the root as prose while the call reported success. Headings and
+> `shortTexts[].node` now share one resolver: exact id → case-insensitive id → node name (decoded or
+> wire-encoded), against every node; a bare last segment stays prose; a node-shaped heading that
+> matches nothing aborts the write; headings kept as prose are reported. The index
+> (`formatKtdNodeIndex`) lists every writable node by the spelling that resolves back to it, with
+> empty ones on an `empty (n):` line, so `Undocumented nodes: N` below is the old header.
+
 `rewriteKtdText` consumes the exact-ID section format emitted by `decodeKtdText`:
 
 - A line is a node boundary **only** when it is `## ` followed by the *exact* id of an element in

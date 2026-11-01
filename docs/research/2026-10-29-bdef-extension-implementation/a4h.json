@@ -1,0 +1,143 @@
+{
+  "target": "a4h",
+  "checkedAt": "2026-10-29T17:36:49.920Z",
+  "baseRead": true,
+  "baseSha256": "d16c4495c62db7c52f8ce2aa5f4486d7efa02fb0125f53622e4f2218eebc986d",
+  "rows": [
+    {
+      "mode": "summary",
+      "providers": [
+        {
+          "id": "bdef_wul_verified",
+          "family": "behavior_extension",
+          "status": "returned",
+          "coverage": "candidate_index",
+          "version": "provider_current",
+          "nested": "not_expanded",
+          "reason": "WUL candidates verified against active statements; index completeness and runtime applicability unknown."
+        }
+      ],
+      "nodes": [
+        {
+          "type": "BDEF",
+          "name": "DEMO_RAP_EVENT_EXT",
+          "version": "active",
+          "provider": "bdef_wul_verified",
+          "family": "behavior_extension",
+          "uri": "/sap/bc/adt/bo/behaviordefinitions/demo_rap_event_ext",
+          "applicability": "unknown"
+        },
+        {
+          "type": "BDEF",
+          "name": "DEMO_RAP_EXTEND1",
+          "version": "active",
+          "provider": "bdef_wul_verified",
+          "family": "behavior_extension",
+          "uri": "/sap/bc/adt/bo/behaviordefinitions/demo_rap_extend1",
+          "applicability": "unknown"
+        }
+      ],
+      "edges": [
+        {
+          "from": "BDEF:DEMO_RAP_EVENT_EXT:active",
+          "to": "BDEF:DEMO_RAP_EXTENSIBLE:active",
+          "kind": "extends_behavior",
+          "attribute": "DEMO_RAP_EXTENSIBLE"
+        },
+        {
+          "from": "BDEF:DEMO_RAP_EXTEND1:active",
+          "to": "BDEF:DEMO_RAP_EXTENSIBLE:active",
+          "kind": "extends_behavior",
+          "attribute": "DEMO_RAP_EXTENSIBLE"
+        }
+      ],
+      "omissions": {},
+      "issues": [],
+      "consumed": {
+        "sends": 5,
+        "responseBytes": 3894,
+        "elapsedMs": 1603
+      },
+      "outputBytes": 798,
+      "sources": []
+    },
+    {
+      "mode": "sources",
+      "providers": [
+        {
+          "id": "bdef_wul_verified",
+          "family": "behavior_extension",
+          "status": "returned",
+          "coverage": "candidate_index",
+          "version": "provider_current",
+          "nested": "not_expanded",
+          "reason": "WUL candidates verified against active statements; index completeness and runtime applicability unknown."
+        }
+      ],
+      "nodes": [
+        {
+          "type": "BDEF",
+          "name": "DEMO_RAP_EVENT_EXT",
+          "version": "active",
+          "provider": "bdef_wul_verified",
+          "family": "behavior_extension",
+          "uri": "/sap/bc/adt/bo/behaviordefinitions/demo_rap_event_ext",
+          "applicability": "unknown"
+        },
+        {
+          "type": "BDEF",
+          "name": "DEMO_RAP_EXTEND1",
+          "version": "active",
+          "provider": "bdef_wul_verified",
+          "family": "behavior_extension",
+          "uri": "/sap/bc/adt/bo/behaviordefinitions/demo_rap_extend1",
+          "applicability": "unknown"
+        }
+      ],
+      "edges": [
+        {
+          "from": "BDEF:DEMO_RAP_EVENT_EXT:active",
+          "to": "BDEF:DEMO_RAP_EXTENSIBLE:active",
+          "kind": "extends_behavior",
+          "attribute": "DEMO_RAP_EXTENSIBLE"
+        },
+        {
+          "from": "BDEF:DEMO_RAP_EXTEND1:active",
+          "to": "BDEF:DEMO_RAP_EXTENSIBLE:active",
+          "kind": "extends_behavior",
+          "attribute": "DEMO_RAP_EXTENSIBLE"
+        }
+      ],
+      "omissions": {},
+      "issues": [],
+      "consumed": {
+        "sends": 3,
+        "responseBytes": 3894,
+        "elapsedMs": 746
+      },
+      "outputBytes": 1691,
+      "sources": [
+        {
+          "identity": {
+            "type": "BDEF",
+            "name": "DEMO_RAP_EVENT_EXT",
+            "version": "active"
+          },
+          "representation": "authored_source",
+          "bytes": 146,
+          "sha256": "a0f67d7bbea177507965bba932c5e299d991f108d9f5925a59d2f4ed929965aa"
+        },
+        {
+          "identity": {
+            "type": "BDEF",
+            "name": "DEMO_RAP_EXTEND1",
+            "version": "active"
+          },
+          "representation": "authored_source",
+          "bytes": 219,
+          "sha256": "040ce9d21a6f89896c3185b108490cae65edae9ca8c5ef1265a9f2d50fd9c5db"
+        }
+      ]
+    }
+  ]
+}

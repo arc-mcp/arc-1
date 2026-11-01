@@ -1,8 +1,134 @@
 import { describe, expect, it } from 'vitest';
 import { buildTableQuerySql } from '../../../src/adt/client.js';
-import { exactSqlIdentifier } from '../../../src/adt/table-query.js';
+import { exactSqlIdentifier, fitFreestyleSqlLines } from '../../../src/adt/table-query.js';
+
+describe('fitFreestyleSqlLines', () => {
+  it.each(['SELECT * FROM t000', 'SELECT mandt\r\nFROM t000', `${'x'.repeat(255)}\r\n`])(
+    'preserves already-fitting input: %s',
+    (sql) => {
+      expect(fitFreestyleSqlLines(sql)).toBe(sql);
+    },
+  );
+
+  it('normalizes short LF input, existing CRLF and inserted wraps to CRLF (#955)', () => {
+    const sql =
+      "SELECT tabname, fieldname, position FROM dd03l WHERE tabname = 'T000' AND as4local = 'A' AND as4vers\n= '0000' AND fieldname <> 'Z01' AND fieldname <> 'Z02' AND fieldname <> 'Q' AND fieldname = 'MANDT'";
+    expect(sql).toHaveLength(200);
+    expect(fitFreestyleSqlLines(sql)).toBe(sql.replaceAll('\n', '\r\n'));
+    const long = `SELECT mandt FROM t000 WHERE ${Array(30).fill("mandt <> '999'").join(' AND ')}\r\n`;
+    const fitted = fitFreestyleSqlLines(long);
+    expect(fitted).not.toMatch(/(?<!\r)\n/);
+    expect(fitted.endsWith('\r\n')).toBe(true);
+    expect(fitFreestyleSqlLines(fitted)).toBe(fitted);
+  });
+
+  it('keeps a long statement intact while fitting every physical line', () => {
+    const sql = `SELECT mandt FROM t000 WHERE ${Array(30).fill("mandt <> '999'").join(' AND ')}`;
+    const result = fitFreestyleSqlLines(sql);
+    expect(result).toContain('\r\n');
+    expect(result.replaceAll('\r\n', ' ')).toBe(sql);
+    expect(result.split('\r\n').every((line) => line.length <= 255)).toBe(true);
+  });
+
+  it.each(["'", '`'])('preserves spaces and doubled %s delimiters inside literals', (quote) => {
+    const literal = quote + `a ${quote}${quote} b " | * `.repeat(12) + quote;
+    const sql = `SELECT mandt FROM t000 WHERE mtext = ${literal} OR mtext = ${literal}`;
+    const result = fitFreestyleSqlLines(sql);
+    expect(result.split(literal)).toHaveLength(3);
+    expect(result.replaceAll('\r\n', ' ')).toBe(sql);
+    expect(result.split('\r\n').every((line) => line.length <= 255)).toBe(true);
+  });
+
+  it.each([
+    ["'", 254],
+    ["'", 255],
+    ["'", 256],
+    ['`', 254],
+    ['`', 255],
+    ['`', 256],
+  ] as const)('preserves a doubled %s delimiter starting at column %i', (quote, column) => {
+    const prefix = 'SELECT mandt FROM t000 WHERE mtext = ';
+    const literal = `${quote}${'x'.repeat(column - prefix.length - 2)}${quote}${quote} y z${quote}`;
+    const sql = `${prefix}${literal} OR mtext = ${literal}`;
+    const result = fitFreestyleSqlLines(sql);
+    expect(result.split(literal)).toHaveLength(3);
+    expect(result.replaceAll('\r\n', ' ')).toBe(sql);
+    expect(result.split('\r\n').every((line) => line.length <= 255)).toBe(true);
+  });
+
+  it('preserves a short inline comment and its CRLF boundary when wrapping the preceding SQL', () => {
+    const commentAndNextLine = "\" keep this comment\r\nWHERE mandt <> '999'";
+    const sql = `SELECT ${'mandt, '.repeat(35)}mandt FROM t000 ${commentAndNextLine}`;
+    const result = fitFreestyleSqlLines(sql);
+    expect(result).toContain(commentAndNextLine);
+    expect(
+      result
+        .replaceAll('\r\n', '\n')
+        .split('\n')
+        .every((line) => line.length <= 255),
+    ).toBe(true);
+  });
+
+  it('allows a break at exactly 255 without creating a column-one star comment', () => {
+    const sql = `SELECT ${' '.repeat(248)}* FROM t000`;
+    const result = fitFreestyleSqlLines(sql);
+    expect(result.replaceAll('\r\n', ' ')).toBe(sql);
+    expect(result.split('\r\n').every((line) => line.length <= 255 && !line.startsWith('*'))).toBe(true);
+    expect(fitFreestyleSqlLines(`${'x'.repeat(255)} FROM t000`)).toBe(`${'x'.repeat(255)}\r\nFROM t000`);
+  });
+
+  it('wraps at tabs without changing the surrounding tokens', () => {
+    expect(fitFreestyleSqlLines(`${'x'.repeat(255)}\tFROM t000`)).toBe(`${'x'.repeat(255)}\r\nFROM t000`);
+  });
+
+  it('keeps a source identifier intact when it crosses character 255', () => {
+    const prefix = 'SELECT field FROM ';
+    const sql = `${prefix}${' '.repeat(250 - prefix.length)}zexample_table`;
+    const result = fitFreestyleSqlLines(sql);
+    expect(result).toContain('zexample_table');
+    expect(result.replaceAll('\r\n', ' ')).toBe(sql);
+    expect(result.split('\r\n').every((line) => line.length <= 255)).toBe(true);
+  });
+
+  it.each([
+    'x'.repeat(256),
+    ` ${'x'.repeat(255)}`, // A break at the segment start would create an empty line.
+    `SELECT '${'x '.repeat(130)}' FROM t000`,
+    `SELECT \`${'x '.repeat(130)}\` FROM t000`,
+    `SELECT mandt FROM t000 "${'comment '.repeat(40)}`,
+    `*${'comment '.repeat(40)}`,
+    `SELECT |${'template '.repeat(40)}| FROM t000`,
+  ])('refuses an unsplittable token, literal, comment or template', (sql) => {
+    expect(() => fitFreestyleSqlLines(sql)).toThrow('Cannot fit freestyle SQL');
+  });
+});
 
 describe('buildTableQuerySql', () => {
+  it.each(['IN', 'NOT IN'])('refuses unqualified space-preserving expressions in %s lists', (op) => {
+    const where = [{ field: 'TDNAME', op, value: 'A  B,C' }];
+    expect(buildTableQuerySql('STXH', ['TDNAME'], where)).toContain(`${op} ('A  B', 'C')`);
+    expect(() => buildTableQuerySql('STXH', ['TDNAME'], where, true)).toThrow('does not support IN lists');
+  });
+  it('preserves repeated literal spaces only with the internal compatibility opt-in', () => {
+    const where = [{ field: 'TDNAME', op: '=', value: "  A'B  C" }];
+    expect(buildTableQuerySql('STXH', ['TDNAME'], where)).toContain("TDNAME = '  A''B  C'");
+    expect(buildTableQuerySql('STXH', ['TDNAME'], where, true)).toContain(
+      "TDNAME = concat_with_space( concat_with_space( ' ', 'A''B', 2 ), 'C', 2 )",
+    );
+  });
+
+  it('treats prefix wildcard and escape characters literally', () => {
+    expect(buildTableQuerySql('STXH', ['TDNAME'], [{ field: 'TDNAME', op: 'STARTS_WITH', value: "Z_%#'" }])).toBe(
+      "SELECT TDNAME FROM STXH WHERE TDNAME LIKE 'Z#_#%##''%' ESCAPE '#'",
+    );
+  });
+
+  it('uses a length-guarded slice for repeated-space prefixes without a LIKE expression', () => {
+    expect(buildTableQuerySql('STXH', ['TDNAME'], [{ field: 'TDNAME', op: 'STARTS_WITH', value: "A'  " }], true)).toBe(
+      "SELECT TDNAME FROM STXH WHERE ( left( TDNAME, 4 ) = concat_with_space( 'A''', ' ', 2 ) AND length( TDNAME ) >= 4 )",
+    );
+  });
+
   // ─── Basic SELECT ──────────────────────────────────────────────────
 
   it('builds SELECT * with no options', () => {

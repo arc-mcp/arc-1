@@ -166,6 +166,7 @@ describe('CRUD Operations', () => {
         undefined,
         undefined,
         expect.objectContaining({ Accept: expect.stringContaining('com.sap.adt.lock.result') }),
+        undefined,
       );
     });
 
@@ -194,6 +195,7 @@ describe('CRUD Operations', () => {
         undefined,
         undefined,
         expect.any(Object),
+        undefined,
       );
     });
 
@@ -481,7 +483,13 @@ describe('CRUD Operations', () => {
         'application/xml',
         'DEVK900001',
       );
-      expect(http.post).toHaveBeenCalledWith(expect.stringContaining('corrNr=DEVK900001'), '<xml/>', 'application/xml');
+      expect(http.post).toHaveBeenCalledWith(
+        expect.stringContaining('corrNr=DEVK900001'),
+        '<xml/>',
+        'application/xml',
+        undefined,
+        { retryTransientErrors: false },
+      );
     });
 
     it('adds _package query parameter when packageName is provided', async () => {

@@ -28,7 +28,13 @@ Live evidence: `objectType=DTEL` and `objectType=DTEL/DE` both return `adtcore:t
 - Note: ARC-1's `crud.ts` includes a content-type fallback (DTEL v2→v1 on 415) — unchanged by this audit.
 
 ### 7.50 (NW 7.50)
-- Not verified live; stable since 7.40.
+- The 2026-10-17 validation in [PR #1007](https://github.com/arc-mcp/arc-1/pull/1007)
+  records a successful native data-element read on 750, 758 and 816.
+- The earlier “stable since 7.40” claim was unverified. SAP's
+  [ADT feature matrix](https://community.sap.com/t5/technology-blog-posts-by-sap/adt-feature-availability-matrix-for-as-abap-releases/ba-p/13027468)
+  lists the native data-element editor from 7.50; that does not establish its exact endpoint
+  contract on earlier support packages. [#996](https://github.com/arc-mcp/arc-1/issues/996)
+  reports empty HTML from this endpoint on 740 SP04. Earlier-release alternatives need evidence.
 
 ## ARC-1 current surface
 | Location | Line(s) | Form used | Correct? |
@@ -49,3 +55,22 @@ Live evidence: `objectType=DTEL` and `objectType=DTEL/DE` both return `adtcore:t
 - Keep as-is.
 - **Breaking change**: none.
 - **Test gap to close**: assert `normalizeObjectType('DTEL/DE') === 'DTEL'`.
+
+
+## Relation Explorer identity evidence — SAP_BASIS 758 (2026-09-10)
+
+This dated section concerns read-only relationship roots, not new SAPRead operations, writes, or a global slash alias. The metadata root and `adtcore:type` attribute below were retained from an actual metadata **GET**, not a create template. Namespace prefixes are preserved. Authors, descriptions and unrelated fields were removed; identity values were not invented or rewritten.
+
+### DTEL/DE
+
+- Observed object: `/BOBF/CONF_CHANGE_MODE`; GET `/sap/bc/adt/ddic/dataelements/%2fbobf%2fconf_change_mode`.
+- Recorded: 2026-09-09T22:07:49.315Z; metadata QName: `blue:wbobj`.
+- [Sanitized wire fixture](../../../../tests/fixtures/relations/dtel-de.json) also preserves one observed ENV edge and original-body SHA-256 values. It is a projection, not a complete network.
+
+```xml
+<blue:wbobj adtcore:name="/BOBF/CONF_CHANGE_MODE" adtcore:type="DTEL/DE" adtcore:version="active" xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel" xmlns:adtcore="http://www.sap.com/adt/core">
+<adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/%2fbobf%2fconfiguration" adtcore:type="DEVC/K" adtcore:name="/BOBF/CONFIGURATION"/>
+</blue:wbobj>
+```
+
+Qualification and limitations: [per-type research](../../2026-09-10-live-relations-types.md). CI binds every qualified native identity to this document and replays the independent recorded fixtures. This proves the observed 758 shapes, not support on other releases or relationship completeness.

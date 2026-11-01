@@ -3,7 +3,7 @@
 ## TL;DR
 `TABL` is the canonical TADIR R3TR type covering both transparent tables (DD02L `TABCLASS=TRANSP`) and DDIC structures (`TABCLASS=INTTAB`/`APPEND`). ADT splits these into two slash subtypes: `TABL/DT` (transparent table, URL `/sap/bc/adt/ddic/tables/`) and `TABL/DS` (structure, URL `/sap/bc/adt/ddic/structures/`). PR #219 collapsed both into ARC-1's single canonical short `TABL` and removed the bogus `STRU` (kept `STRU/DS → TABL` as a legacy alias).
 
-**Read path** uses `AdtClient.getTabl()` / `resolveTablObjectUrl()` which probe `/tables/` first and fall back to `/structures/` on 404 — correct because the source body is identical either way.
+**Read path** uses `AdtClient.getTabl()` / `resolveTablObjectUrl()` which probe `/tables/` first and fall back to `/structures/` on 404. On 750, this gives a field/type representation (`define type`), not a complete table definition: table category and delivery class are absent. See the [22 October 2026 controls](../../2026-10-22-legacy-ddic-alternatives.md). Never reuse this representation for table writes.
 
 **Write path** (after issue #285) uses a separate `AdtClient.resolveTablObjectUrlForWrite()` that asks SAP via repository search for the actual subtype (TABL/DT vs TABL/DS) and refuses transparent-table writes on systems that don't expose `/sap/bc/adt/ddic/tables/` (NW 7.50/7.51 ship `/ddic/structures/` only; the database-table editor was added in NW 7.52, per ADT 2.52 release notes). Pre-fix, the read-path resolver was reused for writes — on NW 7.50 every TABL/DT write silently routed to `/structures/`, where a PUT corrupts DD02L-TABCLASS to INTTAB on the inactive draft.
 
@@ -50,8 +50,8 @@ Live evidence: search with `objectType=TABL/DT` returns tables only; `objectType
 | `src/handlers/intent.ts` `SLASH_TYPE_MAP` | `STRU/DS → TABL` (legacy alias for old prompts) | ✅ legacy-tolerable |
 | `src/handlers/intent.ts` `objectBasePath` | default `/ddic/tables/` (with comment about /structures/ fallback) | ✅ |
 | `src/adt/client.ts` `getTabl` / `resolveTablObjectUrl` | **read path**: tries `/tables/` then falls back to `/structures/` on 404 | ✅ |
-| `src/adt/client.ts` `resolveTablObjectUrlForWrite` (issue #285) | **write/activate/delete path**: search-first, refuses TABL/DT writes when discovery lacks `/ddic/tables` | ✅ |
-| `src/handlers/intent.ts` SAPWrite create/batch_create | refuses bare `TABL` + `TABL/DT` upfront when discovery lacks `/ddic/tables` (issue #285); allows `TABL/DS` because `/ddic/structures` exists on every release (follow-up to #285) | ✅ |
+| `src/adt/client.ts` `resolveTablObjectUrlForWrite` (issue #285) | **write/activate/delete path**: search-first, refuses TABL/DT writes when discovery lacks `/ddic/tables`; there (and without discovery) a failed or empty search is refused too unless a fresh `/tables/` probe hits, since `/structures/` also serves tables on 7.50 | ✅ |
+| `src/handlers/intent.ts` SAPWrite create/batch_create | refuses bare `TABL` + `TABL/DT` upfront when discovery lacks `/ddic/tables` (issue #285); routes `TABL/DS` separately to `/ddic/structures` (verified on 750/758; no universal release guarantee) | ✅ |
 | `src/handlers/intent.ts` `normalizeWriteObjectType` | SAPWrite-aware normalizer that preserves `TABL/DT` and `TABL/DS` end-to-end so the create path can route on subtype (follow-up to #285) | ✅ |
 | `src/handlers/intent.ts` `objectBasePath` | `TABL` and `TABL/DT` → `/ddic/tables/`; `TABL/DS` → `/ddic/structures/` (follow-up to #285) | ✅ |
 | `src/handlers/intent.ts` `buildCreateXml` | `TABL` and `TABL/DT` emit `adtcore:type="TABL/DT"`; `TABL/DS` emits `adtcore:type="TABL/DS"`; same `<blue:blueSource>` envelope for both (follow-up to #285) | ✅ |
@@ -74,7 +74,7 @@ Live evidence: search with `objectType=TABL/DT` returns tables only; `objectType
 | POST `/ddic/structures` with `adtcore:type="TABL/DS"` (27-char Z-name) | **201 Created** (cleanup OK) |
 | POST `/ddic/tables` with `/LEOWM/SD_MON_S_WHO` + `adtcore:type="TABL/DT"` | **422** T100 AD102 "Select a shorter name" — Michael's exact reproduction |
 
-**Fix shape**: preserve `TABL/DT` and `TABL/DS` end-to-end on SAPWrite (`normalizeWriteObjectType`); branch `objectBasePath` and `buildCreateXml` on subtype; scope PR #286's discovery-gated refusal to bare `TABL` + explicit `TABL/DT` (TABL/DS skips the gate because `/ddic/structures` exists on every release, including NW 7.50). The fix unlocks structure creation on NW 7.50 as a bonus.
+**Fix shape**: preserve `TABL/DT` and `TABL/DS` end-to-end on SAPWrite (`normalizeWriteObjectType`); branch `objectBasePath` and `buildCreateXml` on subtype; scope PR #286's discovery-gated refusal to bare `TABL` + explicit `TABL/DT` (TABL/DS skips this table-specific gate; `/ddic/structures` was verified on 750/758, not every release). The fix unlocks structure creation on NW 7.50 as a bonus.
 
 ## Cross-repo pattern reference (researched 2026-05-15)
 | Source | Pattern | Notes |
@@ -95,3 +95,34 @@ Live evidence: search with `objectType=TABL/DT` returns tables only; `objectType
 - Consider sunsetting the `STRU/DS` legacy alias one minor release after v0.8.0 once telemetry confirms no real callers. (Not urgent.)
 - **Breaking change**: none from current state.
 - **Test gap closed**: integration tests in `tests/integration/adt.integration.test.ts` now cover `resolveTablObjectUrlForWrite` on a4h; unit tests in `tests/unit/adt/client.test.ts` and `tests/unit/handlers/intent.test.ts` mock the search response and discovery state to exercise the NW 7.50 refusal path.
+
+
+## Relation Explorer identity evidence — SAP_BASIS 758 (2026-09-10)
+
+This dated section concerns read-only relationship roots, not new SAPRead operations, writes, or a global slash alias. The metadata root and `adtcore:type` attribute below were retained from an actual metadata **GET**, not a create template. Namespace prefixes are preserved. Authors, descriptions and unrelated fields were removed; identity values were not invented or rewritten.
+
+### TABL/DT
+
+- Observed object: `ZABAPGIT`; GET `/sap/bc/adt/ddic/tables/zabapgit`.
+- Recorded: 2026-09-09T22:07:49.315Z; metadata QName: `blue:blueSource`.
+- [Sanitized wire fixture](../../../../tests/fixtures/relations/tabl-dt.json) also preserves one observed WUL edge and original-body SHA-256 values. It is a projection, not a complete network.
+
+```xml
+<blue:blueSource adtcore:name="ZABAPGIT" adtcore:type="TABL/DT" adtcore:version="active" xmlns:blue="http://www.sap.com/wbobj/blue" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core">
+<adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/%24tmp" adtcore:type="DEVC/K" adtcore:name="$TMP"/>
+</blue:blueSource>
+```
+
+### TABL/DS
+
+- Observed object: `/BOBF/S_FRW_ACTION`; GET `/sap/bc/adt/ddic/structures/%2fbobf%2fs_frw_action`.
+- Recorded: 2026-09-09T22:07:49.315Z; metadata QName: `blue:blueSource`.
+- [Sanitized wire fixture](../../../../tests/fixtures/relations/tabl-ds.json) also preserves one observed ENV edge and original-body SHA-256 values. It is a projection, not a complete network.
+
+```xml
+<blue:blueSource adtcore:name="/BOBF/S_FRW_ACTION" adtcore:type="TABL/DS" adtcore:version="active" xmlns:blue="http://www.sap.com/wbobj/blue" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core">
+<adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/%2fbobf%2fframework" adtcore:type="DEVC/K" adtcore:name="/BOBF/FRAMEWORK"/>
+</blue:blueSource>
+```
+
+Qualification and limitations: [per-type research](../../2026-09-10-live-relations-types.md). CI binds every qualified native identity to this document and replays the independent recorded fixtures. This proves the observed 758 shapes, not support on other releases or relationship completeness.

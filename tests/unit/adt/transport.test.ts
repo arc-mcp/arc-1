@@ -799,9 +799,12 @@ describe('Transport Management', () => {
       await expect(reassignTransport(http, safety, 'DEVK900001', 'NEWUSER')).rejects.toThrow(AdtSafetyError);
     });
 
-    it('sends PUT with correct XML body', async () => {
+    it('sends the same owner in the query and XML body', async () => {
       const http = mockHttp();
       await reassignTransport(http, enabledSafety, 'DEVK900001', 'NEWUSER');
+      expect((http.put as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).toBe(
+        '/sap/bc/adt/cts/transportrequests/DEVK900001?targetuser=NEWUSER',
+      );
       const body = (http.put as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as string;
       expect(body).toContain('tm:useraction="changeowner"');
       expect(body).toContain('tm:targetuser="NEWUSER"');
@@ -811,6 +814,9 @@ describe('Transport Management', () => {
     it('escapes special characters in owner name', async () => {
       const http = mockHttp();
       await reassignTransport(http, enabledSafety, 'DEVK900001', 'USER<&>');
+      expect((http.put as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).toBe(
+        '/sap/bc/adt/cts/transportrequests/DEVK900001?targetuser=USER%3C%26%3E',
+      );
       const body = (http.put as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as string;
       expect(body).toContain('&lt;');
       expect(body).toContain('&amp;');
@@ -838,9 +844,11 @@ describe('Transport Management', () => {
       const putCalls = (http.put as ReturnType<typeof vi.fn>).mock.calls;
       // get call uses http.get, put calls are: task1, task2, parent
       expect(putCalls).toHaveLength(3);
-      expect(putCalls[0]?.[0] as string).toContain('DEVK900001T1');
-      expect(putCalls[1]?.[0] as string).toContain('DEVK900001T2');
-      expect(putCalls[2]?.[0] as string).toContain('DEVK900001');
+      expect(putCalls.map((call) => call[0])).toEqual([
+        '/sap/bc/adt/cts/transportrequests/DEVK900001T1?targetuser=NEWUSER',
+        '/sap/bc/adt/cts/transportrequests/DEVK900001T2?targetuser=NEWUSER',
+        '/sap/bc/adt/cts/transportrequests/DEVK900001?targetuser=NEWUSER',
+      ]);
     });
 
     it('recursive skips already-released tasks', async () => {
@@ -854,8 +862,10 @@ describe('Transport Management', () => {
       await reassignTransport(http, enabledSafety, 'DEVK900001', 'NEWUSER', true);
       const putCalls = (http.put as ReturnType<typeof vi.fn>).mock.calls;
       expect(putCalls).toHaveLength(2); // Only T2 + parent
-      expect(putCalls[0]?.[0] as string).toContain('DEVK900001T2');
-      expect(putCalls[1]?.[0] as string).toContain('DEVK900001');
+      expect(putCalls.map((call) => call[0])).toEqual([
+        '/sap/bc/adt/cts/transportrequests/DEVK900001T2?targetuser=NEWUSER',
+        '/sap/bc/adt/cts/transportrequests/DEVK900001?targetuser=NEWUSER',
+      ]);
     });
   });
 

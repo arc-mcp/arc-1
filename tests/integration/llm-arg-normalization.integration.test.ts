@@ -12,29 +12,41 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AdtClient } from '../../src/adt/client.js';
+import { fetchDiscoveryDocument } from '../../src/adt/discovery.js';
 import { handleToolCall } from '../../src/handlers/dispatch.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
+import { deleteProgramFixture } from '../helpers/program-cleanup.js';
+import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
 import { generateUniqueName } from './crud-harness.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
 
 describe('Issue #360 — LLM arg-pollution hardening (live SAP)', () => {
   let client: AdtClient;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     requireSapCredentials();
     client = getTestClient();
+    client.http.setDiscoveryMap((await fetchDiscoveryDocument(client.http)).map);
+    expect(client.http.hasDiscoveryData(), 'ADT discovery must succeed before capability checks').toBe(true);
   });
 
-  // Best-effort delete of any object the tests may have left behind.
+  // A failed delete must fail the test; disposable programs may need their first activation.
   async function cleanup(type: string, name: string): Promise<void> {
-    try {
-      await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', { action: 'delete', type, name });
-    } catch {
-      // best-effort-cleanup
-    }
+    const call = (tool: string, args: Record<string, unknown>) => handleToolCall(client, DEFAULT_CONFIG, tool, args);
+    const result =
+      type === 'PROG'
+        ? await deleteProgramFixture(call, name)
+        : await call('SAPWrite', { action: 'delete', type, name });
+    const text = result.content.map((c) => c.text ?? '').join('\n');
+    if (result.isError) throw new Error(`Cleanup of ${name}: ${text}`);
   }
 
-  it('stringified signExists/lowercase "false" create a NON-sign domain (no silent inversion)', async () => {
+  it('stringified signExists/lowercase "false" create a NON-sign domain (no silent inversion)', async (ctx) => {
+    requireOrSkip(
+      ctx,
+      client.http.discoveryAcceptFor('/sap/bc/adt/ddic/domains'),
+      `${SkipReason.BACKEND_UNSUPPORTED}: ADT domains collection absent`,
+    );
     const name = generateUniqueName('ZARC360D');
     try {
       const created = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {

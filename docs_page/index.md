@@ -30,15 +30,15 @@ As an **admin**, you control what the AI can and cannot do via positive-opt-in f
 
 ```bash
 # Run directly with npx (no install needed)
-npx arc-1@latest --url https://your-sap-host:44300 --user YOUR_USER
+npx arc-1@latest --url https://your-sap-host:44300 --user YOUR_USER --password YOUR_PASSWORD
 
 # Or install globally
 npm install -g arc-1
-arc1 --url https://your-sap-host:44300 --user YOUR_USER
+arc1 --url https://your-sap-host:44300 --user YOUR_USER --password YOUR_PASSWORD
 
 # Or use Docker
-docker run -e SAP_URL=https://host:44300 -e SAP_USER=dev -e SAP_PASSWORD=secret \
-  ghcr.io/arc-mcp/arc-1
+docker run --rm -i -e SAP_URL=https://host:44300 -e SAP_USER=dev -e SAP_PASSWORD=secret \
+  -e SAP_TRANSPORT=stdio ghcr.io/arc-mcp/arc-1
 ```
 
 ### BTP ABAP Environment
@@ -74,7 +74,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 }
 ```
 
-**ARC-1 is read-only by default** — no writes, no free SQL, no table preview, no transport actions. To change that, edit the same `env` block that starts ARC-1. For example, `SAP_ALLOW_DATA_PREVIEW=true SAP_ALLOW_FREE_SQL=true` keeps the server read-only but enables SQL + named table preview. The example below shows the "everything on" variant (writes + SQL + transports + all packages):
+**ARC-1 is read-only by default** — no writes, no free SQL, no table preview, no transport mutations. To change that, edit the same `env` block that starts ARC-1. For example, `SAP_ALLOW_DATA_PREVIEW=true SAP_ALLOW_FREE_SQL=true` keeps the server read-only but enables SQL + named table preview. The example below shows a broad-access variant (writes + SQL + transports + all packages):
 
 ```json
 {
@@ -126,7 +126,7 @@ Add `.mcp.json` to your project root:
 
 ### GitHub Copilot / VS Code
 
-For local stdio mode, use the same `npx` command shape shown above. VS Code's `servers` form looks like this:
+For local stdio mode, use the same `npx` command shape shown above. VS Code's workspace `.vscode/mcp.json` uses this `servers` form:
 
 ```json
 {
@@ -146,11 +146,14 @@ For local stdio mode, use the same `npx` command shape shown above. VS Code's `s
 }
 ```
 
-For HTTP Streamable mode, start arc1 as an HTTP server, then point your MCP client to it:
+For local HTTP Streamable mode, generate an API key, start the server, and configure
+the same key in the client. For shared access, use HTTPS as described in [Deployment](deployment.md).
 
 ```bash
+export ARC1_LOCAL_KEY="$(openssl rand -hex 32)"
+export ARC1_API_KEYS="$ARC1_LOCAL_KEY:admin"
 SAP_URL=https://host:44300 SAP_USER=dev SAP_PASSWORD=secret \
-  npx arc-1@latest --transport http-streamable --http-addr 0.0.0.0:3000
+  npx arc-1@latest --transport http-streamable --http-addr 127.0.0.1:3000
 ```
 
 Add to VS Code / Copilot MCP config:
@@ -159,7 +162,9 @@ Add to VS Code / Copilot MCP config:
 {
   "servers": {
     "sap": {
-      "url": "http://localhost:3000/mcp"
+      "type": "http",
+      "url": "http://127.0.0.1:3000/mcp",
+      "headers": { "Authorization": "Bearer YOUR_GENERATED_API_KEY" }
     }
   }
 }
@@ -177,7 +182,12 @@ All MCP clients that support stdio work out of the box — just point them at `n
 
 ARC-1 exposes 12 intent-based tools via MCP, designed for AI agents like Copilot Studio.
 
-For object understanding, start with `SAPContext(action="deps")` instead of raw `SAPRead`: ARC-1 prepends the object's Knowledge Transfer Document (`SKTD`, also accepted as `KTD`) when one exists, then returns compressed dependency contracts. Use `SAPRead` after that when you need exact source, a method body, grep output, drafts, revisions, or metadata.
+Choose evidence for the question: targeted `SAPRead` for exact behavior or a known reference.
+For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)`
+for available KTD and dependency contracts, then compare documented requirements with source.
+Without documented requirements, intent is unverified. Neither contracts nor metadata relationships prove runtime behavior.
+Experimental [live relations](live-relations.md) automatically offer bounded repository neighborhoods where available;
+no additional database is required.
 
 Full reference: **[tools.md](tools.md)**
 
@@ -208,22 +218,32 @@ The three-layer model (server flag + user scope + SAP authorization) is describe
 
 ## SAP API Policy and data access
 
-ARC-1 is a governed development-tooling proxy around ADT behavior, not a bulk data-extraction product — real user identity, SAP authorization, audit logging and rate controls throughout. Where that stands under SAP's API Policy, and what to ask your SAP contact before production, is covered in **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)**.
+For a custom MCP server such as ARC-1, use SAP's
+[Third-Party MCP Access reference architecture](https://architecture.learning.sap.com/docs/ref-arch/137800)
+as the main design and control baseline. SAP's FAQ allows custom MCP servers under conditions;
+Integration Suite is not mandatory. Our preferred shared deployment is BTP with strict principal
+propagation. **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)** explains
+the path, remaining control gaps and the specific FAQ Q33 clarification needed for ARC-1's direct
+ADT client. Architecture alignment and BTP hosting alone do not establish full adherence.
 
 ARC-1's defaults are intentionally conservative: no writes, no named table preview, no freestyle SQL, no transport mutations, no Git mutations. Two capabilities are especially sensitive and are **off by default** behind explicit opt-in env vars:
 
 | Capability | Env var to enable | Default | Why it is gated |
 | ---------- | ----------------- | ------- | --------------- |
-| Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
-| Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
+| Table previews, [saved SAPscript texts](tools.md#stored-sapscript-long-texts) and [SLG1 messages](tools.md#saved-application-logs-actionapplication_log) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Reads application data; authenticated callers also need `data` scope. |
+| Freestyle ABAP SQL (`SAPQuery(action=sql)`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; authenticated callers also need `sql` scope. |
 
-For production, combine conservative tool exposure with real user identity, SAP-side authorization, audit logging, rate limits, and review against the current SAP policy.
+FAQ Q33 places business-data reads and backend SQL outside ADT's intended development-tooling scope.
+Keep these flags off unless the specific use has a documented allowance or SAP authorization under
+the applicable agreements. Technical opt-ins and internal approval do not supply that allowance.
 
 ## Documentation
 
 | Doc | Description |
 |-----|-------------|
-| [quickstart.md](quickstart.md) | **Start here** — 5-minute npx + Claude Desktop setup |
+| [quickstart.md](quickstart.md) | **Start here** — npx + Claude Desktop setup |
+| [release-notes.md](release-notes.md) | Released changes and upgrade notes |
+| [roadmap.md](roadmap.md) | Parked ideas and future possibilities |
 | [local-development.md](local-development.md) | Full local dev — npx/npm/Docker/git, `.env`, SSO cookie extractor, MCP client configs |
 | [deployment.md](deployment.md) | Multi-user deployment — Docker on a VM, BTP Cloud Foundry, BTP ABAP |
 | [configuration-reference.md](configuration-reference.md) | Every flag and env var, one table |
@@ -233,7 +253,7 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [tools.md](tools.md) | Complete tool reference (12 intent-based tools) |
 | [mcp-usage.md](mcp-usage.md) | AI agent usage guide & workflow patterns |
 | [architecture.md](architecture.md) | System architecture with Mermaid diagrams |
-| [caching.md](caching.md) | Request-driven object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, dependency graphs, and live reverse-dependency lookup |
+| [caching.md](caching.md) | Request-driven object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, dependency parsing reuse, and live reverse-dependency lookup |
 | [security.md](security.md) | Enterprise security overview, evidence, and assessment questions |
 | [security-assessment.md](security-assessment.md) | Plain-language answers and a copyable approval record |
 | [dependency-security.md](dependency-security.md) | Dependency controls, release evidence, SBOM scope, and verification |
@@ -248,7 +268,6 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [multi-target-administration.md](multi-target-administration.md) | Multi-target diagnostics, registry lifecycle, capacity, and security operations |
 | [operations.md](operations.md) | Operational task map for BTP, Docker, updates, logging, limits, caching, auth testing, and incidents |
 | [sap-trial-setup.md](sap-trial-setup.md) | SAP BTP trial setup |
-| [roadmap.md](roadmap.md) | Planned features |
 | [blog-series.md](blog-series.md) | Long-form blog series — AI for ABAP development, ARC-1 design, BTP / Copilot Studio / Joule walkthroughs |
 
 ## License

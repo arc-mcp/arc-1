@@ -18,8 +18,10 @@
 
 import { parseBlockedDataSourcesCsv } from '../adt/data-source-name.js';
 import type { SafetyConfig } from '../adt/safety.js';
+import { resolveSapUserAgent } from '../adt/user-agent.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
+import { SAP_SYSID_PATTERN } from './multi-target-identity.js';
 import type {
   ConfigSource,
   FeatureToggle,
@@ -28,7 +30,7 @@ import type {
   TransportType,
   UiMode,
 } from './types.js';
-import { DEFAULT_CONFIG } from './types.js';
+import { DEFAULT_CONFIG, MAX_HTTP_REQUEST_BYTES } from './types.js';
 
 /**
  * Parse metadata for configuration flags accepted by the CLI.
@@ -66,6 +68,7 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'password', valueName: 'password', description: 'SAP password (prefer SAP_PASSWORD in CI)' },
   { name: 'client', valueName: 'client', description: 'SAP client' },
   { name: 'language', valueName: 'language', description: 'SAP logon and object master language' },
+  { name: 'user-agent', valueName: 'value', description: 'Outbound SAP User-Agent (default: arc-1/version)' },
   { name: 'insecure', valueName: 'boolean', description: 'Disable SAP TLS verification (true/false)' },
   {
     name: 'gzip-datapreview-body',
@@ -76,8 +79,15 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'cookie-string', valueName: 'cookies', description: 'SAP Cookie header value' },
   { name: 'transport', valueName: 'transport', description: 'MCP transport: stdio or http-streamable' },
   { name: 'http-addr', valueName: 'host:port', description: 'HTTP transport bind address' },
+  { name: 'max-http-request-bytes', valueName: 'bytes', description: 'MCP HTTP JSON body limit (1–16777216 bytes)' },
   { name: 'port', valueName: 'port', description: 'HTTP transport port override' },
   { name: 'server-name', valueName: 'name', description: 'MCP server name' },
+  {
+    name: 'ide-links',
+    valueName: 'mode',
+    description: 'Eclipse source links: off (default) or eclipse; VS Code uses SAP ADT MCP',
+  },
+  { name: 'ide-system-id', valueName: 'sid', description: 'Real SAP SID for Eclipse links (single-target only)' },
   { name: 'system-label', valueName: 'label', description: 'Connected-system label shown in MCP instructions' },
   {
     name: 'ui',
@@ -89,7 +99,11 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'ui-port', valueName: 'port', description: 'Admin UI port override' },
   { name: 'ui-open', valueName: 'boolean', description: 'Open the local admin UI in a browser (true/false)' },
   { name: 'allow-writes', valueName: 'boolean', description: 'Enable SAP mutations (true/false)' },
-  { name: 'allow-data-preview', valueName: 'boolean', description: 'Enable table data preview (true/false)' },
+  {
+    name: 'allow-data-preview',
+    valueName: 'boolean',
+    description: 'Enable table data preview, stored SAPscript texts and saved application logs (true/false)',
+  },
   { name: 'allow-free-sql', valueName: 'boolean', description: 'Enable freestyle SQL (true/false)' },
   {
     name: 'allow-transport-writes',
@@ -124,12 +138,23 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'oidc-scopes', valueName: 'scopes', description: 'OIDC scopes' },
   { name: 'xsuaa-auth', valueName: 'boolean', description: 'Enable XSUAA MCP authentication (true/false)' },
   { name: 'allow-http-no-auth', valueName: 'boolean', description: 'Allow unauthenticated HTTP MCP (true/false)' },
+  { name: 'oauth-dcr-enabled', valueName: 'boolean', description: 'Allow new OAuth client registrations' },
+  {
+    name: 'oauth-dcr-redirect-uri-patterns',
+    valueName: 'patterns',
+    description: 'Allowed return addresses for new and existing OAuth client registrations',
+  },
   { name: 'oauth-dcr-ttl-seconds', valueName: 'seconds', description: 'OAuth DCR client lifetime' },
   { name: 'dcr-signing-secret', valueName: 'secret', description: 'OAuth DCR signing secret' },
   { name: 'btp-service-key', valueName: 'json', description: 'BTP ABAP service-key JSON' },
   { name: 'btp-service-key-file', valueName: 'path', description: 'BTP ABAP service-key file' },
   { name: 'btp-oauth-callback-port', valueName: 'port', description: 'BTP OAuth callback port' },
   { name: 'multi-target-endpoints', valueName: 'boolean', description: 'Enable multi-target endpoints (true/false)' },
+  {
+    name: 'multi-target-authorization',
+    valueName: 'mode',
+    description: 'Multi-target authorization: standard (default) or xsuaa-attribute',
+  },
   {
     name: 'multi-target-allow-basic-auth',
     valueName: 'boolean',
@@ -150,7 +175,11 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
     description: 'Optional-schema null mode: auto/on/off',
   },
   { name: 'plugins', valueName: 'paths', description: 'Comma-separated extension paths' },
-  { name: 'allow-plugin-execute', valueName: 'boolean', description: 'Enable plugin class execution (true/false)' },
+  {
+    name: 'allow-plugin-execute',
+    valueName: 'boolean',
+    description: 'Enable plugin class/report execution (true/false)',
+  },
   {
     name: 'allow-plugin-raw-writes',
     valueName: 'boolean',
@@ -314,6 +343,11 @@ export function parseApiKeys(raw: string): Array<{ key: string; profile: string 
     throw new Error('ARC1_API_KEYS is set but contains no valid entries. Format: "key1:profile1,key2:profile2"');
   }
   return entries;
+}
+
+/** Comma or whitespace separated redirect-URI globs; neither occurs inside a pattern. */
+export function splitRedirectPatterns(raw: string): string[] {
+  return raw.split(/[,\s]+/).filter((pattern) => pattern.length > 0);
 }
 
 function parseUiMode(raw: string, transport: TransportType): UiMode {
@@ -559,6 +593,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   config.password = resolveStr('password', 'SAP_PASSWORD', '', 'password');
   config.client = resolveStr('client', 'SAP_CLIENT', '100', 'client');
   config.language = resolveStr('language', 'SAP_LANGUAGE', 'EN', 'language');
+  config.userAgent = resolveSapUserAgent(resolveOptionalStr('user-agent', 'SAP_USER_AGENT', 'userAgent'));
   config.insecure = resolveBool('insecure', 'SAP_INSECURE', false, 'insecure');
   config.gzipDataPreviewBody = resolveBool(
     'gzip-datapreview-body',
@@ -595,6 +630,17 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     const addrHost = config.httpAddr.includes(':') ? config.httpAddr.split(':')[0] : '0.0.0.0';
     config.httpAddr = `${addrHost}:${parsedPort}`;
     sources.httpAddr = getFlag('port') !== undefined ? { flag: '--port' } : { env: 'ARC1_PORT' };
+  }
+  config.maxHttpRequestBytes = resolvePositiveSafeInteger(
+    'max-http-request-bytes',
+    'ARC1_MAX_HTTP_REQUEST_BYTES',
+    DEFAULT_CONFIG.maxHttpRequestBytes,
+    'maxHttpRequestBytes',
+  );
+  if (config.maxHttpRequestBytes > MAX_HTTP_REQUEST_BYTES) {
+    throw new Error(
+      `ARC1_MAX_HTTP_REQUEST_BYTES / --max-http-request-bytes must not exceed ${MAX_HTTP_REQUEST_BYTES}.`,
+    );
   }
   config.serverName = resolveStr('server-name', 'ARC1_SERVER_NAME', DEFAULT_CONFIG.serverName, 'serverName');
   config.systemLabel = normalizeSystemLabel(
@@ -764,6 +810,19 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     sources.oidcScopes = 'default';
   }
   config.xsuaaAuth = resolveBool('xsuaa-auth', 'SAP_XSUAA_AUTH', false, 'xsuaaAuth');
+  config.oauthDcrEnabled = resolveBool('oauth-dcr-enabled', 'ARC1_OAUTH_DCR_ENABLED', true, 'oauthDcrEnabled');
+  // An explicitly empty policy must deny all DCR redirects, never restore defaults.
+  const dcrRedirectFlag = getFlag('oauth-dcr-redirect-uri-patterns');
+  const dcrRedirectEnv = process.env.ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS;
+  const dcrRedirectPatterns = dcrRedirectFlag ?? dcrRedirectEnv;
+  config.oauthDcrRedirectUriPatterns =
+    dcrRedirectPatterns === undefined ? undefined : splitRedirectPatterns(dcrRedirectPatterns);
+  sources.oauthDcrRedirectUriPatterns =
+    dcrRedirectFlag !== undefined
+      ? { flag: '--oauth-dcr-redirect-uri-patterns' }
+      : dcrRedirectEnv !== undefined
+        ? { env: 'ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS' }
+        : 'default';
   config.allowHttpNoAuth = resolveBool('allow-http-no-auth', 'ARC1_ALLOW_HTTP_NO_AUTH', false, 'allowHttpNoAuth');
 
   // OAuth DCR client_id lifetime. Default: 0 = never expire (no per-client
@@ -810,6 +869,26 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     false,
     'multiTargetEndpoints',
   );
+  const targetAuthorizationFlag = getFlag('multi-target-authorization');
+  if (targetAuthorizationFlag === undefined && args.includes('--multi-target-authorization')) {
+    throw new Error('--multi-target-authorization requires standard or xsuaa-attribute.');
+  }
+  const targetAuthorizationEnv = process.env.ARC1_MULTI_TARGET_AUTHORIZATION;
+  const targetAuthorizationRaw = targetAuthorizationFlag ?? targetAuthorizationEnv;
+  if (targetAuthorizationRaw === undefined) {
+    // Unlike resolveStr, an explicit empty value must never disable enforcement.
+    sources.multiTargetAuthorization = 'default';
+  } else {
+    const mode = targetAuthorizationRaw.trim();
+    if (mode !== 'standard' && mode !== 'xsuaa-attribute') {
+      throw new Error('ARC1_MULTI_TARGET_AUTHORIZATION must be standard or xsuaa-attribute; empty values are invalid.');
+    }
+    config.multiTargetAuthorization = mode;
+    sources.multiTargetAuthorization =
+      targetAuthorizationFlag !== undefined
+        ? { flag: '--multi-target-authorization' }
+        : { env: 'ARC1_MULTI_TARGET_AUTHORIZATION' };
+  }
   config.multiTargetAllowBasicAuth = resolveBool(
     'multi-target-allow-basic-auth',
     'ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH',
@@ -847,6 +926,15 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   // ── SAML Behavior ──────────────────────────────────────────────────
   config.disableSaml2 = resolveBool('disable-saml', 'SAP_DISABLE_SAML', false, 'disableSaml2');
 
+  const ideLinks = resolveStr('ide-links', 'ARC1_IDE_LINKS', 'off', 'ideLinks');
+  if (ideLinks !== 'off' && ideLinks !== 'eclipse') {
+    throw new Error(
+      'ARC1_IDE_LINKS must be off or eclipse. VS Code navigation uses the local SAP ADT MCP resolver; remove old IDE destination mappings.',
+    );
+  }
+  config.ideLinks = ideLinks;
+  config.ideSystemId = resolveStr('ide-system-id', 'ARC1_IDE_SYSTEM_ID', '', 'ideSystemId');
+
   // ── Tool Mode ──────────────────────────────────────────────────────
   const toolMode = resolveStr('tool-mode', 'ARC1_TOOL_MODE', 'standard', 'toolMode');
   config.toolMode = (toolMode === 'hyperfocused' ? 'hyperfocused' : 'standard') as ServerConfig['toolMode'];
@@ -865,7 +953,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  // Opt-in: let plugin tools execute ABAP console classes (ctx.run.classRun). Also needs allowWrites.
+  // Opt-in: let plugins execute ABAP classes/reports through ctx.run. Also needs allowWrites.
   config.allowPluginExecute = resolveBool(
     'allow-plugin-execute',
     'SAP_ALLOW_PLUGIN_EXECUTE',
@@ -1014,6 +1102,22 @@ export function parseArgs(args: string[]): ServerConfig {
  * Fails fast at startup for invalid or dangerous config combinations.
  */
 export function validateConfig(config: ServerConfig): void {
+  if (config.ideSystemId && !SAP_SYSID_PATTERN.test(config.ideSystemId)) {
+    throw new Error('ARC1_IDE_SYSTEM_ID must be the real three-character SAP SID (uppercase, starting with a letter).');
+  }
+  if (config.multiTargetEndpoints && config.ideSystemId && !config.targetId) {
+    throw new Error('ARC1_IDE_SYSTEM_ID is single-target only; multi-target uses each destination sap-sysid.');
+  }
+  if (config.ideLinks === 'eclipse' && !config.multiTargetEndpoints && !config.ideSystemId) {
+    throw new Error('ARC1_IDE_LINKS=eclipse requires ARC1_IDE_SYSTEM_ID for a single-target connection.');
+  }
+
+  if (config.multiTargetAuthorization !== 'standard' && config.multiTargetAuthorization !== 'xsuaa-attribute') {
+    throw new Error('ARC1_MULTI_TARGET_AUTHORIZATION must be standard or xsuaa-attribute.');
+  }
+  if (config.multiTargetAuthorization === 'xsuaa-attribute' && !config.multiTargetEndpoints) {
+    throw new Error('ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute requires ARC1_MULTI_TARGET_ENDPOINTS=true.');
+  }
   // SAP client (MANDT) is a canonical 3-digit value (CHAR 3, range 000-999). SAP
   // does NOT zero-pad the sap-client URL parameter, so a 1-2 digit value like '10'
   // authenticates against a different (or non-existent) client and surfaces as a

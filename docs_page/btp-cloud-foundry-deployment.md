@@ -5,8 +5,8 @@ the repository's SAP Multi-Target Application (MTA) descriptor so XSUAA, Destina
 bindings, role collections, health checks, and safe defaults are deployed together.
 
 The first acceptance target is deliberately read-only. Widen a single-target instance only after
-identity, authorization, audit, and rollback have been proven. ARC-1 multi-target routes remain
-mutation-free in v1 regardless of the single-target ceiling.
+identity, authorization, audit, and rollback have been proven. Multi-target aggregate and Basic routes
+remain mutation-free; [scoped pinned PP writes](multi-target-writes.md) require their own complete setup.
 
 !!! note "Two meanings of multi-target"
 
@@ -18,7 +18,7 @@ mutation-free in v1 regardless of the single-target ceiling.
 
 | Topology | Public MCP URL | SAP identity | Capabilities | Start here |
 |---|---|---|---|---|
-| One general SAP target | `/mcp` | Principal Propagation recommended; shared Basic is possible | Full ARC-1 feature set, still constrained by instance flags and roles | This page, then [Destination Reference](btp-destination-setup.md) |
+| One general SAP target | `/mcp` | Principal Propagation recommended; shared Basic is possible | Full ARC-1 feature set, still constrained by instance flags and roles | This page — [single-PP](#single-target-read-only-pp-profile) or [single-Basic](#single-target-read-only-shared-basic-profile) profile |
 | Many SAP system/clients | `/<SYSTEM>/<CLIENT>/mcp` and `/multi/mcp` | PP recommended; optional shared Basic exception | Mutation-free v1: read/search/query/navigate/diagnose/context | This page, then [Multi-System Setup](multi-target-setup.md) |
 | One `/mcp` beside multi-target routes | All of the above | Configured independently | `/mcp` may be writable; multi routes never are | Read [side-by-side risks](multi-target-administration.md#optional-single-target-mcp) first |
 | BTP ABAP Environment | `/mcp` | `OAuth2UserTokenExchange` | Single target | [BTP ABAP Environment](btp-abap-environment.md) |
@@ -30,9 +30,10 @@ diagnostics and a writable `/mcp`. For a customer beta or cutover, a separate CF
 replacing an existing app in place: the shipped XSUAA application and role-collection names are
 space-qualified.
 
-Principal Propagation is the normal customer path because SAP receives the human identity. Shared
-Basic is a default-off compatibility exception: SAP sees a reusable technical user, and a
-multi-target app containing any Basic destination must run exactly one non-rolling CF process.
+Principal Propagation is the normal customer path because SAP receives the human identity.
+Single-target shared Basic is supported when a reusable technical SAP identity is an accepted
+trade-off; it must explicitly disable the base MTA's PP settings. The one-process/non-rolling
+restriction applies only to multi-target mode containing a Basic destination.
 
 ## 2. Assign owners
 
@@ -146,6 +147,25 @@ file; a skipped copy does not mean the selected profile was applied.
 The real `mta-overrides.mtaext` is gitignored. Store the reviewed copy in the customer's protected
 configuration process. Never add secrets to it and never edit generated `mtad.yaml`.
 
+### Single-target read-only shared Basic profile
+
+Use this profile when XSUAA should authenticate MCP callers but every SAP request may use one
+approved technical user:
+
+```bash
+cp -n examples/btp/single-basic/profile.mtaext mta-overrides.mtaext
+```
+
+Prepare a private copy of `examples/btp/single-basic/basic.destination.json` under the ignored
+`.arc1/btp/` directory. Replace the fictional values, supply the credentials through the
+destination owner's protected process, and update `SAP_BTP_DESTINATION` in the extension to the
+same name. The profile explicitly sets both `SAP_PP_ENABLED=false` and `SAP_PP_STRICT=false`
+because the base MTA enables PP.
+
+This initial profile is ADT-only. It disables the gCTS, FLP and UI5 Repository feature probes so
+the Cloud Connector mapping can expose only `/sap/bc/adt` with all sub-paths. Add a non-ADT path
+and re-enable its feature only as one reviewed capability change.
+
 ### Single-target read-only PP profile
 
 For an on-premise `/mcp`, the current runtime uses a Basic destination to resolve the startup target
@@ -162,32 +182,58 @@ startup/request pairing. Its least-privileged startup user is not a PP fallback.
 
 ### Multi-target PP-only profile
 
+The profile below keeps **standard access** (`standard`): every reader may see/try all targets;
+SAP still decides whether the call is authorized. This is a legitimate setup when everyone may
+see the shared inventory. For different per-team target lists, consider optional
+[target filtering](multi-target-authorization.md#when-to-use-it). It uses IAM assignments, not
+automatic SAP-account discovery.
+
 ```bash
 cp -n examples/btp/multi-pp/profile.mtaext mta-overrides.mtaext
 ```
+
+**If opting into filtering**, add this one property to the copied extension's existing
+`arc1-mcp-server` module under `properties:`; keep its other settings:
+
+```yaml
+ARC1_MULTI_TARGET_AUTHORIZATION: xsuaa-attribute
+```
+
+Then continue through steps 5–9 on this page. Leave restricted users unassigned until the app is
+deployed, destinations are active, and enforcement is verified. Step 9 hands off to the target-role
+procedure; do not start that procedure or another deployment in parallel with this runbook.
 
 Prepare private copies of the two `examples/btp/multi-pp/*.destination.json` files under
 `.arc1/btp/`. Replace the fictional QAS targets with your system/client values; add one file per
 additional target if needed. These are subaccount-level PP destinations; no startup destination is
 needed. Keep `SAP_BTP_DESTINATION` and `SAP_BTP_PP_DESTINATION` absent, including in existing app env.
 
-### Prepare the selected PP profile
+### Prepare the selected profile
 
-Both examples keep strict PP on, all mutation/data/SQL flags off, UI/plugins off and cache none.
-They also deny ATC/Unit workloads for initial acceptance; that is a profile choice, not a general
-multi-target limitation. Do not combine the profiles or add UI overlays.
+All three examples keep mutation/data/SQL flags off, UI/plugins off and cache none. They also deny
+ATC/Unit workloads and disable non-ADT gCTS, FLP and UI5 Repository probes for initial acceptance;
+single-target deployments can enable additional capabilities after acceptance. Multi-target v1
+keeps its [restricted tool surface](multi-target-setup.md#allowed-tools), which excludes `SAPGit`
+and `SAPManage` regardless of feature toggles. The PP profiles keep strict PP on,
+while single-Basic explicitly turns it off. Do not combine the profiles or add UI overlays.
 
 Replace names, virtual URLs, real SID/client and descriptions in your private destination files.
 Keep clients such as `001` quoted. Add `CloudConnectorLocationId` only if the Connector owner
 supplies one. JSON files show the destination fields to create in the cockpit; they do not provision
-anything or guarantee a particular import format. Keep startup credentials in the owner's secure
+anything or guarantee a particular import format. Keep SAP credentials in the owner's secure
 process, not in a PR or LLM prompt.
 
-Ask the Connector/Basis owners to complete [Principal Propagation Setup](principal-propagation-setup.md)
-and create/review the destinations using [Destination Reference](btp-destination-setup.md).
-**For single PP, both destinations must exist before deploying this profile:** startup resolves
-the startup destination and fails if it is missing. Multi PP can start empty, but requires all
-processes to restart after destinations are added. Then continue to step 5 below.
+For single-Basic, ask the Connector owner for a principal-type-None mapping with internal HTTPS and
+only the approved resource paths; then create/review the destination using
+[Destination Reference](btp-destination-setup.md#shared-basic-mcp). For PP, ask the Connector/Basis
+owners to complete [Principal Propagation Setup](principal-propagation-setup.md) and create/review
+the destinations using [Destination Reference](btp-destination-setup.md).
+
+**Both single-target profiles require their configured destination data before deployment.**
+Single-Basic resolves its one destination at startup. Single-PP resolves the Basic startup
+destination at startup and needs the PP request destination for user calls. Multi-PP can start
+empty, but requires all processes to restart after destinations are added. Then continue to step 5
+below.
 
 ### Multi-target with a shared Basic exception
 
@@ -216,6 +262,62 @@ Use a separate principal-type-None Cloud Connector mapping with internal HTTPS a
 least-privileged technical SAP user. See
 [Shared Basic controls](multi-target-administration.md#basic-shared-identity-controls).
 
+### Optional: BTP Audit Log sink
+
+ARC-1 always writes audit events to stderr. To also send the supported security/data categories to
+SAP BTP Audit Log Service, first assign `auditlog` **premium** quota and an owner for certificate
+rotation. The service uses X.509 client authentication; a plain service instance and binding create
+a client secret that the Audit Log Write API cannot use.
+
+The base `mta.yaml` contains the complete service-instance and binding configuration but keeps the
+resource inactive. Add this to the real landscape extension, merging it into an existing
+`resources:` block when necessary:
+
+```yaml
+resources:
+  - name: arc1-auditlog
+    active: true
+```
+
+The base descriptor then supplies both required halves:
+
+- service-instance configuration with a unique `xsappname`, X.509 credential type, and
+  `client_credentials` grant; and
+- module `requires.parameters.config` with `xsuaa.credential-type: x509` and a two-month
+  certificate.
+
+For a reviewed direct-`cf push` deployment, use SAP's instance and binding commands in
+[Audit Log Write API for Customers](https://help.sap.com/docs/btp/sap-business-technology-platform/audit-log-write-api-for-customers),
+then restage `arc1-mcp-server`.
+
+A deploy can report `Updating service is currently not supported operation` when
+attempting an Audit Log service update. That warning alone does not establish
+whether the existing instance lacks X.509 configuration, and deployment exit 0
+does not prove a usable binding. Inspect the service operation and check
+`cf logs arc1-mcp-server --recent`:
+
+- `BTP Audit Log sink enabled` confirms the required fields are present. Verify
+  delivery of a known event; if it arrives, no replacement is needed.
+- `BTP Audit Log sink disabled` with missing X.509 fields means the binding is
+  incomplete. Inspect the instance and binding configuration against the two
+  required halves above. Correct/recreate the binding first if the instance
+  already supports X.509; `cf bind-service` returning `OK` alone is insufficient.
+
+Only when an instance needs X.509 configuration that its broker cannot update
+should its owner plan replacement. For a **dedicated, disposable ARC-1 instance**,
+inventory app bindings and service keys, schedule the delivery interruption, then
+unbind/delete it and redeploy the activated MTA resource. A shared instance needs
+its owner's migration plan. Verify retained records through the reader before and
+after replacement; this is not a substitute for a retention/archive policy.
+
+Do not print `cf env` or binding credentials into tickets: they contain the private
+key. Startup validation proves neither authentication nor delivery. Follow
+[Audit Log delivery evidence](btp-administration.md#audit-log-delivery-evidence)
+to retrieve a known `MCP Tool Call` record and account for asynchronous ingestion.
+
+For expiry and rebinding, see
+[Audit Log certificate rotation](btp-administration.md#audit-log-certificate-rotation).
+
 ## 5. Validate, build, and inspect the MTAR
 
 ```bash
@@ -242,10 +344,8 @@ listing useless here:
   which one.
 - **A gate that cannot find anything must fail, not pass.** No archive, no `data.zip` member, or an
   unreadable payload has to be an error; otherwise a broken workspace reports a clean release.
-- **The UI AppRouter has one audited `.npmrc`.** Its `install-links=true` setting is required to
-  install the local `decode-uri-component` compatibility bridge reliably. The checks below allow
-  only the root `.npmrc` in `arc1-ui-router/data.zip`, and only when it is byte-for-byte identical
-  to the reviewed `btp/approuter/.npmrc`; every other `.npmrc` remains denied.
+- **No module needs a packaged `.npmrc`.** AppRouter 23.3 no longer uses the local decoder
+  compatibility bridge, so the checks below deny npm configuration in every payload.
 
 ```bash
 inspect_mtar() (
@@ -259,23 +359,14 @@ inspect_mtar() (
     { echo 'FAIL: no <module>/data.zip member'; return 1; }
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"' EXIT
-  for member in $members; do
+  while IFS= read -r member; do
     unzip -p "$mtar" "$member" > "$tmp/payload.zip" || { echo "FAIL: cannot extract $member"; return 1; }
     entries=$(unzip -Z1 "$tmp/payload.zip") || { echo "FAIL: cannot read $member"; return 1; }
     n=$(printf '%s\n' "$entries" | wc -l) || { echo "FAIL: cannot count $member"; return 1; }
     echo "-- $member: $n entries"
     bad=$(printf '%s\n' "$entries" | grep -Ei "$deny" || true)
-    if [ "$member" = 'arc1-ui-router/data.zip' ]; then
-      printf '%s\n' "$entries" | grep -Fx '.npmrc' >/dev/null ||
-        { echo 'FAIL: arc1-ui-router/data.zip is missing its required .npmrc'; return 1; }
-      unzip -p "$tmp/payload.zip" .npmrc > "$tmp/approuter.npmrc" ||
-        { echo 'FAIL: cannot extract arc1-ui-router/.npmrc'; return 1; }
-      cmp -s "$tmp/approuter.npmrc" btp/approuter/.npmrc ||
-        { echo 'FAIL: packaged arc1-ui-router/.npmrc differs from the reviewed source'; return 1; }
-      bad=$(printf '%s\n' "$bad" | grep -Ev '^\.npmrc$' || true)
-    fi
     [ -z "$bad" ] || { printf '%s\n' "$bad"; echo "FAIL: denied path in $member"; return 1; }
-  done
+  done <<< "$members"
   echo 'PASS: every payload inspected, no denied paths or unreviewed npm config'
 )
 inspect_mtar
@@ -288,7 +379,11 @@ Read a full listing too — the pattern covers today's known names, and the poin
 catch a file type no denylist anticipated. Take the member names from the wrapper listing above:
 
 ```bash
-unzip -p "$MTAR" '<module>/data.zip' > payload.zip && unzip -l payload.zip | less
+MTAR="mta_archives/arc1-mcp_$(node -p "require('./package.json').version").mtar"
+inspect_dir=$(mktemp -d)
+unzip -p "$MTAR" '<module>/data.zip' > "$inspect_dir/payload.zip" &&
+  unzip -l "$inspect_dir/payload.zip" | less
+rm -rf "$inspect_dir"
 ```
 
 On Windows, `Expand-Archive` needs a `.zip` extension, so copy first:
@@ -312,21 +407,7 @@ try {
     $files = @(Get-ChildItem $dest -Recurse -File)
     if ($files.Count -eq 0) { throw "FAIL: empty payload $($member.Directory.Name)" }
     "-- $($member.Directory.Name): $($files.Count) files"
-    $allowedNpmrc = $null
-    if ($member.Directory.Name -eq 'arc1-ui-router') {
-      $allowedNpmrc = Join-Path $dest '.npmrc'
-      if (-not (Test-Path $allowedNpmrc -PathType Leaf)) {
-        throw 'FAIL: arc1-ui-router/data.zip is missing its required .npmrc'
-      }
-      $sourceNpmrc = (Resolve-Path 'btp/approuter/.npmrc').Path
-      if ((Get-FileHash $allowedNpmrc -Algorithm SHA256).Hash -ne
-          (Get-FileHash $sourceNpmrc -Algorithm SHA256).Hash) {
-        throw 'FAIL: packaged arc1-ui-router/.npmrc differs from the reviewed source'
-      }
-    }
-    $bad += $files | Where-Object {
-      $_.Name -match $deny -and (!$allowedNpmrc -or $_.FullName -ne $allowedNpmrc)
-    }
+    $bad += $files | Where-Object { $_.Name -match $deny }
   }
   if ($bad) { $bad.FullName; throw 'FAIL: denied path in payload' }
   'PASS: every payload inspected, no denied paths or unreviewed npm config'
@@ -338,8 +419,8 @@ try {
 A checksum is not a substitute: it proves the archive did not change, not that no secret was packaged.
 
 The application payload must not contain `.env*`, service-key exports, customer `.mtaext` files,
-private keys, certificates, local MCP configuration, source tests, operator artifacts, or an
-`.npmrc` other than the exact reviewed `btp/approuter/.npmrc` in the UI AppRouter payload. The MTA
+private keys, certificates, local MCP configuration, source tests, operator artifacts, or any
+`.npmrc`. The MTA
 build has an explicit denylist and CI coverage for critical names; archive inspection is still a
 release gate because a future file type can evade a denylist.
 
@@ -360,12 +441,22 @@ npm run btp:build-deploy-ext
 The deployment creates/updates:
 
 - `arc1-mcp-server`, one 512 MB process by default;
-- XSUAA with ARC-1 scopes, templates, and seven space-qualified role collections;
-- Destination and Connectivity service instances and bindings; and
+- XSUAA with ARC-1 scopes, templates, and eight space-qualified role collections (seven functional
+  collections plus the unassigned `ARC-1 All Targets` collection), and exact
+  backend `/oauth/callback` and `/oauth/logged-out` URLs;
+- Destination and Connectivity service instances and bindings;
+- the Audit Log premium instance and X.509 binding only when `arc1-auditlog` is activated; and
 - a health check on `/health`.
 
-The unconfigured base application and multi-target mode can start with no SAP targets. The
-single-PP profile is different: its startup destination must already exist, as checked in step 4.
+The default backend route needs no callback setting. For a custom public URL or explicit backend
+`routes:`, follow [Custom public URL](xsuaa-setup.md#custom-public-url) before deployment.
+When updating an existing installation, first check the
+[callback upgrade table](xsuaa-setup.md#upgrading-an-existing-deployment), including preservation
+of an existing optional UI URL.
+
+The unconfigured base application and multi-target mode can start with no SAP targets. The two
+single-target profiles are different: their configured destination data must already exist, as
+checked in step 4.
 
 Verify platform state:
 
@@ -400,11 +491,17 @@ See [BTP Administration](btp-administration.md#dcr-signing-secret) for lifecycle
 As User and Role Administrator:
 
 1. Open **BTP Cockpit → Security → Role Collections**.
-2. Find all seven collections for the CF space, for example `ARC-1 Viewer (dev)` through
-   `ARC-1 Admin (dev)`.
+2. Find the seven functional collections for the CF space, for example `ARC-1 Viewer (dev)` through
+   `ARC-1 Admin (dev)`. The eighth is `ARC-1 All Targets (dev)`.
 3. Open each collection and confirm its **Roles** tab contains the expected current
    `arc1-mcp-<space>!t...` application role.
-4. Assign `ARC-1 Viewer (<space>)` to the initial test user before their first login.
+4. **Single target or standard multi-target access:** assign `ARC-1 Viewer (<space>)` to the initial
+   test user before their first login. **Target-filtered multi-target access:** leave the restricted
+   user unassigned here and continue to step 9. That step hands off to role setup after destinations
+   are ready; verify enforcement before assigning the restricted user's target role collection.
+
+Leave `ARC-1 All Targets (<space>)` unassigned unless explicitly approved: it grants `read` and
+literal `*`, including future targets. It is not a harmless catalog-viewer role.
 
 Do not stop after seeing the role templates under **Roles**. Older/recreated XSUAA deployments can
 have missing or orphaned collections. A collection with an empty **Roles** tab grants nothing. See
@@ -432,7 +529,8 @@ mapping in CERTRULE before testing ARC-1.
 
 Then create the destinations using [BTP Destination Reference](btp-destination-setup.md):
 
-- single target: the explicitly named startup and PP destinations in the extension;
+- single target with shared Basic: the one explicitly named Basic destination in the extension;
+- single target with PP: the explicitly named startup and PP destinations in the extension;
 - multi-target: one subaccount destination per SAP system/client, normally PP, with
   `sap-sysid`, `sap-client`, `Description`, and `arc1.enabled=true`.
 
@@ -446,6 +544,12 @@ For a discovered multi-target Basic destination only, `User`/`Password` rotation
 needs no restart. A single-target `SAP_BTP_DESTINATION` is resolved at startup, so credential changes
 require restarting every app instance. Every non-secret multi-target field belongs to the immutable
 startup registry.
+
+**Target-filtered deployments:** now complete the
+[minimal static role setup](multi-target-authorization.md#minimal-static-role-setup), then return
+to step 10 below. The app/descriptor and destinations are already prepared: do not redeploy from
+the start. The guide checks them, creates the unassigned cohort, verifies enforcement and active
+targets, and only then assigns the pilot user. Standard-access deployments continue directly below.
 
 ## 10. Verify the service in layers
 
@@ -470,11 +574,14 @@ Configure the client with exactly one selected endpoint:
 | Pinned target | `https://<route>/A4H/100/mcp` |
 | Aggregate multi-target | `https://<route>/multi/mcp` |
 
-Use the Viewer identity. After OAuth:
+Use the read-only pilot identity (ordinary Viewer for standard access; the exact-target collection
+for target-filtered access). After OAuth:
 
 1. confirm the expected mutation-free/read-only tool catalog;
-2. for aggregate mode with more than one active target, call `SAPTargets` and select the exact
-   target; an Admin connection can inspect `SAPTargets` with zero, one, or many targets;
+2. for aggregate mode, call `SAPTargets` when there is more than one active target visible to that
+   reader; with filtering this means **granted active targets**, not the whole registry. With one,
+   use the target in the other tools' schemas; with zero grants the tool list is empty. An Admin
+   connection can inspect `SAPTargets` with zero, one, or many grants;
 3. call `SAPRead` with `type: "SYSTEM"`;
 4. call `SAPRead` with `type: "COMPONENTS"`; and
 5. call `SAPSearch` for one known object.
@@ -482,7 +589,8 @@ Use the Viewer identity. After OAuth:
 These calls establish safe-read access, not the backend login identity: `SYSTEM.user` can come from
 configuration or token claims. Follow [backend identity verification](principal-propagation-setup.md#verify-the-backend-identity)
 with Basis and record that result separately. For shared Basic, verify the intended technical user
-in the backend evidence; Admin `SAPTargets` labels that target `identity: "shared"`.
+in the backend evidence. For discovered multi-target Basic destinations, Admin `SAPTargets` also
+labels the identity as `shared`; single-target `/mcp` has no `SAPTargets` tool.
 
 For the multi-only example, verify that `/mcp` is unavailable and pinned routes do not expose
 `SAPTargets`. The aggregate catalog is configuration inventory, not proof of the user's SAP access.
@@ -505,8 +613,10 @@ For multi-target v1, data preview and SQL require both application ceilings and 
 destination opt-ins. The [reviewed tool/action surface](multi-target-setup.md#allowed-tools) also
 includes offline lint, read-only transport inspection, ATC and ABAP Unit. ATC/Unit execute SAP
 workloads: keep them out of routine deployment smoke tests, and deny their actions when not approved.
-Writes, activation, transport/Git mutations, SAP-backed formatter/settings actions, plugins, UI,
-and hyperfocused mode remain unavailable.
+For scoped CLAS/INTF writes and whole-owner activation, complete the separate
+[pinned PP write setup](multi-target-writes.md) after this read-only acceptance. Aggregate and Basic
+routes remain mutation-free. Transport/Git management, SAP-backed formatter/settings actions, plugins,
+UI and hyperfocused mode remain unavailable.
 
 When data preview or SQL is enabled, keep the shipped 2 MiB cumulative response allowance and two
 process-wide data-result slots initially. Wide rows can reach the byte ceiling below the 10,000-row
@@ -520,8 +630,11 @@ limits and the module's `parameters.memory` value as one reviewed deployment dec
 The base MTA also sets `OPTIMIZE_MEMORY=true`; do not replace its `exec sh ./bin/start-cf.sh` launcher
 with a fixed `node --max-old-space-size=...` command in the extension. The launcher validates the
 buildpack-provided `MEMORY_AVAILABLE`, derives old-space from the durable CF allocation (384 MiB at
-512 MiB, 768 MiB at 1 GiB), and `exec`s Node so CF's SIGTERM reaches ARC-1. Verify the `Runtime
-memory envelope` and `Data-result safety envelope` startup logs after every memory or limit change.
+512 MiB, 768 MiB at 1 GiB), and `exec`s Node so CF's SIGTERM reaches ARC-1. The `sh` prefix also
+matters on its own: a reported Windows-built MTAR lost the script executable bit despite its Git mode.
+Starting that script directly (`./bin/start-cf.sh`) caused `Permission denied`,
+exit 126; invoking it through `sh` avoids depending on the archive's executable bit. Verify the `Runtime memory envelope` and `Data-result safety envelope`
+startup logs after every memory or limit change.
 
 ## 11. Handover and ongoing operation
 
@@ -566,7 +679,8 @@ cf push -f <reviewed-customer-manifest.yml>
 
 This is an advanced alternative. Validate it against `mta.yaml`, `xs-security.json`, the selected
 single/multi startup contract, the MTAR secret exclusions, and the acceptance checklist. A raw
-buildpack push does not create the seven MTA role collections for you.
+buildpack push does not create the MTA role collections for you (seven functional plus the
+unassigned All Targets collection).
 
 ## Troubleshooting deployment
 
@@ -578,10 +692,17 @@ buildpack push does not create the seven MTA role collections for you.
 | Multi-target is ready with zero active targets | Call Admin `SAPTargets`; health is not SAP readiness |
 | Role collection missing/empty | Perform full MTA deploy, inspect roles, remove/recreate orphaned collection if needed, then reassign |
 | OAuth `invalid_client` after deploy | Restore the intended DCR signing key or re-register clients; do not invent a new key on every deploy |
-| OAuth `invalid_scope` after a grant | On the failure page choose **Role assigned? Refresh access**, then reconnect the MCP client; verify the user's IdP origin if it persists |
-| SAP `401` through PP | Check generated user certificate, STRUST, trusted proxy, ICF logon, CERTRULE, and SU01 |
+| OAuth `invalid_scope` after a grant | First check the [scope/assignment decision table](xsuaa-setup.md#insufficient-scope-invalid_scope). If the eligible failure page offers **Role assigned? Refresh access**, use it, then start a new MCP sign-in; reconnect alone can reuse stale grants. |
+| SAP `401` through PP | Check generated user certificate, STRUST, trusted proxy, ICF logon, CERTRULE, and SU01; for Basic startup + PP, check the Cloud Connector system-certificate logon setting |
+| SAP `502` `not mutually authenticated` through PP | Check that the effective HTTPS port requests a client certificate (`VCLIENT=1`) and its active SSL Server PSE trusts the system certificate's direct issuer; see [Certificate trust (STRUST)](principal-propagation-setup.md#certificate-trust-strust) |
+| Crash loop `Permission denied`, exit 126 | The launcher was replaced by a direct script call; check the executable bit in the archive and invoke scripts through `sh` as the base `exec sh ./bin/start-cf.sh` does |
+| Non-interactive `cf deploy` prints nothing and never finishes | Check for an earlier operation awaiting a decision with [cf mta-ops](updating.md#btp-cloud-foundry); stop only the identified stalled local process and inspect the server-side operation before retrying |
 | SAP `403` after PP login | Check the actual propagated user's SAP authorizations |
 | Destination change appears ignored | Restart every ARC-1 instance; only discovered multi-target Basic username/password fields are hot |
+| `BTP Audit Log sink disabled` at startup | The selected premium binding is incomplete; recreate/rebind it with the X.509 instance and binding parameters from step 4 |
+| `Updating service "arc1-auditlog" failed … Updating service is currently not supported operation` during `cf deploy` | The warning alone does not justify replacement. Check startup binding validation and known-event delivery; follow step 4 only if configuration repair is needed |
+| Sink enabled, but no `MCP Tool Call` record in the Audit Log Viewer | Allow for asynchronous ingestion, then query the [Retrieval API](btp-administration.md#audit-log-delivery-evidence); check that the binding is `x509` and its certificate has not expired |
+| Repeated `BTP Audit Log delivery failed` warning | Check certificate validity, token/API reachability, and service health; rotate the binding before retrying |
 
 ## Official references
 
@@ -589,4 +710,5 @@ buildpack push does not create the seven MTA role collections for you.
 - [SAP: Defining MTA Extension Descriptors](https://help.sap.com/docs/btp/sap-business-technology-platform/defining-mta-extension-descriptors)
 - [SAP: Destination Service](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/destination-service)
 - [SAP: Working with Role Collections](https://help.sap.com/docs/btp/sap-business-technology-platform/working-with-role-collections)
+- [SAP: Audit Log Write API for Customers](https://help.sap.com/docs/btp/sap-business-technology-platform/audit-log-write-api-for-customers)
 - [Cloud Foundry: Start, Restart, and Restage](https://docs.cloudfoundry.org/devguide/deploy-apps/start-restart-restage.html)

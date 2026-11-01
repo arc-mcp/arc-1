@@ -397,58 +397,6 @@ describe('AdtHttpClient', () => {
       await client.get('/path');
       // csrfToken should still be empty — so next POST will fetch
     });
-
-    it('sends a token and session cookie from the same fetch when concurrent requests refresh both', async () => {
-      // SAP binds the CSRF token to the session cookie; a torn pair is a 403. With a
-      // bearerTokenProvider awaiting mid-build, a second request's CSRF fetch can swap
-      // both fields between the two reads. Park request A there and let B overwrite them.
-      let releaseA!: () => void;
-      const aReleased = new Promise<void>((resolve) => {
-        releaseA = resolve;
-      });
-      let aParked!: () => void;
-      const aIsParked = new Promise<void>((resolve) => {
-        aParked = resolve;
-      });
-
-      let discoveryCalls = 0;
-      const posts: Array<{ token?: string; cookie?: string }> = [];
-      mockFetch.mockImplementation(async (url: string, init: RequestInit) => {
-        const headers = (init.headers ?? {}) as Record<string, string>;
-        if (url.includes('/core/discovery')) {
-          const nth = ++discoveryCalls;
-          // Second (cold) fetch lands while A is parked, replacing token + cookie.
-          if (nth === 2) await aIsParked;
-          return mockResponse(200, '', { 'x-csrf-token': `TOKEN-S${nth}` }, [`SAP_SESSIONID_A4H_001=S${nth}; Path=/`]);
-        }
-        posts.push({ token: headers['X-CSRF-Token'], cookie: headers.Cookie });
-        if (posts.length === 1) releaseA(); // B is on the wire — let A finish building
-        return mockResponse(200, 'ok');
-      });
-
-      let parked = false;
-      const client = new AdtHttpClient({
-        ...getDefaultConfig(),
-        bearerTokenProvider: async () => {
-          // fetchCsrfToken() calls this too, before any discovery — park only the
-          // in-request call that sits between the token read and the cookie read.
-          if (!parked && discoveryCalls > 0) {
-            parked = true;
-            aParked();
-            await aReleased;
-          }
-          return 'bearer';
-        },
-      });
-
-      await Promise.all([client.post('/path', '<xml/>'), client.post('/path', '<xml/>')]);
-
-      expect(posts).toHaveLength(2);
-      for (const sent of posts) {
-        const session = /SAP_SESSIONID_A4H_001=(S\d)/.exec(sent.cookie ?? '')?.[1];
-        expect(sent.token).toBe(`TOKEN-${session}`);
-      }
-    });
   });
 
   describe('data-preview request gzip compatibility', () => {
@@ -885,6 +833,7 @@ describe('AdtHttpClient', () => {
     it('throws AdtApiError when CSRF token is missing from response', async () => {
       mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
       mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
 
       const client = new AdtHttpClient(getDefaultConfig());
       await expect(client.fetchCsrfToken()).rejects.toThrow(AdtApiError);
@@ -950,58 +899,6 @@ describe('AdtHttpClient', () => {
       await client.fetchCsrfToken();
 
       expect(fetchHeaders(0).Cookie).toContain('sap-usercontext=abc');
-    });
-  });
-
-  // ─── Stateful Sessions ─────────────────────────────────────────────
-
-  describe('stateful sessions', () => {
-    it('creates isolated session for withStatefulSession', async () => {
-      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'SESSION_TOKEN' }));
-      mockFetch.mockResolvedValueOnce(mockResponse(200, 'locked'));
-
-      const client = new AdtHttpClient(getDefaultConfig());
-      (client as any).csrfToken = 'MAIN_TOKEN';
-
-      await client.withStatefulSession(async (session) => {
-        const resp = await session.post('/sap/bc/adt/lock', '<lock/>');
-        return resp;
-      });
-    });
-
-    it('session client includes stateful header', async () => {
-      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
-      mockFetch.mockResolvedValueOnce(mockResponse(200, 'locked'));
-
-      const client = new AdtHttpClient(getDefaultConfig());
-      (client as any).csrfToken = 'T';
-
-      await client.withStatefulSession(async (session) => {
-        await session.post('/lock', '<xml/>');
-      });
-
-      // The POST from session client should have stateful header
-      const lastCallHeaders = fetchHeaders(mockFetch.mock.calls.length - 1);
-      expect(lastCallHeaders['X-sap-adt-sessiontype']).toBe('stateful');
-    });
-
-    it('session client shares CSRF token with parent', async () => {
-      const client = new AdtHttpClient(getDefaultConfig());
-      (client as any).csrfToken = 'PARENT_TOKEN';
-
-      await client.withStatefulSession(async (session) => {
-        // Session should have the parent's token
-        expect((session as any).csrfToken).toBe('PARENT_TOKEN');
-      });
-    });
-
-    it('session client shares cookie jar with parent', async () => {
-      const client = new AdtHttpClient(getDefaultConfig());
-      (client as any).cookieJar.set('SAP_SESSIONID', 'sess1');
-
-      await client.withStatefulSession(async (session) => {
-        expect((session as any).cookieJar.get('SAP_SESSIONID')).toBe('sess1');
-      });
     });
   });
 
@@ -1409,6 +1306,25 @@ describe('AdtHttpClient', () => {
       expect(fetchHeaders(2).Accept).toBe('application/xml');
     });
 
+    it('reuses a negotiated Accept for the same resource but not for its sub-resources', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(406, 'Not Acceptable'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'metadata'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'metadata again'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'structure'));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'variants'));
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      await client.get('/sap/bc/adt/programs/programs/ZHELLO', { Accept: 'application/custom+xml' });
+      await client.get('/sap/bc/adt/programs/programs/ZHELLO?version=inactive');
+      await client.get('/sap/bc/adt/programs/programs/ZHELLO/objectstructure');
+      await client.get('/sap/bc/adt/programs/programs/ZHELLO/variants');
+
+      expect(fetchHeaders(1).Accept).toBe('application/xml');
+      expect(fetchHeaders(2).Accept).toBe('application/xml');
+      expect(fetchHeaders(3).Accept).toBe('*/*');
+      expect(fetchHeaders(4).Accept).toBe('*/*');
+    });
+
     it('caches successful 415 retry Content-Type for later writes', async () => {
       // CSRF fetch
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
@@ -1520,6 +1436,29 @@ describe('AdtHttpClient', () => {
 
       expect(resp.statusCode).toBe(200);
       expect(fetchHeaders(1).Accept).toBe('application/vnd.sap.adt.transportorganizertree.v1+xml');
+    });
+
+    it.each([
+      ['SEDX_ADT', '110'],
+      ['SEDX_ADT', '106'],
+      ['00', '001'],
+    ])('returns %s/%s once and keeps the next write on its original media type', async (id, number) => {
+      const refused = `<exception><type id="ExceptionResourceNotAcceptable"/><message>Invalid text content</message><properties><entry key="T100KEY-ID">${id}</entry><entry key="T100KEY-NO">${number}</entry></properties></exception>`;
+      mockFetch.mockResolvedValue(mockResponse(406, refused));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      const client = new AdtHttpClient(getDefaultConfig());
+      const path = '/sap/bc/adt/textelements/programs/ZTEST/source/selections?lockHandle=LOCK';
+      const media = 'application/vnd.sap.adt.textelements.selections.v1';
+      await expect(client.put(path, 'P_TEST=Too long', media, { Accept: media })).rejects.toMatchObject({
+        statusCode: 406,
+        responseBody: refused,
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
+      await client.put(path, 'P_TEST=Fixed', media, { Accept: media });
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(fetchHeaders(2).Accept).toBe(media);
+      expect(fetchHeaders(2)['Content-Type']).toBe(media);
     });
 
     it('retries POST with fallback Content-Type on 415', async () => {
@@ -2054,6 +1993,26 @@ describe('AdtHttpClient', () => {
   // ─── Proxy Configuration ──────────────────────────────────────────
 
   describe('proxy configuration', () => {
+    it('forwards the configured User-Agent on proxy CSRF and mutation requests', async () => {
+      mockClientRequest.mockResolvedValueOnce(mockClientResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockClientRequest.mockResolvedValueOnce(mockClientResponse(200, 'saved'));
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        userAgent: 'arc-1/proxy-test',
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+      await client.post('/path', 'source');
+      expect(mockClientRequest).toHaveBeenCalledTimes(2);
+      expect(clientRequestHeaders(0)['User-Agent']).toBe('arc-1/proxy-test');
+      expect(clientRequestHeaders(1)['User-Agent']).toBe('arc-1/proxy-test');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('uses undici Client for proxy requests (standard HTTP proxy, not CONNECT)', async () => {
       mockClientRequest.mockResolvedValueOnce(mockClientResponse(200, 'ok'));
 
@@ -2075,6 +2034,56 @@ describe('AdtHttpClient', () => {
       // Should use Client.request (not fetch) for proxy requests
       expect(mockClientRequest).toHaveBeenCalledTimes(1);
       expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('forwards quick-fix SAP context headers through BTP Connectivity without changing the proposal URI', async () => {
+      mockClientRequest
+        .mockResolvedValueOnce(mockClientResponse(200, '', { 'x-csrf-token': 'token' }))
+        .mockResolvedValueOnce(mockClientResponse(200, '<result/>'));
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        sapConnectivityAuth: 'Bearer user-token',
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+      const path = '/sap/bc/adt/quickfixes/proposals/providers/refactoring/quickfixes/declare_local_variable';
+      await client.post(path, '<request/>', 'application/xml');
+      expect(clientRequestPath(1)).toBe(`http://sap.example.com:8000${path}`);
+      expect(clientRequestHeaders(1)).toMatchObject({
+        'sap-client': '001',
+        'sap-language': 'EN',
+        'X-CSRF-Token': 'token',
+        'SAP-Connectivity-Authentication': 'Bearer user-token',
+        'Proxy-Authorization': 'Bearer proxy-token',
+      });
+    });
+
+    it('preserves revision-feed context and authentication through BTP Connectivity', async () => {
+      mockClientRequest.mockResolvedValueOnce(mockClientResponse(200, '<feed/>'));
+      const path = '/sap/bc/adt/programs/programs/ZREPORT/source/main/versions';
+      await new AdtHttpClient({
+        ...getDefaultConfig(),
+        disableSaml: true,
+        sapConnectivityAuth: 'Bearer user-token',
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      }).get(path);
+      expect(clientRequestPath()).toBe(`http://sap.example.com:8000${path}`);
+      expect(clientRequestHeaders()).toMatchObject({
+        'sap-client': '001',
+        'sap-language': 'EN',
+        'X-SAP-SAML2': 'disabled',
+        'SAP-Connectivity-Authentication': 'Bearer user-token',
+        'Proxy-Authorization': 'Bearer proxy-token',
+      });
     });
 
     it('sends Proxy-Authorization and full URL via Client for standard HTTP proxy protocol', async () => {

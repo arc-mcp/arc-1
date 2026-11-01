@@ -5,11 +5,20 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
+import { CachingLayer } from '../../../src/cache/caching-layer.js';
+import { MemoryCache } from '../../../src/cache/memory.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+
+const { buildBatchActivationStatuses, formatBatchActivationStatuses } = await import(
+  '../../../src/handlers/activate.js'
+);
+const { activationDetailMatchesObject } = await import('../../../src/handlers/activation-results.js');
+const devtools = await import('../../../src/adt/devtools.js');
+const objects = ['ZFIRST', 'ZFIRST2'].map((name) => ({ type: 'INTF', name, url: `/sap/bc/adt/oo/interfaces/${name}` }));
 
 describe('SAPActivate handler', () => {
   beforeEach(() => {
@@ -900,4 +909,168 @@ describe('SAPActivate handler', () => {
       expect(activation?.[1].body).toContain('/sap/bc/adt/programs/programs/ZARC1_PROG');
     });
   });
+});
+
+describe('batch activation status attribution', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.resetAllMocks();
+  });
+  it.each(['', '/source/main#start=3,1', '/'])('matches a diagnostic at an object boundary: %s', (suffix) => {
+    const result = buildBatchActivationStatuses(objects, {
+      success: false,
+      messages: ['Broken second object'],
+      details: [{ severity: 'error', text: 'Broken second object', uri: `${objects[1].url.toLowerCase()}${suffix}` }],
+    });
+    expect(result.map((row) => row.status)).toEqual(['unknown', 'error']);
+    expect(result[0].messages).toEqual([]);
+    expect(result[1].messages.join()).toContain('Broken second object');
+  });
+  it('keeps warnings without implying successful activation', () => {
+    const result = buildBatchActivationStatuses(objects, {
+      success: false,
+      messages: [],
+      details: [
+        { severity: 'warning', text: 'Own warning', uri: objects[0].url },
+        { severity: 'error', text: 'Cancelled' },
+      ],
+    });
+    expect(result[0]).toMatchObject({ status: 'unknown' });
+    expect(result[0].messages.join()).toContain('Own warning');
+    expect(result[0].messages.join()).not.toContain('Cancelled');
+    expect(formatBatchActivationStatuses(result)).toContain('ZFIRST (INTF): unknown');
+  });
+  it('retains successful and warning outcomes after confirmed batch success', () => {
+    const result = buildBatchActivationStatuses(objects, {
+      success: true,
+      messages: [],
+      details: [{ severity: 'warning', text: 'Warning', uri: objects[1].url }],
+    });
+    expect(result.map((row) => row.status)).toEqual(['active', 'warning']);
+  });
+  it.each([true, false])('retains flat-only global messages (success=%s)', async (success) => {
+    mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+    vi.spyOn(devtools, 'activateBatch').mockResolvedValue({ success, messages: ['Global status'], details: [] });
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', { objects });
+    expect(result.isError === true).toBe(!success);
+    expect(result.content[0].text.match(/Global status/g)).toHaveLength(1);
+    expect(result.content[0].text).toContain('Messages: Global status');
+    expect(result.content[0].text).toContain(`ZFIRST (INTF): ${success ? 'active' : 'unknown'}`);
+  });
+  it.each(['info', 'warning'] as const)(
+    'retains global %s details and unrelated flat messages without duplicates',
+    async (severity) => {
+      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      vi.spyOn(devtools, 'activateBatch').mockResolvedValue({
+        success: false,
+        messages: ['Own error', 'Global detail', 'Additional status', 'Additional status'],
+        details: [
+          { severity: 'error', text: 'Own error', uri: objects[1].url },
+          { severity, text: 'Global detail' },
+        ],
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', { objects });
+      for (const message of ['Own error', 'Global detail', 'Additional status']) {
+        expect(result.content[0].text.split(message)).toHaveLength(2);
+      }
+      expect(result.content[0].text).toContain('ZFIRST (INTF): unknown');
+      expect(result.content[0].text).toContain('ZFIRST2 (INTF): error');
+    },
+  );
+
+  it('shows a global cancellation once without attaching it to the first object', async () => {
+    mockFetch.mockImplementation(async (url, options) =>
+      mockResponse(
+        200,
+        options?.method === 'POST' && new URL(String(url)).pathname === '/sap/bc/adt/activation'
+          ? '<messages><msg severity="error" shortText="Activation was cancelled."/></messages>'
+          : '',
+        { 'x-csrf-token': 'T' },
+      ),
+    );
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', { objects });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text.match(/Activation was cancelled\./g)).toHaveLength(1);
+    expect(result.content[0].text).toContain('ZFIRST (INTF): unknown');
+    expect(result.content[0].text).toContain('ZFIRST2 (INTF): unknown');
+  });
+});
+
+// The promoted draft is served without SAP revalidation, so it must never be armed on a server where
+// several SAP identities share the cache (PP on, e.g. API keys on the shared client + PP users).
+describe('post-activation source promotion', () => {
+  const DRAFT = 'CLASS zcl_promo DEFINITION PUBLIC. ENDCLASS. " activated draft';
+  const SAP_ACTIVE = 'CLASS zcl_promo DEFINITION PUBLIC. ENDCLASS. " served by SAP';
+  const single = { type: 'CLAS', name: 'ZCL_PROMO' };
+  const activations: [string, Record<string, unknown>][] = [
+    ['single', single],
+    ['batch', { objects: [single] }],
+  ];
+  const sourceGets = (version: 'active' | 'inactive') =>
+    mockFetch.mock.calls.filter(([url, opts]) => {
+      const u = new URL(String(url));
+      return (
+        (opts?.method ?? 'GET') === 'GET' &&
+        u.pathname.toLowerCase() === '/sap/bc/adt/oo/classes/zcl_promo/source/main' &&
+        (u.searchParams.get('version') === 'inactive') === (version === 'inactive')
+      );
+    });
+  // Activation runs on the shared client (stdio, or an API-key call on a PP server); the reader is
+  // per-user exactly when PP is on.
+  const activateThenRead = async (ppEnabled: boolean, args: Record<string, unknown>) => {
+    const layer = new CachingLayer(new MemoryCache());
+    const config = { ...DEFAULT_CONFIG, ppEnabled };
+    const activation = await handleToolCall(
+      createClient(),
+      config,
+      'SAPActivate',
+      args,
+      undefined,
+      undefined,
+      layer,
+      false,
+    );
+    expect(activation.isError).toBeUndefined();
+    expect(sourceGets('inactive')).toHaveLength(ppEnabled ? 0 : 1); // draft captured only for promotion
+    expect(layer.wasRecentlyActivated('CLAS', 'ZCL_PROMO')).toBe(!ppEnabled);
+    return handleToolCall(createClient(), config, 'SAPRead', single, undefined, undefined, layer, ppEnabled);
+  };
+
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockImplementation(async (url, opts) => {
+      const u = new URL(String(url));
+      const headers = { 'x-csrf-token': 'T', etag: 'e1' };
+      if (opts?.method === 'POST') return mockResponse(200, '', headers);
+      if (u.pathname.endsWith('/activation/inactiveobjects')) {
+        return mockResponse(200, '<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects"/>');
+      }
+      return mockResponse(200, u.searchParams.get('version') === 'inactive' ? DRAFT : SAP_ACTIVE, headers);
+    });
+  });
+
+  it.each(activations)(
+    '%s: serves the promoted draft to a single-identity reader without a source GET',
+    async (_, args) => {
+      const result = await activateThenRead(false, args);
+      expect(result.content[0]?.text).toContain('activated draft');
+      expect(sourceGets('active')).toHaveLength(0);
+    },
+  );
+
+  it.each(activations)(
+    '%s: with PP enabled, a per-user read after a shared-client activation GETs the source',
+    async (_, args) => {
+      const result = await activateThenRead(true, args);
+      expect(result.content[0]?.text).toContain('served by SAP');
+      expect(sourceGets('active')).toHaveLength(1);
+    },
+  );
+});
+
+it('matches encoded activation identities without matching another index or malformed URI', () => {
+  const object = '/sap/bc/adt/ddic/db/indexes/ztable~001';
+  expect(activationDetailMatchesObject('/sap/bc/adt/ddic/db/indexes/ZTABLE%7E001#start=1,1', object)).toBe(true);
+  expect(activationDetailMatchesObject('/sap/bc/adt/ddic/db/indexes/ztable%7e0010', object)).toBe(false);
+  expect(activationDetailMatchesObject('/sap/bc/adt/ddic/db/indexes/ztable%xx001', object)).toBe(false);
 });

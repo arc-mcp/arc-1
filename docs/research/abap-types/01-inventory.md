@@ -39,7 +39,7 @@ deep-dive in `types/<short>.md`.
 | `DTEL` | R3TR DTEL (data element) | Read, Write | P1 |
 | `VIEW` | R3TR VIEW (DDIC view) | Read | P1 |
 | `MSAG` | R3TR MSAG (message class) | Write only | P1 |
-| `ENHO` | R3TR ENHO (enhancement implementation) | Read | P2 |
+| `ENHO` | R3TR ENHO (enhancement implementation) | Read; write for BAdI implementations (XHB) | P2 |
 | `AUTH` | R3TR AUTH? Or pseudo? | Read | P2 |
 
 ### ABAP Cloud / RAP types

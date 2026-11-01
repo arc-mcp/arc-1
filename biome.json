@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.12/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.2/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -12,6 +12,11 @@
     "indentWidth": 2,
     "lineWidth": 120
   },
+  "markdown": {
+    "formatter": {
+      "enabled": false
+    }
+  },
   "javascript": {
     "formatter": {
       "quoteStyle": "single",
@@ -22,7 +27,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "suspicious": {
         "noExplicitAny": "warn",
         "noAssignInExpressions": "off"
@@ -49,6 +54,23 @@
     }
   ],
   "files": {
-    "includes": ["src/**", "tests/**", "bin/**", "!tests/fixtures/tool-definitions"]
+    "includes": [
+      "src/**",
+      "tests/**",
+      "bin/**",
+      "scripts/smoke-live-relations.ts",
+      "scripts/smoke-ddic-extensions.ts",
+      "scripts/smoke-source-plugins.ts",
+      "scripts/smoke-class-extensions.ts",
+      "scripts/smoke-bdef-extensions.ts",
+      "scripts/smoke-bdef-read.ts",
+      "scripts/smoke-btp-extensions.ts",
+      "scripts/smoke-ddic-extensions-btp.ts",
+      "scripts/bench-context-parsing.ts",
+      "scripts/spikes/pr677-target-authorization/**",
+      "scripts/spikes/stxl/**",
+      "scripts/ci/check-target-authorization-mta.mjs",
+      "!tests/fixtures/tool-definitions"
+    ]
   }
 }

@@ -174,6 +174,7 @@ describe('DevTools', () => {
         expect.stringContaining('checkObjectList'),
         'application/vnd.sap.adt.checkobjects+xml',
         expect.objectContaining({ Accept: 'application/vnd.sap.adt.checkmessages+xml' }),
+        undefined,
       );
     });
 
@@ -485,6 +486,7 @@ describe('DevTools', () => {
         expect.stringContaining('objectReference'),
         'application/*',
         expect.objectContaining({ Accept: 'application/xml' }),
+        expect.objectContaining({ fetchTimeoutMs: 300_000, retryTransientErrors: false }),
       );
     });
 
@@ -496,17 +498,7 @@ describe('DevTools', () => {
         expect.stringContaining('objectReference'),
         'application/*',
         expect.objectContaining({ Accept: 'application/xml' }),
-      );
-    });
-
-    it('defaults preauditRequested=true when preaudit option is omitted', async () => {
-      const http = mockHttp('<activation/>');
-      await activate(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZTEST');
-      expect(http.post).toHaveBeenCalledWith(
-        expect.stringContaining('preauditRequested=true'),
-        expect.any(String),
-        expect.any(String),
-        expect.any(Object),
+        expect.objectContaining({ fetchTimeoutMs: 300_000, retryTransientErrors: false }),
       );
     });
 
@@ -615,6 +607,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/*',
         expect.objectContaining({ Accept: 'application/xml' }),
+        expect.objectContaining({ fetchTimeoutMs: 300_000, retryTransientErrors: false }),
       );
     });
 
@@ -631,6 +624,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/*',
         expect.objectContaining({ Accept: 'application/xml' }),
+        expect.objectContaining({ fetchTimeoutMs: 300_000, retryTransientErrors: false }),
       );
     });
 
@@ -1082,6 +1076,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSB_BOOKING_V4"'),
         'application/xml',
         expect.objectContaining({ Accept: 'application/vnd.sap.as+xml, application/*;q=0.8' }),
+        { retryTransientErrors: false },
       );
       expect(result.severity).toBe('OK');
       expect(result.shortText).toBe('published locally');
@@ -1095,6 +1090,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/xml',
         expect.any(Object),
+        { retryTransientErrors: false },
       );
     });
 
@@ -1106,6 +1102,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/xml',
         expect.any(Object),
+        { retryTransientErrors: false },
       );
     });
 
@@ -1140,6 +1137,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSB_BOOKING_V4"'),
         'application/xml',
         expect.objectContaining({ Accept: 'application/vnd.sap.as+xml, application/*;q=0.8' }),
+        undefined,
       );
       expect(result.severity).toBe('OK');
       expect(result.shortText).toBe('un-published locally');
@@ -1153,6 +1151,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/xml',
         expect.any(Object),
+        undefined,
       );
     });
 
@@ -1206,6 +1205,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSSI_UI_S_ORD_O4"'),
         'application/xml',
         { Accept: 'application/vnd.sap.as+xml, application/*;q=0.8' },
+        { retryTransientErrors: false },
       );
       const asXmlType =
         'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.odatav4.publishjob';
@@ -1215,6 +1215,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSSI_UI_S_ORD_O4"'),
         asXmlType,
         { Accept: asXmlType },
+        { retryTransientErrors: false },
       );
       expect(result.severity).toBe('OK');
       expect(result.shortText).toBe('ZSSI_UI_S_ORD_O4 published locally');
@@ -1235,7 +1236,14 @@ describe('DevTools', () => {
       const asXmlType =
         'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.odatav4.unpublishjob';
       expect(http.post).toHaveBeenCalledTimes(2);
-      expect(http.post).toHaveBeenNthCalledWith(2, path, expect.any(String), asXmlType, { Accept: asXmlType });
+      expect(http.post).toHaveBeenNthCalledWith(
+        2,
+        path,
+        expect.any(String),
+        asXmlType,
+        { Accept: asXmlType },
+        undefined,
+      );
       expect(result.severity).toBe('OK');
     });
 
@@ -1246,7 +1254,14 @@ describe('DevTools', () => {
 
       const asXmlType =
         'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.odatav2.publishjob';
-      expect(http.post).toHaveBeenNthCalledWith(2, path, expect.any(String), asXmlType, { Accept: asXmlType });
+      expect(http.post).toHaveBeenNthCalledWith(
+        2,
+        path,
+        expect.any(String),
+        asXmlType,
+        { Accept: asXmlType },
+        { retryTransientErrors: false },
+      );
     });
 
     it('does not retry a 406 that does not name application/vnd.sap.as+xml', async () => {
@@ -1559,6 +1574,29 @@ describe('DevTools', () => {
   // ─── getFixProposals / applyFixProposal ───────────────────────────
 
   describe('quickfix APIs', () => {
+    it('preserves whitespace in opaque state, affected source, and replacement deltas (#993)', async () => {
+      const http = mockHttpSequence(
+        `<qf:evaluationResults xmlns:qf="http://www.sap.com/adt/quickfixes" xmlns:adtcore="http://www.sap.com/adt/core"><evaluationResult>
+          <adtcore:objectReference adtcore:uri="/sap/bc/adt/quickfixes/1"/>
+          <affectedObjects><unit><content>\n  WRITE 'a &amp; b'.\n</content><adtcore:objectReference adtcore:uri="/source"/></unit></affectedObjects>
+          <userContent> state\n </userContent>
+        </evaluationResult></qf:evaluationResults>`,
+        `<qf:proposalResult xmlns:qf="http://www.sap.com/adt/quickfixes" xmlns:adtcore="http://www.sap.com/adt/core"><deltas>
+          <unit><content>\n    DATA lv TYPE i.\n  </content><adtcore:objectReference adtcore:uri="/source#start=8,13"/></unit>
+          <unit><content> </content><adtcore:objectReference adtcore:uri="/source#start=9,1;end=9,2"/></unit>
+        </deltas></qf:proposalResult>`,
+      );
+      const [proposal] = await getFixProposals(http, unrestrictedSafetyConfig(), '/source', 'source', 9, 1);
+      expect(proposal?.userContent).toBe(' state\n ');
+      expect(proposal?.affectedObjects?.[0]?.content).toBe("\n  WRITE 'a & b'.\n");
+      const deltas = await applyFixProposal(http, unrestrictedSafetyConfig(), proposal!, '/source', 'source', 9, 1);
+      expect(deltas[0]?.content).toBe('\n    DATA lv TYPE i.\n  ');
+      expect(deltas[1]?.content).toBe(' ');
+      expect((http.post as ReturnType<typeof vi.fn>).mock.calls[1]?.[1]).toContain(
+        '<userContent> state\n </userContent>',
+      );
+    });
+
     it('getFixProposals parses quickfix proposals', async () => {
       const xml = `<?xml version="1.0" encoding="utf-8"?>
 <qf:evaluationResults xmlns:qf="http://www.sap.com/adt/quickfixes" xmlns:adtcore="http://www.sap.com/adt/core">
@@ -1778,6 +1816,51 @@ describe('DevTools', () => {
           content: 'METHODS approve_project FOR MODIFY.',
         },
       ]);
+    });
+
+    // SAP escapes source text inside these payloads. Left encoded, a delta carried "lo-&gt;get( )"
+    // into ABAP source and the evaluation state went back to SAP escaped a second time.
+    it('source text and opaque state survive the evaluate → apply round trip', async () => {
+      const http = mockHttpSequence(
+        `<qf:evaluationResults xmlns:qf="http://www.sap.com/adt/quickfixes" xmlns:adtcore="http://www.sap.com/adt/core">
+  <qf:evaluationResult>
+    <adtcore:objectReference adtcore:uri="/sap/bc/adt/quickfixes/1" adtcore:type="quickfix/proposal" adtcore:name="Fix" adtcore:description="Fix"/>
+    <qf:affectedObjects>
+      <qf:unit>
+        <qf:content>IF a &lt; b. lo-&gt;run( ). ENDIF.</qf:content>
+        <adtcore:objectReference adtcore:uri="/sap/bc/adt/oo/classes/ZCL_TEST/source/main"/>
+      </qf:unit>
+    </qf:affectedObjects>
+    <qf:userContent>state&amp;1</qf:userContent>
+  </qf:evaluationResult>
+</qf:evaluationResults>`,
+        `<quickfixes:proposalResult xmlns:quickfixes="http://www.sap.com/adt/quickfixes" xmlns:adtcore="http://www.sap.com/adt/core">
+  <deltas>
+    <unit>
+      <content>lv = lo-&gt;get( ) &amp;&amp; |x|.</content>
+      <adtcore:objectReference adtcore:uri="/sap/bc/adt/oo/classes/ZCL_TEST/source/main#start=4,2;end=4,2"/>
+    </unit>
+  </deltas>
+</quickfixes:proposalResult>`,
+      );
+      const sourceUri = '/sap/bc/adt/oo/classes/ZCL_TEST/source/main';
+
+      const [proposal] = await getFixProposals(http, unrestrictedSafetyConfig(), sourceUri, 'REPORT ztest.', 4, 2);
+      expect(proposal?.affectedObjects?.[0]?.content).toBe('IF a < b. lo->run( ). ENDIF.');
+
+      const deltas = await applyFixProposal(
+        http,
+        unrestrictedSafetyConfig(),
+        proposal!,
+        sourceUri,
+        'REPORT ztest.',
+        4,
+        2,
+      );
+      const body = (http.post as ReturnType<typeof vi.fn>).mock.calls[1]?.[1] as string;
+      expect(body).toContain('<content>IF a &lt; b. lo-&gt;run( ). ENDIF.</content>');
+      expect(body).toContain('<userContent>state&amp;1</userContent>');
+      expect(deltas[0]?.content).toBe('lv = lo->get( ) && |x|.');
     });
 
     it('applyFixProposal posts to proposal URI', async () => {

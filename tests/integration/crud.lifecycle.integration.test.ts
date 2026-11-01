@@ -20,6 +20,7 @@ import {
   unlockObject,
 } from '../../src/adt/crud.js';
 import { activate } from '../../src/adt/devtools.js';
+import { fetchDiscoveryDocument } from '../../src/adt/discovery.js';
 import { AdtApiError } from '../../src/adt/errors.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
 import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
@@ -153,6 +154,16 @@ describe('CRUD lifecycle', () => {
       // WRITE a text symbol, then READ it back via the textelements service.
       await client.writeClassTextSymbols(name, '@MaxLength:20\n001=Hello\n');
       expect(await client.getClassTextSymbols(name)).toContain('001=Hello');
+      const poolUri = `/sap/bc/adt/textelements/classes/${name.toLowerCase()}`;
+      expect((await client.getInactiveObjects()).filter((entry) => entry.uri.toLowerCase() === poolUri)).toEqual([]);
+
+      // Explicit class reads expose SAP's empty selections and heading placeholders.
+      // Writes remain restricted to symbols, independently of those readable resources.
+      expect(await client.getTextElementPart('CLAS', name, 'selections')).toBe('');
+      expect(await client.getTextElementPart('CLAS', name, 'headings')).toContain('listHeader=');
+      await expect(client.writeTextElementPart('CLAS', name, 'selections', '')).rejects.toMatchObject({
+        statusCode: 400,
+      });
 
       // FAILURE PATH: a malformed body (one @MaxLength shared by two symbols) is rejected (406),
       // and the earlier symbol stays intact.
@@ -298,10 +309,10 @@ describe('CRUD lifecycle', () => {
   // issue #343: a DTEL created with a German session must carry German as its
   // master language (not hard-coded EN), so its labels are filed under DE. The
   // DTEL ADT metadata echoes DD04L-DTELMASTER (= the create-body masterLanguage),
-  // so this is a valid discriminator (it was "EN" before the fix). On NW 7.50 the
-  // v1 handler ignores the body language — skipped via ddicSkipReason there.
+  // so this is a valid discriminator (it was "EN" before the fix).
   it('DTEL create with SAP_LANGUAGE=DE persists masterLanguage=DE (issue #343)', async (ctx) => {
     const deClient = getTestClient('DE');
+    deClient.http.setDiscoveryMap((await fetchDiscoveryDocument(deClient.http)).map);
     const name = generateUniqueName('ZARC1_LDE');
     const url = `/sap/bc/adt/ddic/dataelements/${name}`;
     try {
@@ -325,8 +336,8 @@ describe('CRUD lifecycle', () => {
       // The create response echoes the persisted DTELMASTER.
       expect(createResp).toContain('adtcore:masterLanguage="DE"');
       // Re-read the persisted metadata to confirm (not just the create echo).
-      // Note: Accept must not carry a charset param (SAP returns 406 otherwise).
-      const meta = await deClient.http.get(url, { Accept: 'application/vnd.sap.adt.dataelements.v2+xml' });
+      // Let discovery select the metadata MIME (v1 on 750, v2 on modern systems).
+      const meta = await deClient.http.get(url);
       expect(meta.body).toContain('adtcore:masterLanguage="DE"');
     } catch (err) {
       const skip = ddicSkipReason(err);

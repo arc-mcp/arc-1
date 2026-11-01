@@ -851,13 +851,14 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(parsed.summary).toBe('Object ZCL_TEST is locked in transport A4HK900123 by DEVELOPER.');
     });
 
-    it('history falls back to assignment candidates when /transports has no current lock', async () => {
+    it.each(['S', ''])('history preserves fallback candidates with CTS result %s', async (status) => {
       const objectStructure = `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
         <adtcore:packageRef adtcore:name="Z_MY_PKG"/>
       </adtcore:objectReferences>`;
       const fallbackXml = `<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
         <asx:values><DATA>
           <DEVCLASS>Z_MY_PKG</DEVCLASS>
+          <RESULT>${status}</RESULT>
           <DLVUNIT>SAP</DLVUNIT>
           <RECORDING>X</RECORDING>
           <TRANSPORTS>
@@ -895,7 +896,38 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(parsed.relatedTransports).toEqual([]);
       expect(parsed.candidateTransports).toHaveLength(1);
       expect(parsed.candidateTransports[0]?.id).toBe('A4HK900500');
-      expect(parsed.summary).toContain('available for assignment');
+      if (status === 'S') expect(parsed.summary).toContain('available for assignment');
+      else expect(parsed.lockStatusUnknown).toBe(true);
+    });
+
+    it('history reports a lock found only by the transportchecks fallback', async () => {
+      const objectStructure = `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+        <adtcore:packageRef adtcore:name="ZARC1_SAMPLE"/>
+      </adtcore:objectReferences>`;
+      mockFetch.mockImplementation((url: string) => {
+        const target = String(url);
+        if (target.includes('/sap/bc/adt/oo/interfaces/ZIF_ARC1_SAMPLE/transports')) {
+          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        }
+        if (target.includes('/sap/bc/adt/oo/interfaces/ZIF_ARC1_SAMPLE')) {
+          return Promise.resolve(mockResponse(200, objectStructure, { 'x-csrf-token': 'T' }));
+        }
+        if (target.includes('/sap/bc/adt/cts/transportchecks')) {
+          return Promise.resolve(mockResponse(200, loadFixture('transport-check-locked.xml'), { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+        action: 'history',
+        type: 'INTF',
+        name: 'ZIF_ARC1_SAMPLE',
+      });
+
+      const parsed = JSON.parse(result.content[0]?.text ?? '{}');
+      expect(parsed.lockedTransport).toBe('DEVK900201');
+      expect(parsed.relatedTransports[0]).toMatchObject({ id: 'DEVK900201', owner: 'DEVELOPER' });
+      expect(parsed.summary).toBe('Object ZIF_ARC1_SAMPLE is locked in transport DEVK900201 by DEVELOPER.');
     });
 
     it('history reports no current status without guessing that the object is local', async () => {
@@ -1018,6 +1050,143 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('"type" and "name" are required');
     });
+
+    const groupCases = [
+      {
+        label: 'FUNC explicit',
+        type: 'FUNC',
+        name: 'Z_FM',
+        group: ' ZGROUP ',
+        uri: '/sap/bc/adt/functions/groups/zgroup/fmodules/z_fm',
+      },
+      {
+        label: 'FUNC auto namespace',
+        type: 'FUNC',
+        name: '/TEST/FM',
+        uri: '/sap/bc/adt/functions/groups/%2Ftest%2Fgroup/fmodules/%2Ftest%2Ffm',
+      },
+      {
+        label: 'structural include',
+        type: 'INCL',
+        name: 'LZGROUPTOP',
+        group: 'ZGROUP',
+        uri: '/sap/bc/adt/functions/groups/zgroup/includes/lzgrouptop',
+      },
+      {
+        label: 'namespaced include',
+        type: 'INCL',
+        name: '/TEST/LTOP',
+        group: '/TEST/GROUP',
+        uri: '/sap/bc/adt/functions/groups/%2Ftest%2Fgroup/includes/%2Ftest%2Fltop',
+      },
+      { label: 'standalone include', type: 'INCL', name: 'ZINCLUDE', uri: '/sap/bc/adt/programs/includes/ZINCLUDE' },
+    ];
+    describe.each(['check', 'history'])('%s group routing', (action) => {
+      it.each(groupCases)('$label reaches the correct SAP URI', async ({ label: _label, uri, ...object }) => {
+        mockFetch.mockImplementation(async (url: string) => {
+          if (String(url).includes('/informationsystem/search') && object.type === 'INCL' && !('group' in object))
+            return mockResponse(
+              200,
+              `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:name="${object.name}" adtcore:type="PROG/I" adtcore:uri="${uri}"/></adtcore:objectReferences>`,
+            );
+          if (String(url).includes('/informationsystem/search'))
+            return mockResponse(
+              200,
+              '<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:name="/TEST/FM" adtcore:type="FUNC/FF" adtcore:uri="/sap/bc/adt/functions/groups/%2ftest%2fgroup/fmodules/%2ftest%2ffm"/></adtcore:objectReferences>',
+            );
+          return mockResponse(
+            200,
+            '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><DEVCLASS>ZPKG</DEVCLASS><RECORDING>X</RECORDING><CORRNR>DEVK900001</CORRNR></DATA></asx:values></asx:abap>',
+            { 'x-csrf-token': 'T' },
+          );
+        });
+        const result = await handleToolCall(
+          createTransportClient({ ...unrestrictedSafetyConfig(), allowWrites: false, allowTransportWrites: false }),
+          DEFAULT_CONFIG,
+          'SAPTransport',
+          { action, ...object, package: 'ZPKG', operation: 'modify' },
+        );
+        expect(result.isError).toBeUndefined();
+        const parsed = JSON.parse(result.content[0]?.text ?? '{}');
+        if (action === 'history') {
+          expect(parsed.object.uri).toBe(uri);
+          expect(mockFetch.mock.calls.some(([url]) => new URL(String(url)).pathname === `${uri}/transports`)).toBe(
+            true,
+          );
+        } else {
+          const body = mockFetch.mock.calls.find(([url]) => String(url).includes('/transportchecks'))?.[1].body;
+          expect(body).toContain(`<URI>${uri}</URI>`);
+          expect(body).toContain('<OPERATION></OPERATION>');
+          expect(parsed.operation).toBe('modify');
+          expect(parsed.transportRequired).toBe(true);
+        }
+      });
+
+      it('resolves the owning group of a function-group INCL when group is omitted', async () => {
+        mockFetch.mockImplementation(async (url: string) => {
+          if (String(url).includes('/informationsystem/search'))
+            return mockResponse(
+              200,
+              '<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:name="LZTEST_GRPF01" adtcore:type="FUGR/I" adtcore:uri="/sap/bc/adt/functions/groups/ztest_grp/includes/lztest_grpf01"/></adtcore:objectReferences>',
+            );
+          return mockResponse(
+            200,
+            '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><DEVCLASS>ZPKG</DEVCLASS><RECORDING>X</RECORDING><CORRNR>DEVK900001</CORRNR></DATA></asx:values></asx:abap>',
+            { 'x-csrf-token': 'T' },
+          );
+        });
+        const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+          action,
+          type: 'INCL',
+          name: 'LZTEST_GRPF01',
+          package: 'ZPKG',
+          operation: 'modify',
+        });
+        expect(result.isError).toBeUndefined();
+        const uri = '/sap/bc/adt/functions/groups/ZTEST_GRP/includes/lztest_grpf01';
+        const hit = mockFetch.mock.calls.some(
+          ([url, init]) =>
+            new URL(String(url)).pathname.toLowerCase().startsWith(uri.toLowerCase()) ||
+            String(init?.body ?? '')
+              .toLowerCase()
+              .includes(uri.toLowerCase()),
+        );
+        expect(hit).toBe(true);
+      });
+
+      it('requires an explicit group when FUNC search has no match', async () => {
+        mockFetch.mockResolvedValue(mockResponse(200, '<adtcore:objectReferences/>'));
+        const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+          action,
+          type: 'FUNC',
+          name: 'Z_NEW_FM',
+          package: 'ZPKG',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('Provide the "group" parameter');
+        expect(
+          mockFetch.mock.calls.some(
+            ([url]) => String(url).includes('/transportchecks') || String(url).includes('/transports'),
+          ),
+        ).toBe(false);
+      });
+
+      it('keeps group search failures inside central minimal error handling', async () => {
+        mockFetch.mockResolvedValue(mockResponse(403, 'SECRET_LOOKUP_DETAIL'));
+        const audit = vi.spyOn(logger, 'emitAudit');
+        const result = await handleToolCall(
+          createTransportClient(),
+          { ...DEFAULT_CONFIG, minimalErrors: true },
+          'SAPTransport',
+          { action, type: 'FUNC', name: 'Z_FM', package: 'ZPKG' },
+        );
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).not.toContain('SECRET_LOOKUP_DETAIL');
+        expect(result.content[0]?.text).toContain('403');
+        expect(audit.mock.calls.some(([event]) => event.event === 'tool_call_end')).toBe(true);
+        audit.mockRestore();
+      });
+    });
   });
 
   /**
@@ -1089,7 +1258,7 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
         id: 'A4HK906291',
       });
       const payload = JSON.parse(result.content[0]?.text ?? '{}');
-      expect(payload.comparison).toBe('transport-correction-to-immediate-previous');
+      expect(payload.comparison).toBe('released transport snapshot against preceding snapshot');
       expect(payload.transport).toMatchObject({ id: 'A4HK906291', status: 'R' });
     });
 
@@ -1145,7 +1314,7 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(parts[0].note).toMatch(/revision history unavailable/);
     });
 
-    it('reports an inventory reason rather than an empty object when every part 404s', async () => {
+    it('retains explicit unavailable parts when every selected part 404s', async () => {
       mockFetch.mockImplementation((url: string) => {
         const u = String(url);
         if (u.includes('/cts/transportrequests/')) return Promise.resolve(mockResponse(200, ccimpTransportXml()));
@@ -1156,9 +1325,11 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
         id: 'A4HK906291',
       });
       const payload = JSON.parse(result.content[0]?.text ?? '{}');
-      expect(payload.objects[0].parts).toEqual([]);
-      // Without this the object is indistinguishable from "nothing changed".
-      expect(payload.objects[0].inventoryReason).toMatch(/no readable source/);
+      expect(payload.objects[0].parts).toHaveLength(1);
+      expect(payload.objects[0].parts[0]).toMatchObject({
+        part: 'implementations',
+        baselineStatus: 'baseline-unavailable',
+      });
     });
 
     it('withholds SAP diagnostics from result notes under minimalErrors', async () => {
@@ -1230,10 +1401,10 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       const first = await page(0, 2);
       expect(first.totalObjects).toBe(3);
       expect(first.shown).toBe(2);
-      expect(first.hint).toContain('offset=2');
+      expect(first.nextOffset).toBe(2);
       const second = await page(2, 2);
       expect(second.shown).toBe(1);
-      expect(second.hint).toBeUndefined();
+      expect(second.nextOffset).toBeUndefined();
 
       // The two pages partition the set with no gap and no repeat, in sorted order.
       const names = [...first.objects, ...second.objects].map((o: { name: string }) => o.name);
@@ -1631,12 +1802,10 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
 
         expect(result.content[0]?.text).not.toContain('requires a transport number');
         expect(warnSpy).toHaveBeenCalledWith(
-          'SAPWrite batch_create transport preflight failed; continuing without auto transport',
+          'SAPWrite transport preflight unavailable; continuing without auto transport',
           expect.objectContaining({
             package: 'Z_MY_PKG',
-            type: 'PROG',
-            name: 'ZTEST',
-            error: expect.stringContaining('ADT API error'),
+            statusCode: 500,
           }),
         );
       } finally {
@@ -1657,14 +1826,17 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'batch_create',
         package: 'Z_MY_PKG',
-        objects: [
-          { type: 'DDLS', name: 'ZI_TRAVEL', source: '@EndUserText.label: "Travel"\ndefine view entity ZI_TRAVEL ...' },
-        ],
+        objects: [{ type: 'PROG', name: 'ZTRAVEL', source: 'REPORT ztravel.' }],
       });
 
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('requires a transport number');
       expect(result.content[0]?.text).toContain('SAPTransport');
+      expect(
+        mockFetch.mock.calls.some(
+          ([url, options]) => options?.method === 'POST' && String(url).includes('/sap/bc/adt/programs/programs'),
+        ),
+      ).toBe(false);
     });
 
     it('still preflights batch_create package when only some objects provide object transport', async () => {
@@ -1768,6 +1940,8 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
     it('auto-propagates lock corrNr to delete when no transport supplied', async () => {
       const calls: Array<{ url: string; method: string }> = [];
       mockFetch.mockImplementation((url: string, opts: any) => {
+        if (String(url).includes('/textelements/programs/ZTEST?version=inactive'))
+          return Promise.resolve(mockResponse(200, '<textElement name="ZTEST" type="PROG/PX" version="active"/>'));
         calls.push({ url: url.toString(), method: opts?.method ?? 'GET' });
         // CSRF HEAD
         if (opts?.method === 'HEAD') return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
@@ -1797,6 +1971,8 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
     it('uses explicit transport over lock corrNr in delete', async () => {
       const calls: Array<{ url: string; method: string }> = [];
       mockFetch.mockImplementation((url: string, opts: any) => {
+        if (String(url).includes('/textelements/programs/ZTEST?version=inactive'))
+          return Promise.resolve(mockResponse(200, '<textElement name="ZTEST" type="PROG/PX" version="active"/>'));
         calls.push({ url: url.toString(), method: opts?.method ?? 'GET' });
         if (opts?.method === 'HEAD') return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
         if (url.toString().includes('_action=LOCK'))
@@ -1824,6 +2000,8 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
     it('does not add corrNr to delete when lock returns empty corrNr', async () => {
       const calls: Array<{ url: string; method: string }> = [];
       mockFetch.mockImplementation((url: string, opts: any) => {
+        if (String(url).includes('/textelements/programs/ZTEST?version=inactive'))
+          return Promise.resolve(mockResponse(200, '<textElement name="ZTEST" type="PROG/PX" version="active"/>'));
         calls.push({ url: url.toString(), method: opts?.method ?? 'GET' });
         if (opts?.method === 'HEAD') return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
         if (url.toString().includes('_action=LOCK'))
@@ -1848,6 +2026,8 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
 
     it('delete succeeds for $TMP objects without transport', async () => {
       mockFetch.mockImplementation((url: string, opts: any) => {
+        if (String(url).includes('/textelements/programs/ZTEST?version=inactive'))
+          return Promise.resolve(mockResponse(200, '<textElement name="ZTEST" type="PROG/PX" version="active"/>'));
         if (opts?.method === 'HEAD') return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
         if (url.toString().includes('_action=LOCK'))
           return Promise.resolve(mockResponse(200, lockBodyNoCorrNr, { 'x-csrf-token': 'T' }));
@@ -2149,6 +2329,8 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
 
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        if (String(url).includes('/textelements/programs/ZPROGRAM?version=inactive'))
+          return Promise.resolve(mockResponse(200, '<textElement name="ZPROGRAM" type="PROG/PX" version="active"/>'));
         const method = (opts?.method ?? 'GET').toUpperCase();
         if (method === 'POST' && String(url).includes('_action=LOCK')) {
           return Promise.resolve(mockResponse(200, lockBody, { 'x-csrf-token': 'T' }));
@@ -2180,6 +2362,8 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
 
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        if (String(url).includes('/textelements/programs/ZPROGRAM?version=inactive'))
+          return Promise.resolve(mockResponse(200, '<textElement name="ZPROGRAM" type="PROG/PX" version="active"/>'));
         const method = (opts?.method ?? 'GET').toUpperCase();
         const parsed = new URL(String(url));
         if (method === 'POST' && parsed.searchParams.get('_action') === 'LOCK') {
@@ -2238,6 +2422,7 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
         action: 'create',
         type: 'DDLS',
         name: 'ZI_BAD',
+        lintBeforeWrite: false, // Exercise the SAP create failure, past the local lint gate.
         source: 'define view entity ZI_BAD as select from sflight {}',
       });
 

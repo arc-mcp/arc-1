@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<app:service xmlns:app="http://www.w3.org/2007/app" xmlns:adtcomp="http://www.sap.com/adt/compatibility">
+  <app:workspace>
+    <app:collection href="/sap/bc/adt/repository/informationsystem/search">
+      <adtcomp:templateLinks>
+        <adtcomp:templateLink rel="http://www.sap.com/adt/relations/informationsystem/search/quicksearch"
+          template="/sap/bc/adt/repository/informationsystem/search{?operation,query,useSearchProvider,noDescription,maxResults}{&amp;objectType*}{&amp;packageName*}"/>
+      </adtcomp:templateLinks>
+    </app:collection>
+  </app:workspace>
+</app:service>

@@ -2,6 +2,69 @@
 
 import { canonicalDataSourceName } from './data-source-name.js';
 
+/** ADT's freestyle handler cuts each input line here (verified on 7.58 and 8.16). */
+const FREESTYLE_SQL_LINE_MAX = 255;
+const LINE_WRAP_REFUSAL =
+  "Cannot fit freestyle SQL into SAP's 255-character lines. Add line breaks between tokens; long literals, comments, and templates cannot be split safely.";
+
+/** Find a break that advances the line without splitting a literal or creating a comment. */
+function findSafeLineBreak(line: string, segmentStart: number): number | undefined {
+  let lastSafeBreak: number | undefined;
+  // Each segment starts outside a literal: the preceding break was outside one too.
+  let quoteDelimiter: "'" | '`' | undefined;
+  const lineLimit = segmentStart + FREESTYLE_SQL_LINE_MAX;
+
+  for (let index = segmentStart; index <= lineLimit; index++) {
+    const char = line[index];
+    if (quoteDelimiter !== undefined) {
+      if (char !== quoteDelimiter) continue;
+      if (line[index + 1] === quoteDelimiter) {
+        index++; // Doubled delimiters belong to the literal.
+      } else {
+        quoteDelimiter = undefined;
+      }
+      continue;
+    }
+
+    if (char === "'" || char === '`') {
+      quoteDelimiter = char;
+      continue;
+    }
+    if (char === '"' || char === '|') {
+      break; // Do not wrap inside an inline comment or attempt to parse a template.
+    }
+
+    const isWhitespace = char === ' ' || char === '\t';
+    if (isWhitespace && index > segmentStart && line[index + 1] !== '*') {
+      lastSafeBreak = index; // A column-one '*' would turn the new line into a comment.
+    }
+  }
+  return lastSafeBreak;
+}
+
+/** Fit 255-character payload lines and send CRLF; older SAP handlers do not recognize bare LF. */
+export function fitFreestyleSqlLines(sql: string): string {
+  return sql
+    .split(/\r?\n/)
+    .map((line) => {
+      const lineLength = line.length;
+      if (lineLength <= FREESTYLE_SQL_LINE_MAX) return line;
+      if (line.startsWith('*')) throw new Error(LINE_WRAP_REFUSAL);
+
+      const parts: string[] = [];
+      let segmentStart = 0;
+      while (lineLength - segmentStart > FREESTYLE_SQL_LINE_MAX) {
+        const breakAt = findSafeLineBreak(line, segmentStart);
+        if (breakAt === undefined) throw new Error(LINE_WRAP_REFUSAL);
+        parts.push(line.slice(segmentStart, breakAt));
+        segmentStart = breakAt + 1;
+      }
+      parts.push(line.slice(segmentStart));
+      return parts.join('\r\n');
+    })
+    .join('\r\n');
+}
+
 /** Allowed SQL comparison operators for TABLE_QUERY where conditions. */
 const ALLOWED_OPS = new Set([
   '=',
@@ -17,6 +80,7 @@ const ALLOWED_OPS = new Set([
   'NOT IN',
   'IS NULL',
   'IS NOT NULL',
+  'STARTS_WITH',
 ]);
 
 // BETWEEN is intentionally excluded: the value would require parsing "low AND high"
@@ -27,8 +91,20 @@ const ALLOWED_OPS = new Set([
 function buildInList(raw: string): string {
   const trimmed = raw.trim();
   const inner = trimmed.startsWith('(') && trimmed.endsWith(')') ? trimmed.slice(1, -1) : trimmed;
-  const parts = inner.split(',').map((part) => `'${part.trim().replace(/'/g, "''")}'`);
+  const parts = inner.split(',').map((part) => quoteTableQueryValue(part.trim()));
   return `(${parts.join(', ')})`;
+}
+
+/** Opt-in compatibility for SAP handlers that CONDENSE SQL lines, including quoted literals. */
+export function quoteTableQueryValue(value: string, preserveLiteralSpaces = false): string {
+  const quote = (part: string) => `'${part.replaceAll("'", "''")}'`;
+  if (!preserveLiteralSpaces || !/ {2}/u.test(value)) return quote(value);
+  const parts = value.split(/( +)/u);
+  let expression = quote(parts[0] || ' ');
+  for (let index = 1; index < parts.length; index += 2) {
+    expression = `concat_with_space( ${expression}, ${quote(parts[index + 1] || ' ')}, ${parts[index].length} )`;
+  }
+  return expression;
 }
 
 /** Upper bound for an in-memory TABLE_QUERY result. */
@@ -65,6 +141,7 @@ export function buildTableQuerySql(
   tableName: string,
   columns?: string[],
   where?: Array<{ field: string; op: string; value?: string }>,
+  preserveLiteralSpaces = false,
 ): string {
   const safeTable = exactSqlIdentifier(tableName, 'table');
   const colList = columns?.length ? columns.map((column) => exactSqlIdentifier(column, 'column')).join(', ') : '*';
@@ -75,9 +152,24 @@ export function buildTableQuerySql(
       const safeField = exactSqlIdentifier(field, 'field');
       const safeOp = op.trim().toUpperCase();
       if (!ALLOWED_OPS.has(safeOp)) throw new Error(`TABLE_QUERY: operator "${op}" is not allowed`);
+      if (safeOp === 'STARTS_WITH') {
+        const prefix = String(value ?? '');
+        if (preserveLiteralSpaces && / {2}/u.test(prefix)) {
+          // ABAP SQL does not accept an expression as LIKE's pattern (7.58/8.16).
+          // Compare the prefix slice instead. LENGTH excludes short, blank-padded names.
+          return `( left( ${safeField}, ${prefix.length} ) = ${quoteTableQueryValue(prefix, true)} AND length( ${safeField} ) >= ${prefix.length} )`;
+        }
+        const pattern = `${prefix.replace(/[#%_]/gu, '#$&')}%`;
+        return `${safeField} LIKE ${quoteTableQueryValue(pattern, preserveLiteralSpaces)} ESCAPE '#'`;
+      }
       if (safeOp === 'IS NULL' || safeOp === 'IS NOT NULL') return `${safeField} ${safeOp}`;
-      if (safeOp === 'IN' || safeOp === 'NOT IN') return `${safeField} ${safeOp} ${buildInList(String(value ?? ''))}`;
-      return `${safeField} ${safeOp} '${String(value ?? '').replace(/'/g, "''")}'`;
+      if (safeOp === 'IN' || safeOp === 'NOT IN') {
+        // The stored-text compatibility path uses scalar predicates only; expressions in IN lists
+        // have different ABAP SQL support and have not been qualified on the supported backends.
+        if (preserveLiteralSpaces) throw new Error('TABLE_QUERY: literal-space preservation does not support IN lists');
+        return `${safeField} ${safeOp} ${buildInList(String(value ?? ''))}`;
+      }
+      return `${safeField} ${safeOp} ${quoteTableQueryValue(String(value ?? ''), preserveLiteralSpaces)}`;
     });
     sql += ` WHERE ${clauses.join(' AND ')}`;
   }

@@ -47,6 +47,10 @@ shared SAP user.
 
 ## Configuration ownership
 
+For the OAuth callback-policy upgrade, follow
+[XSUAA upgrade guidance](xsuaa-setup.md#upgrading-an-existing-deployment). It requires a full MTA
+deployment; an app restart alone does not update the XSUAA service policy.
+
 Use one source of truth for each kind of value:
 
 | Location | Put here | Avoid here |
@@ -102,14 +106,19 @@ Keep these XSUAA concepts separate:
 | Role collection | Subaccount bundle that administrators assign |
 | Assignment | User/group grant that produces scopes in a new token |
 
-The MTA creates seven role collections with the CF space suffix, for example
-`ARC-1 Viewer (dev)`. After every new or upgraded XSUAA deployment:
+The MTA creates **eight role collections** with the CF space suffix: seven functional collections
+(for example `ARC-1 Viewer (dev)`) plus `ARC-1 All Targets (dev)`. Leave All Targets unassigned
+unless explicitly approved; it grants all current and future targets when filtering is enabled.
+After every new or upgraded XSUAA deployment:
 
 1. Open **BTP Cockpit → Security → Role Collections**.
 2. Confirm all expected `ARC-1 … (<space>)` collections exist.
 3. Open each collection and confirm its **Roles** tab contains roles for the current
    `arc1-mcp-<space>!t...` application identifier.
-4. Assign the least-privilege collection before the user's first MCP login.
+4. For single-target or standard multi-target access, assign the least-privilege collection before
+   the user's first MCP login. For target-filtered access, follow the
+   [target-role setup order](multi-target-authorization.md#minimal-static-role-setup): verify
+   enforcement and active destinations before assigning restricted users.
 5. Have the user sign in again and restart/reconnect the MCP client if its tool catalog is cached.
 
 An older or recreated XSUAA instance can leave same-name collections with empty/orphaned roles.
@@ -153,6 +162,67 @@ With a dedicated secret, rebinding XSUAA no longer revokes DCR registrations by 
 `ARC1_DCR_SIGNING_SECRET` when global DCR revocation is intended. ARC-1 currently consumes it as an
 environment variable; sufficiently privileged CF operators can therefore read it. A bound/file
 secret is a future hardening item, not a property that documentation can provide today.
+
+## Audit Log delivery evidence
+
+Verify a known event end to end; a startup message only confirms binding fields.
+
+1. Prepare an approved Audit Log Viewer or `auditlog-management` reader (plan
+   `default`) for subaccount-wide API retrieval. Follow SAP's
+   [retrieval setup](https://help.sap.com/docs/btp/sap-business-technology-platform/audit-log-retrieval-api-usage-for-subaccounts-in-cloud-foundry-environment).
+   Prefer X.509/mTLS credentials, keep keys outside tickets/source control, and
+   recreate reader bindings/keys at least every 90 days or earlier on expiry.
+   A client-secret key is an alternative where credential policy permits it.
+2. Make one successful `SAPRead` call with `type="SYSTEM"` through the intended
+   ARC-1 endpoint. Record the UTC time, authenticated caller and CF space GUID
+   (`cf space <space-name> --guid`). Run
+   `cf logs arc1-mcp-server --recent` and record the matching tool event's request
+   ID. `REQ-n` is process-local and repeats across restarts/instances; it is not
+   a globally unique lookup key.
+3. In the Viewer, or with a valid OAuth token in the retrieval API, search a narrow
+   UTC window around that call. `SAPRead` uses `audit.data-access`, matching this
+   example (other tools can use different categories):
+
+   ```text
+   GET <url>/auditlog/v2/auditlogrecords?time_from=2026-09-17T07:00:00&time_to=2026-09-17T07:05:00&category=audit.data-access
+   Authorization: Bearer <token>
+   ```
+
+   `<url>` comes from the reader credentials. UTC times use `YYYY-MM-DDTHH:MM:SS`;
+   without a time filter the API searches the previous 30 days. Pages contain up
+   to 500 records: URL-encode `Paging: handle=…` as the next request's `handle`
+   parameter. HTTP 204 means an empty result. Back off on 429. If category
+   filtering returns 501 for your landscape, omit it and filter locally. See
+   SAP's linked API contract for current limits.
+4. Match `object.type = "MCP Tool Call"`, tool, user, `space_id`, request ID and the
+   UTC window together. Use `target` when present; a space can serve several SAP
+   systems. Invocation records include redacted `args` (cut after 500 characters
+   with `...` appended); completion records carry the outcome. Retain the matched
+   evidence privately. If these fields do not distinguish concurrent requests,
+   repeat with a fresh known call in a quiet window.
+
+Delivery is asynchronous: one eu10 check took 11 minutes, which is an observation,
+not a delivery guarantee. Recheck the same known event before diagnosing loss.
+Monitor known traffic and certificate expiry; a quiet server alone is not evidence
+of failure. ARC-1 emits throttled `BTP Audit Log delivery failed` warnings but does
+not configure an external alert for you. The reader does not enable writing:
+ARC-1's sink requires the separate `auditlog` **premium** binding.
+
+## Audit Log certificate rotation
+
+The optional Audit Log binding certificate does not renew inside a running process. Before its
+configured validity ends, unbind `arc1-auditlog` from `arc1-mcp-server` during a maintenance window.
+For MTA deployments, redeploy the reviewed MTAR with the same extension to recreate the binding;
+for direct `cf push`, repeat SAP's
+[X.509 binding procedure](https://help.sap.com/docs/btp/sap-business-technology-platform/audit-log-write-api-for-customers)
+and restage. Check the startup log and delivery of a known audit event afterward (see
+[Audit Log delivery evidence](#audit-log-delivery-evidence)). Rotation recreates only the binding;
+the instance keeps its X.509 configuration. Track the expiry in your monitoring or
+calendar and verify a delivered event after rotation. Do not rotate
+ARC-1's XSUAA binding or DCR signing key as part of this operation.
+
+On SIGTERM/SIGINT, ARC-1 allows up to five seconds to drain requests and flush audit sinks before
+exiting. A timeout is logged and exits with status 1; SIGKILL cannot flush pending records.
 
 ## Deployment and scaling by identity mode
 
@@ -263,6 +333,15 @@ heap limit and the `Data-result safety envelope` log shows the intended raw enve
 widest approved row shape at full configured data concurrency, inspect `cf app`/platform memory,
 and keep the larger tier until sustained evidence justifies reducing it.
 
+### Large MCP request bodies
+
+For large source writes, set `ARC1_MAX_HTTP_REQUEST_BYTES` in `.mtaext` `properties:`
+(100 KiB default, 16 MiB maximum) and align proxy limits. Follow the
+[request admission rules](configuration-reference.md#http-request-bodies), including
+proxy body/read timeouts. Before raising the limit in a small CF app, measure peak
+RSS with concurrent large writes; admission is not a live-memory bound.
+Data-preview response admission is separate.
+
 ### Non-rolling update for shared Basic
 
 Use a maintenance window. Do not pass a rolling strategy and do not use blue-green deployment:
@@ -307,9 +386,13 @@ active targets or quarantined configuration. It does not prove Destination Servi
 SAP authorization, data/SQL policy, or a usable tool catalog.
 
 For multi-target acceptance, call `SAPTargets` as an Admin, review exclusions and registry revision,
-then perform the same safe read as a Viewer through each endpoint style. For PP, `SAPRead SYSTEM`
-must identify the human SAP user. For shared Basic, it must identify only the approved technical
-user, and the ARC-1 audit record must identify the human XSUAA caller.
+then perform the same safe read through each endpoint style with a read-only pilot user: ordinary
+Viewer for standard access, or an exact-target collection for filtered access. A plain Viewer has
+no execution grants in filtered mode; test that denial separately. `SAPRead SYSTEM` alone
+does not prove which SAP user processed the request. Follow
+[Verify the backend identity](principal-propagation-setup.md#verify-the-backend-identity): expect
+the human SAP user for PP or the approved technical user for shared Basic, and correlate the live
+request with SAP-side evidence. The ARC-1 audit record must identify the human XSUAA caller.
 
 ## Pre-customer acceptance
 
@@ -319,15 +402,20 @@ Record evidence rather than only checking configuration screens.
 - [ ] The reviewed `.mtaext`, deployed ARC-1 version, route, CF org/space, and rollback MTAR are recorded.
 - [ ] The built MTAR was inspected and contains no `.env`, service key, private key, certificate, or local operator file.
 - [ ] XSUAA, Destination, and Connectivity bindings point to the intended subaccount and space.
-- [ ] All seven space-specific role collections exist and contain current roles.
+- [ ] All eight space-specific role collections exist and contain current roles; All Targets stays
+      unassigned unless approved.
 - [ ] Viewer, Data Viewer, Viewer + SQL, Admin, and no-role behavior match the expected tool surface.
-- [ ] Every test user obtains a fresh token after role changes; cached client catalogs were refreshed.
+      In filtered mode, pair capability tests with explicit target grants and separately test
+      no-grant readers, denied targets and Admin without execution grants.
+- [ ] After role changes, new application sign-in and catalog reload show the expected access;
+      refresh alone is not treated as revocation. Follow the
+      [role-change procedure](multi-target-administration.md#role-changes-and-revocation).
 - [ ] PP maps to the intended SAP human in each target; wrong/unmapped and SAP-unauthorized users fail conclusively and can retry after repair.
 - [ ] Cloud Connector exposes only the required paths and uses verified backend HTTPS.
 - [ ] Multi-target Admin `SAPTargets` shows no unexpected quarantine, duplicate, shadow, or policy narrowing.
 - [ ] Pinned, aggregate, unknown-target, lowercase-route, bare `/mcp`, and absent `/targets` behavior match the selected topology.
 - [ ] Named data preview and SQL work only where both instance and destination allow them.
-- [ ] Multi-target routes expose no writes, activation, transport/Git mutations, SAP-backed formatter/settings actions, plugins, UI, or hyperfocused mode. Permitted lint/transport reads match the [reviewed action surface](multi-target-setup.md#allowed-tools).
+- [ ] Aggregate/Basic routes expose no writes; pinned PP writes satisfy the [write guide](multi-target-writes.md). Transport/Git management, SAP-backed formatter/settings actions, plugins, UI and hyperfocused mode remain unavailable. Permitted lint/transport reads match the [reviewed action surface](multi-target-setup.md#allowed-tools).
 - [ ] ATC and ABAP Unit workload access is deliberately retained or denied; neither is run as a routine deployment smoke test.
 - [ ] Shared Basic, if enabled, uses a least-privilege non-`SAP_ALL` user, monitored lockout/expiry, one CF process, and a rehearsed non-rolling update.
 - [ ] PP-only scale testing includes total process concurrency and consistent registry revisions.
@@ -343,7 +431,8 @@ Work from the outer layer inward:
 3. **Registry:** Admin `SAPTargets`, destination marker/fields, duplicates, shadows, revision.
 4. **Destination/Connectivity:** binding, lookup, Cloud Connector location and resource exposure.
 5. **SAP authentication:** certificate generated, STRUST, trusted proxy, CERTRULE/SU01 or Basic credential.
-6. **SAP authorization:** propagated/technical user has only required ADT permissions.
+6. **SAP authorization:** propagated/technical user has only required ADT permissions (for the
+   startup user, see [Startup user authorizations](btp-destination-setup.md#startup-user-authorizations)).
 7. **ARC-1 policy:** instance ceiling, destination data/SQL narrowing, user scope, deny actions.
 
 Do not “fix” a downstream failure by widening an upstream boundary. For example, a SAP `403` after

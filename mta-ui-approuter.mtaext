@@ -11,3 +11,19 @@ modules:
     build-parameters:
       supported-platforms:
         - CF
+    parameters:
+      # Extensions cannot add a resource dependency on this optional module.
+      # Use one globally unique host for the module and its XSUAA callback.
+      host: arc1-ui-${space-guid}
+
+resources:
+  - name: arc1-xsuaa
+    parameters:
+      config:
+        oauth2-configuration:
+          redirect-uris:
+            - ~{arc1-mcp-api/url}/oauth/callback
+            - ~{arc1-mcp-api/url}/oauth/logged-out
+            - https://arc1-ui-${space-guid}.${default-domain}/login/callback
+    requires:
+      - name: arc1-mcp-api

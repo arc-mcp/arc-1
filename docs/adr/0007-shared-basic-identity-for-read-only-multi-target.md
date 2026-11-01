@@ -6,6 +6,13 @@
 [implementation plan](../plans/destination-discovered-multi-target-v1.md)
 **Qualifies:** ADR-0006's strict Principal Propagation requirement for explicitly enabled Basic
 destinations only
+**Qualified by:** [ADR-0008](0008-opt-in-xsuaa-target-authorization.md) for opted-in target grants
+and the complete bounded catalog instead of the eight-row summary; Basic safeguards remain intact
+
+**Current write qualification:** [ADR-0010](0010-pinned-pp-multi-target-writes.md) supersedes
+this document's blanket mutation-free statements only for the reviewed pinned strict-PP
+CLAS/INTF surface with exact write grants. Aggregate/Copilot and shared Basic remain mutation-free;
+other discovery, identity and operational constraints below still apply.
 
 ## Context
 
@@ -41,7 +48,7 @@ Multi-target v1 may accept an on-premise BTP destination with
 - XSUAA still authenticates the human and requires global read before target resolution; every
   authorized caller to that target then reaches SAP as the same technical user;
 - there is no PP-to-Basic or Basic-to-PP fallback, and no destination-level target ACL;
-- multi-target routes remain structurally mutation-free. Basic targets can expose source reads and,
+- Basic multi-target routes remain structurally mutation-free. Basic targets can expose source reads and,
   with the existing dual instance/destination consent plus XSUAA/SAP authorization, data and SQL;
   and
 - an application with Basic multi-target enabled runs exactly one non-rolling CF app instance in v1.

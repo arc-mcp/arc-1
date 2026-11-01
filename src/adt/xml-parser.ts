@@ -18,8 +18,6 @@ import { XMLParser } from 'fast-xml-parser';
 import { AdtApiError } from './errors.js';
 import type {
   AdtSearchResult,
-  ApiReleaseContract,
-  ApiReleaseStateInfo,
   AttributeStructure,
   AuthorizationFieldInfo,
   BspAppInfo,
@@ -36,11 +34,10 @@ import type {
   LineRange,
   MessageClassInfo,
   MethodStructure,
-  RevisionInfo,
-  RevisionListResult,
   ServerDrivenObjectMetadata,
   TransactionInfo,
 } from './types.js';
+import { decodeXmlEntities } from './xml-entities.js';
 
 /**
  * Escape the five predefined XML entities (`& < > " '`) for safe interpolation into XML.
@@ -105,24 +102,34 @@ const ARRAY_TAGS = new Set([
   'badiImplementation',
 ]);
 
-/** Shared parser instance — configured for ADT XML conventions */
-const parser = new XMLParser({
+/** Common ADT conventions; data-preview cells additionally retain their exact text. */
+const parserOptions = {
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   removeNSPrefix: true, // Strip adtcore:, asx:, etc.
-  isArray: (name) => ARRAY_TAGS.has(name),
+  isArray: (name: string) => ARRAY_TAGS.has(name),
   parseAttributeValue: false, // Keep attributes as strings
   parseTagValue: false, // Keep tag values as strings (prevents "001" → 1)
-  // SAP ADT responses use only standard XML entities (&amp; &lt; &gt; &quot;).
-  // Dump listings (ST22) can contain thousands of entity references in stack traces.
-  // fast-xml-parser v5 defaults to maxTotalExpansions=1000 which is too low.
-  // Disable custom entity processing — standard entities are handled regardless.
-  processEntities: false,
-});
+  // Use the native entity boundary: unlike value processors, it skips literal CDATA.
+  // Decode only predefined/numeric references, with no recursive DOCTYPE expansion or ST22 cap.
+  entityDecoder: {
+    decode: decodeXmlEntities,
+    addInputEntities: () => {},
+    setExternalEntities: () => {},
+    setXmlVersion: () => {},
+    reset: () => {},
+  },
+};
+const parser = new XMLParser(parserOptions);
+const whitespacePreservingParser = new XMLParser({ ...parserOptions, trimValues: false });
 
-/** Parse raw XML string to a JS object */
-export function parseXml(xml: string): Record<string, unknown> {
-  return parser.parse(xml) as Record<string, unknown>;
+/**
+ * Parse raw XML string to a JS object. Every attribute and text value is entity-DECODED
+ * (`R&amp;D` → `R&D`): never decode a parsed value again, and `escapeXmlAttr` it on the way back.
+ * Set preserveWhitespace to retain leading/trailing text whitespace, e.g. in quick-fix deltas.
+ */
+export function parseXml(xml: string, preserveWhitespace = false): Record<string, unknown> {
+  return (preserveWhitespace ? whitespacePreservingParser : parser).parse(xml) as Record<string, unknown>;
 }
 
 /**
@@ -132,25 +139,29 @@ export function parseXml(xml: string): Record<string, unknown> {
  * <adtcore:objectReferences>
  *   <adtcore:objectReference uri="..." type="PROG/P" name="ZTEST" packageName="$TMP" description="..."/>
  * </adtcore:objectReferences>
- *
- * The shared parser runs with `processEntities: false` (intentional — dump XML
- * can exceed fast-xml-parser's `maxTotalExpansions` cap), so XML attribute
- * values like descriptions arrive with `&gt;` / `&amp;` / `&lt;` / `&quot;` /
- * `&apos;` un-decoded. We decode the user-visible free-text field
- * (`description`) at the boundary via `decodeXmlEntities()`. Object names,
- * types, URIs, and package names don't carry free text — leaving them
- * undecoded is intentional.
  */
 export function parseSearchResults(xml: string): AdtSearchResult[] {
   const parsed = parseXml(xml);
   const refs = getNestedArray(parsed, 'objectReferences', 'objectReference');
   return refs.map((ref: Record<string, unknown>) => ({
     objectType: String(ref['@_type'] ?? ''),
-    objectName: String(ref['@_name'] ?? ''),
-    description: decodeXmlEntities(String(ref['@_description'] ?? '')),
+    objectName: canonicalSearchName(String(ref['@_name'] ?? ''), String(ref['@_uri'] ?? '')),
+    description: String(ref['@_description'] ?? ''),
     packageName: String(ref['@_packageName'] ?? ''),
     uri: String(ref['@_uri'] ?? ''),
   }));
+}
+
+/** Legacy quickSearch decorates names with localized type labels; require URI identity proof. */
+function canonicalSearchName(displayName: string, uri: string): string {
+  const name = /^([^\s()]+) \([^()]+\)$/.exec(displayName)?.[1];
+  if (!name) return displayName;
+  const segment = /^\/sap\/bc\/adt\/(?:[^/?#]+\/)*([^/?#]+)$/i.exec(uri)?.[1];
+  try {
+    return segment && decodeURIComponent(segment).toUpperCase() === name.toUpperCase() ? name : displayName;
+  } catch {
+    return displayName;
+  }
 }
 
 /**
@@ -291,7 +302,7 @@ export interface DataPreviewMeta {
   totalRows?: number;
   /** Server-side execution time in milliseconds (ADT `queryExecutionTime`, as shown by Eclipse Data Preview). */
   queryExecutionTimeMs?: number;
-  /** The actual OpenSQL ADT generated and ran (whitespace-collapsed). */
+  /** The OpenSQL echo returned by SAP, without client-side whitespace normalization. */
   executedQueryString?: string;
 }
 
@@ -316,7 +327,7 @@ function parseDataPreviewMetaObject(parsed: Record<string, unknown>): DataPrevie
 
   const executed = td.executedQueryString;
   if (typeof executed === 'string' && executed.trim()) {
-    meta.executedQueryString = executed.trim().replace(/\s+/g, ' ');
+    meta.executedQueryString = executed;
   }
   return meta;
 }
@@ -324,13 +335,13 @@ function parseDataPreviewMetaObject(parsed: Record<string, unknown>): DataPrevie
 /** Parse data-preview rows and metrics from one shared fast-xml-parser object tree. */
 export function parseDataPreviewResult(xml: string): DataPreviewResult {
   if (!xml || xml.trim().length === 0) return { columns: [], rows: [] };
-  const parsed = parseXml(xml);
+  const parsed = whitespacePreservingParser.parse(xml) as Record<string, unknown>;
   return { ...parseTableContentsObject(parsed), ...parseDataPreviewMetaObject(parsed) };
 }
 
 export function parseTableContents(xml: string): { columns: string[]; rows: Record<string, string>[] } {
   if (!xml || xml.trim().length === 0) return { columns: [], rows: [] };
-  return parseTableContentsObject(parseXml(xml));
+  return parseTableContentsObject(whitespacePreservingParser.parse(xml) as Record<string, unknown>);
 }
 
 /**
@@ -340,7 +351,7 @@ export function parseTableContents(xml: string): { columns: string[]; rows: Reco
  */
 export function parseDataPreviewMeta(xml: string): DataPreviewMeta {
   if (!xml || xml.trim().length === 0) return {};
-  return parseDataPreviewMetaObject(parseXml(xml));
+  return parseDataPreviewMetaObject(whitespacePreservingParser.parse(xml) as Record<string, unknown>);
 }
 
 /**
@@ -550,7 +561,15 @@ export function parseDiscoveryDocument(xml: string): Map<string, string[]> {
   if (!xml?.trim()) return new Map();
 
   try {
-    const parsed = parseXml(xml);
+    return parseDiscoveryObject(parseXml(xml));
+  } catch {
+    return new Map();
+  }
+}
+
+/** Map an already-parsed discovery document without parsing its XML a second time. */
+export function parseDiscoveryObject(parsed: Record<string, unknown>): Map<string, string[]> {
+  try {
     const service = (parsed.service ?? {}) as Record<string, unknown>;
     const workspaces = Array.isArray(service.workspace)
       ? service.workspace
@@ -575,11 +594,11 @@ export function parseDiscoveryDocument(xml: string): Map<string, string[]> {
 
         const accepts = acceptsRaw.map((value) => String(value)).filter((value) => value.length > 0);
 
-        // Collections without <app:accept> are not useful for negotiation.
-        if (accepts.length === 0) continue;
-
-        // If href is duplicated, keep the last definition from the document.
-        discoveryMap.set(normalizedPath, accepts);
+        // A listed collection still exists when this user has no advertised POST media types.
+        // Retain its presence; an empty duplicate must not erase an earlier usable definition.
+        if (accepts.length > 0 || !discoveryMap.has(normalizedPath)) {
+          discoveryMap.set(normalizedPath, accepts);
+        }
       }
     }
 
@@ -693,6 +712,7 @@ export function parseDataElementMetadata(xml: string): DataElementInfo {
   // Find the dataElement node — after NS strip: dtel:dataElement → dataElement
   const dtelNodes = findDeepNodes(parsed, 'dataElement');
   const dtel = dtelNodes[0] ?? {};
+  const flag = (value: unknown) => String(value ?? '').toLowerCase() === 'true';
 
   return {
     name: String(wbobj['@_name'] ?? ''),
@@ -703,11 +723,21 @@ export function parseDataElementMetadata(xml: string): DataElementInfo {
     length: String(dtel.dataTypeLength ?? ''),
     decimals: String(dtel.dataTypeDecimals ?? ''),
     shortLabel: String(dtel.shortFieldLabel ?? ''),
+    shortLength: String(dtel.shortFieldLength ?? ''),
     mediumLabel: String(dtel.mediumFieldLabel ?? ''),
+    mediumLength: String(dtel.mediumFieldLength ?? ''),
     longLabel: String(dtel.longFieldLabel ?? ''),
+    longLength: String(dtel.longFieldLength ?? ''),
     headingLabel: String(dtel.headingFieldLabel ?? ''),
+    headingLength: String(dtel.headingFieldLength ?? ''),
     searchHelp: String(dtel.searchHelp ?? ''),
+    searchHelpParameter: String(dtel.searchHelpParameter ?? ''),
+    setGetParameter: String(dtel.setGetParameter ?? ''),
     defaultComponentName: String(dtel.defaultComponentName ?? ''),
+    deactivateInputHistory: flag(dtel.deactivateInputHistory),
+    changeDocument: flag(dtel.changeDocument),
+    leftToRightDirection: flag(dtel.leftToRightDirection),
+    deactivateBIDIFiltering: flag(dtel.deactivateBIDIFiltering),
     package: String(pkgRef['@_name'] ?? ''),
   };
 }
@@ -796,11 +826,7 @@ export function parseFeatureToggleStates(json: string, name: string): FeatureTog
   };
 }
 
-/**
- * Parse enhancement implementation metadata from /sap/bc/adt/enhancements/enhoxhb/{name}.
- *
- * Expected root: <enho:objectData> with contentCommon/contentSpecific and BAdI entries.
- */
+/** Parse BAdI metadata (XHB v4 or legacy XH v1), rooted at enho:objectData. */
 export function parseEnhancementImplementation(xml: string): EnhancementImplementationInfo {
   const parsed = parseXml(xml);
   const objectData = (parsed.objectData ?? findDeepNodes(parsed, 'objectData')[0] ?? {}) as Record<string, unknown>;
@@ -839,8 +865,8 @@ export function parseEnhancementImplementation(xml: string): EnhancementImplemen
         implementingClass: String(implementingClass['@_name'] ?? ''),
         badiDefinition: String(badiDefinition['@_name'] ?? ''),
         enhancementSpot: String(enhancementSpot['@_name'] ?? ''),
-        active: String(node['@_active'] ?? '') === 'true',
-        default: String(node['@_default'] ?? '') === 'true',
+        active: String(node['@_active'] ?? node['@_isActive'] ?? '') === 'true',
+        default: String(node['@_default'] ?? node['@_isDefault'] ?? '') === 'true',
       };
     }),
   };
@@ -866,157 +892,6 @@ export function parseTransactionMetadata(xml: string): TransactionInfo {
     program: '', // Not available from this endpoint — populated via SQL in handler
     package: String(pkgRef['@_name'] ?? ''),
   };
-}
-
-/**
- * Parse API release state XML from /sap/bc/adt/apireleases/{encoded-uri}.
- *
- * Returns structured release info with per-contract states (C0–C4),
- * successor information, and catalog metadata.
- *
- * Expected root: element with releasableObject, c0Release–c4Release, apiCatalogData.
- */
-export function parseApiReleaseState(xml: string): ApiReleaseStateInfo {
-  const parsed = parseXml(xml);
-  // The root element name varies — find the first non-declaration key
-  const rootKey = Object.keys(parsed).find((k) => !k.startsWith('?'));
-  const root = (rootKey ? parsed[rootKey] : parsed) as Record<string, unknown>;
-
-  // releasableObject attrs
-  const relObj = (root.releasableObject ?? {}) as Record<string, unknown>;
-
-  // Parse C0–C4 contract releases
-  const contracts: ApiReleaseContract[] = [];
-  for (const key of ['c0Release', 'c1Release', 'c2Release', 'c3Release', 'c4Release']) {
-    const release = root[key] as Record<string, unknown> | undefined;
-    if (!release) continue;
-    const status = (release.status ?? {}) as Record<string, unknown>;
-    const successorsContainer = release.successors as Record<string, unknown> | undefined;
-    const successorArr: Array<{ uri: string; type: string; name: string }> = [];
-    if (successorsContainer) {
-      const succs = Array.isArray(successorsContainer.successor)
-        ? (successorsContainer.successor as Array<Record<string, unknown>>)
-        : successorsContainer.successor
-          ? [successorsContainer.successor as Record<string, unknown>]
-          : [];
-      for (const s of succs) {
-        successorArr.push({
-          uri: String(s['@_uri'] ?? ''),
-          type: String(s['@_type'] ?? ''),
-          name: String(s['@_name'] ?? ''),
-        });
-      }
-    }
-    contracts.push({
-      contract: String(release['@_contract'] ?? key.replace('Release', '').toUpperCase()),
-      state: String(status['@_state'] ?? ''),
-      stateDescription: String(status['@_stateDescription'] ?? ''),
-      useInKeyUserApps: String(release['@_useInKeyUserApps'] ?? 'false') === 'true',
-      useInSAPCloudPlatform: String(release['@_useInSAPCloudPlatform'] ?? 'false') === 'true',
-      successors: successorArr,
-    });
-  }
-
-  // apiCatalogData attrs
-  const catalog = (root.apiCatalogData ?? {}) as Record<string, unknown>;
-
-  return {
-    objectUri: String(relObj['@_uri'] ?? ''),
-    objectType: String(relObj['@_type'] ?? ''),
-    objectName: String(relObj['@_name'] ?? ''),
-    contracts,
-    isAnyContractReleased: String(catalog['@_isAnyContractReleased'] ?? 'false') === 'true',
-    isAnyAssignmentPossible: String(catalog['@_isAnyAssignmentPossible'] ?? 'false') === 'true',
-  };
-}
-
-export function assertApiReleaseStateConfirmed(
-  info: ApiReleaseStateInfo,
-  contract: string,
-  expectedState: string,
-  expectedVisibility?: { useInSAPCloudPlatform: boolean; useInKeyUserApps: boolean },
-): void {
-  const c = contract.toUpperCase();
-  const confirmedContract = info.contracts.find((release) => release.contract.toUpperCase() === c);
-  if (!confirmedContract) {
-    throw new Error(`API release contract ${c} read-back did not include the contract after PUT.`);
-  }
-  if (confirmedContract.state !== expectedState) {
-    throw new Error(
-      `API release contract ${c} read-back state is ${confirmedContract.state || '(missing)'}, expected ${expectedState}.`,
-    );
-  }
-  if (
-    expectedState === 'RELEASED' &&
-    expectedVisibility &&
-    (confirmedContract.useInSAPCloudPlatform !== expectedVisibility.useInSAPCloudPlatform ||
-      confirmedContract.useInKeyUserApps !== expectedVisibility.useInKeyUserApps)
-  ) {
-    throw new Error(`API release contract ${c} read-back visibility does not match the requested visibility.`);
-  }
-}
-
-/**
- * Build the PUT body that sets an object's API release contract `state` (RELEASED / NOT_RELEASED).
- *
- * The apireleases GET (v10) returns a rich document, but the PUT to `…/apireleases/{uri}/{contract}`
- * accepts only a NARROW, strictly-ordered subset — live reverse-engineered on a4h 758 + 816: the
- * standalone contract block (`ars:contract="C1"`) carrying `status` + the successor scaffold, plus
- * a sibling `apiCatalogData`/`ApiCatalogs` envelope. Response-only nodes (`atom:link`,
- * `stateTransitions`, `transportObject`, `authValueObject`) are rejected with HTTP 400.
- *
- * Visibility on a RELEASED contract is taken VERBATIM from that contract's behaviour DEFAULT flags
- * (`useInSAPCloudPlatformDefault` / `useInKeyUserAppsDefault`) — never broadened. We deliberately do
- * NOT pre-judge whether visibility is even required: that varies by contract (C0/C1 demand ≥1
- * visibility — ARS_STATE_HANDLER/119 — but e.g. C4 has entirely different rules, like "must be an AMDP
- * method"). So if both defaults are false we send both false and let SAP return the contract-accurate
- * error, rather than guessing it's a visibility problem. Crucially this still never INVENTS visibility
- * the contract didn't warrant (the original over-exposure bug). For NOT_RELEASED visibility is untouched.
- */
-export function buildApiReleasePutBody(getXml: string, contract: string, state: string): string {
-  const c = contract.toUpperCase();
-  const targetState = state.toUpperCase();
-  if (targetState !== 'RELEASED' && targetState !== 'NOT_RELEASED') {
-    throw new Error(`API release state must be RELEASED or NOT_RELEASED, got ${state}.`);
-  }
-  const tag = `c${c.slice(1)}Release`; // 'C1' -> 'c1Release'
-  // The behaviour block lists the *Default visibility flags (self-closing element with "Default" attrs).
-  const behaviour = new RegExp(`<ars:${tag}\\b([^>]*Default[^>]*)/>`).exec(getXml)?.[1] ?? '';
-  const cloudDefault = /useInSAPCloudPlatformDefault="true"/.test(behaviour);
-  const keyUserDefault = /useInKeyUserAppsDefault="true"/.test(behaviour);
-  // The standalone contract block's opening tag (has ars:contract="<C>").
-  const openTagMatch = new RegExp(`<ars:${tag}\\b[^>]*\\bars:contract="${c}"[^>]*>`).exec(getXml);
-  if (!openTagMatch) {
-    // Only the contracts the object type supports appear as settable `ars:contract="Cn"` blocks
-    // (e.g. SRVD supports only C0, classic VIEW only C3) — list them so the caller can retry.
-    const supported = [...new Set([...getXml.matchAll(/ars:contract="(C\d)"/g)].map((m) => m[1]))];
-    const hint = supported.length ? ` This object supports: ${supported.join(', ')}.` : '';
-    throw new Error(`API release contract ${c} is not available for this object.${hint}`);
-  }
-  let openTag = openTagMatch[0];
-  if (targetState === 'RELEASED') {
-    // Set both visibility flags from the contract's own defaults — both-false stays both-false (no
-    // invented exposure); SAP decides whether that's acceptable for this contract.
-    const setAttr = (tagText: string, attr: string, value: boolean): string => {
-      const rendered = `${attr}="${value}"`;
-      return new RegExp(`\\b${attr}="[^"]*"`).test(tagText)
-        ? tagText.replace(new RegExp(`\\b${attr}="[^"]*"`), rendered)
-        : tagText.replace(/>$/, ` ${rendered}>`);
-    };
-    openTag = setAttr(openTag, 'ars:useInSAPCloudPlatform', cloudDefault);
-    openTag = setAttr(openTag, 'ars:useInKeyUserApps', keyUserDefault);
-  }
-  const contractBlock =
-    `${openTag}<ars:status ars:state="${targetState}"/>` +
-    '<ars:useConceptAsSuccessor>false</ars:useConceptAsSuccessor><ars:successors/><ars:successorConceptName/>' +
-    `</ars:${tag}>`;
-  return (
-    '<?xml version="1.0" encoding="utf-8"?>' +
-    '<ars:apiRelease xmlns:ars="http://www.sap.com/adt/ars" xmlns:adtcore="http://www.sap.com/adt/core">' +
-    contractBlock +
-    '<ars:apiCatalogData ars:isAnyAssignmentPossible="true" ars:isAnyContractReleased="true"><ars:ApiCatalogs/></ars:apiCatalogData>' +
-    '</ars:apiRelease>'
-  );
 }
 
 /**
@@ -1084,7 +959,7 @@ export function parseMessageClass(xml: string): MessageClassInfo {
   const msgNodes = Array.isArray(mc.messages) ? (mc.messages as Array<Record<string, unknown>>) : [];
   const messages = msgNodes.map((m) => ({
     number: String(m['@_msgno'] ?? ''),
-    shortText: decodeXmlEntities(String(m['@_msgtext'] ?? '')),
+    shortText: String(m['@_msgtext'] ?? ''),
   }));
 
   return {
@@ -1157,24 +1032,6 @@ export function parseBspFolderListing(xml: string, appName: string): BspFileNode
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
-/**
- * Decode standard XML entities in attribute values.
- * fast-xml-parser with processEntities:false + parseAttributeValue:false
- * keeps raw encoded strings — we decode them for human-readable output.
- *
- * `&amp;` is decoded LAST so chained entities like `&amp;lt;` resolve to the
- * literal `&lt;` rather than `<`. Closes CodeQL alert `js/double-escaping`
- * (alert #8).
- */
-export function decodeXmlEntities(s: string): string {
-  return s
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&');
-}
-
 /** Safely get a nested array from parsed XML.
  *  Absent, empty (`<alerts/>` → `''` on 7.50) and single-node containers all collapse to an array. */
 export function getNestedArray(
@@ -1231,16 +1088,9 @@ export function parseNamedItems(xml: string): NamedItem[] {
     const x = Array.isArray(v) ? v[0] : v;
     return typeof x === 'string' ? x : typeof x === 'number' ? String(x) : '';
   };
-  // Some items carry entity-encoded markup (e.g. "&lt;p&gt;Target: &lt;b&gt;DEV&lt;/b&gt;&lt;/p&gt;").
-  // The shared parser leaves entities encoded — decode, strip tags, collapse whitespace.
+  // Some items carry markup (e.g. "gCTS generated<p>Target: <b>DEV</b></p>") — strip tags, collapse whitespace.
   const clean = (v: unknown): string =>
     str(v)
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&apos;/g, "'")
-      .replace(/&#39;/g, "'")
-      .replace(/&amp;/g, '&') // decode &amp; last so encoded entities aren't double-decoded
       .replace(/<[^>]*>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
@@ -1386,7 +1236,7 @@ function getDeepArray(obj: Record<string, unknown>, path: string[]): Array<Recor
   return [];
 }
 
-function toRecordArray(value: unknown): Array<Record<string, unknown>> {
+export function toRecordArray(value: unknown): Array<Record<string, unknown>> {
   if (Array.isArray(value)) {
     return value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object');
   }
@@ -1472,99 +1322,7 @@ export function parseInactiveObjects(xml: string): InactiveObject[] {
   return flatResults;
 }
 
-const TRANSPORT_RELS = new Set([
-  'http://www.sap.com/adt/relations/transport/request', // live shape (a4h 758)
-  'http://www.sap.com/adt/relations/transports', // legacy — kept for older releases
-]);
-
-/** CTS request/task id: 3-char system + K/T/… + 6 alphanumerics, e.g. A4HK906291. */
-const CTS_ID_RE = /^[A-Z0-9]{3}[A-Z][A-Z0-9]{6}$/;
-
-/** Decode a URI component, returning the raw value rather than throwing on a malformed `%` escape. */
-function safeDecode(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
-/**
- * CTS request id of a revision, from its transport link.
- *
- * `adtcore:name` carries the id; `@_title` is the transport DESCRIPTION (only used as a last
- * resort, for releases that put the id there). The href tail is accepted ONLY when it looks
- * like a CTS id — ADT also emits hrefs ending in `reference?obj_name=…`, and returning
- * `"reference"` for every revision would silently break attribution everywhere.
- * Evidence: docs/plans/2026-08-03-transport-diff.md §1.
- */
-function revisionTransportId(links: Record<string, unknown>[]): string {
-  for (const link of links) {
-    if (!TRANSPORT_RELS.has(String(link['@_rel'] ?? ''))) continue;
-    const name = String(link['@_name'] ?? '').trim();
-    if (name) return name;
-    const tail = safeDecode(
-      String(link['@_href'] ?? '')
-        .split('/')
-        .pop()
-        ?.split('?')[0] ?? '',
-    )
-      .trim()
-      .toUpperCase();
-    if (CTS_ID_RE.test(tail)) return tail;
-    // `@_title`/`@_version` are last resorts for older releases that put the id there; both
-    // go through the shape guard, so a description can never be mistaken for a transport.
-    for (const attr of ['@_title', '@_version'] as const) {
-      const value = String(link[attr] ?? '')
-        .trim()
-        .toUpperCase();
-      if (CTS_ID_RE.test(value)) return value;
-    }
-  }
-  return '';
-}
-
-/** Parse source revision history feed from /source/main/versions */
-export function parseRevisionFeed(xml: string): RevisionListResult {
-  const empty: RevisionListResult = {
-    object: { name: '', type: '' },
-    revisions: [],
-  };
-  if (!xml.trim()) return empty;
-
-  try {
-    const parsed = parseXml(xml);
-    const feed = (parsed.feed ?? {}) as Record<string, unknown>;
-    const title = String(feed.title ?? '');
-    const match = title.match(/^Version List of (\S+) \(([A-Z]+)\)/);
-    const object = {
-      name: String(match?.[1] ?? ''),
-      type: String(match?.[2] ?? ''),
-    };
-
-    const revisions: RevisionInfo[] = [];
-    const entries = findDeepNodes(parsed, 'entry');
-    for (const entry of entries) {
-      const authorNode = toRecordArray(entry.author)[0] ?? {};
-      const contentNode = toRecordArray(entry.content)[0] ?? {};
-      const links = toRecordArray(entry.link);
-      const transport = revisionTransportId(links);
-      const versionTitle = String(entry.title ?? '');
-
-      revisions.push({
-        id: String(entry.id ?? ''),
-        author: String(authorNode.name ?? ''),
-        timestamp: String(entry.updated ?? ''),
-        ...(versionTitle ? { versionTitle } : {}),
-        ...(transport ? { transport } : {}),
-        uri: String(contentNode['@_src'] ?? ''),
-      });
-    }
-    return { object, revisions };
-  } catch {
-    return empty;
-  }
-}
+export { parseRevisionFeed } from './revision-feed.js';
 
 // ─── parseClassStructure (issue #303) ─────────────────────────────────────
 
@@ -1599,12 +1357,8 @@ function parseLineRange(href: string): LineRange | null {
  * Live evidence: fixtures `tests/fixtures/xml/objectstructure-clas-a4h-758.xml`
  * (single-element shape) and `objectstructure-clas-npl-750.xml` (split shape).
  *
- * Implementation note: this parser is regex-driven, not XMLParser-driven. The
- * `objectstructure` response is large (~40KB for `CL_ABAP_TYPEDESCR`) and the
- * existing `removeNSPrefix: true` parser config would strip the `adtcore:type`
- * attribute we need for the OO/OM merge. The element shape is regular enough
- * that scoped regexes are cheaper and more readable than reconfiguring the
- * shared parser.
+ * Scoped regexes preserve the `adtcore:type` prefix used to merge OO/OM entries;
+ * the shared XML parser's `removeNSPrefix` setting would strip it.
  */
 export function parseClassStructure(xml: string, className?: string): ClassStructure {
   if (!xml.trim()) {
@@ -1664,6 +1418,7 @@ export function parseClassStructure(xml: string, className?: string): ClassStruc
   // 7.50 split shape: per-name accumulators.
   type PartialMethod = {
     name: string;
+    redefinition?: boolean;
     visibility?: 'public' | 'protected' | 'private';
     level?: 'instance' | 'static';
     abstract: boolean;
@@ -1709,6 +1464,7 @@ export function parseClassStructure(xml: string, className?: string): ClassStruc
       // 7.58+ the single CLAS/OM element carries everything.
       if (visibility && (!entry.visibility || type === 'CLAS/OO')) entry.visibility = visibility;
       if (level && (!entry.level || type === 'CLAS/OO')) entry.level = level;
+      if (/\bredefinition="true"/.test(attrs)) entry.redefinition = true;
       if (isAbstract) entry.abstract = true;
       if (isConstructor) entry.constructor = true;
       if (defBlock) {
@@ -1759,6 +1515,7 @@ export function parseClassStructure(xml: string, className?: string): ClassStruc
     if (!m.definition) continue;
     methods.push({
       name: m.name,
+      ...(m.redefinition ? { redefinition: true } : {}),
       visibility: m.visibility ?? 'public',
       level: m.level ?? 'instance',
       abstract: m.abstract,

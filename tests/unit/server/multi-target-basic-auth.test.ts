@@ -23,7 +23,8 @@ vi.mock('../../../src/server/multi-target-destination-runtime.js', async (import
 }));
 
 const { AdtClient } = await import('../../../src/adt/client.js');
-const { AdtApiError } = await import('../../../src/adt/errors.js');
+const featureProbeModule = await import('../../../src/adt/features.js');
+const { AdtApiError, AdtNetworkError } = await import('../../../src/adt/errors.js');
 const { AdtHttpClient } = await import('../../../src/adt/http.js');
 const { featuresOff } = await import('../handlers/handler-test-config.js');
 const { getCachedDiscovery, getCachedFeatures, resetCachedFeatures, setCachedDiscovery, setCachedFeatures } =
@@ -44,7 +45,7 @@ const { DEFAULT_CONFIG } = await import('../../../src/server/types.js');
 
 type RequestHandler = (
   request: Record<string, unknown>,
-  extra: { authInfo?: AuthInfo },
+  extra: { authInfo?: AuthInfo; signal?: AbortSignal; requestInfo?: { headers: Record<string, string> } },
 ) => Promise<Record<string, any>>;
 
 function requestHandler(server: Server): RequestHandler {
@@ -282,7 +283,7 @@ describe('multi-target shared Basic authentication', () => {
       return DISCOVERY_RESPONSE;
     });
 
-    const pinned = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const pinned = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -305,11 +306,68 @@ describe('multi-target shared Basic authentication', () => {
     expect(sharedAuthState.getHealth('A4H/100').status).toBe('healthy');
   });
 
+  it.each(['pinned', 'aggregate'] as const)(
+    'keeps Eclipse preferences request-local for shared Basic %s calls',
+    async (mode) => {
+      const instanceConfig = { ...INSTANCE_CONFIG, ideLinks: 'eclipse' as const };
+      const current = registry(undefined, instanceConfig);
+      const target = current.targets[0];
+      const sharedAuthState = new MultiTargetSharedAuthState();
+      setCachedFeatures(featuresOff(), target.target);
+      resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
+      vi.spyOn(AdtClient.prototype, 'getClass').mockResolvedValue({
+        source: 'CLASS zcl_test DEFINITION.',
+        notModified: false,
+        statusCode: 200,
+      });
+      vi.spyOn(AdtHttpClient.prototype, 'get').mockResolvedValue(DISCOVERY_RESPONSE);
+      const config =
+        mode === 'pinned'
+          ? buildMultiTargetConfig(instanceConfig, target, { mode: 'pinned' })
+          : buildAggregateToolSurfaceConfig(instanceConfig, current.targets);
+      const server = createServer(config, {
+        btpConfig: BTP_CONFIG,
+        multiTarget: { mode, registry: current, instanceConfig, target, sharedAuthState },
+      });
+      try {
+        const request = {
+          method: 'tools/call',
+          params: {
+            name: 'SAPRead',
+            arguments: {
+              type: 'CLAS',
+              extensions: 'none',
+              name: 'ZCL_TEST',
+              ...(mode === 'aggregate' ? { target: target.target } : {}),
+            },
+          },
+        };
+        for (const editor of ['eclipse', 'vscode', undefined, 'eclipse']) {
+          const result = await requestHandler(server)(request, {
+            authInfo: READ_AUTH,
+            requestInfo: {
+              headers: editor ? { 'arc1-ide-client': editor } : {},
+            },
+          });
+          expect(result.isError).not.toBe(true);
+          expect(result.content).toHaveLength(editor === 'eclipse' ? 2 : 1);
+          if (editor === 'eclipse')
+            expect(result.content[1].text).toContain('target: A4H/100; SAP SID: A4H; client: 100');
+        }
+        expect(sharedAuthState.getHealth(target.target).status).toBe('healthy');
+        expect(resolveRuntimeSubaccountPpDestination).not.toHaveBeenCalled();
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
   it('builds a fresh Basic-only client with current credentials and no inherited user auth state', async () => {
     const current = registry();
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
     resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
+    const sharedHttp = new AdtHttpClient({ baseUrl: 'https://other-sap.invalid', cookies: { MYSAPSSO2: 'shared' } });
 
     await sharedAuthState.runExclusive(target.target, async (lease) => {
       const prepared = await prepareSharedBasicClient({
@@ -318,6 +376,7 @@ describe('multi-target shared Basic authentication', () => {
         target,
         lease,
         buildClientConfig: () => ({
+          http: sharedHttp,
           cookies: { SECRET_COOKIE: 'must-not-survive' },
           cookieFile: '/tmp/must-not-survive',
           cookieString: 'SECRET_COOKIE=must-not-survive',
@@ -333,6 +392,7 @@ describe('multi-target shared Basic authentication', () => {
         }
       ).config;
 
+      expect(prepared.client.http).not.toBe(sharedHttp);
       expect(httpConfig).toMatchObject({
         baseUrl: canonicalDestinationUrl(BASE_DESTINATION.URL),
         username: BASE_DESTINATION.User,
@@ -410,7 +470,7 @@ describe('multi-target shared Basic authentication', () => {
       apiKeys: [{ key: 'basic-api-key', profile: 'viewer' }],
     };
     const audit = vi.spyOn(logger, 'emitAudit');
-    const server = createServer(buildMultiTargetConfig(config, target), {
+    const server = createServer(buildMultiTargetConfig(config, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: config, target, sharedAuthState },
     });
@@ -443,7 +503,7 @@ describe('multi-target shared Basic authentication', () => {
   it('fails safely before destination lookup when Basic BTP runtime state is missing', async () => {
     const current = registry();
     const target = current.targets[0];
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target },
     });
 
@@ -481,7 +541,15 @@ describe('multi-target shared Basic authentication', () => {
     };
 
     expect(await names(['read'])).not.toContain('SAPQuery');
-    expect(await names(['read', 'data'])).not.toContain('SAPQuery');
+    expect(await names(['read', 'data'])).toContain('SAPQuery');
+    const dataTools = await list(
+      { method: 'tools/list', params: {} },
+      { authInfo: { ...READ_AUTH, scopes: ['read', 'data'] } },
+    );
+    const dataQuery = dataTools.tools.find((tool: { name: string }) => tool.name === 'SAPQuery');
+    expect(dataQuery.inputSchema.properties.action.enum).toEqual(['long_text']);
+    expect(dataQuery.inputSchema.properties.sql).toBeUndefined();
+    expect(dataQuery.inputSchema.properties.longText).toBeDefined();
     expect(await names(['read', 'data', 'sql'])).toContain('SAPQuery');
     expect(await names(['admin'])).toContain('SAPQuery');
     for (const scopes of [['read'], ['read', 'data'], ['read', 'data', 'sql'], ['admin']]) {
@@ -540,7 +608,7 @@ describe('multi-target shared Basic authentication', () => {
       if (canaries === 1) await firstBlocked;
       return DISCOVERY_RESPONSE;
     });
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -578,7 +646,7 @@ describe('multi-target shared Basic authentication', () => {
       if (canaries === 1) await firstBlocked;
       return DISCOVERY_RESPONSE;
     });
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -610,7 +678,7 @@ describe('multi-target shared Basic authentication', () => {
       await canaryBlocked;
       throw new AdtApiError('Unauthorized', 401, path, 'SECRET_SAP_BODY');
     });
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -646,7 +714,7 @@ describe('multi-target shared Basic authentication', () => {
       }
       return DISCOVERY_RESPONSE;
     });
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -669,35 +737,45 @@ describe('multi-target shared Basic authentication', () => {
     expect(sharedAuthState.getHealth('A4H/100').status).toBe('healthy');
   });
 
-  it('caches authorization-limited shared feature evidence and reprobes after credential rotation', async () => {
-    const current = registry();
-    const target = current.targets[0];
-    const sharedAuthState = new MultiTargetSharedAuthState();
-    let password = 'FIRST_PASSWORD';
-    resolveRuntimeSubaccountDestination.mockImplementation(async () => ({ ...BASE_DESTINATION, Password: password }));
-    vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H"}');
-    let featureProbes = 0;
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockImplementation(async (path) => {
-      if (path === '/sap/bc/adt/ddic/sysinfo/hanainfo') {
-        featureProbes += 1;
-        throw new AdtApiError('Forbidden', 403, path, 'Authorization denied');
-      }
-      return DISCOVERY_RESPONSE;
-    });
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
-      btpConfig: BTP_CONFIG,
-      multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
-    });
-    const call = requestHandler(server);
+  it.each([false, true])(
+    'caches shared feature denials and reprobes after rotation (all denied: %s)',
+    async (allDenied) => {
+      const current = registry();
+      const target = current.targets[0];
+      const sharedAuthState = new MultiTargetSharedAuthState();
+      let password = 'FIRST_PASSWORD';
+      resolveRuntimeSubaccountDestination.mockImplementation(async () => ({ ...BASE_DESTINATION, Password: password }));
+      vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H"}');
+      let featureProbes = 0;
+      vi.spyOn(AdtHttpClient.prototype, 'get').mockImplementation(async (path) => {
+        if (path === '/sap/bc/adt/ddic/sysinfo/hanainfo') {
+          featureProbes += 1;
+          throw new AdtApiError('Forbidden', 403, path, 'Authorization denied');
+        }
+        if (allDenied && !path.endsWith('/discovery')) throw new AdtApiError('Forbidden', 403, path);
+        if (allDenied)
+          return {
+            statusCode: 200,
+            headers: { 'content-type': 'application/atomsvc+xml' },
+            body: '<app:service xmlns:app="http://www.w3.org/2007/app"/>',
+          };
+        return DISCOVERY_RESPONSE;
+      });
+      const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
+        btpConfig: BTP_CONFIG,
+        multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
+      });
+      const call = requestHandler(server);
 
-    expect((await call(toolRequest('pinned'), { authInfo: READ_AUTH })).isError).not.toBe(true);
-    expect((await call(toolRequest('pinned'), { authInfo: READ_AUTH })).isError).not.toBe(true);
-    expect(featureProbes).toBe(1);
+      expect((await call(toolRequest('pinned'), { authInfo: READ_AUTH })).isError).not.toBe(true);
+      expect((await call(toolRequest('pinned'), { authInfo: READ_AUTH })).isError).not.toBe(true);
+      expect(featureProbes).toBe(1);
 
-    password = 'ROTATED_PASSWORD';
-    expect((await call(toolRequest('pinned'), { authInfo: READ_AUTH })).isError).not.toBe(true);
-    expect(featureProbes).toBe(2);
-  });
+      password = 'ROTATED_PASSWORD';
+      expect((await call(toolRequest('pinned'), { authInfo: READ_AUTH })).isError).not.toBe(true);
+      expect(featureProbes).toBe(2);
+    },
+  );
 
   it('recovers from missing destination credentials on the next call without restart', async () => {
     const current = registry();
@@ -707,7 +785,7 @@ describe('multi-target shared Basic authentication', () => {
     resolveRuntimeSubaccountDestination.mockImplementation(async () => ({ ...BASE_DESTINATION, Password: password }));
     vi.spyOn(AdtHttpClient.prototype, 'get').mockResolvedValue(DISCOVERY_RESPONSE);
     vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H"}');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -752,7 +830,7 @@ describe('multi-target shared Basic authentication', () => {
       body,
     });
     vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H"}');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -790,7 +868,7 @@ describe('multi-target shared Basic authentication', () => {
     resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
     vi.spyOn(AdtHttpClient.prototype, 'get').mockResolvedValue({ statusCode: 200, headers, body });
     const tool = vi.spyOn(AdtClient.prototype, 'getSystemInfo');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -822,7 +900,7 @@ describe('multi-target shared Basic authentication', () => {
     vi.spyOn(AdtClient.prototype, 'getSystemInfo')
       .mockRejectedValueOnce(new AdtApiError('Forbidden', 403, '/sap/bc/adt/systeminformation', authorizationBody))
       .mockResolvedValueOnce('{"sid":"A4H"}');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -849,7 +927,7 @@ describe('multi-target shared Basic authentication', () => {
       .spyOn(AdtHttpClient.prototype, 'get')
       .mockRejectedValue(new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', authorizationBody));
     const tool = vi.spyOn(AdtClient.prototype, 'getSystemInfo');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -878,7 +956,7 @@ describe('multi-target shared Basic authentication', () => {
     const canary = vi
       .spyOn(AdtHttpClient.prototype, 'get')
       .mockRejectedValue(new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', connectivityBody));
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -908,7 +986,7 @@ describe('multi-target shared Basic authentication', () => {
     const canary = vi
       .spyOn(AdtHttpClient.prototype, 'get')
       .mockRejectedValue(new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', body));
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -949,7 +1027,7 @@ describe('multi-target shared Basic authentication', () => {
       return '{"sid":"A4H"}';
     });
     const audit = vi.spyOn(logger, 'emitAudit');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -983,7 +1061,7 @@ describe('multi-target shared Basic authentication', () => {
       URL: 'http://changed.internal:50000',
     });
     const canary = vi.spyOn(AdtHttpClient.prototype, 'get');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -1016,7 +1094,7 @@ describe('multi-target shared Basic authentication', () => {
       new RuntimeDestinationLevelError('INSTANCE_DESTINATION_SHADOW', target.destinationName),
     );
     const canary = vi.spyOn(AdtHttpClient.prototype, 'get');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -1041,7 +1119,7 @@ describe('multi-target shared Basic authentication', () => {
       throw new Error('SENTINEL_PROXY_FAILURE_DETAIL');
     });
     const canary = vi.spyOn(AdtHttpClient.prototype, 'get');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -1073,7 +1151,7 @@ describe('multi-target shared Basic authentication', () => {
     createConnectivityProxy.mockImplementationOnce(() => {
       throw new Error('proxy temporarily unavailable');
     });
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -1096,7 +1174,7 @@ describe('multi-target shared Basic authentication', () => {
     const sharedAuthState = new MultiTargetSharedAuthState();
     resolveRuntimeSubaccountDestination.mockResolvedValue({ ...BASE_DESTINATION, User: username });
     const canary = vi.spyOn(AdtHttpClient.prototype, 'get');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -1132,5 +1210,94 @@ describe('multi-target shared Basic authentication', () => {
     expect(payload.admin.sharedAuthentication).toEqual({ targets: 1, statusCounts: { healthy: 1 } });
     expect(JSON.stringify(payload)).not.toContain('SENTINEL_TECHNICAL_USER');
     expect(JSON.stringify(payload)).not.toContain('SENTINEL_TECHNICAL_PASSWORD');
+  });
+});
+
+describe('bounded transport review with shared Basic identity', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetCachedFeatures();
+    resolveRuntimeSubaccountDestination.mockReset();
+  });
+  const inventory =
+    '<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900001" tm:status="R" tm:owner="T" tm:type="K"><tm:task tm:number="A4HK900002" tm:status="R"><tm:abap_object_list><tm:abap_object tm:pgmid="R3TR" tm:type="CLAS" tm:name="ZCL_DEMO" tm:wbtype="CLAS/OC"/></tm:abap_object_list></tm:task></tm:request></tm:root>';
+  const review = {
+    method: 'tools/call',
+    params: { name: 'SAPTransport', arguments: { action: 'diff', id: 'A4HK900001' } },
+  };
+  function setup() {
+    vi.spyOn(featureProbeModule, 'probeFeatures').mockResolvedValue(featuresOff());
+    const current = registry();
+    const target = current.targets[0];
+    const sharedAuthState = new MultiTargetSharedAuthState();
+    setCachedFeatures(featuresOff(), target.target);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
+      btpConfig: BTP_CONFIG,
+      multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
+    });
+    return { server, call: requestHandler(server), sharedAuthState };
+  }
+  it('stops on a part-level 401 and blocks the next call without another SAP read', async () => {
+    const get = vi.spyOn(AdtHttpClient.prototype, 'get').mockImplementation(async function (
+      this: InstanceType<typeof AdtHttpClient>,
+      path,
+    ) {
+      if (path === '/sap/bc/adt/core/discovery') return DISCOVERY_RESPONSE;
+      if (path.includes('/cts/transportrequests/')) return { statusCode: 200, headers: {}, body: inventory };
+      const config = (
+        this as unknown as { config: { onUnauthorized?: (context: { path: string; statusCode: 401 }) => void } }
+      ).config;
+      config.onUnauthorized?.({ path, statusCode: 401 });
+      throw new AdtApiError('SECRET_SAP_BODY', 401, path);
+    });
+    const { server, call, sharedAuthState } = setup();
+    try {
+      const first = await call(review, { authInfo: READ_AUTH });
+      expect(JSON.parse(first.content[0].text)).toMatchObject({ error: 'SAP_AUTHENTICATION_FAILED', retryable: false });
+      expect(first.content[0].text).not.toContain('SECRET_');
+      expect(get).toHaveBeenCalledTimes(3); // canary, inventory, first history
+      const second = await call(review, { authInfo: READ_AUTH });
+      expect(JSON.parse(second.content[0].text)).toMatchObject({ error: 'SAP_AUTHENTICATION_FAILED' });
+      expect(get).toHaveBeenCalledTimes(3);
+      expect(sharedAuthState.getHealth('A4H/100').status).toBe('authentication_failed');
+    } finally {
+      await server.close();
+    }
+  });
+  it('cancellation during history stops the fan-out and releases a queued caller', async () => {
+    let entered!: () => void;
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const abort = new AbortController();
+    const get = vi.spyOn(AdtHttpClient.prototype, 'get').mockImplementation(async (path, _headers, options) => {
+      if (path === '/sap/bc/adt/core/discovery') return DISCOVERY_RESPONSE;
+      if (path.includes('/cts/transportrequests/')) return { statusCode: 200, headers: {}, body: inventory };
+      entered();
+      await new Promise<void>((_resolve, reject) =>
+        options?.signal?.addEventListener(
+          'abort',
+          () => reject(new AdtNetworkError('Cancelled', new DOMException('Cancelled', 'AbortError'))),
+          { once: true },
+        ),
+      );
+      throw new Error('Cancelled read should reject');
+    });
+    const { server, call } = setup();
+    try {
+      const first = call(review, { authInfo: READ_AUTH, signal: abort.signal });
+      await reading;
+      const second = call(
+        { method: 'tools/call', params: { name: 'SAPTransport', arguments: { action: 'get', id: 'A4HK900001' } } },
+        { authInfo: READ_AUTH },
+      );
+      abort.abort();
+      expect((await first).isError).toBe(true);
+      expect((await second).isError).not.toBe(true);
+      expect(get.mock.calls.filter(([path]) => path.endsWith('/versions'))).toHaveLength(1);
+    } finally {
+      await server.close();
+    }
   });
 });

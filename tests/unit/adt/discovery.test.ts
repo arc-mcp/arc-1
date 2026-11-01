@@ -8,17 +8,48 @@ import {
   resolveContentType,
 } from '../../../src/adt/discovery.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
-import { parseDiscoveryDocument } from '../../../src/adt/xml-parser.js';
+import { parseDiscoveryDocument, parseDiscoveryObject, parseXml } from '../../../src/adt/xml-parser.js';
 
 const fixturesDir = join(import.meta.dirname, '../../fixtures/xml');
 const loadFixture = (name: string) => readFileSync(join(fixturesDir, name), 'utf-8');
 
 describe('ADT Discovery', () => {
   describe('parseDiscoveryDocument', () => {
+    it('retains the listed display-only collections without inventing MIME types (#950)', () => {
+      const map = parseDiscoveryDocument(loadFixture('discovery-display-only.xml'));
+      for (const path of ['/ddic/domains', '/ddic/tabletypes', '/ddic/lockobjects/sources']) {
+        expect(map.get(`/sap/bc/adt${path}`)).toEqual([]);
+        expect(resolveAcceptType(map, `/sap/bc/adt${path}`)).toBeUndefined();
+      }
+      expect(map.has('/sap/bc/adt/ddic/tables')).toBe(false);
+    });
+
+    it.each(['', '<app:accept/>', '<app:accept>  </app:accept>'])(
+      'retains a collection with no usable media type: %s',
+      (accept) => {
+        const xml = `<app:service><app:workspace><app:collection href="/sap/bc/adt/ddic/domains">${accept}</app:collection></app:workspace></app:service>`;
+        expect(parseDiscoveryDocument(xml).get('/sap/bc/adt/ddic/domains')).toEqual([]);
+      },
+    );
+
+    it.each([true, false])('an empty duplicate preserves the advertised MIME type (empty first: %s)', (emptyFirst) => {
+      const empty = '<app:collection href="/sap/bc/adt/ddic/domains"><app:accept/></app:collection>';
+      const typed =
+        '<app:collection href="/sap/bc/adt/ddic/domains"><app:accept>application/xml</app:accept></app:collection>';
+      const xml = `<app:service><app:workspace>${emptyFirst ? empty + typed : typed + empty}</app:workspace></app:service>`;
+      expect(parseDiscoveryDocument(xml).get('/sap/bc/adt/ddic/domains')).toEqual(['application/xml']);
+    });
+
+    it('maps pre-parsed XML identically, preserving duplicate and MIME normalization behavior', () => {
+      const xml = loadFixture('discovery.xml');
+      expect(parseDiscoveryObject(parseXml(xml))).toEqual(parseDiscoveryDocument(xml));
+      expect(parseDiscoveryObject({})).toEqual(new Map());
+      expect(parseDiscoveryObject({ service: { workspace: [null] } })).toEqual(new Map());
+    });
     it('parses fixture into expected map size', () => {
       const xml = loadFixture('discovery.xml');
       const map = parseDiscoveryDocument(xml);
-      expect(map.size).toBe(9);
+      expect(map.size).toBe(10);
     });
 
     it('returns multiple accepts in order', () => {
@@ -31,10 +62,10 @@ describe('ADT Discovery', () => {
       ]);
     });
 
-    it('omits collections without accepts', () => {
+    it('retains collection presence without accepts', () => {
       const xml = loadFixture('discovery.xml');
       const map = parseDiscoveryDocument(xml);
-      expect(map.has('/sap/bc/adt/activation')).toBe(false);
+      expect(map.get('/sap/bc/adt/activation')).toEqual([]);
     });
 
     it('returns single accept as one-element array', () => {
@@ -61,7 +92,7 @@ describe('ADT Discovery', () => {
       const xml = loadFixture('discovery.xml');
       const map = parseDiscoveryDocument(xml);
       expect(map.has('')).toBe(false);
-      expect(map.size).toBe(9);
+      expect(map.size).toBe(10);
     });
 
     it('preserves MIME types exactly', () => {
@@ -93,7 +124,7 @@ describe('ADT Discovery', () => {
       const xml = loadFixture('discovery.xml');
       const client = mockClient(async () => ({ body: xml }));
       const { map } = await fetchDiscoveryDocument(client);
-      expect(map.size).toBe(9);
+      expect(map.size).toBe(10);
       expect((client as any).get).toHaveBeenCalledWith(
         '/sap/bc/adt/discovery',
         { Accept: 'application/atomsvc+xml' },
@@ -138,7 +169,7 @@ describe('ADT Discovery', () => {
       const client = mockClient(async () => ({ body: xml }));
       const { map, nhiPresent } = await fetchDiscoveryDocument(client);
       expect(nhiPresent).toBe(true);
-      expect(map.size).toBe(0); // NHI collections have no <app:accept>
+      expect(map.size).toBe(1); // NHI collection presence survives without <app:accept>.
     });
 
     it('sets nhiPresent=false when NHI hrefs are absent', async () => {
@@ -204,6 +235,20 @@ describe('ADT Discovery', () => {
   });
 
   describe('resolveAcceptType / resolveContentType', () => {
+    it.each([resolveAcceptType, resolveContentType])(
+      'empty entries do not shadow usable parent MIME types',
+      (resolve) => {
+        const map = new Map<string, string[]>([
+          ['/sap/bc/adt/ddic', ['application/xml']],
+          ['/sap/bc/adt/ddic/domains', []],
+        ]);
+        expect(resolve(map, '/sap/bc/adt/ddic/domains')).toBe('application/xml');
+        // Parent fallback is still shallow; no MIME type is inferred for an object or its source.
+        expect(resolve(map, '/sap/bc/adt/ddic/domains/ZTEST')).toBeUndefined();
+        expect(resolve(map, '/sap/bc/adt/ddic/domains/ZTEST/source/main')).toBeUndefined();
+      },
+    );
+
     it('resolves exact path matches', () => {
       const map = new Map<string, string[]>([
         ['/sap/bc/adt/oo/classes', ['application/vnd.sap.adt.oo.classes.v4+xml']],

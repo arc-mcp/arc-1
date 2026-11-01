@@ -5,6 +5,7 @@
 
 import { type AdtClient, clampSearchResults } from '../adt/client.js';
 import { AdtApiError } from '../adt/errors.js';
+import { canonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { checkTransport } from '../adt/safety.js';
 import {
   checkRecursiveTransportReleaseScope,
@@ -26,19 +27,16 @@ import {
   supportsExplicitTransportTarget,
   type TransportReleaseResult,
 } from '../adt/transport.js';
-import { diffTransportObject, type LogicalTransportObject, rollupTransportObjects } from '../adt/transport-diff.js';
 import type { InactiveObject, ObjectTransportHistory, TransportReleaseReport, TransportRequest } from '../adt/types.js';
 import { logger } from '../server/logger.js';
 import type { ServerConfig } from '../server/types.js';
-import { objectUrlForType } from './object-types.js';
+import { functionGroupObjectUrl, functionModuleObjectUrl, objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
+import { handleTransportReview } from './transport-review.js';
 
 /** Default page size for `list`. Object lists dominate the payload, so the backlog sets the cost. */
 const DEFAULT_TRANSPORT_RESULTS = 50;
 const DEFAULT_TRANSPORT_CHECK_RESULTS = 10;
-/** `diff` page size. Cap matches SAP's own transport-diff tool (pageSize max 40) so results compare. */
-const DEFAULT_DIFF_OBJECTS = 20;
-const MAX_DIFF_OBJECTS = 40;
 
 /**
  * Pre-release guard: find inactive objects that belong to `transportId`. Releasing a transport that
@@ -194,6 +192,64 @@ function summarizeTransport(t: TransportRequest) {
   };
 }
 
+/** Owning group of a function-group include, or undefined for a standalone include. */
+async function resolveIncludeGroup(
+  client: AdtClient,
+  includeName: string,
+  allowMissing: boolean,
+): Promise<string | undefined> {
+  const [lookup] = await client.lookupObjects([includeName]);
+  const matches = (lookup?.matches ?? []).filter((r) => r.objectType === 'FUGR/I' || r.objectType === 'PROG/I');
+  if (matches.length === 0 && allowMissing) return undefined;
+  const owners = new Map<string, string | undefined>();
+  const unverified = new Error(
+    `Cannot verify the owning group of include "${includeName}". Provide "group" explicitly.`,
+  );
+  for (const r of matches) {
+    const path = canonicalHostRelativeAdtPath(r.uri, '/sap/bc/adt/', { allowRawEncodedSlash: true });
+    if (!path || path.includes('?')) throw unverified;
+    const grouped = path.match(/^\/sap\/bc\/adt\/functions\/groups\/([^/]+)\/includes\/([^/?#]+)$/i);
+    if (
+      r.objectType === 'FUGR/I' &&
+      grouped &&
+      decodeURIComponent(grouped[2]).toUpperCase() === includeName.toUpperCase()
+    ) {
+      const group = decodeURIComponent(grouped[1]).toUpperCase();
+      owners.set(group, group);
+    } else if (
+      r.objectType === 'PROG/I' &&
+      path.toUpperCase() === `/sap/bc/adt/programs/includes/${encodeURIComponent(includeName)}`.toUpperCase()
+    ) {
+      owners.set('standalone', undefined);
+    } else {
+      throw unverified;
+    }
+  }
+  if (owners.size !== 1) throw unverified;
+  return owners.values().next().value;
+}
+
+/** FUNC and structural INCL objects use a parent-group collection. */
+async function resolveTransportObjectUrl(
+  client: AdtClient,
+  type: string,
+  name: string,
+  group: string | undefined,
+  allowMissingInclude = false,
+): Promise<string> {
+  let parent = group?.trim();
+  if (type === 'FUNC' && !parent) {
+    parent = (await client.resolveFunctionGroup(name)) ?? undefined;
+    if (!parent)
+      throw new Error(`Cannot resolve function group for FM "${name}". Provide the "group" parameter explicitly.`);
+  }
+  if (type === 'INCL' && !parent) parent = await resolveIncludeGroup(client, name, allowMissingInclude);
+  if (type === 'FUNC' && parent) return functionModuleObjectUrl(parent, name);
+  if (type === 'INCL' && parent)
+    return `${functionGroupObjectUrl(parent)}/includes/${encodeURIComponent(name.toLowerCase())}`;
+  return objectUrlForType(type, name);
+}
+
 export async function handleSAPTransport(
   client: AdtClient,
   args: Record<string, unknown>,
@@ -240,75 +296,8 @@ export async function handleSAPTransport(
       if (!transport) return textResult(`Transport ${id} not found.`);
       return textResult(toolJson(transport));
     }
-    case 'diff': {
-      const id = String(args.id ?? '');
-      if (!id) return errorResult('Transport ID is required for "diff" action.');
-      const transport = await getTransport(client.http, client.safety, id);
-      if (!transport) return textResult(`Transport ${id} not found.`);
-
-      // A transport of copies records its objects on the REQUEST, not under a task, so
-      // reviewing only `tasks` returns an empty change set. A released workbench request also
-      // MIRRORS its task objects at request level — add only the entries no task already
-      // carries, otherwise the request id lands in `taskIds` and reads as an extra task.
-      const taskObjectKeys = new Set(
-        transport.tasks.flatMap((t) => t.objects.map((o) => `${o.pgmid}:${o.type}:${o.name}`.toUpperCase())),
-      );
-      const requestOnly = (transport.requestObjects ?? []).filter(
-        (o) => !taskObjectKeys.has(`${o.pgmid}:${o.type}:${o.name}`.toUpperCase()),
-      );
-      const objects = rollupTransportObjects([
-        ...transport.tasks,
-        ...(requestOnly.length ? [{ id: transport.id, objects: requestOnly }] : []),
-      ]);
-      const offset = Math.max(0, Number(args.offset ?? 0) || 0);
-      const limit = Math.min(
-        clampSearchResults(args.limit as number | undefined, DEFAULT_DIFF_OBJECTS),
-        MAX_DIFF_OBJECTS,
-      );
-      // Stable order across pages: the transport is re-read per call, and SAP does not promise
-      // a fixed task/object sequence, so an unsorted slice could skip or repeat an object.
-      // Plain code-point comparison, NOT localeCompare — collation is ICU/locale dependent
-      // (da-DK sorts "AA" after "Z"), so two instances behind a load balancer would page
-      // differently. The key mirrors the rollup key so entries can never compare equal.
-      const sortKey = (o: LogicalTransportObject) => `${o.pgmid}:${o.type}:${o.name}`;
-      objects.sort((a, b) => (sortKey(a) < sortKey(b) ? -1 : sortKey(a) > sortKey(b) ? 1 : 0));
-      const page = objects.slice(offset, offset + limit);
-
-      // Match the request AND its tasks: version records reference the request on the systems
-      // verified so far, but matching both can only add correct matches, never remove one.
-      const transportIds = new Set<string>([transport.id, ...transport.tasks.map((t) => t.id)].filter(Boolean));
-
-      // Objects are independent reads; http.ts caps real concurrency via the shared Semaphore.
-      const diffs = await Promise.all(
-        page.map((object) =>
-          diffTransportObject(client, object, transportIds, { minimalErrors: config.minimalErrors }),
-        ),
-      );
-
-      return textResult(
-        toolJson({
-          transport: {
-            id: transport.id,
-            description: transport.description,
-            owner: transport.owner,
-            status: transport.status,
-          },
-          // One model for released and open transports alike: while a transport is open its
-          // objects are locked, so the active revision carries its id and matches the same way.
-          comparison: 'transport-correction-to-immediate-previous',
-          totalObjects: objects.length,
-          offset,
-          shown: page.length,
-          // parseTransportList only harvests objects nested under <tm:task>; a request whose
-          // objects sit at request level would otherwise read as "nothing changed".
-          ...(objects.length === 0 ? { note: 'This transport records no reviewable objects.' } : {}),
-          ...(offset + page.length < objects.length
-            ? { hint: `Showing ${page.length} of ${objects.length}. Next page: offset=${offset + page.length}.` }
-            : {}),
-          objects: diffs,
-        }),
-      );
-    }
+    case 'diff':
+      return handleTransportReview(client, args, config);
     case 'create': {
       const description = String(args.description ?? '');
       if (!description) return errorResult('Description is required for "create" action.');
@@ -564,8 +553,14 @@ export async function handleSAPTransport(
       if (!objectType || !objectName) return errorResult('"type" and "name" are required for "check" action.');
       if (!pkg) return errorResult('"package" is required for "check" action.');
 
-      const objectUrl = objectUrlForType(objectType, objectName);
       const operation = args.operation === 'modify' ? 'modify' : 'create';
+      const objectUrl = await resolveTransportObjectUrl(
+        client,
+        objectType,
+        objectName,
+        args.group as string | undefined,
+        operation === 'create',
+      );
       const info = await getTransportInfo(
         client.http,
         client.safety,
@@ -573,6 +568,8 @@ export async function handleSAPTransport(
         pkg,
         operation === 'create' ? 'I' : '',
       );
+      if (info.lockedTransportAmbiguous || (info.lockedTasks.length > 0 && !info.lockedTransport))
+        return errorResult('SAP returned ambiguous CTS lock holders. Inspect the object in CTS before editing.');
       const transportRequired = !info.isLocal && (info.recording || Boolean(info.lockedTransport));
       const transportAssignmentRequired = !info.isLocal && info.recording && !info.lockedTransport;
       const candidateLimit = clampSearchResults(args.maxResults as number | undefined, DEFAULT_TRANSPORT_CHECK_RESULTS);
@@ -624,39 +621,68 @@ export async function handleSAPTransport(
         return errorResult('"type" and "name" are required for "history" action.');
       }
 
-      const objectUrl = objectUrlForType(objectType, objectName);
+      const objectUrl = await resolveTransportObjectUrl(
+        client,
+        objectType,
+        objectName,
+        args.group as string | undefined,
+      );
       const primary = await getObjectTransports(client.http, client.safety, objectUrl);
       let candidateTransports = primary.candidateTransports;
+      let lockedTransport = primary.lockedTransport;
+      let relatedTransports = primary.relatedTransports;
+      let lockStatusUnknown = false;
 
       // Fallback: if per-object transport lookup is empty, derive the package via
       // the object metadata endpoint and ask transportchecks for candidate transports.
       if (primary.relatedTransports.length === 0 && candidateTransports.length === 0) {
         try {
           const pkg = await client.resolveObjectPackage(objectUrl);
-          if (pkg && pkg !== '$TMP') {
+          if (!pkg) lockStatusUnknown = true;
+          else if (pkg !== '$TMP') {
             const info = await getTransportInfo(client.http, client.safety, objectUrl, pkg, '');
             candidateTransports = info.existingTransports;
+            // transportchecks reports locks (incl. other users') that /transports omitted.
+            if (info.lockedTransportAmbiguous || (info.lockedTasks.length > 0 && !info.lockedTransport)) {
+              lockStatusUnknown = true;
+            } else if (info.lockedTransport) {
+              lockedTransport = info.lockedTransport;
+              const owner = info.lockedTransportOwner ?? '';
+              relatedTransports = [
+                {
+                  id: info.lockedTransport,
+                  description: candidateTransports.find((t) => t.id === info.lockedTransport)?.description ?? '',
+                  owner,
+                  status: 'D',
+                },
+              ];
+            } else if (info.result !== 'S') {
+              lockStatusUnknown = true;
+            }
           }
         } catch {
-          // best-effort-fallback
+          lockStatusUnknown = true;
         }
       }
 
-      const lockOwner = primary.relatedTransports[0]?.owner;
+      const lockOwner = relatedTransports[0]?.owner;
       const candidateTotal = candidateTransports.length;
       const candidateLimit = clampSearchResults(args.maxResults as number | undefined, DEFAULT_TRANSPORT_RESULTS);
       const boundedCandidates = candidateTransports.slice(0, candidateLimit);
       const candidateTruncated = candidateTotal > boundedCandidates.length;
-      const summary = primary.lockedTransport
-        ? `Object ${objectName} is locked in transport ${primary.lockedTransport}${lockOwner ? ` by ${lockOwner}` : ''}.`
-        : candidateTotal > 0
-          ? `Object ${objectName} has no active lock; ${candidateTotal} transport(s) available for assignment.`
-          : `Object ${objectName} has no current lock or assignment candidates.`;
+      const summary = lockStatusUnknown
+        ? `The current CTS lock for ${objectName} could not be verified. Inspect it in CTS before editing.`
+        : lockedTransport
+          ? `Object ${objectName} is locked in transport ${lockedTransport}${lockOwner ? ` by ${lockOwner}` : ''}.`
+          : candidateTotal > 0
+            ? `Object ${objectName} has no active lock; ${candidateTotal} transport(s) available for assignment.`
+            : `Object ${objectName} has no current lock or assignment candidates.`;
 
       const history: ObjectTransportHistory = {
         object: { type: objectType, name: objectName, uri: objectUrl },
-        ...(primary.lockedTransport ? { lockedTransport: primary.lockedTransport } : {}),
-        relatedTransports: primary.relatedTransports,
+        ...(lockedTransport ? { lockedTransport } : {}),
+        ...(lockStatusUnknown ? { lockStatusUnknown: true } : {}),
+        relatedTransports,
         candidateTransports: boundedCandidates,
         candidateTotal,
         candidateTruncated,

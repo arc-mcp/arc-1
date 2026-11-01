@@ -344,6 +344,15 @@ describe('abapGit client helpers', () => {
     await expect(pullRepo(http, gitSafety, '000000000001')).rejects.toThrow(/rejecting object messages/);
   });
 
+  it('reports a rejecting object message in full when its text contains angle brackets', async () => {
+    const http = mockHttp(
+      '<abapObjects:abapObjects xmlns:abapObjects="http://www.sap.com/adt/abapgit/abapObjects"><abapObjects:abapObject><abapObjects:type>CLAS</abapObjects:type><abapObjects:name>ZCL_FOO</abapObjects:name><abapObjects:msgType>E</abapObjects:msgType><abapObjects:msgText>Include &lt;ZFOO_TOP&gt; not found; length &lt; 5 &amp; more</abapObjects:msgText></abapObjects:abapObject></abapObjects:abapObjects>',
+    );
+    await expect(pullRepo(http, gitSafety, '000000000001')).rejects.toThrow(
+      'E CLAS ZCL_FOO: Include <ZFOO_TOP> not found; length < 5 & more',
+    );
+  });
+
   it('pullRepo maps bridge XML errors to AdtApiError message with namespace', async () => {
     const http = mockHttp();
     (http.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
@@ -436,8 +445,81 @@ describe('abapGit client helpers', () => {
       expect(String(err)).not.toContain(sentinel);
       expect((err as AdtApiError).responseBody).not.toContain(sentinel);
       expect((err as AdtApiError).responseBody!.length).toBeLessThan(4_096);
-      expect((err as AdtApiError).responseBody).toContain('[truncated');
+      expect((err as AdtApiError).responseBody).toContain('details omitted');
     }
+  });
+
+  const bridgeError = (message: string): AdtApiError => {
+    const body = `<?xml version="1.0"?><exc:exception xmlns:exc="x"><namespace id="org.abapgit.adt"/><message>${message}</message></exc:exception>`;
+    return new AdtApiError(body.slice(0, 500), 500, '/sap/bc/adt/abapgit/repos/R/pull', body);
+  };
+
+  it('shows a bridge error entity-decoded exactly once', async () => {
+    const http = mockHttp();
+    (http.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      bridgeError(
+        'Clone of https://example.com/r.git?a=1&amp;b=2 failed: &lt;unknown&gt; branch, see &amp;lt;docs&amp;gt;',
+      ),
+    );
+
+    // The sanitizer re-wraps the extracted message; that must neither strip `<unknown>` nor decode `&lt;`.
+    await expect(pullRepo(http, gitSafety, 'R')).rejects.toThrow(
+      'ADT API error: status 500 at /sap/bc/adt/abapgit/repos/R/pull: [org.abapgit.adt] ' +
+        'Clone of https://example.com/r.git?a=1&b=2 failed: <unknown> branch, see &lt;docs&gt;',
+    );
+  });
+
+  // Both thrown errors and check results omit the same credential-bearing diagnostic.
+  it.each([
+    // Decoded before redaction, `<` / `>` would end the URL match and leave the rest of the password.
+    ['a URL password containing &lt;', 'Remote failed https://git-user:pa&lt;SENTINEL@example.com/r.git now'],
+    ['a URL password containing &gt;', 'Remote failed https://git-user:pa&gt;SENTINEL@example.com/r.git now'],
+    // Redacted only before decoding, these keep their secret: no literal quote or tag to match.
+    ['an entity-quoted assignment', 'Remote said password=&quot;SENTINEL words&quot; rejected'],
+    [
+      'an echoed request element',
+      'Bad payload &lt;abapgitrepo:remotePassword&gt;SENTINEL&lt;/abapgitrepo:remotePassword&gt; rejected',
+    ],
+  ])('redacts %s from a bridge error message', async (_label, message) => {
+    const thrown = mockHttp();
+    (thrown.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(bridgeError(message));
+    const err = await pullRepo(thrown, gitSafety, 'R').catch((caught: unknown) => caught);
+    expect(err).toBeInstanceOf(AdtApiError);
+    expect((err as AdtApiError).message).toContain('[org.abapgit.adt]');
+    expect((err as AdtApiError).message).not.toContain('SENTINEL');
+
+    const checked = mockHttp();
+    (checked.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(bridgeError(message));
+    const result = await checkRepo(checked, gitSafety, firstRepo());
+    expect(result.ok).toBe(false);
+    expect(result.message).not.toContain('SENTINEL');
+  });
+
+  // The encoded pass runs on the extracted text, never on the raw body: there markup separates a
+  // keyword from its value, and an unbalanced quote makes a quoted-value match swallow the tags after it.
+  it('omits credentials separated by HTML tags or introduced by an unfinished assignment', async () => {
+    const siblings =
+      '<html><body><table><tr><td>Authorization: Bearer</td><td>SENTINEL</td></tr></table></body></html>';
+    const http = mockHttp();
+    (http.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new AdtApiError(siblings, 500, '/sap/bc/adt/abapgit/repos/R/pull', siblings),
+    );
+    await expect(pullRepo(http, gitSafety, 'R')).rejects.toThrow(
+      'ADT API error: status 500 at /sap/bc/adt/abapgit/repos/R/pull: abapGit error details omitted because they may contain credentials.',
+    );
+
+    const unbalanced =
+      '<?xml version="1.0"?><exc:exception xmlns:exc="x"><namespace id="org.abapgit.adt"/>' +
+      `<message lang="EN">Login failed, auth_token='</message><localizedMessage lang="EN">Login failed, auth_token='</localizedMessage>` +
+      '<localizedMessage lang="EN">See note 123 for details</localizedMessage></exc:exception>';
+    const checked = mockHttp();
+    (checked.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new AdtApiError(unbalanced.slice(0, 500), 500, '/sap/bc/adt/abapgit/repos/R/checks', unbalanced),
+    );
+    expect(await checkRepo(checked, gitSafety, firstRepo())).toEqual({
+      ok: false,
+      message: 'abapGit error details omitted because they may contain credentials.',
+    });
   });
 
   it('stageRepo throws descriptive error when repository has no stage link', async () => {

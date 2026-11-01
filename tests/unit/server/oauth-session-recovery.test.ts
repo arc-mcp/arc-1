@@ -8,6 +8,7 @@ import {
   OAUTH_LOGGED_OUT_PATH,
   withInvalidScopeSessionRecovery,
 } from '../../../src/server/oauth-session-recovery.js';
+import { TEST_BROWSER_BINDING, TEST_BROWSER_COOKIE } from '../../helpers/oauth-browser-binding.js';
 
 const SECRET = 'session-recovery-test-signing-secret-1234567890';
 const REFRESH_URL =
@@ -39,8 +40,12 @@ describe('XSUAA browser-session recovery', () => {
 
   it('adds the refresh action to a validated loopback invalid_scope page', async () => {
     const codec = new OAuthStateCodec(SECRET);
-    const state = codec.encode({ clientRedirectUri: 'http://127.0.0.1:5/cb', clientId: 'arc1-test' });
-    const res = await request(buildApp(codec)).get('/oauth/callback').query({
+    const state = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
+      clientRedirectUri: 'http://127.0.0.1:5/cb',
+      clientId: 'arc1-test',
+    });
+    const res = await request(buildApp(codec)).get('/oauth/callback').set('Cookie', TEST_BROWSER_COOKIE).query({
       error: 'invalid_scope',
       error_description: 'no assigned scopes',
       state,
@@ -54,9 +59,14 @@ describe('XSUAA browser-session recovery', () => {
 
   it('does not add the action to another loopback OAuth error', async () => {
     const codec = new OAuthStateCodec(SECRET);
-    const state = codec.encode({ clientRedirectUri: 'http://localhost:5/cb', clientId: 'arc1-test' });
+    const state = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
+      clientRedirectUri: 'http://localhost:5/cb',
+      clientId: 'arc1-test',
+    });
     const res = await request(buildApp(codec))
       .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
       .query({ error: 'access_denied', error_description: 'cancelled', state });
 
     expect(res.status).toBe(400);
@@ -67,6 +77,7 @@ describe('XSUAA browser-session recovery', () => {
     const codec = new OAuthStateCodec(SECRET);
     const res = await request(buildApp(codec))
       .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
       .query({ error: 'invalid_scope', state: 'forged.AAAAAAAAAAAAAAAAAAAAAA' });
 
     expect(res.status).toBe(400);
@@ -77,11 +88,13 @@ describe('XSUAA browser-session recovery', () => {
   it('preserves the package redirect for hosted callbacks', async () => {
     const codec = new OAuthStateCodec(SECRET);
     const state = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
       clientRedirectUri: 'https://claude.ai/api/mcp/auth_callback',
       clientId: 'arc1-test',
     });
     const res = await request(buildApp(codec))
       .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
       .query({ error: 'invalid_scope', error_description: 'no scopes', state });
 
     expect(res.status).toBe(302);

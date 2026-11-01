@@ -53,6 +53,48 @@ const HISTORY_LOCAL_OBJECT_MOCK = JSON.stringify({
 // ─── Scenarios ─────────────────────────────────────────────────────
 
 export const SCENARIOS: EvalScenario[] = [
+  {
+    id: 'transport-check-new-function-group',
+    description: 'A transport check for a new function module needs its parent group',
+    prompt:
+      'Check transport assignment before creating function module Z_ORDER_SAVE in existing function group ZORDER, package ZORDERS. The module does not exist yet; do not create it.',
+    category: 'transport',
+    tags: ['function-group', 'single-step'],
+    optimal: [
+      {
+        tool: 'SAPTransport',
+        requiredArgs: {
+          action: 'check',
+          type: 'FUNC',
+          name: 'Z_ORDER_SAVE',
+          group: 'ZORDER',
+          package: 'ZORDERS',
+        },
+        argumentPatterns: { operation: { forbidden: [/^modify$/i] } },
+      },
+    ],
+    forbidden: ['SAPWrite', 'SAPQuery'],
+    requireFullParameters: true,
+    maxToolCalls: 1,
+  },
+
+  {
+    id: 'transport-history-function-group-include',
+    description: 'Function-group include history needs the parent group',
+    prompt: 'Show transport assignment and locks for include LZORDERF01 in function group ZORDER.',
+    category: 'transport',
+    tags: ['function-group', 'transport-history', 'single-step'],
+    optimal: [
+      {
+        tool: 'SAPTransport',
+        requiredArgs: { action: 'history', type: 'INCL', name: 'LZORDERF01', group: 'ZORDER' },
+      },
+    ],
+    forbidden: ['SAPWrite', 'SAPQuery'],
+    requireFullParameters: true,
+    maxToolCalls: 1,
+  },
+
   // Baseline: list transports (pre-FEAT-49 scenario — keep for coverage).
   {
     id: 'transport-list',

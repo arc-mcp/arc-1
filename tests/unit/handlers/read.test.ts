@@ -346,13 +346,21 @@ describe('SAPRead handler', () => {
       expect(String(sourceCall?.[0])).toContain('/sap/bc/adt/oo/classes/ZCL_TEST/source/main');
     });
 
-    it("resolves version='auto' to inactive when draft exists", async () => {
+    it.each([
+      { type: 'CLAS', adtType: 'CLAS/OC', name: 'ZCL_TEST', uri: '/sap/bc/adt/oo/classes/zcl_test' },
+      {
+        type: 'INCL',
+        adtType: 'FUGR/I',
+        name: 'LZTESTTOP',
+        uri: '/sap/bc/adt/functions/groups/ztest/includes/lztesttop',
+      },
+    ])('resolves $type auto reads to the $adtType inactive draft', async ({ type, adtType, name, uri }) => {
       mockFetch.mockReset();
       mockFetch
         .mockResolvedValueOnce(
           mockResponse(
             200,
-            `<?xml version="1.0"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects" xmlns:adtcore="http://www.sap.com/adt/core"><ioc:entry><ioc:object ioc:user="admin" ioc:deleted="false"><ioc:ref adtcore:uri="/sap/bc/adt/oo/classes/zcl_test" adtcore:type="CLAS/OC" adtcore:name="ZCL_TEST"/></ioc:object></ioc:entry></ioc:inactiveObjects>`,
+            `<?xml version="1.0"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects" xmlns:adtcore="http://www.sap.com/adt/core"><ioc:entry><ioc:object ioc:user="admin" ioc:deleted="false"><ioc:ref adtcore:uri="${uri}" adtcore:type="${adtType}" adtcore:name="${name}"/></ioc:object></ioc:entry></ioc:inactiveObjects>`,
           ),
         )
         .mockResolvedValueOnce(mockResponse(200, 'inactive source', { etag: 'e1' }));
@@ -362,12 +370,13 @@ describe('SAPRead handler', () => {
         createClient(),
         DEFAULT_CONFIG,
         'SAPRead',
-        { type: 'CLAS', name: 'ZCL_TEST', version: 'auto' },
+        { type, name, version: 'auto' },
         undefined,
         undefined,
         layer,
       );
 
+      expect(result.isError).toBeUndefined();
       const sourceCall = mockFetch.mock.calls.find((call: any[]) => String(call[0]).includes('/source/main'));
       expect(String(sourceCall?.[0])).toContain('version=inactive');
       expect(result.content[0]?.text).toBe('inactive source');
@@ -511,7 +520,7 @@ describe('SAPRead handler', () => {
       expect(getUrl).not.toContain('version=workingArea');
     });
 
-    it('returns marker-free single-node route escapes that SAPWrite can consume verbatim', async () => {
+    it('keeps single-node route escapes in the writable half and the node index behind the marker', async () => {
       mockFetch.mockReset();
       const name = 'ZI_TRAVEL';
       const marker = '<!-- arc1:ktd-meta — read-only context below; SAPWrite ignores it -->';
@@ -525,8 +534,13 @@ describe('SAPRead handler', () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'SKTD', name });
       const text = result.content[0]?.text ?? '';
 
-      expect(text).toBe(`## ${name}\n\n\\## ${name}\n\nThe travel view.\n\n\\${marker}\n\nStill body text.`);
-      expect(text.split(/\r?\n/)).not.toContain(marker);
+      // Every read now carries the node index, so the writable half is asserted on its own.
+      const [writable, context] = text.split(`\n\n${marker}\n`);
+      expect(writable).toBe(`## ${name}\n\n\\## ${name}\n\nThe travel view.\n\n\\${marker}\n\nStill body text.`);
+      // The body's own marker line stays escaped; only the trailer delimiter is bare.
+      expect(writable.split(/\r?\n/)).not.toContain(marker);
+      expect(context).toContain('Nodes: 1');
+      // The complete read — trailer included — still writes back byte-identically.
       expect(rewriteKtdText(envelope, text)).toBe(envelope);
     });
 
@@ -587,10 +601,12 @@ describe('SAPRead handler', () => {
       const text = result.content[0]?.text ?? '';
       expect(text.startsWith('## ZBDEF\n\nRoot docs.')).toBe(true);
       expect(text).toContain('<!-- arc1:ktd-meta');
-      expect(text).toContain('Undocumented nodes: 2');
+      expect(text).toContain('Nodes: 3 (2 with no text yet');
+      expect(text).toContain('root: ZBDEF');
       expect(text).toContain(`base: ${base}`);
       expect(text).toContain('BDEF/BAC (1): ZBDEF.SetPhoto');
       expect(text).toContain('BDEF/BAF (1): ZBDEF.GetPhoto');
+      expect(text).toContain('empty (2): ZBDEF.SetPhoto, ZBDEF.GetPhoto');
       expect(text).not.toContain('<sktd:');
     });
 
@@ -672,7 +688,9 @@ describe('SAPRead handler', () => {
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text).toContain('Root docs.');
       expect(result.content[0]?.text).not.toContain('\\## ZBDEF');
-      expect(result.content[0]?.text).not.toContain('Undocumented nodes');
+      // The node index lives behind the marker, so grep — which searches the bare Markdown — never sees it.
+      expect(result.content[0]?.text).not.toContain('Nodes:');
+      expect(result.content[0]?.text).not.toContain('<!-- arc1:ktd-meta');
     });
 
     it('returns soft informational message when SKTD is not found (404)', async () => {
@@ -743,6 +761,12 @@ describe('SAPRead handler', () => {
 
     it('reads package contents (DEVC) via the search endpoint', async () => {
       mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          readFileSync(new URL('../../fixtures/xml/package-search-discovery.xml', import.meta.url), 'utf8'),
+        ),
+      );
       mockFetch.mockResolvedValue(
         mockResponse(
           200,
@@ -757,7 +781,7 @@ describe('SAPRead handler', () => {
         name: 'ZPKG',
       });
       expect(result.isError).toBeUndefined();
-      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      const url = String(mockFetch.mock.calls[1]?.[0] ?? '');
       expect(url).toContain('/sap/bc/adt/repository/informationsystem/search');
       expect(url).toContain('packageName=ZPKG');
       expect(url).not.toContain('/nodestructure');
@@ -765,6 +789,12 @@ describe('SAPRead handler', () => {
 
     it('forwards maxResults from SAPRead args to getPackageContents URL', async () => {
       mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          readFileSync(new URL('../../fixtures/xml/package-search-discovery.xml', import.meta.url), 'utf8'),
+        ),
+      );
       mockFetch.mockResolvedValue(
         mockResponse(
           200,
@@ -778,7 +808,7 @@ describe('SAPRead handler', () => {
         maxResults: 750,
       });
       expect(result.isError).toBeUndefined();
-      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      const url = String(mockFetch.mock.calls[1]?.[0] ?? '');
       expect(url).toContain('maxResults=750');
     });
 
@@ -787,6 +817,12 @@ describe('SAPRead handler', () => {
       // 50.5 — which previously returned a Zod "expected int" error. It must now succeed and floor
       // to 50. See docs/research/2026-06-12-maxresults-contract-asymmetry.md.
       mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          readFileSync(new URL('../../fixtures/xml/package-search-discovery.xml', import.meta.url), 'utf8'),
+        ),
+      );
       mockFetch.mockResolvedValue(
         mockResponse(
           200,
@@ -801,7 +837,7 @@ describe('SAPRead handler', () => {
       });
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text ?? '').not.toContain('Invalid arguments');
-      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      const url = String(mockFetch.mock.calls[1]?.[0] ?? '');
       expect(url).toContain('maxResults=50');
       // 'maxResults=50' is a substring of the un-floored 'maxResults=50.5' — pin the floor too.
       expect(url).not.toContain('maxResults=50.5');
@@ -809,6 +845,12 @@ describe('SAPRead handler', () => {
 
     it('accepts an out-of-range maxResults end-to-end and clamps to 1000 (the promised clamping)', async () => {
       mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          readFileSync(new URL('../../fixtures/xml/package-search-discovery.xml', import.meta.url), 'utf8'),
+        ),
+      );
       mockFetch.mockResolvedValue(
         mockResponse(
           200,
@@ -822,7 +864,7 @@ describe('SAPRead handler', () => {
         maxResults: 1001,
       });
       expect(result.isError).toBeUndefined();
-      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain('maxResults=1000');
+      expect(String(mockFetch.mock.calls[1]?.[0] ?? '')).toContain('maxResults=1000');
     });
 
     it('reads installed components (COMPONENTS)', async () => {
@@ -908,6 +950,24 @@ describe('SAPRead handler', () => {
       });
       expect(result.isError).toBeUndefined();
     });
+
+    it.each(['CLASS lcl_helper DEFINITION.\nENDCLASS.', ''])(
+      'keeps an explicit local definitions include separate from MAIN (%j)',
+      async (localSource) => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, localSource, { 'x-csrf-token': 't' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'CLAS',
+          name: 'ZCL_FOO',
+          include: 'definitions',
+        });
+        expect(result.isError).toBeUndefined();
+        if (localSource) expect(result.content[0]?.text).toContain(localSource);
+        const urls = mockFetch.mock.calls.map(([url]) => String(url));
+        expect(urls.some((url) => url.includes('/includes/definitions'))).toBe(true);
+        expect(urls.some((url) => url.includes('/source/main'))).toBe(false);
+      },
+    );
 
     it('lists BSP apps when no name provided', async () => {
       mockFetch.mockReset();
@@ -1206,6 +1266,7 @@ describe('SAPRead handler', () => {
       );
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'TABL',
+        extensions: 'none',
         name: 'T000',
       });
       expect(result.isError).toBeUndefined();
@@ -1287,12 +1348,42 @@ describe('SAPRead handler', () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'DTEL',
         name: 'BUKRS',
+        version: 'inactive',
       });
       expect(result.isError).toBeUndefined();
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain(
+        '/sap/bc/adt/ddic/dataelements/BUKRS?version=inactive',
+      );
       const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.name).toBe('BUKRS');
       expect(parsed.typeName).toBe('BUKRS');
       expect(parsed.searchHelp).toBe('C_T001');
+    });
+
+    it.each([
+      ['omitted', undefined, ''],
+      ['auto', 'auto', ''],
+      ['explicit active', 'active', '?version=active'],
+    ])('routes a %s DTEL version correctly', async (_case, version, expectedQuery) => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0"?><blue:wbobj adtcore:name="ZDTEL" xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel" xmlns:adtcore="http://www.sap.com/adt/core"><dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements"><dtel:dataType>CHAR</dtel:dataType></dtel:dataElement></blue:wbobj>`,
+        ),
+      );
+
+      const args: Record<string, unknown> = {
+        type: 'DTEL',
+        name: 'ZDTEL',
+      };
+      if (version !== undefined) args.version = version;
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', args);
+
+      expect(result.isError).toBeUndefined();
+      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      expect(url).toContain(`/sap/bc/adt/ddic/dataelements/ZDTEL${expectedQuery}`);
+      expect(url.includes('version=')).toBe(expectedQuery.length > 0);
     });
 
     it('reads an authorization field (AUTH)', async () => {
@@ -1640,30 +1731,6 @@ describe('SAPRead handler', () => {
       expect(result.content[0]?.text).toContain('objectType');
     });
 
-    it('API_STATE uses raw URI to avoid double encoding for namespaced objects', async () => {
-      mockFetch.mockReset();
-      mockFetch.mockResolvedValueOnce(
-        mockResponse(
-          200,
-          `<?xml version="1.0" encoding="utf-8"?>
-<apirelease:apiReleaseInfos xmlns:apirelease="http://www.sap.com/adt/apirelease" xmlns:adtcore="http://www.sap.com/adt/core">
-  <apirelease:releasableObject adtcore:uri="/sap/bc/adt/oo/classes/%2fBOBF%2fCL_LIB" adtcore:type="CLAS/OC" adtcore:name="/BOBF/CL_LIB"/>
-  <apirelease:apiCatalogData apirelease:isAnyAssignmentPossible="false" apirelease:isAnyContractReleased="false"/>
-</apirelease:apiReleaseInfos>`,
-        ),
-      );
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
-        type: 'API_STATE',
-        name: '/BOBF/CL_LIB',
-        objectType: 'CLAS',
-      });
-      expect(result.isError).toBeUndefined();
-      // The URL should encode the entire URI once — namespace slashes become %2F, not %252F
-      const calledUrl = String(mockFetch.mock.calls[0]?.[0] ?? '');
-      expect(calledUrl).toContain('%2FBOBF%2FCL_LIB');
-      expect(calledUrl).not.toContain('%252F');
-    });
-
     it('returns error for unknown type with supported types via Zod validation', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'UNKNOWN',
@@ -1792,53 +1859,32 @@ describe('SAPRead handler', () => {
       expect(result.content[0]?.text).toContain('REPORT');
     });
 
-    it('returns error when format="structured" used with non-CLAS type', async () => {
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
-        type: 'PROG',
-        name: 'ZTEST',
-        format: 'structured',
-      });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('structured');
-      expect(result.content[0]?.text).toContain('CLAS');
-    });
+    it.each(['PROG', 'TABL', 'TTYP', 'DTEL', 'DOMA', 'INTF'])(
+      'offers a retry without fetching %s for unsupported structured format',
+      async (type) => {
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type,
+          name: 'ZTEST',
+          format: 'structured',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('structured');
+        expect(result.content[0]?.text).toContain('CLAS');
+        expect(result.content[0]?.text).toContain('Retry this read with format="text" or omit format');
+        expect(mockFetch).not.toHaveBeenCalled();
+      },
+    );
 
-    it('reads class with format="structured" and method param — format takes precedence', async () => {
-      const classMetadataXml = `<?xml version="1.0" encoding="utf-8"?>
-<class:abapClass class:category="00" class:fixPointArithmetic="true"
-    adtcore:name="ZCL_TEST" adtcore:description="Test class" adtcore:language="EN"
-    adtcore:masterLanguage="EN"
-    xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:adtcore="http://www.sap.com/adt/core">
-  <adtcore:packageRef adtcore:name="$TMP"/>
-</class:abapClass>`;
-      mockFetch.mockReset();
-      mockFetch.mockImplementation(async (url: string) => {
-        const urlStr = String(url);
-        if (urlStr.includes('/oo/classes/ZCL_TEST') && !urlStr.includes('/source/') && !urlStr.includes('/includes/')) {
-          return mockResponse(200, classMetadataXml, { 'x-csrf-token': 'T' });
-        }
-        if (urlStr.includes('/source/main')) {
-          return mockResponse(200, 'CLASS zcl_test DEFINITION.\nENDCLASS.\nCLASS zcl_test IMPLEMENTATION.\nENDCLASS.', {
-            'x-csrf-token': 'T',
-          });
-        }
-        if (urlStr.includes('/includes/')) {
-          return mockResponse(404, 'Not Found', { 'x-csrf-token': 'T' });
-        }
-        return mockResponse(200, '', { 'x-csrf-token': 'T' });
-      });
-
+    it('rejects structured class reads combined with a method before contacting SAP', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'CLAS',
         name: 'ZCL_TEST',
         format: 'structured',
         method: 'get_name',
       });
-
-      expect(result.isError).toBeUndefined();
-      const parsed = JSON.parse(result.content[0]?.text ?? '');
-      expect(parsed.metadata).toBeDefined();
-      expect(parsed.main).toBeDefined();
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Do not combine method with format="structured"');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('structured response is valid JSON with expected keys', async () => {
@@ -1882,14 +1928,14 @@ describe('SAPRead handler', () => {
       expect(parsed.testclasses).toContain('ltcl_test');
     });
 
-    it('returns sqlFilter remediation hint for TABLE_CONTENTS parser errors', async () => {
+    it('returns sqlFilter remediation hint for other TABLE_CONTENTS parser errors', async () => {
       mockFetch.mockReset();
       mockFetch.mockRejectedValueOnce(
         new AdtApiError(
-          'Invalid query string. Only SELECT statement is allowed',
+          'The column MANDTX is invalid here',
           400,
           '/sap/bc/adt/datapreview/ddic',
-          'Invalid query string. Only SELECT statement is allowed',
+          'The column MANDTX is invalid here',
         ),
       );
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
@@ -2025,7 +2071,7 @@ describe('SAPRead handler', () => {
         createClient(),
         DEFAULT_CONFIG,
         'SAPRead',
-        { type: 'PROG', name: 'ZHELLO' },
+        { type: 'PROG', name: 'ZHELLO', extensions: 'none' },
         undefined,
         undefined,
         layer,
@@ -2038,7 +2084,7 @@ describe('SAPRead handler', () => {
         createClient(),
         DEFAULT_CONFIG,
         'SAPRead',
-        { type: 'PROG', name: 'ZHELLO' },
+        { type: 'PROG', name: 'ZHELLO', extensions: 'none' },
         undefined,
         undefined,
         layer,
@@ -2100,7 +2146,7 @@ describe('SAPRead handler', () => {
         createClient(),
         DEFAULT_CONFIG,
         'SAPRead',
-        { type: 'INTF', name: 'ZIF_TEST' },
+        { type: 'INTF', name: 'ZIF_TEST', extensions: 'none' },
         undefined,
         undefined,
         layer,
@@ -2110,7 +2156,7 @@ describe('SAPRead handler', () => {
         createClient(),
         DEFAULT_CONFIG,
         'SAPRead',
-        { type: 'INTF', name: 'ZIF_TEST' },
+        { type: 'INTF', name: 'ZIF_TEST', extensions: 'none' },
         undefined,
         undefined,
         layer,

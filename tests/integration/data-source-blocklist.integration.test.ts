@@ -4,12 +4,15 @@
  * Verified fixtures:
  * - DEMO_CDS_SUMDIST -> SCARR + SPFLI on SAP_BASIS 750 and 758
  * - SCARR data preview is bound on the 758 target; the available 750 endpoint is unbound
+ * - BSEG is a cluster table in RFBLG on non-HANA ECC 750 SP23 (principal propagation, 2026-09-26);
+ *   cluster cases skip when the target has no active BSEG cluster fixture
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AdtClient } from '../../src/adt/client.js';
 import { DataSourcePolicyError } from '../../src/adt/data-source-policy.js';
 import { fetchDiscoveryDocument } from '../../src/adt/discovery.js';
+import { AdtApiError } from '../../src/adt/errors.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
 import { SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
@@ -17,6 +20,8 @@ import { getTestClient, requireSapCredentials } from './helpers.js';
 describe('experimental data-source blocklist live contract', () => {
   let client: AdtClient;
   let basisRelease = 0;
+  let dataPreviewAvailable = false;
+  let bsegClusterContainer = '';
 
   beforeAll(async () => {
     requireSapCredentials();
@@ -27,7 +32,26 @@ describe('experimental data-source blocklist live contract', () => {
     ]);
     client.http.setDiscoveryMap(map);
     basisRelease = Number.parseInt(components.find((component) => component.name === 'SAP_BASIS')?.release ?? '0', 10);
+    try {
+      await client.runQuery('SELECT CARRID FROM SCARR', 1);
+      dataPreviewAvailable = true;
+    } catch (error) {
+      if (!(error instanceof AdtApiError && error.statusCode === 404)) throw error;
+    }
+    if (dataPreviewAvailable) {
+      const { rows } = await client.runQuery(
+        "SELECT TABCLASS, SQLTAB FROM DD02L WHERE TABNAME = 'BSEG' AND AS4LOCAL = 'A'",
+        2,
+      );
+      if (rows.length === 1 && rows[0]?.TABCLASS?.trim() === 'CLUSTER') bsegClusterContainer = rows[0].SQLTAB!.trim();
+    }
   });
+
+  const requireClusterFixture = (ctx: Parameters<typeof skipTest>[0]): void => {
+    if (!bsegClusterContainer) {
+      skipTest(ctx, `${SkipReason.NO_FIXTURE}: BSEG is not an active cluster table on this target`);
+    }
+  };
 
   afterEach(() => vi.restoreAllMocks());
 
@@ -56,33 +80,34 @@ describe('experimental data-source blocklist live contract', () => {
     });
   });
 
-  it('expands the live DDIC replacement object before deciding', async (ctx) => {
-    if (basisRelease < 752) {
-      skipTest(
-        ctx,
-        `${SkipReason.BACKEND_UNSUPPORTED}: canonical table source omits replacement metadata on SAP_BASIS 750`,
-      );
-    }
+  it('expands the live DDIC replacement object or refuses unavailable catalog access', async () => {
     const strict = withBlocked(['SCARR']);
-
-    await expect(strict.runTableQuery('DEMO_SUMDIST')).rejects.toMatchObject({
-      code: 'DATA_SOURCE_BLOCKED',
-      sourcePath: ['DEMO_SUMDIST', 'DEMO_CDS_SUMDIST', 'SCARR'],
-    });
+    await expect(strict.runTableQuery('DEMO_SUMDIST')).rejects.toMatchObject(
+      dataPreviewAvailable
+        ? {
+            code: 'DATA_SOURCE_BLOCKED',
+            sourcePath: ['DEMO_SUMDIST', 'DEMO_CDS_SUDI', 'DEMO_CDS_SUMDIST', 'SCARR'],
+          }
+        : { code: 'DATA_POLICY_UNAVAILABLE', sourcePath: ['DEMO_SUMDIST'] },
+    );
   });
 
-  it('allows an unrelated static table after live lineage checks on a bound data-preview backend', async (ctx) => {
-    if (basisRelease < 752) {
-      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: /datapreview is unbound on the live SAP_BASIS 750 target`);
-    }
+  it('allows an unrelated table only when the catalog endpoint is available', async () => {
     const strict = withBlocked(['USR02']);
+    if (!dataPreviewAvailable) {
+      await expect(strict.runQuery('SELECT CARRID FROM SCARR')).rejects.toMatchObject({
+        code: 'DATA_POLICY_UNAVAILABLE',
+        sourcePath: ['SCARR'],
+      });
+      return;
+    }
     const result = await strict.runQuery('SELECT CARRID FROM SCARR');
     expect(result.columns).toContain('CARRID');
   });
 
   it('restores zero-analysis behavior when the list is empty', async (ctx) => {
-    if (basisRelease < 752) {
-      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: /datapreview is unbound on the live SAP_BASIS 750 target`);
+    if (!dataPreviewAvailable) {
+      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: freestyle data preview returns 404 on this target`);
     }
     const off = withBlocked([]);
     const searchSpy = vi.spyOn(off, 'searchObject');
@@ -95,7 +120,7 @@ describe('experimental data-source blocklist live contract', () => {
     // Regression for the prototype: I_BUSINESSPARTNER carries an auxiliary
     // RELATED_OBJECTS_TREE -> ... -> DCLS/DL branch that was mistaken for an unknown data node.
     if (basisRelease < 752) {
-      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: the v3 dependency graph is unavailable on SAP_BASIS 750`);
+      skipTest(ctx, `${SkipReason.NO_FIXTURE}: this standard CDS fixture is not verified on the pre-752 test target`);
     }
     const strict = withBlocked(['USR02']);
     await expect(strict.runTableQuery('I_BUSINESSPARTNER', { maxRows: 1 })).resolves.toBeDefined();
@@ -103,7 +128,7 @@ describe('experimental data-source blocklist live contract', () => {
 
   it('denies a blocked table reached through the access-controlled standard view', async (ctx) => {
     if (basisRelease < 752) {
-      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: the v3 dependency graph is unavailable on SAP_BASIS 750`);
+      skipTest(ctx, `${SkipReason.NO_FIXTURE}: this standard CDS fixture is not verified on the pre-752 test target`);
     }
     const strict = withBlocked(['BUT000']);
     await expect(strict.runTableQuery('I_BUSINESSPARTNER', { maxRows: 1 })).rejects.toMatchObject({
@@ -114,7 +139,7 @@ describe('experimental data-source blocklist live contract', () => {
 
   it('fails closed on a live CDS table-function graph', async (ctx) => {
     if (basisRelease < 752) {
-      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: the v3 dependency graph is unavailable on SAP_BASIS 750`);
+      skipTest(ctx, `${SkipReason.NO_FIXTURE}: this standard CDS fixture is not verified on the pre-752 test target`);
     }
     const strict = withBlocked(['USR02']);
     await expect(strict.runTableQuery('CdsFrwk_flight_booking', { maxRows: 1 })).rejects.toMatchObject({
@@ -122,9 +147,85 @@ describe('experimental data-source blocklist live contract', () => {
     });
   });
 
+  // Read-only standard demos captured on A4H 758 SP02 for #912; pre-758 fixtures are not verified.
+  describe.each([
+    ['DEMO_CDS_SPFLI_ENTITY', 'CARRID', ['DEMO_CDS_SPFLI_ENTITY', 'SPFLI']],
+    ['DEMO_MANAGED_ROOT_WAS', 'KEY_FIELD', ['DEMO_MANAGED_ROOT_WAS', 'DEMO_TAB_ROOT_3']],
+    ['DEMO_MANAGED_ROOT_PROJ', 'KEY_FIELD', ['DEMO_MANAGED_ROOT_PROJ', 'DEMO_MANAGED_ROOT_WAS', 'DEMO_TAB_ROOT_3']],
+    ['DEMO_CDS_ASSOCIATION_VE', 'CARRIER', ['DEMO_CDS_ASSOCIATION_VE', 'SCARR']],
+    ['DEMO_CDS_PV_PARENT', 'ID', ['DEMO_CDS_PV_PARENT', 'DEMO_CDS_PV_CHILD', 'DEMO_CDS_VIEW_CHILD', 'DEMO_DDIC_TYPES']],
+  ] as const)('view-entity lineage: %s', (name, column, sourcePath) => {
+    const requireViewEntityFixture = (ctx: Parameters<typeof skipTest>[0]): void => {
+      if (basisRelease < 758) {
+        skipTest(ctx, `${SkipReason.NO_FIXTURE}: these CDS demos are not verified on the pre-758 test target`);
+      }
+    };
+
+    it('allows the freestyle query with an unrelated blocklist', async (ctx) => {
+      requireViewEntityFixture(ctx);
+      const result = await withBlocked(['USR02']).runQuery(`SELECT ${column} FROM ${name}`, 1);
+      expect(result.columns).toEqual([column]);
+    });
+
+    it('denies the terminal table before sending a data POST', async (ctx) => {
+      requireViewEntityFixture(ctx);
+      const strict = withBlocked([sourcePath.at(-1)!]);
+      const postSpy = vi.spyOn(strict.http, 'post');
+      await expect(strict.runQuery(`SELECT ${column} FROM ${name}`, 1)).rejects.toMatchObject({
+        code: 'DATA_SOURCE_BLOCKED',
+        sourcePath,
+      });
+      expect(postSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  it.for([
+    ['SAPQuery', (c: AdtClient) => c.runQuery('SELECT * FROM DEMO_ANALYTICAL_QUERY', 1)],
+    ['TABLE_QUERY', (c: AdtClient) => c.runTableQuery('DEMO_ANALYTICAL_QUERY', { maxRows: 1 })],
+    ['TABLE_CONTENTS', (c: AdtClient) => c.getTableContents('DEMO_ANALYTICAL_QUERY', 1)],
+  ] as const)('denies the live analytical query before a %s data POST', async ([_, call], ctx) => {
+    if (basisRelease < 758) {
+      skipTest(ctx, `${SkipReason.NO_FIXTURE}: analytical query demo is not verified on the pre-758 test target`);
+    }
+    const strict = withBlocked(['USR02']);
+    const postSpy = vi.spyOn(strict.http, 'post');
+    await expect(call(strict)).rejects.toMatchObject({
+      code: 'DATA_LINEAGE_UNRESOLVED',
+      sourcePath: ['DEMO_ANALYTICAL_QUERY'],
+      reason: 'dependency DEMO_ANALYTICAL_QUERY is not active in the database',
+    });
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('allows a live cluster table whose physical container is not blocked', async (ctx) => {
+    requireClusterFixture(ctx);
+    const strict = withBlocked(['USR02']);
+    const result = await strict.runTableQuery('BSEG', { columns: ['BUKRS'], maxRows: 1 });
+    expect(result.columns).toEqual(['BUKRS']);
+  });
+
+  it('denies a live cluster table through its blocked physical container', async (ctx) => {
+    requireClusterFixture(ctx);
+    const strict = withBlocked([bsegClusterContainer]);
+    await expect(strict.runTableQuery('BSEG', { columns: ['BUKRS'], maxRows: 1 })).rejects.toMatchObject({
+      code: 'DATA_SOURCE_BLOCKED',
+      sourcePath: ['BSEG', bsegClusterContainer],
+      matchedSource: bsegClusterContainer,
+    });
+  });
+
+  it('keeps the live physical container itself unresolved', async (ctx) => {
+    requireClusterFixture(ctx);
+    const strict = withBlocked(['USR02']);
+    await expect(strict.runQuery(`SELECT BUKRS FROM ${bsegClusterContainer}`, 1)).rejects.toMatchObject({
+      code: 'DATA_LINEAGE_UNRESOLVED',
+      sourcePath: [bsegClusterContainer],
+    });
+  });
+
   it('authorizes an IN-list chunked request once', async (ctx) => {
-    if (basisRelease < 752) {
-      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: /datapreview is unbound on the live SAP_BASIS 750 target`);
+    if (!dataPreviewAvailable) {
+      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: freestyle data preview returns 404 on this target`);
     }
     const strict = withBlocked(['USR02']);
     const searchSpy = vi.spyOn(strict, 'searchObject');

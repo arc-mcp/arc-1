@@ -930,8 +930,6 @@ function cacheEventLabel(event) {
       source_refresh: 'Source refresh',
       source_invalidate: 'Invalidation',
       source_evict: 'Eviction',
-      depgraph_hit: 'Dep graph hit',
-      depgraph_store: 'Dep graph store',
       func_group_hit: 'Function group hit',
       func_group_store: 'Function group store',
     }[event] || event

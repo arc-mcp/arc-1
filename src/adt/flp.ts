@@ -4,6 +4,7 @@
  * Uses `/sap/opu/odata/UI2/PAGE_BUILDER_CUST` for catalog/group/tile management.
  */
 
+import { postCreate } from './create-request.js';
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
@@ -234,7 +235,7 @@ export async function createCatalog(
   checkOperation(safety, OperationType.Workflow, 'CreateFlpCatalog');
 
   const payload = JSON.stringify({ domainId, title, type: 'CATALOG_PAGE' });
-  const resp = await http.post(`${FLP_SERVICE_PATH}/Catalogs`, payload, 'application/json', {
+  const resp = await postCreate(http, `${FLP_SERVICE_PATH}/Catalogs`, payload, 'application/json', {
     Accept: 'application/json',
   });
 
@@ -250,7 +251,7 @@ export async function createGroup(
   checkOperation(safety, OperationType.Workflow, 'CreateFlpGroup');
 
   const payload = JSON.stringify({ id, title, catalogId: '/UI2/FLPD_CATALOG', layout: '' });
-  const resp = await http.post(`${FLP_SERVICE_PATH}/Pages`, payload, 'application/json', {
+  const resp = await postCreate(http, `${FLP_SERVICE_PATH}/Pages`, payload, 'application/json', {
     Accept: 'application/json',
   });
 
@@ -273,7 +274,7 @@ export async function createTile(
     configuration: buildTileConfiguration(tile),
   });
 
-  const resp = await http.post(`${FLP_SERVICE_PATH}/PageChipInstances`, payload, 'application/json', {
+  const resp = await postCreate(http, `${FLP_SERVICE_PATH}/PageChipInstances`, payload, 'application/json', {
     Accept: 'application/json',
   });
 
@@ -294,7 +295,7 @@ export async function addTileToGroup(
     pageId: groupId,
   });
 
-  const resp = await http.post(`${FLP_SERVICE_PATH}/PageChipInstances`, payload, 'application/json', {
+  const resp = await postCreate(http, `${FLP_SERVICE_PATH}/PageChipInstances`, payload, 'application/json', {
     Accept: 'application/json',
   });
 

@@ -6,7 +6,13 @@
 [implementation plan](../plans/destination-discovered-multi-target-v1.md)
 **Qualifies:** ADR-0005 for the explicit, default-off v1 mode described here
 **Qualified by:** [ADR-0007](0007-shared-basic-identity-for-read-only-multi-target.md) for the
-explicit shared Basic-authentication exception
+explicit shared Basic-authentication exception; [ADR-0008](0008-opt-in-xsuaa-target-authorization.md)
+for opted-in target grants, multi-only routing and the complete bounded catalog
+
+**Current write qualification:** [ADR-0010](0010-pinned-pp-multi-target-writes.md) supersedes
+this document's blanket mutation-free statements only for the reviewed pinned strict-PP
+CLAS/INTF surface with exact write grants. Aggregate/Copilot and shared Basic remain mutation-free;
+other discovery, identity and operational constraints below still apply.
 
 ## Context
 
@@ -40,7 +46,7 @@ ARC-1 may expose experimental multi-target endpoints only when
 - a structural multi-target ceiling that forbids writes, activation, transport/Git mutations,
   enqueue locks, and SAP-backed formatter/settings actions regardless of administrator role or
   single-target configuration. The reviewed mutation-free additions are offline
-  `SAPLint.lint|lint_and_fix|list_rules`, read-only `SAPTransport.list|get|check|history`, and the
+  `SAPLint.lint|lint_and_fix|list_rules`, read-only `SAPTransport.list|get|diff|check|history`, and the
   explicit `SAPDiagnose` allowlist in the implementation plan. Diagnostic data actions retain the
   normal destination/instance/XSUAA/SAP data gates; adding a general diagnostic action does not add
   it to multi-target mode automatically.
@@ -114,7 +120,7 @@ must be restricted before SAP is contacted.
 - Writes on any multi-target route require a new security review and ADR. They are not an incremental
   flag or destination property for v1.
 - ADR-0005 continues to govern the default mode, writable access, and deployments requiring stronger
-  isolation. The MCP hub remains the alternative for independently deployed ARC-1 instances.
+  isolation. Use independently deployed ARC-1 instances for those requirements.
 
 ## Rejected alternatives
 
@@ -126,3 +132,11 @@ must be restricted before SAP is contacted.
   shared state, and the cache would be incomplete after deployment.
 - **Separate HTTP/browser catalog:** it duplicates the MCP discovery surface and needs another auth,
   rate-limit, and payload contract. V1 keeps one role-sensitive `SAPTargets` tool instead.
+
+### Transport diff qualification (18 October 2026)
+
+The read allowlist includes `SAPTransport.diff` with one explicitly selected target and
+identity per call. It uses bounded sequential source reads, cancellation, response/attempt
+limits and capped diff work; no files or review sessions are stored. Offset pages reread SAP
+and do not promise snapshot consistency. This adds no mutation or identity fallback. See
+[the transport plan](../plans/2026-10-18-transport-review-mcp.md) for evidence and limitations.

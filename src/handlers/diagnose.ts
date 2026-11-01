@@ -3,6 +3,7 @@
  * state, ATC, unit tests, CDS test cases.
  */
 
+import { type AtcBatchObject, atcDdicObjectUrl, runAtcBatch } from '../adt/atc-batch.js';
 import type { AunitAlert, AunitProgramSource, AunitRunResult } from '../adt/aunit.js';
 import {
   AunitIncompleteError,
@@ -32,14 +33,12 @@ import {
   runAtcCheck,
   runUnitTests,
   supportsCdsTestCases,
-  syntaxCheck,
 } from '../adt/devtools.js';
 import {
   createTraceRequest,
   deleteTraceRequest,
   getAuthorizationTrace,
   getCdsCreateStatements,
-  getDump,
   getGatewayErrorDetail,
   getObjectState,
   getSqlTraceDirectory,
@@ -55,19 +54,28 @@ import {
   probeODataPerformance,
   setSqlTraceState,
 } from '../adt/diagnostics.js';
+import { getDumpWithFeedFallback } from '../adt/dump-feed-detail.js';
+import { dayLimitedDumpListNote, feedUpdatedAt } from '../adt/dump-list-window.js';
 import { AdtApiError, AdtNetworkError } from '../adt/errors.js';
+import { detectAbapRelease } from '../adt/features.js';
+import { type FeedFilter, readDumpFeedSchema } from '../adt/feed-schema.js';
 import { internalOperationDenial } from '../adt/internal-data-operations.js';
+import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import type {
   DumpDetail,
   FixAffectedObject,
+  SystemType,
   TracedObjectType,
   TracedProcessType,
   TraceRequestCreateOptions,
   UnitTestResult,
 } from '../adt/types.js';
-import { isBtpSystem } from './feature-cache.js';
+import { getCurrentContext } from '../server/context.js';
+import { handleCiQuality } from './diagnose-ci.js';
+import { cacheFeatureEvidence, getCachedFeatures, isBtpSystem } from './feature-cache.js';
 import { classIncludeUrl, normalizeObjectType, objectUrlForType, sourceUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
+import { handleSyntaxCheck } from './syntax.js';
 
 const AUNIT_SOURCE_MAX_BLOCKS = 80;
 const AUNIT_SOURCE_MAX_DEPTH = 5;
@@ -77,6 +85,7 @@ const AUNIT_SOURCE_REQUEST_LIMIT = 500;
 interface AunitEvidenceBudget {
   deadline: number;
   remainingSourceRequests: number;
+  signal?: AbortSignal;
 }
 
 class AunitSourceBudgetError extends Error {
@@ -89,7 +98,7 @@ class AunitSourceBudgetError extends Error {
 function reserveAunitSourceRequests(budget: AunitEvidenceBudget, count = 1): SourceReadOptions {
   if (budget.remainingSourceRequests < count) throw new AunitSourceBudgetError();
   budget.remainingSourceRequests -= count;
-  return { deadline: budget.deadline };
+  return { deadline: budget.deadline, signal: budget.signal };
 }
 
 function isAunitDeadlineFailure(error: unknown): boolean {
@@ -547,7 +556,7 @@ async function runLegacyAunitForSelection(
   try {
     return await runUnitTests(client.http, client.safety, objectUrls, {
       coverage,
-      requestOptions: { deadline: budget.deadline },
+      requestOptions: { deadline: budget.deadline, signal: budget.signal },
     });
   } catch (error) {
     if (isAunitDeadlineFailure(error)) {
@@ -632,45 +641,26 @@ export function toLegacyAunitResults(result: AunitRunResult): UnitTestResult[] {
   return rows;
 }
 
-export async function handleSAPDiagnose(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
+export async function handleSAPDiagnose(
+  client: AdtClient,
+  args: Record<string, unknown>,
+  minimalErrors: boolean,
+  options: {
+    deadline?: number;
+    signal?: AbortSignal;
+    configuredAbapRelease?: string;
+    configuredSystemType?: SystemType;
+  } = {},
+): Promise<ToolResult> {
   const action = String(args.action ?? '');
   const name = String(args.name ?? '');
   const type = normalizeObjectType(String(args.type ?? ''));
 
   switch (action) {
-    case 'syntax': {
-      const objectUrl = objectUrlForType(type, name);
-      const version = args.version === 'inactive' ? 'inactive' : args.version === 'active' ? 'active' : undefined;
-      const content = typeof args.source === 'string' ? (args.source as string) : undefined;
-      const opts: { version?: 'active' | 'inactive'; content?: string } = {};
-      if (version) opts.version = version;
-      if (content !== undefined) opts.content = content;
-      const result = await syntaxCheck(
-        client.http,
-        client.safety,
-        objectUrl,
-        Object.keys(opts).length > 0 ? opts : undefined,
-      );
-      // Fail closed: SAP checked nothing (object does not exist yet) → never report "clean", or
-      // callers read hasErrors:false as "SAP will accept this source".
-      if (!result.checked) {
-        return textResult(
-          toolJson({
-            ...result,
-            hasErrors: true,
-            messages: [
-              {
-                severity: 'error',
-                text: `Not checked — ${(result.statusText || 'SAP did not process this check').replace(/\.$/, '')}. The source was NOT validated; create the object first (SAPWrite action="create"), then re-run the syntax check.`,
-                line: 0,
-                column: 0,
-              },
-            ],
-          }),
-        );
-      }
-      return textResult(toolJson(result));
-    }
+    case 'feed_schema':
+      return textResult(toolJson(await readDumpFeedSchema(client.http, client.safety)));
+    case 'syntax':
+      return handleSyntaxCheck(client, args);
     case 'unittest': {
       const coverage = args.coverage === true;
       const resultFormat = String(args.resultFormat ?? 'legacy');
@@ -678,7 +668,8 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       const timeoutMs =
         args.timeoutSeconds === undefined ? DEFAULT_PUBLIC_AUNIT_TIMEOUT_MS : Number(args.timeoutSeconds) * 1000;
       const evidenceBudget: AunitEvidenceBudget = {
-        deadline: Date.now() + timeoutMs,
+        deadline: Math.min(Date.now() + timeoutMs, options.deadline ?? Infinity),
+        signal: options.signal ?? getCurrentContext()?.signal,
         remainingSourceRequests: AUNIT_SOURCE_REQUEST_LIMIT,
       };
 
@@ -687,6 +678,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
         try {
           publicAvailable = await probePublicAunit(client.http, client.safety, {
             deadline: evidenceBudget.deadline,
+            signal: evidenceBudget.signal,
           });
         } catch (error) {
           if (!isAunitDeadlineFailure(error)) throw error;
@@ -718,6 +710,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
               includeSubpackages,
               timeoutMs,
               deadline: evidenceBudget.deadline,
+              signal: evidenceBudget.signal,
             });
           } catch (error) {
             if (!(error instanceof AunitIncompleteError)) throw error;
@@ -867,7 +860,35 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
           'Coverage unavailable on this system (the coverage-measurement endpoint or measurement result was not available).';
       return textResult(toolJson(out));
     }
+    case 'unittest_ci':
+    case 'atc_ci':
+      return handleCiQuality(
+        client,
+        args,
+        (c, a, o) => handleSAPDiagnose(c, a, minimalErrors, o),
+        options.configuredSystemType,
+      );
     case 'atc': {
+      if (args.objects !== undefined) {
+        const objects = (args.objects as { type: AtcBatchObject['type']; name: string }[]).map((object) => ({
+          ...object,
+          uri: atcDdicObjectUrl(object.type, object.name) ?? objectUrlForType(object.type, object.name),
+        }));
+        const result = await runAtcBatch(client.http, client.safety, objects, args.variant as string | undefined, {
+          signal: getCurrentContext()?.signal,
+          ...(args.timeoutSeconds === undefined ? {} : { timeoutMs: Number(args.timeoutSeconds) * 1000 }),
+        });
+        return !result.complete && args.resultFormat !== 'structured'
+          ? errorResult(toolJson(result))
+          : textResult(toolJson(result));
+      }
+      // Without type+name the URL degrades to a bare collection path (e.g. /programs/programs/) that SAP
+      // only rejects AFTER a worklist and run were already created, leaving an orphan worklist.
+      if (!type || !name)
+        return errorResult(
+          '"type" and "name" are required for "atc" (e.g. type="CLAS", name="ZCL_FOO"), or pass "objects" for a batch. ' +
+            'For packages use action="atc", type="DEVC", name=<package>; BTP also supports action="atc_ci".',
+        );
       const objectUrl = objectUrlForType(type, name);
       const variant = args.variant as string | undefined;
       const result = await runAtcCheck(client.http, client.safety, objectUrl, variant, {
@@ -943,6 +964,11 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       return textResult(toolJson(payload));
     }
     case 'object_state': {
+      if (isServerDrivenObjectType(type)) {
+        return errorResult(
+          'object_state cannot verify active/inactive version identity for server-driven objects. SAP may substitute another version. Use SAPRead with an explicit version instead.',
+        );
+      }
       if (!name || !type) return errorResult('"name" and "type" are required for "object_state" action.');
       const sections =
         type === 'CLAS'
@@ -1019,7 +1045,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
     case 'dumps': {
       const id = args.id as string | undefined;
       if (id) {
-        const detail = await getDump(client.http, client.safety, id);
+        const detail = await getDumpWithFeedFallback(client.http, client.safety, id);
         const includeFullText = args.includeFullText === true || String(args.includeFullText ?? '') === 'true';
         const selectedSections = selectDumpSections(detail, args.sections);
 
@@ -1039,6 +1065,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
             title: chapter.title,
             line: chapter.line,
           })),
+          ...(detail.origin ? { origin: detail.origin, note: detail.note } : {}),
         };
         if (includeFullText) {
           payload.formattedText = detail.formattedText;
@@ -1048,8 +1075,28 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
 
       const user = args.user as string | undefined;
       const maxResults = args.maxResults ? Number(args.maxResults) : undefined;
-      const dumps = await listDumps(client.http, client.safety, { user, maxResults });
-      return textResult(toolJson(dumps));
+      const from = args.from as string | undefined;
+      const to = args.to as string | undefined;
+      let feedClock: Date | undefined;
+      const dumps = await listDumps(client.http, client.safety, {
+        user,
+        maxResults,
+        from,
+        to,
+        filters: args.filters as FeedFilter[] | undefined,
+        onFirstPage: (body) => {
+          feedClock = feedUpdatedAt(body);
+        },
+      });
+      const result = textResult(toolJson(dumps));
+      // The list stays a plain array; the window note is a separate text block after it.
+      const abapRelease = await dumpListRelease(client, options.configuredAbapRelease, {
+        deadline: options.deadline,
+        signal: options.signal ?? getCurrentContext()?.signal,
+      });
+      const note = dayLimitedDumpListNote({ abapRelease, from, to, feedClock, empty: dumps.length === 0 });
+      if (note) result.content.push({ type: 'text', text: note });
+      return result;
     }
     case 'traces': {
       const id = args.id as string | undefined;
@@ -1197,7 +1244,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
           result = await getAuthorizationTrace(client, { user, authObject, onlyFailures, maxResults });
         } catch (error) {
           if (error instanceof DataSourcePolicyError) {
-            return errorResult(internalOperationDenial('authorization_trace', error.message));
+            return errorResult(internalOperationDenial('authorization_trace', error, minimalErrors));
           }
           throw error;
         }
@@ -1215,9 +1262,26 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
     }
     default:
       return errorResult(
-        `Unknown SAPDiagnose action: ${action}. Supported: syntax, unittest, atc, atc_variants, cds_testcases, object_state, quickfix, apply_quickfix, dumps, traces, trace_start, trace_requests, trace_cancel, system_messages, gateway_errors, odata_perf, cds_sql, sql_trace_state, set_sql_trace_state, sql_trace_directory, authorization_trace`,
+        `Unknown SAPDiagnose action: ${action}. Supported: syntax, unittest, unittest_ci, atc, atc_ci, atc_variants, cds_testcases, object_state, quickfix, apply_quickfix, dumps, traces, trace_start, trace_requests, trace_cancel, system_messages, gateway_errors, odata_perf, cds_sql, sql_trace_state, set_sql_trace_state, sql_trace_directory, authorization_trace`,
       );
   }
+}
+
+/**
+ * SAP_BASIS for the dump window note: the probed release, else SAP_ABAP_RELEASE, else one read as this
+ * caller. A startup probe under a restricted technical user can miss it; a read release is shared like
+ * other lazily learned facts, so later lists skip the read.
+ */
+async function dumpListRelease(
+  client: AdtClient,
+  configured: string | undefined,
+  request: { deadline?: number; signal?: AbortSignal },
+): Promise<string | undefined> {
+  const known = getCachedFeatures()?.abapRelease ?? configured;
+  if (known) return known;
+  const detected = await detectAbapRelease(client.http, request);
+  if (detected) cacheFeatureEvidence({ abapRelease: detected }, true);
+  return detected;
 }
 
 function selectDumpSections(detail: DumpDetail, requestedSections: unknown): Record<string, string> {
@@ -1226,7 +1290,9 @@ function selectDumpSections(detail: DumpDetail, requestedSections: unknown): Rec
   if (availableIds.length === 0) return {};
 
   const requestedIds = resolveRequestedDumpSectionIds(detail, requestedSections);
-  const selectedIds = requestedIds.length > 0 ? requestedIds : pickDefaultDumpSectionIds(detail);
+  // A feed summary is already the focused part of a dump, so it is returned whole by default.
+  const defaultIds = detail.origin === 'feed-summary' ? availableIds : pickDefaultDumpSectionIds(detail);
+  const selectedIds = requestedIds.length > 0 ? requestedIds : defaultIds;
   const finalIds = selectedIds.length > 0 ? selectedIds : availableIds.slice(0, 5);
 
   return Object.fromEntries(finalIds.map((id) => [id, availableSections[id] ?? '']));

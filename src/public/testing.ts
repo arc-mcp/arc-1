@@ -19,6 +19,8 @@ export interface MockToolContext extends ToolContext {
   httpCalls: MockHttpCall[];
   /** Every class name passed to `ctx.run.classRun`, in order. */
   classRunCalls: string[];
+  /** Every report name passed to `ctx.run.programRun`, in order. */
+  programRunCalls: string[];
 }
 
 export interface MockToolContextOptions {
@@ -33,6 +35,8 @@ export interface MockToolContextOptions {
   client?: Partial<ToolContext['client']>;
   /** Console output returned by `ctx.run.classRun` (default ''). The mock never gates. */
   classRunOutput?: string;
+  /** List output returned by `ctx.run.programRun` (default ''). The mock never gates. */
+  programRunOutput?: string;
 }
 
 export function createMockToolContext(options: MockToolContextOptions = {}): MockToolContext {
@@ -65,10 +69,15 @@ export function createMockToolContext(options: MockToolContextOptions = {}): Moc
   };
 
   const classRunCalls: string[] = [];
+  const programRunCalls: string[] = [];
   const run: ToolContext['run'] = {
     classRun: async (className) => {
       classRunCalls.push(className);
       return options.classRunOutput ?? '';
+    },
+    programRun: async (programName) => {
+      programRunCalls.push(programName);
+      return options.programRunOutput ?? '';
     },
   };
 
@@ -81,6 +90,7 @@ export function createMockToolContext(options: MockToolContextOptions = {}): Moc
     requestId: options.requestId ?? 'test-request',
     httpCalls,
     classRunCalls,
+    programRunCalls,
   };
   return ctx;
 }

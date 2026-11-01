@@ -17,6 +17,8 @@ export class DataResponseBudget {
   constructor(
     readonly limitBytes: number,
     readonly endpointFamily = 'data-preview',
+    /** Optional analysis counts error/control responses too; data-preview retains success-only accounting. */
+    readonly countAllResponses = false,
   ) {
     if (!Number.isSafeInteger(limitBytes) || limitBytes < 1) {
       throw new RangeError(`Data response limit must be a positive safe integer, got ${limitBytes}.`);

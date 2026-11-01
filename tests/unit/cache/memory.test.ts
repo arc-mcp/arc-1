@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { CacheApi, CachedDepGraph } from '../../../src/cache/cache.js';
+import type { CacheApi } from '../../../src/cache/cache.js';
 import { hashSource } from '../../../src/cache/cache.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
 
@@ -110,26 +110,10 @@ describe('MemoryCache', () => {
     });
   });
 
-  describe('dep graphs', () => {
-    it('stores and retrieves a dependency graph', () => {
-      const graph: CachedDepGraph = {
-        sourceHash: 'abc123',
-        objectName: 'ZCL_TEST',
-        objectType: 'CLAS',
-        contracts: [{ name: 'ZCL_DEP', type: 'CLAS', methodCount: 3, source: 'compressed', success: true }],
-        cachedAt: new Date().toISOString(),
-      };
-      cache.putDepGraph(graph);
-      const found = cache.getDepGraph('abc123');
-      expect(found).not.toBeNull();
-      expect(found?.objectName).toBe('ZCL_TEST');
-      expect(found?.contracts).toHaveLength(1);
-      expect(found?.contracts[0]?.name).toBe('ZCL_DEP');
-    });
-
-    it('returns null for missing dep graph', () => {
-      expect(cache.getDepGraph('missing_hash')).toBeNull();
-    });
+  it('has no retired aggregate read/write API or in-memory graph store', () => {
+    expect(cache).not.toHaveProperty('putDepGraph');
+    expect(cache).not.toHaveProperty('getDepGraph');
+    expect(cache).not.toHaveProperty('depGraphs');
   });
 
   describe('function groups', () => {
@@ -153,30 +137,16 @@ describe('MemoryCache', () => {
       cache.putApi({ name: 'X', type: 'CLAS', releaseState: 'released' });
       cache.putSource('CLAS', 'ZCL_A', 'source a');
       cache.putSource('PROG', 'ZTEST', 'source b');
-      cache.putDepGraph({
-        sourceHash: 'h1',
-        objectName: 'ZCL_A',
-        objectType: 'CLAS',
-        contracts: [],
-        cachedAt: '',
-      });
 
       const stats = cache.stats();
       expect(stats.apiCount).toBe(1);
       expect(stats.sourceCount).toBe(2);
-      expect(stats.contractCount).toBe(1);
+      expect(stats.contractCount).toBe(0);
     });
 
-    it('clears all data including sources, dep graphs, and func groups', () => {
+    it('clears all data including sources and func groups', () => {
       cache.putApi({ name: 'X', type: 'CLAS', releaseState: 'released' });
       cache.putSource('CLAS', 'ZCL_A', 'source');
-      cache.putDepGraph({
-        sourceHash: 'h1',
-        objectName: 'ZCL_A',
-        objectType: 'CLAS',
-        contracts: [],
-        cachedAt: '',
-      });
       cache.putFuncGroup('Z_FUNC', 'Z_GROUP');
       cache.clear();
 

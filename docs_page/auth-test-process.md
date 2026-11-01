@@ -49,9 +49,9 @@ The script checks the live MCP `tools/list` manifest for each key. It verifies t
 **1. Start arc1 with API key:**
 
 ```bash
-npx arc-1 --url http://your-sap:8000 \
+npx arc-1@latest --url https://your-sap-host \
   --user DEVELOPER --password secret --client 001 \
-  --transport http-streamable --http-addr 0.0.0.0:8080 \
+  --transport http-streamable --http-addr 127.0.0.1:8080 \
   --api-keys 'test-key-12345:admin'
 ```
 
@@ -59,7 +59,7 @@ npx arc-1 --url http://your-sap:8000 \
 
 ```bash
 curl -s http://localhost:8080/health
-# Expected: {"status":"ok"}
+# Expected: HTTP 200; the response includes "status":"ok"
 ```
 
 **3. Verify request without API key is rejected:**
@@ -83,6 +83,7 @@ curl -s -o /dev/null -w "%{http_code}" \
 ```bash
 curl -s -H "Authorization: Bearer test-key-12345" \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   http://localhost:8080/mcp \
   -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 # Expected: 200 with JSON-RPC response containing tool list
@@ -93,6 +94,7 @@ curl -s -H "Authorization: Bearer test-key-12345" \
 ```bash
 curl -s -H "Authorization: bearer test-key-12345" \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   http://localhost:8080/mcp \
   -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 # Expected: 200 (same as above)
@@ -124,9 +126,9 @@ npm test
 **1. Start arc1 with OIDC:**
 
 ```bash
-npx arc-1 --url http://your-sap:8000 \
+npx arc-1@latest --url https://your-sap-host \
   --user DEVELOPER --password secret --client 001 \
-  --transport http-streamable --http-addr 0.0.0.0:8080 \
+  --transport http-streamable --http-addr 127.0.0.1:8080 \
   --oidc-issuer 'https://your-idp.example.com' \
   --oidc-audience 'your-audience'
 ```
@@ -153,16 +155,16 @@ curl -s -o /dev/null -D - http://localhost:8080/mcp | grep -i "^HTTP/\|www-authe
 # Example for Azure CLI:
 TOKEN=$(az account get-access-token --resource your-audience --query accessToken -o tsv)
 
-# Example for Keycloak (password grant for testing):
-TOKEN=$(curl -s -X POST https://keycloak.example.com/realms/myrealm/protocol/openid-connect/token \
-  -d "grant_type=password&client_id=arc1&username=testuser&password=testpass" | jq -r .access_token)
 ```
+
+For other providers, use their interactive authorization flow to obtain an access token for the configured audience; see [OAuth / JWT Setup](oauth-jwt-setup.md).
 
 **5. Verify request with valid JWT succeeds:**
 
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   http://localhost:8080/mcp \
   -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 # Expected: 200 with tool list
@@ -177,12 +179,9 @@ curl -s -o /dev/null -w "%{http_code}" \
 # Expected: 401
 ```
 
-**7. Check logs for username extraction:**
+**7. Check identity attribution:**
 
-```
-# In arc1 stderr output, look for:
-# [OIDC] Authenticated user: <username>
-```
+Make a permitted read request from an MCP client and inspect its audit event for the authenticated user. See [Log Analysis](log-analysis.md). Listing tools alone does not verify the mapped SAP identity.
 
 ### Checklist
 
@@ -191,7 +190,7 @@ curl -s -o /dev/null -w "%{http_code}" \
 - [ ] Invalid/expired token → 401
 - [ ] Valid JWT → 200 with tools
 - [ ] Username extracted from JWT claims (check logs)
-- [ ] JWKS auto-discovery works (check logs for JWKS fetch)
+- [ ] A signed token from the configured issuer is accepted through JWKS validation
 
 ---
 
@@ -213,12 +212,18 @@ npm test
 
 **1. Configure ARC-1 with PP:**
 
-```bash
-SAP_BTP_DESTINATION=SAP_TRIAL \
-SAP_BTP_PP_DESTINATION=SAP_TRIAL_PP \
-SAP_PP_ENABLED=true \
-SAP_PP_STRICT=true
+Set these properties on `arc1-mcp-server` in your deployment extension, using the actual destination names, then deploy as described in the [runbook](btp-cloud-foundry-deployment.md):
+
+```yaml
+properties:
+  SAP_BTP_DESTINATION: SAP_TRIAL       # least-privileged Basic startup destination
+  SAP_BTP_PP_DESTINATION: SAP_TRIAL_PP
+  SAP_PP_ENABLED: "true"
+  SAP_PP_STRICT: "true"
 ```
+
+The startup destination supports discovery before a user JWT exists. Keep it separate from the
+`PrincipalPropagation` destination used for user calls; see [single-target PP setup](principal-propagation-setup.md#step-4-configure-arc-1).
 
 **2. Verify per-user identity in SAP:**
 
@@ -255,25 +260,20 @@ npm test
 
 **1. Deploy to CF:**
 
-```bash
-# Build Docker image
-docker build -t arc1 .
-# Push to CF (see btp-cloud-foundry-deployment.md)
-cf push
-```
+Follow the [BTP Cloud Foundry deployment runbook](btp-cloud-foundry-deployment.md) for the chosen profile and MTA deployment commands.
 
 **2. Verify app is running** (check app logs):
 
 ```bash
-cf logs arc1 --recent | grep "BTP"
+cf logs arc1-mcp-server --recent | grep "BTP"
 # Expected: Log messages showing parsed XSUAA and Destination bindings
 ```
 
 **3. Verify health:**
 
 ```bash
-cf ssh arc1 -c "curl -s http://localhost:8080/health"
-# Expected: {"status":"ok"}
+curl -i https://<your-cf-route>/health
+# Expected: HTTP 200; the response includes "status":"ok"
 ```
 
 ### Checklist
@@ -319,13 +319,13 @@ TEST_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-abap-service-key.json npm run test
 | **Backend unavailable** | 503, maintenance page | Platform maintenance or provisioning |
 | **Assertion** | `expect` mismatch | API contract changed — a real regression to investigate |
 
-Only assertion failures indicate an ARC-1 problem; auth and connectivity failures are expected with
-free-tier instances.
+Classify the failure before changing configuration. Auth and connectivity failures can come from
+instance lifecycle, credentials, the network, or an ARC-1 regression; they are not automatically harmless.
 
 ### Tenant assumptions
 
 - Standard released objects exist (`CL_ABAP_RANDOM`, `IF_ABAP_RANDOM`).
-- Free tier: one system per global account, stopped automatically, 90-day limit.
+- Check the current [BTP ABAP prerequisites](btp-abap-prerequisites.md) for trial and free-tier limits and instance availability.
 
 ### Checklist
 

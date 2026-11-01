@@ -265,12 +265,10 @@ function validateBdef(source: string, context: RapPreflightContext, findings: Ra
  * Two distinct rule families here:
  *
  *  1. On-prem 7.5x only — DDLX_ANNOTATION_SCOPE_ONPREM_75X.
- *     The DDLX annotation scope was narrowed on older releases: headerInfo,
- *     searchable, and objectModel belong in the projection DDLS source
- *     instead. Modern S/4 relaxes this, which is why the rule is gated on
- *     `isOnPrem75x(context)`. The error rendered at activation is "unknown
- *     annotation in this scope" — doesn't tell the developer that the fix is
- *     to move the annotation to a different artifact.
+ *     ObjectModel annotations belong in the DDLS source on these releases
+ *     (semanticKey/text.element rejected live on 758). UI.headerInfo and
+ *     Search.searchable are allowed in metadata extensions, documented since
+ *     7.52 and verified on 758; do not group them with ObjectModel (#941).
  *
  *  2. All releases — DDLX_DUPLICATE_UI_ANNOTATION.
  *     Developers sometimes stack multiple @UI.lineItem / @UI.fieldGroup /
@@ -289,14 +287,14 @@ function validateDdlx(source: string, context: RapPreflightContext, findings: Ra
   if (isOnPrem75x(context)) {
     for (let i = 0; i < lines.length; i += 1) {
       const line = lines[i] ?? '';
-      if (/@UI\.headerInfo\b/i.test(line) || /@Search\.searchable\b/i.test(line) || /@ObjectModel\./i.test(line)) {
+      if (/@ObjectModel\./i.test(line)) {
         findings.push({
           severity: 'error',
           ruleId: 'DDLX_ANNOTATION_SCOPE_ONPREM_75X',
-          message: 'Annotation scope is unsupported in DDLX on on-prem 7.5x (headerInfo/searchable/objectmodel).',
+          message: 'ObjectModel annotation scope is unsupported in DDLX on on-prem 7.5x.',
           line: i + 1,
           suggestion:
-            'Move these annotations to the projection DDLS source and keep DDLX to UI facet/lineItem/fieldGroup style annotations.',
+            'Move ObjectModel annotations to the DDLS source. UI.headerInfo and Search.searchable may remain in DDLX.',
         });
       }
     }

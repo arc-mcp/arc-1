@@ -22,6 +22,25 @@ function readFixture(name: string): string {
 }
 
 describe('buildFmSignatureClause', () => {
+  it.each(['importing', 'exporting', 'changing', 'tables'] as const)(
+    'preserves explicit typing and adds TYPE only to bare expressions for %s',
+    (kind) => {
+      for (const [type, expected] of [
+        ['STRING', 'TYPE STRING'],
+        ['TYPE STRING', 'TYPE STRING'],
+        ['LIKE ICON-NAME', 'LIKE ICON-NAME'],
+        ['REF TO CL_ABAP_TYPEDESCR', 'TYPE REF TO CL_ABAP_TYPEDESCR'],
+        ['TYPE REF TO CL_ABAP_TYPEDESCR', 'TYPE REF TO CL_ABAP_TYPEDESCR'],
+        [' like icon-name ', 'like icon-name'],
+        ['LIKE-FIELD', 'TYPE LIKE-FIELD'],
+        ['TYPE-FIELD', 'TYPE TYPE-FIELD'],
+      ]) {
+        const result = buildFmSignatureClause([{ kind, name: 'P', type }]);
+        expect(result).toBe(`  ${kind.toUpperCase()}\n    P ${expected}`);
+      }
+    },
+  );
+
   it('returns empty string for empty params array', () => {
     expect(buildFmSignatureClause([])).toBe('');
   });
@@ -105,6 +124,46 @@ describe('buildFmSignatureClause', () => {
 });
 
 describe('parseFmSignature', () => {
+  it.each(['importing', 'exporting', 'changing', 'tables'] as const)('preserves LIKE for %s', (kind) => {
+    const source = `FUNCTION z_test\n  ${kind}\n    p LIKE icon-name.\nENDFUNCTION.`;
+    const { params } = parseFmSignature(source);
+    expect(params).toEqual([{ kind, name: 'P', type: 'LIKE icon-name' }]);
+    expect(buildFmSignatureClause(params)).toContain('P LIKE icon-name');
+  });
+
+  it('keeps OPTIONAL separate from SAP’s trailing untyped-parameter pragma', () => {
+    const source = 'FUNCTION z_test\n IMPORTING\n iv TYPE ANY OPTIONAL ##ADT_PARAMETER_UNTYPED.\nENDFUNCTION.';
+    const { params } = parseFmSignature(source);
+    expect(params).toEqual([{ kind: 'importing', name: 'IV', type: 'ANY ##ADT_PARAMETER_UNTYPED', optional: true }]);
+    expect(parseFmSignature(spliceFmSignature(source, 'Z_TEST', params)).params).toEqual(params);
+  });
+
+  it.each(['popup-to-confirm.abap', 'bapi-user-getlist.abap'])('round-trips the native signature in %s', (fixture) => {
+    const source = readFixture(fixture);
+    const { params, bodyStart } = parseFmSignature(source);
+    const name = /FUNCTION\s+(\S+)/i.exec(source)![1]!;
+    const rebuilt = spliceFmSignature(source, name, params);
+    const rebuiltHeader = rebuilt.slice(0, parseFmSignature(rebuilt).bodyStart);
+    const normalize = (header: string) => header.replace(/\s+/g, ' ').trim().toUpperCase();
+    expect(normalize(rebuiltHeader)).toBe(normalize(source.slice(0, bodyStart)));
+    expect(rebuilt.slice(parseFmSignature(rebuilt).bodyStart)).toBe(source.slice(bodyStart));
+  });
+
+  it.each(['/NS/FOO', '/1BCDWB/GENERATED'])(
+    'parses and edits namespaced function %s while preserving documentation and the body',
+    (name) => {
+      const prefix = '"! Keep documentation\r\n';
+      const body = '\r\n  WRITE / 1.\r\nENDFUNCTION.\r\n* Keep footer\r\n';
+      const source = `${prefix}FUNCTION ${name}\r\n  IMPORTING iv_input TYPE char10.\r\n${body}`;
+      expect(parseFmSignature(source).params).toEqual([{ kind: 'importing', name: 'IV_INPUT', type: 'char10' }]);
+      const output = spliceFmSignature(source, name, [{ kind: 'importing', name: 'IV_INPUT', type: 'STRING' }]);
+      expect(output.startsWith(`${prefix}FUNCTION ${name}\r\n`)).toBe(true);
+      expect(output).toContain('IV_INPUT TYPE STRING.');
+      expect(output.endsWith(body)).toBe(true);
+      expect(output.replaceAll('\r\n', '')).not.toContain('\n');
+    },
+  );
+
   it('returns empty arrays for FUNCTION X. ENDFUNCTION.', () => {
     const result = parseFmSignature('FUNCTION X.\nENDFUNCTION.\n');
     expect(result.params).toEqual([]);
@@ -198,6 +257,15 @@ describe('spliceFmSignature', () => {
     expect(result).toContain('VALUE(NEW_PARAM) TYPE STRING');
     expect(result).toContain('body line.');
     expect(result).not.toContain('name TYPE c');
+  });
+
+  it('preserves the body after SAP’s template comment and bare signature terminator', () => {
+    const source =
+      "FUNCTION z_fm\r\n \" You can use the template 'functionModuleParameter' to add here the signature!\r\n.\r\n\r\n DATA lv_guard TYPE i.\r\n lv_guard = 17.\r\nENDFUNCTION.";
+    const result = spliceFmSignature(source, 'Z_FM', [{ kind: 'importing', name: 'IV_X', type: 'I' }]);
+    expect(result).toContain('IV_X TYPE I.');
+    expect(result).toContain('DATA lv_guard TYPE i.\r\n lv_guard = 17.');
+    expect(parseFmSignature(source).params).toEqual([]);
   });
 
   it('inserts signature into bare stub', () => {

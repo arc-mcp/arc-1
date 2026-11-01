@@ -26,7 +26,7 @@ export function readFixture(filename: string): string {
   }
 }
 
-/** Persistent test objects — created once, expected to stay on SAP */
+/** Persistent test objects — prerequisites precede their dependents; expected to stay on SAP. */
 export const PERSISTENT_OBJECTS = [
   {
     name: 'ZARC1_TEST_REPORT',
@@ -67,12 +67,14 @@ export const PERSISTENT_OBJECTS = [
   {
     name: 'ZI_ARC1_I33_ROOT',
     type: 'DDLS',
+    dependsOn: 'TABL ZTABL_ARC1_I33',
     fixture: 'zi_arc1_i33_root.ddls.abap',
     searchQuery: 'ZI_ARC1_I33_ROOT',
   },
   {
     name: 'ZI_ARC1_I33_PROJ',
     type: 'DDLS',
+    dependsOn: 'DDLS ZI_ARC1_I33_ROOT',
     fixture: 'zi_arc1_i33_proj.ddls.abap',
     searchQuery: 'ZI_ARC1_I33_PROJ',
   },

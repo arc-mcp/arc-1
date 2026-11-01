@@ -3,6 +3,7 @@
  * management.
  */
 
+import type { ApiReleaseVisibility } from '../adt/api-release.js';
 import type { AdtClient } from '../adt/client.js';
 import { createObject, deleteObject, lockObject, unlockObject } from '../adt/crud.js';
 import { buildPackageXml, normalizeAdtResponsible, type PackageCreateParams } from '../adt/ddic-xml.js';
@@ -25,8 +26,8 @@ import { getTransportInfo } from '../adt/transport.js';
 import { parseSearchResults } from '../adt/xml-parser.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
-import { getCachedFeatures, isPackagesEndpointAvailable, setCachedFeatures } from './feature-cache.js';
-import { inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
+import { cacheProbedFeatures, getCachedFeatures, isPackagesEndpointAvailable } from './feature-cache.js';
+import { functionModuleObjectUrl, inferObjectType, normalizeObjectType, objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import {
   DEVC_WRITE_UNAVAILABLE_HINT,
@@ -83,12 +84,24 @@ export async function handleSAPManage(
             `Cannot infer object type from name "${name}". Specify objectType (e.g. CLAS, INTF, DDLS, TABL).`,
           );
         }
-        objectUri = objectUrlForTypeRaw(inferred, name);
+        if (inferred === 'FUNC') {
+          // A function module URI needs its parent group; objectBasePath('FUNC') throws by design (#928).
+          const group = await client.resolveFunctionGroup(name);
+          if (!group) {
+            return errorResult(
+              `Cannot resolve function group for "${name}". Pass objectUri="/sap/bc/adt/functions/groups/<group>/fmodules/<name>" instead.`,
+            );
+          }
+          objectUri = functionModuleObjectUrl(group, name);
+        } else {
+          objectUri = objectUrlForType(inferred, name);
+        }
       }
       // Fail-closed package gate against the object's REAL package (resolves via the object URI).
       await enforceAllowedPackageForObjectUrl(client, objectUri, `set_api_state on ${objectUri}`);
       const result = await client.setApiReleaseState(objectUri, {
         state: stateArg,
+        visibility: args.apiVisibility as ApiReleaseVisibility | undefined,
         contract,
         transport: args.transport as string | undefined,
       });
@@ -510,6 +523,7 @@ export async function handleSAPManage(
       // Override with server config feature toggles
       featureConfig.hana = config.featureHana as 'auto' | 'on' | 'off';
       featureConfig.abapGit = config.featureAbapGit as 'auto' | 'on' | 'off';
+      featureConfig.gcts = config.featureGcts as 'auto' | 'on' | 'off';
       featureConfig.rap = config.featureRap as 'auto' | 'on' | 'off';
       featureConfig.amdp = config.featureAmdp as 'auto' | 'on' | 'off';
       featureConfig.ui5 = config.featureUi5 as 'auto' | 'on' | 'off';
@@ -519,25 +533,9 @@ export async function handleSAPManage(
 
       const probed = await probeFeatures(client.http, featureConfig, config.systemType);
 
-      // In PP mode with a per-user client, auth-sensitive results (401/403 on any
-      // feature) must not poison the global cache — another user may have different
-      // authorizations.  Return the per-user result to the caller but keep the global
-      // cache unchanged.  However, when PP is enabled but the request fell back to the
-      // shared/default client (no JWT, missing btpConfig, or non-strict fallback), the
-      // probe ran with the same service-account credentials as the startup probe, so
-      // updating the cache is safe and allows a manual probe to repair a failed startup.
-      // Apply the same auth-failure sanitization as the startup probe: in PP mode,
-      // shared-client 401/403 on textSearch must not hide source_code from users who
-      // might have authorization via per-user clients.
-      if (!isPerUserClient) {
-        if (config.ppEnabled && probed.textSearch && !probed.textSearch.available) {
-          const reason = probed.textSearch.reason ?? '';
-          if (reason.includes('authorization') || reason.includes('401') || reason.includes('403')) {
-            probed.textSearch = undefined;
-          }
-        }
-        setCachedFeatures(probed);
-      }
+      cacheProbedFeatures(probed, !!isPerUserClient || config.ppEnabled);
+      const discoveryMap = getCachedFeatures()?.discoveryMap;
+      if (discoveryMap) client.http.setDiscoveryMap(discoveryMap);
       return textResult(toolJson(probed));
     }
 

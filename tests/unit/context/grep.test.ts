@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   grepSource,
+  grepSourceBlocks,
   MAX_GREP_LINE_LENGTH,
   MAX_GREP_PATTERN_LENGTH,
   type MethodRange,
@@ -226,5 +227,49 @@ describe('grepSource', () => {
     // the trailing context line must be detached from the method block by a separator,
     // not rendered directly under [lcl=>a] (which would mis-attribute it to method a)
     expect(lines[constIdx - 1]).toBe('--');
+  });
+});
+
+describe('grepSourceBlocks', () => {
+  it.each([
+    { label: 'empty', blocks: [] },
+    { label: 'only unreadable', blocks: [{ name: 'missing', source: '[unreadable]', unreadable: true }] },
+  ])('refuses an unsafe pattern even with $label sources', ({ blocks }) => {
+    const r = grepSourceBlocks(blocks, '(?=x)');
+    expect(r.invalidPattern).toBe(true);
+    expect(r.output).toContain('Unsupported grep pattern');
+  });
+
+  it('caps rendered matches across blocks but counts them all', () => {
+    const blocks = Array.from({ length: 3 }, (_, i) => ({ name: `b${i}`, source: 'hit\nhit\nhit' }));
+    const r = grepSourceBlocks(blocks, 'hit', { maxMatches: 4, contextLines: 0 });
+    expect(r.matchCount).toBe(9);
+    expect(r.output.split('\n')[0]).toBe('9 match(es) for /hit/i in 3 of 3 source(s):');
+    expect(r.output).toContain('=== b0 ===');
+    expect(r.output).toContain('=== b1 ===');
+    expect(r.output).not.toContain('=== b2 ===');
+    expect(r.output).toContain('... showing first 4 of 9 matches. Narrow your pattern.');
+    expect(r.output.match(/^>/gm)).toHaveLength(4);
+  });
+
+  it('does not claim display truncation at exactly 100 matches', () => {
+    const blocks = Array.from({ length: 2 }, (_, i) => ({ name: `b${i}`, source: Array(50).fill('hit').join('\n') }));
+    const r = grepSourceBlocks(blocks, 'hit', { contextLines: 0 });
+    expect(r.matchCount).toBe(100);
+    expect(r.output.match(/^>/gm)).toHaveLength(100);
+    expect(r.output).not.toContain('showing first');
+  });
+
+  it('keeps the requested pattern in the summary when blocks use different fallback forms', () => {
+    const r = grepSourceBlocks(
+      [
+        { name: 'regex', source: 'a0' },
+        { name: 'literal', source: 'a[0]' },
+      ],
+      'a[0]',
+    );
+    expect(r.matchCount).toBe(2);
+    expect(r.output.split('\n')[0]).toBe('2 match(es) for /a[0]/i in 2 of 2 source(s):');
+    expect(r.output).toContain('=== literal ===\n1 match(es) for /a\\[0\\]/i:');
   });
 });
