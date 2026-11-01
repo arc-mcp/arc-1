@@ -62,6 +62,9 @@ TEST_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-abap-service-key.json npm run test
 
 Pre-commit: Husky runs `lint-staged` → Biome auto-fixes staged `*.{ts,js,json}`. Never hand-fix formatting.
 
+Pre-push: Husky runs `check:sizes`, `validate:policy` and `typecheck` on the working tree, not the pushed
+commits. Tests, full lint and build are not included; CI remains authoritative.
+
 ## Deploying ARC-1 (not developing it)
 
 If the task is "deploy/install ARC-1 for a team", you are an operator, not a contributor — do not
