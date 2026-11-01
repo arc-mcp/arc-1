@@ -99,9 +99,18 @@ Primary native preference reads occur during both users' patches and after resto
 formatting behavior, exact refusal codes and per-field recovery. The native deletion proof records
 the 404 exception type; cleanup checks exact owner source and metadata and preserves uncertain work.
 The 15 formatter and 14 deletion fault scenarios passed without accessing SAP or CF. This new harness
-has not yet produced live evidence and still needs its own independent review.
+had not yet produced live evidence or received its own independent review at that checkpoint.
 
 The completed correction/harness checkpoint passed **391 unit files / 10,846 tests**, all 29 local
 harness fault scenarios, typecheck (including native harness scripts), build, lint, file/schema
 budgets and strict docs. Script type checking infers the archived MJS modules through `allowJs`;
 no wildcard declarations erase their exported types.
+
+The subsequent actual [harness review](broader-pinned-pp-writes/claude-harness-review-20261101.md)
+ran all 29 simulations and found the main composition sound, with three Medium fixes before live use:
+real Git-root binding, shutdown that waits for cleanup, and native failure reports retaining observed
+identity and diagnostics. The revised code addresses these and the smaller evidence/cleanup gaps.
+The real native identity/cleanup functions now have offline refusal tests; earlier fake-backend
+simulations did not execute that native branch. A separate v5 review also requires nondefault native
+formatter fixtures. The dependency/native-source review inputs must be placed inside the next
+reviewer's restricted root. Follow-up review and all new live qualification remain pending.

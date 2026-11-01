@@ -1,8 +1,9 @@
+import { realpathSync } from 'node:fs';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+export const REPO_ROOT = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../..'));
 export class HarnessError extends Error {
   constructor(code, status) {
     super(code);
@@ -18,6 +19,7 @@ export function safeFailure(error) {
 }
 
 export function assertSafeDiagnosticEnvironment(env = process.env, execArgv = process.execArgv) {
+  if (env.NODE_TLS_REJECT_UNAUTHORIZED?.trim() === '0') throw new HarnessError('TLS_VERIFICATION_REQUIRED');
   const diagnosticOptions =
     /(^|[\s"'])--(?:inspect(?:[-_]brk|[-_]wait)?|trace[-_]tls|tls[-_]keylog|heapsnapshot[-_](?:signal|near[-_]heap[-_]limit)|heap[-_]snapshot[-_]on[-_](?:oom|gc)|heap[-_]prof|cpu[-_]prof|prof|report[-_](?:on[-_]signal|on[-_]fatalerror|uncaught[-_]exception))(?:=|[\s"']|$)/;
   if (
@@ -98,6 +100,7 @@ function parseSseEvent(event, responseId) {
 }
 
 export async function boundedFetch(url, init = {}, { timeoutMs = 60_000, rpcResponseId } = {}) {
+  assertSafeDiagnosticEnvironment();
   let response;
   try {
     response = await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) });
@@ -171,4 +174,20 @@ export function readToolBody(response) {
     /* Some ARC errors are plain text. */
   }
   return { result, body, text: typeof entry?.text === 'string' ? entry.text : '' };
+}
+
+/** Owner-only evidence, including malformed bodies, without reflecting known bearer tokens to disk. */
+export function responseReceipt(response, tokens) {
+  const scrub = (value) => {
+    for (const token of tokens)
+      if (typeof token === 'string' && token) value = value.replaceAll(token, '[REDACTED_TOKEN]');
+    return value.replace(/\b[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b/g, '[REDACTED_JWT]');
+  };
+  return {
+    status: response.status,
+    response: JSON.parse(scrub(JSON.stringify(response.json ?? null))),
+    rawBody: scrub(response.text ?? ''),
+    receivedBytes: response.bytes,
+    contentType: response.headers?.get('content-type') ?? null,
+  };
 }

@@ -139,14 +139,16 @@ destinations, aggregate routes and Basic targets. `format` returns formatted sou
 Use `SAP_DENY_ACTIONS=SAPLint.set_formatter_settings` to prohibit preference changes while retaining
 the supporting reads on otherwise writable pinned connections.
 
-Formatter patches require the native v5 settings representation, preserve untouched native fields
+Formatter settings reads and patches require SAP's preferred representation to be native v5. Patches preserve untouched native fields
 and refuse older representations or unrecognized metadata before writing. Older versions omit
 preferences that SAP's PUT can reset; there is no fallback. Strong native
 ETags are used when available; otherwise the result reports `native-unconditional`, so concurrent
 updates to the same user's preferences can overwrite each other. An uncertain outcome is not a
 rollback; read the settings before deciding whether another update is appropriate. The
 [formatter qualification record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-formatter.md)
-records direct-native checks and a two-identity MCP-visible result. Claude identified missing
+records historical v2 direct-native checks and a two-identity MCP-visible result. No live v5 write
+has yet been qualified. Historical v2 comparisons do not establish preservation of newer preferences.
+Claude identified missing
 in-run actor/backend proof; a strengthened current-revision run remains required in draft PR #1142.
 
 Deletion removes the current complete owner. It does not require or protect a previous source read.

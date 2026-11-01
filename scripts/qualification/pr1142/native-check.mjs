@@ -1,12 +1,15 @@
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { durable } from './durable-journal.mjs';
-import { configuration } from './qualification-config.mjs';
-import { HarnessError, privateJson } from './safe-io.mjs';
+import { configuration, validateConfiguration } from './qualification-config.mjs';
+import { assertSafeDiagnosticEnvironment, HarnessError, privateJson } from './safe-io.mjs';
 
 const execute = promisify(execFile);
 export async function nativeCheck(script, mode, name) {
+  assertSafeDiagnosticEnvironment();
+  validateConfiguration(configuration);
   if (
     !['native-fixtures.mts', 'native-formatter.mts'].includes(script) ||
     !/^[a-z-]+$/.test(mode) ||
@@ -14,11 +17,19 @@ export async function nativeCheck(script, mode, name) {
   )
     throw new HarnessError('INVALID_NATIVE_CHECK');
   const prefix = script === 'native-fixtures.mts' ? 'native' : 'native-formatter';
-  const output = `${configuration.root}/${prefix}-${mode}${name ? `-${name}` : ''}`;
+  const attempt = script === 'native-fixtures.mts' && mode === 'cleanup' ? randomUUID() : undefined;
+  const output = `${configuration.root}/${prefix}-${mode}${name ? `-${name}` : ''}${attempt ? `-${attempt}` : ''}`;
   try {
     await execute(
       process.execPath,
-      ['--import', 'tsx', fileURLToPath(new URL(`./${script}`, import.meta.url)), mode, ...(name ? [name] : [])],
+      [
+        '--import',
+        'tsx',
+        fileURLToPath(new URL(`./${script}`, import.meta.url)),
+        mode,
+        ...(name ? [name] : []),
+        ...(attempt ? [attempt] : []),
+      ],
       {
         cwd: fileURLToPath(new URL('../../../', import.meta.url)),
         env: {

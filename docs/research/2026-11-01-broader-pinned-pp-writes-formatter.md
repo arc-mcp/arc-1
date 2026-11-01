@@ -95,7 +95,7 @@ XSUAA configuration, transport requests or repository objects were changed by th
 The machine-readable [evidence record](broader-pinned-pp-writes/formatter-native-2026-11-01.json)
 contains the timing, outcomes and hashes, without credentials. The live run preceded addition of one
 extra outgoing-document equality check for unrelated attributes; the subsequent unit run includes
-that check. No additional native request was needed to establish a different endpoint contract.
+that check. This was the historical v2 checkpoint; later v5 contract research and qualification are separate.
 
 ## Native-candidate verification
 
@@ -193,9 +193,26 @@ the configured route. Both SAP mappings rely on earlier class evidence and repor
 there was no native sentinel or during-write native preference read in this run. The secondary
 role change turning a refusal into success supports its mapping, but does not replace that proof.
 Only the primary ended byte-identical to its pre-run native XML; this alone does not show that
-the pinned writes reached that record. secondary restoration checks two
+the pinned writes reached that record. Secondary restoration checks two
 fields through the candidate route. The six simulations did not test every negative oracle or
 actual restore-only recovery. A strengthened current-revision run remains required. Same-user
 concurrent updates still have the documented native-unconditional risk when no strong ETag exists.
 Basic/global-readonly/deny-rule boundaries have unit coverage but were not new live fixtures here.
 This formatter result does not qualify CTS, traces, FLP, broad CRUD or whole PR #1142 for merging.
+
+These historical writes and byte comparisons used v2. Those PUTs may themselves have reset hidden
+preferences for both test users; their pre-run values were not captured and cannot be reconstructed
+from today's empty optional fields. No live v5 write or full v5 restoration has been verified yet.
+
+### Follow-up review and nondefault fixture
+
+The actual [v5 review](broader-pinned-pp-writes/claude-formatter-v5-review-20261101.md) found no adapter
+bug in the readable source, but could not inspect native proof outside its restricted directory.
+It also identified an evidence blocker: an empty optional-field baseline would let the old lossy
+writer pass the proposed native comparisons. The revised fixture saves the full pre-seed XML before
+any PUT, seeds all five optional preferences, and requires their nondefault values before PP writes.
+During-write checks compare the complete document. After the two-field PP restoration, native
+cleanup compares the current state with the original or owned seeded state, restores the saved
+original XML, and verifies it byte-for-byte. Unknown/foreign state is preserved and reported incomplete.
+This adds direct-native primary fixture setup; it does not add independent native preference proof
+for the secondary user. Its source review and live run remain pending.

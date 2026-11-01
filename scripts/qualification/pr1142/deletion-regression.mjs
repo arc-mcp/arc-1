@@ -28,6 +28,9 @@ const scenarios = [
   'cleanup-read-failure',
   'cleanup-journal-failure',
   'invalid-delete-catalog',
+  'formatter-failure',
+  'visible-denied-write',
+  'abort-before-delete',
 ];
 for (const scenario of scenarios) {
   const root = await mkdtemp(join(tmpdir(), 'arc1-deletion-harness-test-'));
@@ -83,7 +86,14 @@ for (const scenario of scenarios) {
       mutations = 0,
       injected = false,
       formatterCalled = false;
+    const abort = new AbortController();
     const emit = (event, value) => {
+      if (
+        scenario === 'abort-before-delete' &&
+        event === 'qualification_phase' &&
+        value.phase === `delete-${manifest.fixtures[0].name}`
+      )
+        abort.abort();
       if (event === 'qualification_phase') phase = value.phase;
       if (event === 'qualification_complete') output = value;
     };
@@ -101,22 +111,23 @@ for (const scenario of scenarios) {
         result = { protocolVersion: '2025-03-26', capabilities: {}, serverInfo: { name: 'mock', version: '1' } };
       else if (request.method === 'tools/list')
         result = {
-          tools: denied
-            ? []
-            : [
-                {
-                  name: 'SAPWrite',
-                  inputSchema: {
-                    type: 'object',
-                    required:
-                      scenario === 'invalid-delete-catalog'
-                        ? ['action', 'type', 'name', 'source']
-                        : ['action', 'type', 'name'],
-                    properties: { action: { enum: ['create', 'update', 'edit_method', 'delete'] } },
+          tools:
+            denied && !(scenario === 'visible-denied-write' && actor !== 'readerA')
+              ? []
+              : [
+                  {
+                    name: 'SAPWrite',
+                    inputSchema: {
+                      type: 'object',
+                      required:
+                        scenario === 'invalid-delete-catalog'
+                          ? ['action', 'type', 'name', 'source']
+                          : ['action', 'type', 'name'],
+                      properties: { action: { enum: ['create', 'update', 'edit_method', 'delete'] } },
+                    },
                   },
-                },
-                { name: 'SAPActivate' },
-              ],
+                  { name: 'SAPActivate' },
+                ],
         };
       else {
         const { name, arguments: args } = request.params;
@@ -243,7 +254,11 @@ for (const scenario of scenarios) {
       formatterCalled = true;
       assert.equal(keyOf(frozen.get('writerB').token.access_token), 'writerB');
       assert.equal(sentinels.length, 4);
-      return { failed: 0, restored: { writerA: true, writerB: true } };
+      return {
+        failed: scenario === 'formatter-failure' ? 1 : 0,
+        restored: { writerA: true, writerB: true },
+        nativeSeedRestored: true,
+      };
     };
     const journalOverride = async (path, value, exclusive) => {
       if (scenario === 'cleanup-journal-failure' && phase?.startsWith('cleanup-') && !injected) {
@@ -264,6 +279,7 @@ for (const scenario of scenarios) {
         configurationOverride: { root, target: 'PR1142/001', actors },
         formatterQualifier,
         journalOverride,
+        signal: abort.signal,
       });
     await invoke();
     assert.ok(output);
@@ -287,6 +303,9 @@ for (const scenario of scenarios) {
     } else {
       assert.equal(output.failed > 0, true, `${scenario} should fail`);
       assert.equal(cleanup.length, 4, 'Every fixture receives an independent cleanup attempt');
+      if (scenario === 'abort-before-delete')
+        assert.ok(output.failures.some((f) => f.code === 'QUALIFICATION_STOP_REQUESTED'));
+      if (scenario === 'formatter-failure') assert.equal(formatterCalled, true);
       if (
         [
           'create-uncertain',

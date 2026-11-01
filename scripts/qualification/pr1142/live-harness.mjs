@@ -23,6 +23,7 @@ import {
   validateBaseUrl,
 } from './safe-io.mjs';
 import { forgetSessionLabel, reserveSessionLabel } from './session-labels.mjs';
+import { QualificationShutdown } from './shutdown.mjs';
 
 // Provider debug output can contain user identifiers. Import SDKs only after disabling it.
 process.env.DEBUG = '';
@@ -34,6 +35,8 @@ const reservedLabels = new Map();
 let server;
 let input;
 let stopping = false;
+const shutdown = new QualificationShutdown();
+let queue = Promise.resolve();
 
 function options() {
   const result = {};
@@ -313,7 +316,8 @@ async function main() {
     if (!action || typeof action !== 'object' || Array.isArray(action)) throw new HarnessError('INVALID_COMMAND');
     if (action.command === 'login') return beginLogin(action);
     if (action.command === 'run') return run(action.label, action.scenario);
-    if (action.command === 'qualify') return qualify({ action, sessions, baseUrl, verifyUser, service, emit });
+    if (action.command === 'qualify')
+      return qualify({ action, sessions, baseUrl, verifyUser, service, emit, signal: shutdown.signal });
     if (action.command === 'concurrent') {
       if (!Array.isArray(action.labels) || action.labels.length < 2 || action.labels.length > 8)
         throw new HarnessError('CONCURRENT_LABELS_REQUIRED');
@@ -401,17 +405,18 @@ async function main() {
   }
 
   server = createServer((request, response) => {
-    callback(request, response).catch(() => {
-      if (!response.headersSent) response.writeHead(500).end('Local callback failed');
-      emit('callback_failed', { code: 'UNEXPECTED_FAILURE' });
-    });
+    shutdown
+      .track(() => callback(request, response))
+      .catch(() => {
+        if (!response.headersSent) response.writeHead(500).end('Local callback failed');
+        emit('callback_failed', { code: 'UNEXPECTED_FAILURE' });
+      });
   });
   await new Promise((accept, reject) => {
     server.once('error', reject);
     server.listen(config.port, '127.0.0.1', accept);
   });
   input = createInterface({ input: process.stdin, terminal: false });
-  let queue = Promise.resolve();
   input.on('line', (line) => {
     queue = queue.then(async () => {
       try {
@@ -422,7 +427,7 @@ async function main() {
         } catch {
           throw new HarnessError('INVALID_JSON_COMMAND');
         }
-        await command(value);
+        await shutdown.track(() => command(value));
       } catch (error) {
         emit('command_failed', safeFailure(error));
       }
@@ -438,21 +443,29 @@ async function main() {
 }
 
 function stop() {
-  if (stopping) return;
+  if (!shutdown.request()) return;
   stopping = true;
   for (const entry of pending.values()) clearTimeout(entry.timer);
   pending.clear();
   reservedLabels.clear();
-  sessions.clear();
   input?.close();
   server?.close();
-  server?.closeAllConnections();
-  emit('stopped', { inMemorySessionsDiscarded: true });
+  emit('stopping', { cleanupPending: true });
+  // Do not return this promise: a queued `finish` command must finish before its own queue drains.
+  void (async () => {
+    await queue;
+    await shutdown.drain();
+    sessions.clear();
+    input?.close();
+    if (server?.listening) server.close();
+    server?.closeAllConnections();
+    emit('stopped', { inMemorySessionsDiscarded: true, activeOperations: 0 });
+  })();
 }
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
 process.on('unhandledRejection', () => emit('operation_failed', { code: 'UNEXPECTED_FAILURE' }));
-main().catch((error) => {
+shutdown.track(main).catch((error) => {
   emit('startup_failed', safeFailure(error));
   process.exitCode = 1;
   stop();

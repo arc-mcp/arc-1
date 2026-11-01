@@ -7,6 +7,7 @@ import { pinnedMutationContext } from '../../../src/adt/mutation-context.js';
 import {
   FORMATTER_SETTINGS_CONTENT_TYPE,
   FORMATTER_SETTINGS_PATH,
+  getPinnedFormatterSettings,
   parsePinnedFormatterDocument,
   patchPinnedFormatterSettings,
 } from '../../../src/adt/pinned-formatter.js';
@@ -65,12 +66,42 @@ describe('pinned native formatter patch candidate', () => {
       'p:keepIdentifier="true" p:formatMethodCalls="true" p:condenseMethodCalls="true" p:formatValue="true" p:defaultAutoStyle="keywordLower"';
     const test = setup(xml('true', 'keywordUpper', attributes));
     const before = parsePinnedFormatterDocument(test.reply().body).unrelated;
+    expect(Object.keys(before)).toHaveLength(5);
     expect(await test.patch({ indentation: false, style: 'keywordLower' })).toMatchObject({
       ok: true,
       state: 'updated',
     });
     expect(parsePinnedFormatterDocument(String(test.put.mock.calls[0][1])).unrelated).toEqual(before);
     expect(test.get.mock.calls[0][1]).toEqual({ Accept: '*/*' });
+  });
+
+  it('requests the preferred representation for standalone reads and refuses an unqualified version', async () => {
+    const test = setup();
+    expect(await getPinnedFormatterSettings(test.client.http, test.client.safety)).toEqual({
+      indentation: true,
+      style: 'keywordUpper',
+    });
+    expect(test.get).toHaveBeenCalledExactlyOnceWith(FORMATTER_SETTINGS_PATH, { Accept: '*/*' });
+    test.get.mockResolvedValueOnce({
+      ...test.reply(),
+      headers: { 'content-type': 'application/vnd.sap.adt.ppsettings.v6+xml' },
+    });
+    await expect(getPinnedFormatterSettings(test.client.http, test.client.safety)).rejects.toThrow('qualified v5');
+    expect(test.put).not.toHaveBeenCalled();
+  });
+
+  it('reports an unconfirmed update if read-back changes the native representation', async () => {
+    const test = setup();
+    test.get.mockResolvedValueOnce(test.reply()).mockResolvedValueOnce({
+      ...test.reply(),
+      headers: { 'content-type': 'application/vnd.sap.adt.ppsettings.v4+xml' },
+    });
+    expect(await test.patch({ indentation: false })).toMatchObject({
+      ok: false,
+      state: 'update-unconfirmed',
+      phase: 'readback',
+    });
+    expect(test.put).toHaveBeenCalledTimes(1);
   });
 
   it.each([1, 2, 3, 4, 6])(

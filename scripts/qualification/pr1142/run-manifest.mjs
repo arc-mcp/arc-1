@@ -12,6 +12,26 @@ import { assertSafeDiagnosticEnvironment, HarnessError, outsideRepository, priva
 const directory = fileURLToPath(new URL('./', import.meta.url));
 const workspace = fileURLToPath(new URL('../../../', import.meta.url));
 const digest = (value) => createHash('sha256').update(value).digest('hex');
+export async function assertWorkspaceRoot(location = workspace) {
+  const actual = await realpath(location);
+  const top = await realpath(
+    execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: actual, encoding: 'utf8' }).trim(),
+  );
+  if (actual !== top) throw new HarnessError('REAL_GIT_WORKSPACE_ROOT_REQUIRED');
+}
+export async function assertPersistentStateParent(location) {
+  const parent = await realpath(location);
+  const temporaryRoots = [];
+  for (const path of [tmpdir(), '/tmp', '/var/tmp']) {
+    try {
+      temporaryRoots.push(await realpath(path));
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+  if (!outsideRepository(parent) || temporaryRoots.some((path) => parent === path || parent.startsWith(path + sep)))
+    throw new HarnessError('PERSISTENT_PRIVATE_STATE_REQUIRED');
+}
 export const verifierEntry = fileURLToPath(import.meta.resolve('@arc-mcp/xsuaa-auth'));
 async function verifierFiles() {
   const directory = dirname(verifierEntry),
@@ -27,6 +47,7 @@ async function harnessFiles() {
   return files;
 }
 export async function verifyRunManifest(root) {
+  await assertWorkspaceRoot();
   const run = await privateJson(`${root}/run-manifest.json`),
     files = await harnessFiles();
   if (run.harnessSha256 !== digest(JSON.stringify(files)) || JSON.stringify(run.harnessFiles) !== JSON.stringify(files))
@@ -52,6 +73,7 @@ export async function verifyRunManifest(root) {
 export async function prepareRun() {
   assertSafeDiagnosticEnvironment();
   validateConfiguration(configuration);
+  await assertWorkspaceRoot();
   const { root, actors, target } = configuration;
   const status = execFileSync('git', ['status', '--porcelain'], { cwd: workspace, encoding: 'utf8' });
   if (status.trim()) throw new HarnessError('COMMITTED_CLEAN_WORKTREE_REQUIRED');
@@ -59,10 +81,7 @@ export async function prepareRun() {
   const files = await harnessFiles(),
     authModules = await verifierFiles();
   await mkdir(dirname(root), { recursive: true, mode: 0o700 });
-  const parent = await realpath(dirname(root)),
-    temporary = await realpath(tmpdir());
-  if (!outsideRepository(parent) || parent === temporary || parent.startsWith(temporary + sep))
-    throw new HarnessError('PERSISTENT_PRIVATE_STATE_REQUIRED');
+  await assertPersistentStateParent(dirname(root));
   await mkdir(root, { mode: 0o700 }); // Exclusive run directory: never silently reuse a baseline.
   const stats = await lstat(root);
   if (stats.uid !== process.getuid() || (stats.mode & 0o077) !== 0 || !stats.isDirectory())

@@ -28,6 +28,9 @@ const scenarios = [
   'format-echo',
   'wrong-native-during',
   'wrong-sentinel',
+  'wrong-format-case',
+  'restore-binding-refusal',
+  'abort-forward',
 ];
 for (const scenario of scenarios) {
   const root = await mkdtemp(join(tmpdir(), 'arc1-formatter-harness-test-'));
@@ -73,7 +76,10 @@ for (const scenario of scenarios) {
       requests = 0,
       mutations = 0,
       injected = false;
+    const abort = new AbortController();
     const emit = (event, value) => {
+      if (scenario === 'abort-forward' && event === 'qualification_phase' && value.phase === 'secondary-patch')
+        abort.abort();
       if (event === 'qualification_phase') phase = value.phase;
       if (event === 'qualification_complete') output = value;
     };
@@ -135,12 +141,13 @@ for (const scenario of scenarios) {
           }
           body = { ...values[key] };
         } else if (args.action === 'format') {
+          const caseActor = scenario === 'wrong-format-case' ? (actor === 'writerA' ? 'writerB' : 'writerA') : actor;
           const formatted =
             scenario === 'format-echo'
               ? args.source
               : args.source
-                  .replace('rEpOrT', actor === 'writerA' ? 'REPORT' : 'report')
-                  .replace('wRiTe', actor === 'writerA' ? 'WRITE' : 'write');
+                  .replace('rEpOrT', caseActor === 'writerA' ? 'REPORT' : 'report')
+                  .replace('wRiTe', caseActor === 'writerA' ? 'WRITE' : 'write');
           result = { content: [{ type: 'text', text: formatted }] };
         } else {
           assert.equal(args.action, 'set_formatter_settings');
@@ -181,6 +188,8 @@ for (const scenario of scenarios) {
     };
     const nativeOverride = async (mode) => ({
       status: 'complete',
+      seeded: mode === 'seed',
+      sentinelFields: ['keepIdentifier', 'formatMethodCalls', 'condenseMethodCalls', 'formatValue', 'defaultAutoStyle'],
       unrelatedPreserved: scenario !== 'wrong-native-during',
       originalBytesRestored:
         values.writerA.indentation === baseline.indentation && values.writerA.style === baseline.style,
@@ -210,6 +219,7 @@ for (const scenario of scenarios) {
         configurationOverride: { root, target: 'PR1142/001', actors },
         nativeOverride,
         journalOverride,
+        signal: abort.signal,
       });
     await invoke();
     assert.ok(output);
@@ -226,6 +236,22 @@ for (const scenario of scenarios) {
       await invoke({ restoreOnly: true });
       assert.equal(output.failed, 0, JSON.stringify(output.failures));
       assert.equal(mutations, 4);
+    } else if (scenario === 'restore-binding-refusal') {
+      assert.equal(output.failed, 0);
+      const saved = JSON.parse(await readFile(`${root}/formatter-qualification.json`, 'utf8'));
+      saved.runId = randomUUID();
+      await durable(`${root}/formatter-qualification.json`, saved);
+      const bytes = await readFile(`${root}/formatter-qualification.json`, 'utf8');
+      const beforeRequests = requests;
+      await invoke({ restoreOnly: true });
+      assert.equal(output.journalOwned, false);
+      assert.ok(output.failures.some((f) => f.code === 'RESTORE_BINDING'));
+      assert.equal(requests, beforeRequests);
+      assert.equal(await readFile(`${root}/formatter-qualification.json`, 'utf8'), bytes);
+    } else if (scenario === 'abort-forward') {
+      assert.ok(output.failures.some((f) => f.code === 'QUALIFICATION_STOP_REQUESTED'));
+      assert.deepEqual(values, { writerA: baseline, writerB: baseline });
+      assert.equal(mutations, 2, 'Only the primary patch and its restoration may write');
     } else if (['wrong-identity', 'extra-scope'].includes(scenario)) {
       assert.ok(output.failed > 0);
       assert.equal(requests, 0);

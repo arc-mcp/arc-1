@@ -4,7 +4,8 @@ import { McpSession } from './mcp-checks.mjs';
 import { nativeCheck } from './native-check.mjs';
 import { configuration, validateConfiguration } from './qualification-config.mjs';
 import { verifyRunManifest } from './run-manifest.mjs';
-import { HarnessError, privateJson, readToolBody, safeFailure } from './safe-io.mjs';
+import { HarnessError, privateJson, readToolBody, responseReceipt, safeFailure } from './safe-io.mjs';
+import { checkForwardWork } from './shutdown.mjs';
 
 const styles = ['none', 'keywordLower', 'keywordAuto', 'keywordUpper'];
 const companionActions = ['format', 'get_formatter_settings', 'set_formatter_settings'];
@@ -31,6 +32,7 @@ export async function qualify({
   configurationOverride,
   nativeOverride,
   journalOverride,
+  signal,
 }) {
   if (busy || action.plan !== 'formatter-two-user-v2') throw new HarnessError('QUALIFICATION_PLAN_OR_STATE_MISMATCH');
   if (baseUrl.origin !== 'https://mcp-sap-docs.cfapps.us10-001.hana.ondemand.com')
@@ -40,14 +42,17 @@ export async function qualify({
   const { root, target, actors } = config;
   busy = true;
   const write = journalOverride ?? durable;
-  const native = async (mode) =>
-    nativeOverride ? nativeOverride(mode) : nativeCheck('native-formatter.mts', mode, randomUUID());
+  const native = async (mode) => {
+    checkForwardWork(signal, recovering);
+    return nativeOverride ? nativeOverride(mode) : nativeCheck('native-formatter.mts', mode, randomUUID());
+  };
   const assertions = [],
     clients = {},
     tokens = {};
   let phase = 'identity-preflight',
     journal,
     journalOwned = false,
+    recovering = action.restoreOnly === true,
     run;
   const record = (test, pass, details = {}) => assertions.push({ test, pass: pass === true, ...details });
   const ensure = (test, pass, details = {}) => {
@@ -55,20 +60,30 @@ export async function qualify({
     if (!pass) throw new HarnessError(test.toUpperCase().replace(/[^A-Z0-9_]/g, '_'));
   };
   const step = (value) => {
+    checkForwardWork(signal, recovering);
     phase = value;
     emit('qualification_phase', { phase });
   };
   const save = () => write(`${root}/formatter-qualification.json`, journal);
+  const observeResponse = (session) => async (method, response) => {
+    if (!journalOwned) return;
+    journal.rpcReceipts = (journal.rpcReceipts ?? 0) + 1;
+    await write(
+      `${root}/formatter-rpc-${randomUUID()}.json`,
+      {
+        runId: journal.runId,
+        phase,
+        session,
+        method,
+        at: new Date().toISOString(),
+        ...responseReceipt(response, Object.values(tokens)),
+      },
+      true,
+    );
+  };
   const call = async (client, name, args, expectedError) => {
+    checkForwardWork(signal, recovering);
     const response = await client.request('tools/call', { name, arguments: args });
-    if (journalOwned) {
-      journal.rpcReceipts = (journal.rpcReceipts ?? 0) + 1;
-      await write(
-        `${root}/formatter-rpc-${randomUUID()}.json`,
-        { runId: journal.runId, phase, at: new Date().toISOString(), status: response.status, response: response.json },
-        true,
-      );
-    }
     const parsed = readToolBody(response);
     ensure(`${phase}.http_result`, response.status === 200 && parsed.result != null && !response.json?.error);
     ensure(`${phase}.expected_outcome`, Boolean(parsed.result.isError) === Boolean(expectedError), {
@@ -89,6 +104,7 @@ export async function qualify({
     return { indentation: value.indentation, style: value.style };
   };
   const catalog = async (client) => {
+    checkForwardWork(signal, recovering);
     const response = await client.request('tools/list');
     ensure(`${phase}.catalog`, response.status === 200 && Array.isArray(response.json?.result?.tools));
     const actions = response.json.result.tools.find((t) => t.name === 'SAPLint')?.inputSchema?.properties?.action?.enum;
@@ -96,7 +112,8 @@ export async function qualify({
     return actions;
   };
   const initialize = async (key, route, token) => {
-    const client = new McpSession(new URL(route, baseUrl), token, record, key);
+    checkForwardWork(signal, recovering);
+    const client = new McpSession(new URL(route, baseUrl), token, record, key, true, observeResponse(key));
     ensure(`${phase}.${key}.initialize`, (await client.initialize()).status === 200);
     return client;
   };
@@ -110,6 +127,7 @@ export async function qualify({
     for (const key of ['writerB', 'writerA']) {
       step(`restore-${key}`);
       journal.restored[key] = false;
+      (journal.restorationStatus ??= {})[key] = 'not-attempted';
       try {
         let attempted = false;
         try {
@@ -126,7 +144,11 @@ export async function qualify({
         } catch (error) {
           if (error.code !== 'ENOENT') throw error;
         }
-        if (!attempted) continue;
+        if (!attempted) {
+          journal.restorationStatus[key] = 'not-required';
+          continue;
+        }
+        journal.restorationStatus[key] = 'pending';
         ensure(`${phase}.valid_baseline`, validSettings(journal.baseline[key]) && validSettings(journal.expected[key]));
         const current = await get(clients[key]);
         if (!same(current, journal.baseline[key])) {
@@ -146,7 +168,9 @@ export async function qualify({
         }
         ensure(`${phase}.verified`, same(await get(clients[key]), journal.baseline[key]));
         journal.restored[key] = true;
+        journal.restorationStatus[key] = 'verified';
       } catch (error) {
+        journal.restorationStatus[key] = 'incomplete';
         record(`${phase}.failure`, false, safeFailure(error));
       } finally {
         try {
@@ -158,6 +182,7 @@ export async function qualify({
     }
   };
   try {
+    checkForwardWork(signal, recovering);
     for (const actor of actors) {
       const token = sessions.get(actor.label)?.token.access_token;
       if (typeof token !== 'string') throw new HarnessError('ALL_THREE_SESSIONS_REQUIRED');
@@ -183,6 +208,9 @@ export async function qualify({
           (verification.extra?.xsuaaUserAttributes?.arc1_targets ?? []).some((v) => v === t || v === '*'),
         ),
       );
+      record(`${actor.label}.observed_read_grants`, true, {
+        grants: verification.extra?.xsuaaUserAttributes?.arc1_targets ?? [],
+      });
       const payload = JSON.parse(Buffer.from(tokens[actor.label].split('.')[1], 'base64url').toString('utf8'));
       ensure(
         `${actor.label}.token_lifetime`,
@@ -277,6 +305,13 @@ export async function qualify({
         style: 'keywordLower',
       };
       await save();
+      step('native-seed');
+      journal.nativeSeedAttempted = true;
+      await save();
+      const seed = await native('seed');
+      ensure('native.seeded', seed.status === 'complete' && seed.seeded === true && seed.sentinelFields?.length === 5);
+      journal.nativeSeeded = true;
+      await save();
       ensure('native.before', (await native('before')).status === 'complete');
       step('primary-patch');
       await write(
@@ -366,15 +401,29 @@ export async function qualify({
   } catch (error) {
     record('qualification.failure', false, { phase, ...safeFailure(error) });
   } finally {
+    recovering = true;
     try {
       await restore();
       if (journalOwned) {
-        if (journal.restored.writerA)
+        if (journal.restored.writerA && action.restoreOnly !== true)
           try {
             ensure('native.restored', (await native('after')).originalBytesRestored === true);
           } catch (error) {
             record('native.restore_failure', false, safeFailure(error));
           }
+        try {
+          const restoredSeed = await native('restore-seed');
+          ensure(
+            'native.pre_seed_restored',
+            (restoredSeed.status === 'complete' ||
+              (!journal.nativeSeedAttempted && restoredSeed.status === 'not-required')) &&
+              restoredSeed.originalBytesRestored === true,
+          );
+          journal.nativeSeedRestored = true;
+        } catch (error) {
+          journal.nativeSeedRestored = false;
+          record('native.seed_restore_failure', false, safeFailure(error));
+        }
         journal.assertions = [...(action.restoreOnly === true ? (journal.assertions ?? []) : []), ...assertions];
         journal.finishedAt = new Date().toISOString();
         try {
@@ -388,9 +437,17 @@ export async function qualify({
     }
   }
   const result = {
+    plan: 'formatter-two-user-v2',
+    target,
+    runId: run?.runId,
+    sourceRevision: run?.sourceRevision,
+    harnessSha256: run?.harnessSha256,
+    journalOwned,
     passed: assertions.filter((a) => a.pass).length,
     failed: assertions.filter((a) => !a.pass).length,
     restored: journal?.restored ?? {},
+    restorationStatus: journal?.restorationStatus ?? {},
+    nativeSeedRestored: journal?.nativeSeedRestored === true,
     failures: assertions.filter((a) => !a.pass),
   };
   emit('qualification_complete', result);

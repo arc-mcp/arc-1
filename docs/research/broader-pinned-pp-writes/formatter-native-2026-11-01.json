@@ -57,7 +57,6 @@
   "postLiveChange": "Added an outgoing equality check for unrelated attributes; current focused suite passes with this additional guard.",
   "focusedUnitTests": 42,
   "multiTargetAdmitted": false,
-  "claudeReview": "pending-session-limit-reset",
   "fullUnit": {
     "files": 388,
     "tests": 10726,
@@ -70,5 +69,7 @@
     "file/schema budgets",
     "strict docs build"
   ],
-  "reviewStatus": "Historical native checkpoint; corrected integrated production delta accepted at source level on 1a621f67f. Stronger current-revision PP actor/backend qualification remains outstanding."
+  "reviewStatus": "Historical v2 checkpoint. Production corrections accepted at source level on 1a621f67f; the v5 correction and stronger harness have separate reviews and pending follow-ups/live qualification.",
+  "claudeReviewAtNativeCheckpoint": "pending-session-limit-reset",
+  "restorationLimit": "The v2 byte comparison covers only visible fields. These PUTs may have reset hidden newer preferences; their prior values were not captured."
 }

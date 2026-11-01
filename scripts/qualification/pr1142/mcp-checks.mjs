@@ -10,7 +10,7 @@ function sameSet(left, right) {
 }
 
 export class McpSession {
-  constructor(url, token, record, prefix, privateResponses = true) {
+  constructor(url, token, record, prefix, privateResponses = true, responseObserver) {
     this.url = url;
     this.token = token;
     this.id = 1;
@@ -18,6 +18,7 @@ export class McpSession {
     this.record = record;
     this.prefix = prefix;
     this.privateResponses = privateResponses;
+    this.responseObserver = responseObserver;
   }
   async request(method, params = {}, notification = false) {
     const requestId = notification ? undefined : this.id++;
@@ -37,6 +38,7 @@ export class McpSession {
       },
       { rpcResponseId: requestId, timeoutMs: 330_000 },
     );
+    await this.responseObserver?.(method, response);
     if (this.privateResponses) {
       const directives = (response.headers.get('cache-control') ?? '')
         .toLowerCase()

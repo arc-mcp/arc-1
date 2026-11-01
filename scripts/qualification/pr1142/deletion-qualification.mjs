@@ -6,7 +6,8 @@ import { McpSession } from './mcp-checks.mjs';
 import { nativeCheck } from './native-check.mjs';
 import { configuration, validateConfiguration } from './qualification-config.mjs';
 import { verifyRunManifest } from './run-manifest.mjs';
-import { HarnessError, privateJson, readToolBody, safeFailure } from './safe-io.mjs';
+import { HarnessError, privateJson, readToolBody, responseReceipt, safeFailure } from './safe-io.mjs';
+import { checkForwardWork } from './shutdown.mjs';
 
 const sameSet = (a, b) => JSON.stringify([...new Set(a)].sort()) === JSON.stringify([...new Set(b)].sort());
 let busy = false;
@@ -22,6 +23,7 @@ export async function qualify({
   configurationOverride,
   formatterQualifier,
   journalOverride,
+  signal,
 }) {
   if (busy || action.plan !== 'delete-two-user-v1') throw new HarnessError('QUALIFICATION_PLAN_OR_STATE_MISMATCH');
   if (baseUrl.origin !== 'https://mcp-sap-docs.cfapps.us10-001.hana.ondemand.com')
@@ -34,6 +36,7 @@ export async function qualify({
   let phase = 'identity-preflight',
     journal,
     journalOwned = false,
+    recovering = false,
     manifest;
   const clients = {},
     tokens = {},
@@ -44,22 +47,34 @@ export async function qualify({
     if (!pass) throw new HarnessError(test.toUpperCase().replace(/[^A-Z0-9_]/g, '_'));
   };
   const step = (value) => {
+    checkForwardWork(signal, recovering);
     phase = value;
     emit('qualification_phase', { phase });
   };
   const save = () => write(`${root}/deletion-qualification.json`, journal);
-  const native = (mode, name) =>
-    nativeOverride ? nativeOverride(mode, name) : nativeCheck('native-fixtures.mts', mode, name);
+  const native = (mode, name) => {
+    checkForwardWork(signal, recovering);
+    return nativeOverride ? nativeOverride(mode, name) : nativeCheck('native-fixtures.mts', mode, name);
+  };
+  const observeResponse = (session) => async (method, response) => {
+    if (!journalOwned) return;
+    journal.rpcReceipts = (journal.rpcReceipts ?? 0) + 1;
+    await write(
+      `${root}/deletion-rpc-${randomUUID()}.json`,
+      {
+        runId: journal.runId,
+        phase,
+        session,
+        method,
+        at: new Date().toISOString(),
+        ...responseReceipt(response, Object.values(tokens)),
+      },
+      true,
+    );
+  };
   const call = async (client, name, args, expectedError) => {
+    checkForwardWork(signal, recovering);
     const response = await client.request('tools/call', { name, arguments: args });
-    if (journalOwned) {
-      journal.rpcReceipts = (journal.rpcReceipts ?? 0) + 1;
-      await write(
-        `${root}/deletion-rpc-${randomUUID()}.json`,
-        { runId: journal.runId, phase, at: new Date().toISOString(), status: response.status, response: response.json },
-        true,
-      );
-    }
     const parsed = readToolBody(response);
     ensure(`${phase}.http_result`, response.status === 200 && parsed.result != null && !response.json?.error);
     ensure(`${phase}.expected_outcome`, Boolean(parsed.result.isError) === Boolean(expectedError));
@@ -73,7 +88,8 @@ export async function qualify({
     return parsed;
   };
   const initialize = async (key, route, token) => {
-    const client = new McpSession(new URL(route, baseUrl), token, record, key);
+    checkForwardWork(signal, recovering);
+    const client = new McpSession(new URL(route, baseUrl), token, record, key, true, observeResponse(key));
     const response = await client.initialize();
     ensure(
       `${phase}.${key}.initialize`,
@@ -82,6 +98,7 @@ export async function qualify({
     return client;
   };
   const catalog = async (client) => {
+    checkForwardWork(signal, recovering);
     const result = await client.request('tools/list');
     ensure(`${phase}.catalog`, result.status === 200 && Array.isArray(result.json?.result?.tools));
     return result.json.result.tools;
@@ -99,6 +116,7 @@ export async function qualify({
     return body;
   };
   try {
+    checkForwardWork(signal, recovering);
     for (const actor of actors) {
       const token = sessions.get(actor.label)?.token.access_token;
       if (typeof token !== 'string') throw new HarnessError('ALL_THREE_SESSIONS_REQUIRED');
@@ -120,6 +138,7 @@ export async function qualify({
         `${actor.label}.read_grants`,
         [target, 'A4H/001'].every((t) => (attributes?.arc1_targets ?? []).some((v) => v === t || v === '*')),
       );
+      record(`${actor.label}.observed_read_grants`, true, { grants: attributes?.arc1_targets ?? [] });
       const payload = JSON.parse(Buffer.from(tokens[actor.label].split('.')[1], 'base64url').toString('utf8'));
       ensure(
         `${actor.label}.token_lifetime`,
@@ -286,6 +305,7 @@ export async function qualify({
       ensure(
         'formatter.qualified',
         journal.formatter.failed === 0 &&
+          journal.formatter.nativeSeedRestored === true &&
           journal.formatter.restored.writerA === true &&
           journal.formatter.restored.writerB === true,
       );
@@ -371,6 +391,7 @@ export async function qualify({
   } catch (error) {
     record('qualification.execution', false, { phase, ...safeFailure(error) });
   } finally {
+    recovering = true;
     try {
       if (journalOwned) {
         for (const fixture of manifest.fixtures) {
