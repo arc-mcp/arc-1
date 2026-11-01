@@ -89,8 +89,8 @@ describe('class-bound enhancements', () => {
     s.get
       .mockResolvedValueOnce({
         body: fixture('nested-owner-source-reference.xml').replace(
-          '<enho:enhancement ',
-          '<enho:enhancement enho:switchSupported="true" ',
+          '<enho:contentCommon ',
+          '<enho:contentCommon enho:switchSupported="true" ',
         ),
       })
       .mockResolvedValueOnce({ body: 'exact active child source' });
