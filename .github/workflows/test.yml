@@ -1,5 +1,5 @@
-# Temporary research workflow on this branch only; do not merge this workflow into main.
-name: SAP 1057 retained-failure diagnosis
+# Temporary research workflow on this branch only; never merge this workflow into main.
+name: SAP 1057 retained-pair diagnosis
 
 on:
   workflow_dispatch:
@@ -10,11 +10,18 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     concurrency:
       group: ${{ github.repository }}-sap-live-a4h
       cancel-in-progress: false
       queue: max
+    env:
+      TEST_SAP_URL: ${{ secrets.TEST_SAP_URL }}
+      TEST_SAP_USER: ${{ secrets.TEST_SAP_USER }}
+      TEST_SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
+      TEST_SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+      TEST_SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
+      TEST_FILE_PARALLELISM: 'false'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -22,23 +29,43 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Run the original assertion with bounded failure diagnostics
-        run: npx vitest run --config vitest.integration.config.ts tests/integration/where-used-diagnosis.integration.test.ts
-        env:
-          TEST_SAP_URL: ${{ secrets.TEST_SAP_URL }}
-          TEST_SAP_USER: ${{ secrets.TEST_SAP_USER }}
-          TEST_SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
-          TEST_SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
-          TEST_SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
-          TEST_FILE_PARALLELISM: 'false'
-      - name: Retain the original failure and bounded follow-up evidence
+      - name: Run at most six fresh-process trials
+        timeout-minutes: 22
+        run: npx tsx scripts/diagnose-1057.ts trials
+      - name: Publish names and original observations before inspection
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: where-used-retained-failure-diagnosis
-          path: |
-            test-results/integration.json
-            /tmp/arc1-1057-native-original-*.json
-            /tmp/arc1-1057-native-followup-*.json
+          name: where-used-1057-inspection-start
+          path: test-results/1057-public/
           retention-days: 14
           if-no-files-found: warn
+      - name: Observe retained pairs through minute five
+        timeout-minutes: 8
+        run: npx tsx scripts/diagnose-1057.ts observe-before-native
+      - name: Publish the native inspection checkpoint
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: where-used-1057-native-checkpoint
+          path: test-results/1057-public/
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Continue observations until the twenty-minute hold ends
+        timeout-minutes: 14
+        run: npx tsx scripts/diagnose-1057.ts observe-after-native
+      - name: Delete only registered owned objects and verify metadata 404
+        if: always()
+        timeout-minutes: 10
+        run: npx tsx scripts/diagnose-1057.ts cleanup
+      - name: Preserve sanitized evidence and cleanup outcome
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: where-used-1057-final
+          path: test-results/1057-public/
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Preserve every original test failure
+        if: always()
+        run: npx tsx scripts/diagnose-1057.ts verdict
