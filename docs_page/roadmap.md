@@ -203,56 +203,24 @@ for behavior-preserving shared mutation infrastructure, merged in [#1138](https:
 [PR 2](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-broader-pinned-pp-writes.md)
 for the capability expansion. Existing opted-in writers may gain the documented capabilities;
 read-only applications/destinations must remain mutation-free.
-Author review and two Claude Code Opus 5.5 max reviews are recorded with findings and dispositions
-in the research record. The remaining implementation is PR 2's capability expansion; its remaining families still need live
-qualification. A [two-writer PP run](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-pp-qualification.md)
-verified the existing CLAS lifecycle and native authorship, with temporary access and configuration
-restored; it does not qualify the broader capabilities. Implementation started with
-[ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-broader-pinned-pp-mutations.md), an explicit
-[review inventory](https://github.com/arc-mcp/arc-1/blob/main/docs/research/broader-pinned-pp-writes/inventory.md)
-and request-scoped package hierarchy checks. Follow-up infrastructure binds native adapters to the
-mutation budget and verifies CTS parent/task scopes. The follow-up Claude review loop is accepted,
-with fresh hierarchy early-exit and complete nested-schema drift tests; these do not enable
-additional operations. The explicit capability table and mixed-tool admission/projection infrastructure are implemented.
-Broader type/action adapters and their PP qualification remain outstanding. The class-include adapter and
-its two-writer qualification harness are implemented in the draft; the first Opus include review
-identified an ambiguous blank-source case, now restricted to hash-guarded clearing. Live include
-qualification remains open. Opus accepted the corrected harness after a direct native initialization
-check, which passed. A primary-writer PP attempt passed 386 assertions before a follow-up HTTP read
-failed; the second writer and owner activation were not reached. The preserved partial fixture was
-independently verified and removed. Further negative controls and diagnostic coverage address the
-review's diagnostic and test findings. Opus retained the integrated checkpoint with no High/Medium
-issue. A subsequent immutable Opus review retained `8c259f96`, passed 11,516 tests and 59 simulations,
-and found four Low follow-ups. Its verdict and the follow-up dispositions are retained in the evidence.
-A complete fresh PP run remains required.
-The host power log explains the failed run's long gap as lid-closed sleep; the precise fetch error
-was not captured. A fresh run requires an awake host, a preserved power log and remains necessary
-for qualification.
-No additional family is qualified by this incomplete attempt.
-Research for class surgery found overlapping native declaration ranges for chained `METHODS`.
-The shared signature/delete/visibility helpers now refuse those individual edits before saving;
-the broader pinned class-surgery adapter and its source/structure checks remain outstanding.
-The existing pinned main-method edit now shares its single-target action handler with explicit
-pinned lifecycle policy. Common replacement guards refuse renamed/multiple methods and shared
-statement boundaries. This is implementation convergence, not additional capability qualification;
-Opus retained that checkpoint with no High/Medium finding. Its follow-up adds direct quality/CTS
-and cleanup-warning tests and documents remaining shared-line metadata and cleanup-result gaps.
-Opus retained the follow-up with no High/Medium finding; paired real-lint success, native syntax
-fixture and evidence-wording corrections address its small follow-ups. New artifact-bound live
-verification remains pending. The original
-IAM/XSUAA configuration is now restored and freshly verified; this does not qualify the failed run.
-The formatter and local CLAS/INTF deletion adapters now have a
-[combined two-writer PP qualification](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
-at `1b234d3a4`: native authorship/source binding, typed absence, v5 optional-preference preservation
-for the primary user, MCP-visible secondary isolation and verified cleanup. Actual Claude Code
-Opus 5.5 max accepted running that controlled qualification with documented operating constraints.
-Its subsequent evidence review found no High/Medium issues; minor documentation and harness
-recovery fixes are recorded with the review. This closes the
-previous local deletion/v5 run gap, not broader PR readiness. Remaining work includes transportable
-deletion, class-include native/PP qualification, other types and surgery, DDIC/RAP, batches, package/API/publication, CTS, tracing and
-classic FLP, with their operation-specific adapters and PP qualification. Secondary native preference
-proof, untested or unsupported native formatter styles, other releases and the separate legacy v2 preservation issue
-remain explicit limits. Aggregate, Basic and read-only connections stay mutation-free.
+Implementation in draft [#1142](https://github.com/arc-mcp/arc-1/pull/1142) includes an explicit
+capability matrix, request-scoped package hierarchy and CTS parent/task checks, native adapter
+budgets, local deletion, class-include replacement and mapped-user formatter preferences.
+[Fresh two-writer PP evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-includes.md)
+at `77e41fdcd` covers the shared main-method handler, all four local include kinds, native
+`testclasses` initialization, owner activation, CLAS/INTF deletion, formatter preservation and
+read-only-route refusals. Native authorship/source checks and complete temporary-access/configuration
+restoration passed. The recorded failed attempt remains failed. Actual Opus 5.5 max reviews and
+finding dispositions are linked from the evidence; this is not whole-PR acceptance.
+
+Remaining work is transportable deletion/includes, other object types and class/procedural surgery,
+DDIC/RAP, batches, package/API/publication, CTS, runtime tracing and classic FLP, each with its
+resource policy, tests and PP qualification. Broader class metadata surgery also requires positive
+owner/source/name/range checks; the existing declaration-chain refusal is only a partial guard.
+Source-save cleanup results need consistent transport/warning/close-failure reporting. Secondary
+native formatter-preference proof, untested native styles, other releases and the separate legacy
+v2 preservation issue remain evidence limits. Aggregate, Basic and read-only connections stay
+mutation-free. Git and custom extensions/plugins remain excluded.
 
 **Resume when.** The PR 1 acceptance and owner request prerequisites are met. Continue the guarded
 adapters and native qualification against the reviewed PR 2 plan. Preserve the shared foundation's

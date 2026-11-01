@@ -135,3 +135,12 @@ shape, and corrects cloud evidence timestamps and retrospective script-hash word
 reporting on incomplete saves remains part of the already identified cleanup-result alignment.
 GitHub checks at this revision, including SAP integration and end-to-end tests, passed; these are
 not the pending two-identity pinned PP qualification. No new capability is admitted by this follow-up.
+
+## Fresh PP evidence at `77e41fdcd`
+
+The [complete include/CRUD/formatter run](2026-11-01-broader-pinned-pp-writes-includes.md#complete-fresh-pp-run-16021607-utc)
+exercised this shared main-method handler for both mapped SAP writers, followed by owner activation,
+independent native actor/source checks and deletion. Production bytes match the accepted `771aff1c6`
+checkpoint; its test/documentation follow-ups are included. All temporary access and configuration
+were restored. This closes the pending main-method PP rerun, without qualifying metadata surgery,
+include method editing or the remaining PR 2 families.

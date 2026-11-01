@@ -1,9 +1,47 @@
-# Pinned class-local includes — implementation checkpoint
+# Pinned class-local includes — implementation and qualification
 
 PR #1142 now implements `SAPWrite.update` for CLAS `definitions`, `implementations`, `macros`
-and `testclasses`. Code review and live native/two-writer PP qualification remain pending for
-this addition. The earlier [combined run](2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
-does not qualify these paths or their initialization behavior.
+and `testclasses`. The fresh two-writer run below qualifies their local `$TMP` lifecycle at
+`77e41fdcdcfd43ead7fc66fbb23508037d6e2dba`. Earlier checkpoints and the failed attempt remain historical
+evidence; neither the earlier [combined run](2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
+nor this new run qualifies transportable includes or the rest of PR 2.
+
+## Complete fresh PP run, 16:02–16:07 UTC
+
+The [sanitized receipt](broader-pinned-pp-writes/include-qualification-20261101.json) binds run
+`53e76504-7aab-4944-90bc-580518297ac9` to the clean source revision, harness, fresh fixture manifest,
+CF package and selected droplet. The fresh build contains 1,219 hashed files, reverified after the
+run. Production source, harness, integration helper and lockfile match the Opus-reviewed `771aff1c6`;
+the intervening commit contains only its test and documentation follow-ups.
+
+Three separately authenticated sessions first passed 39 identity/scope checks. The parent lifecycle
+then passed **1,216 checks with zero failures**; its formatter child passed **262 with zero failures**.
+Both writers created and edited CLAS/INTF fixtures, exercised the shared main-method handler,
+replaced all four class includes, and activated each complete owner. Each class initialized a
+previously absent `testclasses` include; the other three kinds already existed. This does not prove
+initialization of every kind. Missing/stale hashes and blank requests were refused, while explicit
+hash-guarded clearing and subsequent replacement succeeded.
+
+Native active/editable source hashes matched for both owners and all eight includes. Their native
+last changers were `MARIAN` and `ARC1_WG_RO` respectively. These observations followed activation;
+they do not independently attribute every earlier request or reveal every other user's drafts.
+Reader, read-only destination, aggregate and compatibility-route refusals passed. Formatter settings,
+including the primary user's optional v5 preference seed, were restored. Secondary preference isolation
+was observed through MCP, without an independent native enumeration of that user's preferences.
+Deletion and independent typed absence checks confirmed all four fixture names absent. No manual
+fixture recovery was needed. The harness stopped with zero active operations and discarded its sessions.
+
+Fresh read-only verification matched both users' complete role/profile rows and both named roles'
+authorization/organization-level rows exactly to their pre-run captures. The temporary SAP assignment,
+BTP role/collection and destination were removed. The original app, droplet, full environment, routes,
+seven XSUAA security fields and source read-only destination matched their baselines; the app was
+running and healthy. Receipt timestamps identify when each verification completed, not when each
+preceding removal happened. The rollback ledger is `fully-restored`.
+
+The preserved host power log covers setup through restoration (15:49:16–16:13:58 UTC), including
+89 lines and no sleep/wake event. A run-scoped idle assertion covered the harness lifetime and the
+lid was checked open; the assertion cannot prevent deliberate lid-closed sleep. This run resolves
+the prior incomplete local include qualification. It does not make the broader PR merge-ready.
 
 ## Shared protocol and policy
 

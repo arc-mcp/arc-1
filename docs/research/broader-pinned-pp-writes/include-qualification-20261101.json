@@ -1,0 +1,331 @@
+{
+  "runId": "53e76504-7aab-4944-90bc-580518297ac9",
+  "sourceRevision": "77e41fdcdcfd43ead7fc66fbb23508037d6e2dba",
+  "harnessSha256": "3b0299b5223d4aca470158f584fa0bd3619a3fe0b100d719a6be9c1ad3a5c0d7",
+  "fixtureManifestSha256": "c6f02967c07f224d11421781531a2dbfebca14b5e5459b3ce55c573a05bb7ad1",
+  "target": "PR1142/001",
+  "startedAt": "2026-11-01T16:02:41.244Z",
+  "finishedAt": "2026-11-01T16:07:26.208Z",
+  "parentChecks": {
+    "passed": 1216,
+    "failed": 0
+  },
+  "formatterChecks": {
+    "passed": 262,
+    "failed": 0,
+    "restored": {
+      "writerB": true,
+      "writerA": true
+    },
+    "restorationStatus": {
+      "writerB": "verified",
+      "writerA": "verified"
+    },
+    "nativeSeedRestored": true
+  },
+  "fixtures": [
+    {
+      "actor": "writerA",
+      "type": "CLAS",
+      "name": "ZARC1_DPP_AC_45CEBEDD",
+      "nativeIdentity": {
+        "name": "ZARC1_DPP_AC_45CEBEDD",
+        "type": "CLAS",
+        "package": "$TMP",
+        "version": "active",
+        "masterSystem": "A4H",
+        "createdBy": "MARIAN",
+        "createdAt": "2026-11-01T00:00:00Z",
+        "changedBy": "MARIAN",
+        "changedAt": "2026-11-01T16:04:19Z",
+        "description": "Temporary PR1142 PP deletion fixture",
+        "sourceSha256": "8d5020129b9157b3066048cf372f37c97d00b225818b0d549284a663b4a7bf42",
+        "activeSourceSha256": "8d5020129b9157b3066048cf372f37c97d00b225818b0d549284a663b4a7bf42",
+        "includes": {
+          "definitions": {
+            "createdBy": "MARIAN",
+            "changedBy": "MARIAN",
+            "version": "active",
+            "sourceSha256": "92c5f932934036de5720237860c156c73f68b1a9a6814f64d24ff7648f281718",
+            "activeSourceSha256": "92c5f932934036de5720237860c156c73f68b1a9a6814f64d24ff7648f281718"
+          },
+          "implementations": {
+            "createdBy": "MARIAN",
+            "changedBy": "MARIAN",
+            "version": "active",
+            "sourceSha256": "3c0fdcd2029456338add29758fcb9c5eedfec402789229836b7978ac7c5191f1",
+            "activeSourceSha256": "3c0fdcd2029456338add29758fcb9c5eedfec402789229836b7978ac7c5191f1"
+          },
+          "macros": {
+            "createdBy": "MARIAN",
+            "changedBy": "MARIAN",
+            "version": "active",
+            "sourceSha256": "78b79acbbf4e4f56a1dc7bcb7e2e00639d2e88ddc6652f4e27c6a6f5f251c681",
+            "activeSourceSha256": "78b79acbbf4e4f56a1dc7bcb7e2e00639d2e88ddc6652f4e27c6a6f5f251c681"
+          },
+          "testclasses": {
+            "createdBy": "MARIAN",
+            "changedBy": "MARIAN",
+            "version": "active",
+            "sourceSha256": "3b9b218abca1312d9b6a97fa55069250c2c735e011b88a86cfa3da52bbd6403f",
+            "activeSourceSha256": "3b9b218abca1312d9b6a97fa55069250c2c735e011b88a86cfa3da52bbd6403f"
+          }
+        }
+      },
+      "independentAbsence": true,
+      "finalAbsenceVerified": true,
+      "includes": {
+        "complete": true,
+        "initializedKinds": [
+          "testclasses"
+        ],
+        "kinds": {
+          "definitions": {
+            "initialReadAvailable": true,
+            "initialized": false,
+            "complete": true,
+            "sourceHash": "92c5f932934036de5720237860c156c73f68b1a9a6814f64d24ff7648f281718"
+          },
+          "implementations": {
+            "initialReadAvailable": true,
+            "initialized": false,
+            "complete": true,
+            "sourceHash": "3c0fdcd2029456338add29758fcb9c5eedfec402789229836b7978ac7c5191f1"
+          },
+          "macros": {
+            "initialReadAvailable": true,
+            "initialized": false,
+            "complete": true,
+            "sourceHash": "78b79acbbf4e4f56a1dc7bcb7e2e00639d2e88ddc6652f4e27c6a6f5f251c681"
+          },
+          "testclasses": {
+            "initialReadAvailable": false,
+            "initialized": true,
+            "complete": true,
+            "sourceHash": "3b9b218abca1312d9b6a97fa55069250c2c735e011b88a86cfa3da52bbd6403f"
+          }
+        }
+      }
+    },
+    {
+      "actor": "writerA",
+      "type": "INTF",
+      "name": "ZARC1_DPP_AI_3674AFE9",
+      "nativeIdentity": {
+        "name": "ZARC1_DPP_AI_3674AFE9",
+        "type": "INTF",
+        "package": "$TMP",
+        "version": "active",
+        "masterSystem": "A4H",
+        "createdBy": "MARIAN",
+        "createdAt": "2026-11-01T00:00:00Z",
+        "changedBy": "MARIAN",
+        "changedAt": "2026-11-01T16:04:33Z",
+        "description": "Temporary PR1142 PP deletion fixture",
+        "sourceSha256": "db0ec667e9683ae993d3625d1ff4eac5b18ddf90e2ae3aed5e8334ee068cab0f",
+        "activeSourceSha256": "db0ec667e9683ae993d3625d1ff4eac5b18ddf90e2ae3aed5e8334ee068cab0f"
+      },
+      "independentAbsence": true,
+      "finalAbsenceVerified": true
+    },
+    {
+      "actor": "writerB",
+      "type": "CLAS",
+      "name": "ZARC1_DPP_BC_F25AB1B1",
+      "nativeIdentity": {
+        "name": "ZARC1_DPP_BC_F25AB1B1",
+        "type": "CLAS",
+        "package": "$TMP",
+        "version": "active",
+        "masterSystem": "A4H",
+        "createdBy": "ARC1_WG_RO",
+        "createdAt": "2026-11-01T00:00:00Z",
+        "changedBy": "ARC1_WG_RO",
+        "changedAt": "2026-11-01T16:05:57Z",
+        "description": "Temporary PR1142 PP deletion fixture",
+        "sourceSha256": "0b1224247d0079fcdb63aaaea86c31bf36cd24b72c19788442682e7d88ae7d7d",
+        "activeSourceSha256": "0b1224247d0079fcdb63aaaea86c31bf36cd24b72c19788442682e7d88ae7d7d",
+        "includes": {
+          "definitions": {
+            "createdBy": "ARC1_WG_RO",
+            "changedBy": "ARC1_WG_RO",
+            "version": "active",
+            "sourceSha256": "014737b926c5e95a17118aaa192a6a73e2d23b472ed19d2a2442bbcd1da35a5d",
+            "activeSourceSha256": "014737b926c5e95a17118aaa192a6a73e2d23b472ed19d2a2442bbcd1da35a5d"
+          },
+          "implementations": {
+            "createdBy": "ARC1_WG_RO",
+            "changedBy": "ARC1_WG_RO",
+            "version": "active",
+            "sourceSha256": "c1cc8813e0a62f97fabdf6f53970635ecc288df334a9e20437cd71caa4fdd288",
+            "activeSourceSha256": "c1cc8813e0a62f97fabdf6f53970635ecc288df334a9e20437cd71caa4fdd288"
+          },
+          "macros": {
+            "createdBy": "ARC1_WG_RO",
+            "changedBy": "ARC1_WG_RO",
+            "version": "active",
+            "sourceSha256": "85e0d6270669cdcf1df1a7228b395ee0b2c87f830466e67074d9daba38cccf69",
+            "activeSourceSha256": "85e0d6270669cdcf1df1a7228b395ee0b2c87f830466e67074d9daba38cccf69"
+          },
+          "testclasses": {
+            "createdBy": "ARC1_WG_RO",
+            "changedBy": "ARC1_WG_RO",
+            "version": "active",
+            "sourceSha256": "2e28698fae58dac4cf5d4432e37b2daeae766a188ad745d3ee961540fb18f334",
+            "activeSourceSha256": "2e28698fae58dac4cf5d4432e37b2daeae766a188ad745d3ee961540fb18f334"
+          }
+        }
+      },
+      "independentAbsence": true,
+      "finalAbsenceVerified": true,
+      "includes": {
+        "complete": true,
+        "initializedKinds": [
+          "testclasses"
+        ],
+        "kinds": {
+          "definitions": {
+            "initialReadAvailable": true,
+            "initialized": false,
+            "complete": true,
+            "sourceHash": "014737b926c5e95a17118aaa192a6a73e2d23b472ed19d2a2442bbcd1da35a5d"
+          },
+          "implementations": {
+            "initialReadAvailable": true,
+            "initialized": false,
+            "complete": true,
+            "sourceHash": "c1cc8813e0a62f97fabdf6f53970635ecc288df334a9e20437cd71caa4fdd288"
+          },
+          "macros": {
+            "initialReadAvailable": true,
+            "initialized": false,
+            "complete": true,
+            "sourceHash": "85e0d6270669cdcf1df1a7228b395ee0b2c87f830466e67074d9daba38cccf69"
+          },
+          "testclasses": {
+            "initialReadAvailable": false,
+            "initialized": true,
+            "complete": true,
+            "sourceHash": "2e28698fae58dac4cf5d4432e37b2daeae766a188ad745d3ee961540fb18f334"
+          }
+        }
+      }
+    },
+    {
+      "actor": "writerB",
+      "type": "INTF",
+      "name": "ZARC1_DPP_BI_BFB576E8",
+      "nativeIdentity": {
+        "name": "ZARC1_DPP_BI_BFB576E8",
+        "type": "INTF",
+        "package": "$TMP",
+        "version": "active",
+        "masterSystem": "A4H",
+        "createdBy": "ARC1_WG_RO",
+        "createdAt": "2026-11-01T00:00:00Z",
+        "changedBy": "ARC1_WG_RO",
+        "changedAt": "2026-11-01T16:06:12Z",
+        "description": "Temporary PR1142 PP deletion fixture",
+        "sourceSha256": "0ecc0286a2a4005a92703658b5ced55767861dfb4b7faf1f5d2789b3767d2cf9",
+        "activeSourceSha256": "0ecc0286a2a4005a92703658b5ced55767861dfb4b7faf1f5d2789b3767d2cf9"
+      },
+      "independentAbsence": true,
+      "finalAbsenceVerified": true
+    }
+  ],
+  "deployment": {
+    "revision": "77e41fdcdcfd43ead7fc66fbb23508037d6e2dba",
+    "artifactBuiltAtRevision": "77e41fdcdcfd43ead7fc66fbb23508037d6e2dba",
+    "packageGuid": "822bf441-123b-4f37-b3b4-007e86a5bf04",
+    "dropletGuid": "fb950d8f-938f-4de0-981d-f82d7da2d3a3",
+    "dropletChecksum": {
+      "type": "sha256",
+      "value": "7b9cb4d9d45ce83cc80b57afde7c235e0b44996501f2ddb9ef6bb55ec16a15b8"
+    }
+  },
+  "artifactFilesReverified": 1219,
+  "restoration": {
+    "verifiedAt": "2026-11-01T16:16:14.465226+00:00",
+    "phase": "fully-restored",
+    "sapUsersRolesAndProfilesExactlyRestored": true,
+    "sapRoleDefinitionsAndOrganizationLevelsExactlyRestored": true,
+    "sapVerificationAt": "2026-11-01T16:12:40.545Z",
+    "cloud": {
+      "at": "2026-11-01T16:12:26.289532+00:00",
+      "runId": "53e76504-7aab-4944-90bc-580518297ac9",
+      "checks": {
+        "environment": {
+          "matchesOriginalBaseline": true,
+          "sha256": "6ff32ffd2632eeaa8eaa0a3e609b499b10a50463f1c8cf102fed741d9fadd858"
+        },
+        "droplet": {
+          "matchesOriginalBaseline": true,
+          "sha256": "a6b02fffa41cfff599e500284d0f3dd619dacc45c0b06291dc810ffcf24ce6b1"
+        },
+        "routes": {
+          "matchesOriginalBaseline": true,
+          "sha256": "b1edba4b6ec60a385d279cf6b9d6d933d892136617c6e6594fdeda8517eeb03f"
+        },
+        "xsuaa": {
+          "matchesOriginalBaseline": true,
+          "comparedFields": [
+            "tenant-mode",
+            "scopes",
+            "authorities",
+            "foreign-scope-references",
+            "attributes",
+            "role-templates",
+            "oauth2-configuration"
+          ]
+        },
+        "ARC1_PR1142_PP_WRITERS": {
+          "absent": true
+        },
+        "PR1142 exact PP development": {
+          "absent": true
+        },
+        "health": {
+          "httpSuccess": true,
+          "runningInstances": 1
+        }
+      },
+      "verificationScriptSha256": "37a2197fd71c9a5a5b581bd85ecd080ecc197863f6381826bebd5d7b61e8f37a",
+      "operatorScriptSha256": "cf468fe9af79fa15a2567e7f59b674d0d8f5bf9f7ae42eec699ff9f9069ce7c8"
+    },
+    "destinations": {
+      "at": "2026-11-01T16:13:25.858Z",
+      "runId": "53e76504-7aab-4944-90bc-580518297ac9",
+      "sourceDestinationUnchanged": true,
+      "temporaryDestinationAbsent": true,
+      "verificationScriptSha256": "b301d1079db78c68999a62ec69063274792675d4ea78c981011b055e08fe7919"
+    }
+  },
+  "powerWindow": {
+    "windowStart": "2026-11-01T15:49:16+00:00",
+    "windowEnd": "2026-11-01T16:13:58.957917+00:00",
+    "lineCount": 89,
+    "sha256": "eacc68f4806aa786d829e9394bb87291a2127d1f873577435b957dc5178131a0",
+    "scope": "Every pmset log line in the full setup, qualification and restoration interval, with continuation lines. Idle assertion covered harness lifetime; no claim that it prevents clamshell sleep."
+  },
+  "sleepWakeEventsObserved": 0,
+  "privateReceiptHashes": {
+    "run-manifest.json": "3cdd14e0b7e10b1309119df0dff0ff1c2da87b946fa3b3992eb320d62ea0b911",
+    "fixture-manifest.json": "8344b952aa916470d6500b1cd2bd35acbc8f51743ffa5aa022d825261be29d2d",
+    "deployment-manifest.json": "e986e6312dea17e29f2bd3da7231e7e352ff779bca58ffb45c60970fef17a7ff",
+    "deletion-qualification.json": "b6117b95c915e4d7b7bb8ae3716e9644303f49f3728d47f7c22c4ae232abf8b5",
+    "formatter-qualification.json": "9952c2ce1bb6de293d8fd3a88f840ade9d742b9a6c4b7f63bac69e26eb0345dc",
+    "sap-access-before.json": "0b853a8401883684886a088119f118a5380b1b554e6811137d58f1c45f97b21f",
+    "sap-access-candidate.json": "e2c9ffa3eb828ce776c635d79aaf0816aed0c3e667b3a7ddc10cef7b605429a0",
+    "sap-access-restored.json": "a4a4eaa95013687c12928e144722f724136600cb4840527a7f8a47ff30d01e2a",
+    "cloud-restoration-verified.json": "cc6f8c807d2bbcd70174598ec6155e595b5e27149b2f726173a70cbdaa63137d",
+    "destination-restoration-verified.json": "32382825da732ec1640791b4047e8c69d830f82c5793d329158d2ef854359fa5",
+    "cleanup.json": "492d733faab708e9233b0277b9c7fb43c05d5b035c98fd6b34414a92278fbee3"
+  },
+  "limits": [
+    "A4H/001 only; $TMP CLAS/INTF fixtures. No transportable object qualification.",
+    "Three existing include kinds plus native testclasses initialization for each writer; no claim of initializing every include kind.",
+    "Native actor/version and source receipts followed whole-owner activation; not attribution of every preceding HTTP request.",
+    "Primary optional formatter preference baseline restored; secondary isolation observed through MCP, not independent native preference enumeration.",
+    "No Git, plugins, broader class surgery, other types, DDIC/RAP, batches, package/API/publication, CTS, trace or FLP qualification."
+  ]
+}
