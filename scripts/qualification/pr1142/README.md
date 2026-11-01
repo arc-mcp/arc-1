@@ -137,7 +137,11 @@ code covers multiple gates, so it does not identify which gate fired. Actual rea
 recorded, including wildcard grants. RPC receipts include initialization, catalogs and malformed
 bodies before protocol validation; known access tokens and JWT-shaped strings are redacted.
 
-## Class-include extension (live evidence pending)
+## Class-include replacement qualification
+
+The local `$TMP` replacement run at `77e41fdcd` passed for both writers; see
+`docs/research/2026-11-01-broader-pinned-pp-writes-includes.md`. It used comment-only include bodies.
+Transportable includes and the later include-method adapter remain unqualified.
 
 The live combined command also runs `include-qualification.mjs` for each writer's temporary
 class before its first whole-owner activation and independent ownership receipt. It exercises

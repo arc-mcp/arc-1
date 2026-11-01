@@ -1,6 +1,8 @@
 # PR 2: broader built-in writes on pinned PP targets
 
-Status: implementation in progress. Formatter, CLAS/INTF deletion and class-include updates are admitted in the draft.
+Status: implementation in progress. Formatter, CLAS/INTF deletion, class-include updates and existing-include method edits are admitted in the draft.
+The fresh local run at `77e41fdcd` qualifies include replacement and the refactored main method path;
+the later include-method adapter, refactored transportable paths and remaining families still need qualification.
 The [combined PP run](../research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
 qualifies the listed local CLAS/INTF and tested v5 formatter cases at `1b234d3a4`. Claude accepted its evidence
 follow-up for continued development; broader capabilities and final acceptance remain outstanding.
@@ -12,7 +14,7 @@ Implementation starts with [ADR-0011](../adr/0011-broader-pinned-pp-mutations.md
 [Implementation checkpoint and incomplete review status](../research/2026-10-29-broader-pinned-pp-writes-progress.md).
 [Existing CLAS two-writer PP evidence and remaining qualification](../research/2026-11-01-broader-pinned-pp-writes-pp-qualification.md).
 [CLAS/INTF deletion integration and qualification limits](../research/2026-11-01-broader-pinned-pp-writes-deletion.md).
-[Class-local include implementation; review and native/PP qualification pending](../research/2026-11-01-broader-pinned-pp-writes-includes.md).
+[Class-local include implementation and local two-writer qualification](../research/2026-11-01-broader-pinned-pp-writes-includes.md).
 Proposed title: `feat: expand pinned PP writes across built-in development operations`.
 [Research and owner decisions](../research/2026-10-26-multi-target-write-parity.md).
 

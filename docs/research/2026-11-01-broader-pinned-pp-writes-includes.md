@@ -14,10 +14,12 @@ CF package and selected droplet. The fresh build contains 1,219 hashed files, re
 run. Production source, harness, integration helper and lockfile match the Opus-reviewed `771aff1c6`;
 the intervening commit contains only its test and documentation follow-ups.
 
-Three separately authenticated sessions first passed 39 identity/scope checks. The parent lifecycle
+Three separately authenticated sessions first passed 39 identity/route checks, recorded separately
+from the parent and formatter counts. The parent lifecycle
 then passed **1,216 checks with zero failures**; its formatter child passed **262 with zero failures**.
 Both writers created and edited CLAS/INTF fixtures, exercised the shared main-method handler,
-replaced all four class includes, and activated each complete owner. Each class initialized a
+replaced all four class includes, and activated each complete owner. All non-empty replacement bodies were one ABAP comment line: activation did not compile real
+local classes, macros or test classes in this run. Each class initialized a
 previously absent `testclasses` include; the other three kinds already existed. This does not prove
 initialization of every kind. Missing/stale hashes and blank requests were refused, while explicit
 hash-guarded clearing and subsequent replacement succeeded.
@@ -33,10 +35,12 @@ fixture recovery was needed. The harness stopped with zero active operations and
 
 Fresh read-only verification matched both users' complete role/profile rows and both named roles'
 authorization/organization-level rows exactly to their pre-run captures. The temporary SAP assignment,
-BTP role/collection and destination were removed. The original app, droplet, full environment, routes,
+BTP role/collection and destination were removed. The original app, droplet, all user-provided environment variables, routes,
 seven XSUAA security fields and source read-only destination matched their baselines; the app was
 running and healthy. Receipt timestamps identify when each verification completed, not when each
-preceding removal happened. The rollback ledger is `fully-restored`.
+preceding removal happened. The rollback ledger is `fully-restored`. Service bindings/system environment were not compared;
+an XSUAA field absent from both compared descriptors counts equal. The candidate package and
+droplet remain retained, unselected test artifacts.
 
 The preserved host power log covers setup through restoration (15:49:16–16:13:58 UTC), including
 89 lines and no sleep/wake event. A run-scoped idle assertion covered the harness lifetime and the
@@ -193,7 +197,7 @@ persist the individual before-lock/under-lock observations or a script hash. Its
 retrospectively; this is a code audit plus recorded outcome, not independent runtime proof of each comparison.
 The original application/environment, temporary destination and SAP role/profile are restored;
 temporary IAM entries and XSUAA restoration initially awaited operator BTP session renewal;
-they were subsequently restored and freshly verified at 13:44:21 UTC, as recorded below.
+they were subsequently verified restored at 13:44:21 UTC, as recorded below.
 
 The follow-up closes the review's offline coverage gaps: persisted attempts are checked when the
 mock receives each include mutation, including the second writer; contradictory or missing save
@@ -299,8 +303,8 @@ Verbatim report SHA-256: `4462ca3450269cb3e3acf218fc493c114049c832b352e38649ea08
 The current follow-up also converges the existing pinned main-method edit with the
 [single-target action handler](2026-11-01-shared-pinned-method-edit.md). This changes shipped source,
 so the accepted `8c259f96` review is not approval of those later bytes. They need follow-up review,
-a fresh build and new qualification manifests before deployment. The complete two-writer include
-run remains pending. IAM/XSUAA restoration is recorded below.
+a fresh build and new qualification manifests before deployment. At that checkpoint the complete two-writer include
+run remained pending. The later successful run is recorded at the top; IAM/XSUAA restoration is below.
 
 
 ## Original cloud configuration restored
@@ -317,4 +321,27 @@ not contemporaneous execution attestations. Its sanitized observation is include
 in the attempt JSON. The rollback ledger is `fully-restored`, with `awaitingBtpLogin=false` and
 `activeConfigurationChanged=false`. SAP role/profile, destination and fixture restoration retain
 their earlier evidence timestamps; these cloud checks do not claim to re-exercise SAP authorization.
-The failed include run remains failed. A new reviewed artifact and new manifests are still required.
+The failed include run remains failed. It required a new reviewed artifact and new manifests;
+the later successful run at the top uses that fresh binding.
+
+## Opus review of the completed local run
+
+The [verbatim Opus 5.5 max review](broader-pinned-pp-writes/claude-include-success-review-20261101.md)
+retained `1b08bd518` with no High/Medium issue and no required rerun or code fix for that checkpoint.
+It passed 11,573 tests, 59 simulations, all typechecks and budgets; all 2,612 snapshot files were
+unchanged before/after and on author re-verification. The launcher used `--model claude-opus-5-5
+--effort max`; initialization confirmed the model. Report SHA-256:
+`88162c4d8f55942a0cd9d63e984bfc0e057064a72a5c2147770a07a9d8a95d6f`.
+
+Its six Low findings are addressed by distinguishing historical pending states from this local
+qualification; recording comment-only content and include lint/syntax skips; keeping all refactored
+transportable paths open; narrowing the environment/XSUAA comparison and disclosing retained
+candidate artifacts; adding the three initial identity/route check sets, deployed environment
+settings, later read-only SAP_BASIS 758 observation and retrospective SAP verifier hashes; and
+correcting remaining verification timestamp wording. These are author evidence, not independent
+live observations by Claude. The later release read does not recover the run's feature-probe result
+or selected lint parser. Cross-run raw baselines for user environment variables, droplet and routes
+compare equal; differing published digests came from JSON serialization choices.
+
+The subsequent include-method/cleanup implementation has different production bytes and remains
+unqualified by this historical run. Broader class metadata and other PR 2 families remain open.

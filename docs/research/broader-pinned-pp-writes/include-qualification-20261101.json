@@ -290,7 +290,9 @@
         }
       },
       "verificationScriptSha256": "37a2197fd71c9a5a5b581bd85ecd080ecc197863f6381826bebd5d7b61e8f37a",
-      "operatorScriptSha256": "cf468fe9af79fa15a2567e7f59b674d0d8f5bf9f7ae42eec699ff9f9069ce7c8"
+      "operatorScriptSha256": "cf468fe9af79fa15a2567e7f59b674d0d8f5bf9f7ae42eec699ff9f9069ce7c8",
+      "environmentComparisonScope": "All user-provided environment_variables only; bindings/system environment were not compared.",
+      "xsuaaComparisonLimit": "Seven security fields compared; a field absent on both sides compares equal."
     },
     "destinations": {
       "at": "2026-11-01T16:13:25.858Z",
@@ -326,6 +328,249 @@
     "Three existing include kinds plus native testclasses initialization for each writer; no claim of initializing every include kind.",
     "Native actor/version and source receipts followed whole-owner activation; not attribution of every preceding HTTP request.",
     "Primary optional formatter preference baseline restored; secondary isolation observed through MCP, not independent native preference enumeration.",
-    "No Git, plugins, broader class surgery, other types, DDIC/RAP, batches, package/API/publication, CTS, trace or FLP qualification."
-  ]
+    "No Git, plugins, broader class surgery, other types, DDIC/RAP, batches, package/API/publication, CTS, trace or FLP qualification.",
+    "Include replacement bodies were one ABAP comment line; activation did not compile a real local class, macro or test class in this run.",
+    "Live main-method oracle verifies changed hash and native hash equality, not exact splice content; exact neighbor preservation is tested offline."
+  ],
+  "initialIdentityAndRouteChecks": [
+    {
+      "label": "readerA",
+      "at": "2026-11-01T16:00:23.891Z",
+      "passed": 13,
+      "failed": 0,
+      "scope": [
+        "read"
+      ],
+      "assertions": [
+        {
+          "test": "token.signature_audience_expiry",
+          "pass": true
+        },
+        {
+          "test": "token.user_principal",
+          "pass": true
+        },
+        {
+          "test": "token.exact_local_scopes",
+          "pass": true
+        },
+        {
+          "test": "token.expected_identity",
+          "pass": true
+        },
+        {
+          "test": "anonymous_0.http_401",
+          "pass": true
+        },
+        {
+          "test": "anonymous_1.http_401",
+          "pass": true
+        },
+        {
+          "test": "aggregate.initialize.http",
+          "pass": true
+        },
+        {
+          "test": "alias.initialize.http",
+          "pass": true
+        },
+        {
+          "test": "aggregate.initialize.protocol",
+          "pass": true
+        },
+        {
+          "test": "aggregate.tools_list.protocol",
+          "pass": true
+        },
+        {
+          "test": "alias.same_tool_projection",
+          "pass": true
+        },
+        {
+          "test": "aggregate.no_mutation_tools",
+          "pass": true
+        },
+        {
+          "test": "catalog.call.success",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "label": "writerA",
+      "at": "2026-11-01T16:00:48.760Z",
+      "passed": 13,
+      "failed": 0,
+      "scope": [
+        "read",
+        "write"
+      ],
+      "assertions": [
+        {
+          "test": "token.signature_audience_expiry",
+          "pass": true
+        },
+        {
+          "test": "token.user_principal",
+          "pass": true
+        },
+        {
+          "test": "token.exact_local_scopes",
+          "pass": true
+        },
+        {
+          "test": "token.expected_identity",
+          "pass": true
+        },
+        {
+          "test": "anonymous_0.http_401",
+          "pass": true
+        },
+        {
+          "test": "anonymous_1.http_401",
+          "pass": true
+        },
+        {
+          "test": "aggregate.initialize.http",
+          "pass": true
+        },
+        {
+          "test": "alias.initialize.http",
+          "pass": true
+        },
+        {
+          "test": "aggregate.initialize.protocol",
+          "pass": true
+        },
+        {
+          "test": "aggregate.tools_list.protocol",
+          "pass": true
+        },
+        {
+          "test": "alias.same_tool_projection",
+          "pass": true
+        },
+        {
+          "test": "aggregate.no_mutation_tools",
+          "pass": true
+        },
+        {
+          "test": "catalog.call.success",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "label": "writerB",
+      "at": "2026-11-01T16:02:19.234Z",
+      "passed": 13,
+      "failed": 0,
+      "scope": [
+        "read",
+        "write"
+      ],
+      "assertions": [
+        {
+          "test": "token.signature_audience_expiry",
+          "pass": true
+        },
+        {
+          "test": "token.user_principal",
+          "pass": true
+        },
+        {
+          "test": "token.exact_local_scopes",
+          "pass": true
+        },
+        {
+          "test": "token.expected_identity",
+          "pass": true
+        },
+        {
+          "test": "anonymous_0.http_401",
+          "pass": true
+        },
+        {
+          "test": "anonymous_1.http_401",
+          "pass": true
+        },
+        {
+          "test": "aggregate.initialize.http",
+          "pass": true
+        },
+        {
+          "test": "alias.initialize.http",
+          "pass": true
+        },
+        {
+          "test": "aggregate.initialize.protocol",
+          "pass": true
+        },
+        {
+          "test": "aggregate.tools_list.protocol",
+          "pass": true
+        },
+        {
+          "test": "alias.same_tool_projection",
+          "pass": true
+        },
+        {
+          "test": "aggregate.no_mutation_tools",
+          "pass": true
+        },
+        {
+          "test": "catalog.call.success",
+          "pass": true
+        }
+      ]
+    }
+  ],
+  "initialChecksCountingNote": "39 identity/route checks before the combined command; separate from its 1216 parent checks and 262 formatter checks.",
+  "deployedEnvironmentSettings": {
+    "SAP_ALLOW_WRITES": "true",
+    "SAP_LINT_BEFORE_WRITE": "unset",
+    "SAP_CHECK_BEFORE_WRITE": "unset",
+    "SAP_ABAP_RELEASE": "unset",
+    "SAP_ALLOWED_PACKAGES": "unset",
+    "SAP_ALLOW_TRANSPORT_WRITES": "false",
+    "ARC1_MULTI_TARGET_AUTHORIZATION": "xsuaa-attribute",
+    "ARC1_CACHE": "none",
+    "SAP_PP_STRICT": "true"
+  },
+  "qualitySettingsInterpretation": {
+    "parserDefaults": {
+      "lintBeforeWrite": true,
+      "checkBeforeWrite": false
+    },
+    "limitation": "Environment settings were captured before the run. The actual feature-probe/lint parser choice and whether a live lint refusal would occur were not captured. Include writes skip lint and advisory syntax checks."
+  },
+  "sapReleaseObservation": {
+    "observedAt": "2026-11-01T16:41:15.098Z",
+    "system": "A4H",
+    "client": "001",
+    "source": "Read-only native /sap/bc/adt/system/components after qualification and restoration",
+    "basis": {
+      "name": "SAP_BASIS",
+      "release": "758",
+      "spName": "SAPK-75802INSAPBASIS",
+      "spLevel": "0002",
+      "description": "SAP Basis Component"
+    },
+    "limit": "Does not record the runtime feature-probe result or lint parser selected during the earlier PP run."
+  },
+  "hostLidOpenObservedAtStart": true,
+  "retrospectiveSapVerifierScriptHashes": {
+    "pr1142-fresh-sap-baseline.mts": "80cbf63f8137ee6657175c7a092620b7f66dfd9be5f3ae78d593982eea571298",
+    "pr1142-fresh-sap-candidate.mts": "5d1e3b5df133569ed473d89e027e7b082fa2fbceb52d828ca7c85a3777c01b55",
+    "pr1142-fresh-sap-restored.mts": "fd30f385842cc6bbc5be2ac92243de0abeaedea07ff885be783726a02fddd01a"
+  },
+  "sapScriptHashLimit": "Hashes recorded after execution; identify the retained comparison code, not contemporaneous runtime attestations.",
+  "retainedCandidateArtifacts": "Candidate package and droplet retained as unselected test artifacts; restoration did not delete them.",
+  "baselineContinuity": {
+    "checkedAt": "2026-11-01T16:42:03.040835+00:00",
+    "comparison": "Retrospective exact canonical comparison of original raw environment_variables, current-droplet relationship and routes before-files from both runs.",
+    "priorRunId": "85255428-666f-4e20-a960-19624f580d30",
+    "matches": true,
+    "digestLimit": "Published digests used different JSON serialization; this compares raw parsed records instead."
+  }
 }

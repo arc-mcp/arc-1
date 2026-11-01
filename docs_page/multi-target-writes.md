@@ -192,7 +192,9 @@ Use `SAP_DENY_ACTIONS=SAPActivate` if your team must activate separately in ADT.
 other types, class metadata surgery, batches, RAP/DDIC, publication, transport management and Git
 are refused even if a client sends the call directly. Per-call lint-disable options are unavailable.
 ABAP Unit can execute newly authored code under the SAP user; deny `SAPDiagnose.unittest` unless
-that execution is intended. Global lint configuration applies; `SAP_CHECK_BEFORE_WRITE` remains advisory. SAP authorization is
+that execution is intended. Global lint configuration applies to main-source saves; class-include
+replacement and include-method edits skip lint and advisory syntax checks. `SAP_CHECK_BEFORE_WRITE`
+remains advisory for the paths that use it. SAP authorization is
 always required in addition to ARC-1 policy. Live qualification used SAP_BASIS 758 SP02 with
 Cloud Connector PP. Other releases must affirm the same lock, recording and activation evidence;
 unrecognized responses fail closed. An activation response without positive execution evidence

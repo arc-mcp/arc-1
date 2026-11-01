@@ -54,8 +54,9 @@ AMDP headers. Existing single-target class/RAP tests remain part of the full sui
 
 This change has no new live SAP or PP result. The refactored source requires a new artifact and
 review before the next controlled run. Historical PP evidence remains bound to its original source.
-FEAT-93 and the broader PR remain open; complete include qualification is still pending.
-The original IAM/XSUAA configuration was restored and verified at 13:44:21 UTC on 1 November.
+At this checkpoint FEAT-93 and the broader PR remained open, with complete local include
+qualification pending. The successful later local run is recorded below.
+The original IAM/XSUAA configuration was verified restored at 13:44:21 UTC on 1 November.
 
 
 Author validation passed **428 files / 11,557 tests**, all three typecheck projects, build, lint,
@@ -134,7 +135,7 @@ The follow-up qualifies the missing-period claim above, adds an unstubbed lint s
 shape, and corrects cloud evidence timestamps and retrospective script-hash wording. Transport
 reporting on incomplete saves remains part of the already identified cleanup-result alignment.
 GitHub checks at this revision, including SAP integration and end-to-end tests, passed; these are
-not the pending two-identity pinned PP qualification. No new capability is admitted by this follow-up.
+not the then-pending two-identity pinned PP qualification. No new capability is admitted by this follow-up.
 
 ## Fresh PP evidence at `77e41fdcd`
 
@@ -142,7 +143,7 @@ The [complete include/CRUD/formatter run](2026-11-01-broader-pinned-pp-writes-in
 exercised this shared main-method handler for both mapped SAP writers, followed by owner activation,
 independent native actor/source checks and deletion. Production bytes match the accepted `771aff1c6`
 checkpoint; its test/documentation follow-ups are included. All temporary access and configuration
-were restored. This closes the pending main-method PP rerun, without qualifying metadata surgery,
+were restored. This closes the pending main-method PP rerun for local `$TMP`, without qualifying metadata surgery,
 include method editing or the remaining PR 2 families.
 
 ## Existing-include method adapter and cleanup alignment

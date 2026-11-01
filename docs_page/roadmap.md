@@ -213,7 +213,7 @@ read-only-route refusals. Native authorship/source checks and complete temporary
 restoration passed. The recorded failed attempt remains failed. Actual Opus 5.5 max reviews and
 finding dispositions are linked from the evidence; this is not whole-PR acceptance.
 
-Remaining work is transportable deletion/includes, other object types and class/procedural surgery,
+Remaining work is all refactored transportable-object paths, other object types and class/procedural surgery,
 DDIC/RAP, batches, package/API/publication, CTS, runtime tracing and classic FLP, each with its
 resource policy, tests and PP qualification. Broader class metadata surgery also requires positive
 owner/source/name/range checks; the existing declaration-chain refusal is only a partial guard.
