@@ -215,8 +215,8 @@ finding dispositions are linked from the evidence; this is not whole-PR acceptan
 
 Remaining work is all refactored transportable-object paths, other object types and class/procedural surgery,
 DDIC/RAP, batches, package/API/publication, CTS, runtime tracing and classic FLP, each with its
-resource policy, tests and PP qualification. Broader class metadata surgery also requires positive
-owner/source/name/range checks; the existing declaration-chain refusal is only a partial guard.
+resource policy, tests and PP qualification. Main-source class metadata surgery now has exact owner/source/name/range and inventory checks
+with offline tests; its PP qualification and definition-include replacement adapter remain open.
 Source-save cleanup results now retain transport/warnings and report close failures consistently.
 Existing-include method edits share the main-method lifecycle and have offline tests; their PP
 qualification remains pending. Secondary

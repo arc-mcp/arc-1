@@ -25,6 +25,7 @@ import {
   runPreWriteLint,
   runPreWriteSyntaxCheck,
 } from '../write-helpers.js';
+import { isClassSurgeryAction } from './class-surgery-dispatch.js';
 import { handlePinnedClassSurgery } from './pinned-class-surgery.js';
 import { pinnedSourceLockPolicy } from './pinned-lock.js';
 import { isPinnedWriteRejection, pinnedFailure } from './pinned-result.js';
@@ -36,7 +37,7 @@ export async function handlePinnedWrite(
   args: Record<string, unknown>,
   config: ServerConfig,
 ): Promise<ToolResult> {
-  if (args.action === 'edit_method') return handlePinnedClassSurgery(client, args, config);
+  if (isClassSurgeryAction(args.action)) return handlePinnedClassSurgery(client, args, config);
   let state = 'unchanged';
   let phase = 'validation';
   const cleanup: MutationCleanupState = { unlockFailed: false };

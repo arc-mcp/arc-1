@@ -143,7 +143,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
     return {
       ...tool,
       description: write
-        ? 'Create/delete CLAS/INTF, update their main source or replace a CLAS local include on this pinned PP target. edit_method edits an existing method in main source or a selected/inferred class include. Existing source requires expectedSourceHash from SAPRead(format="editable"); a missing optional include can be initialized under the class lock without a hash. Delete takes no source/hash and verifies native owner absence. Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate activates the complete owner, including existing inactive includes.'
+        ? 'Create/delete CLAS/INTF, update their main source or replace a CLAS local include on this pinned PP target. edit_method edits an existing method in main source or a selected/inferred class include. Class definition/signature edits, method add/delete and visibility moves use verified native main-source structure. Existing source requires expectedSourceHash from SAPRead(format="editable"); a missing optional include can be initialized under the class lock without a hash. Delete takes no source/hash and verifies native owner absence. Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate activates the complete owner, including existing inactive includes.'
         : 'Activate one CLAS/INTF owner on this pinned PP target, including ALL its existing inactive drafts and includes. Additional owners are refused. This is not method-only activation.',
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
       inputSchema: {
@@ -159,7 +159,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                 source: {
                   type: 'string',
                   description:
-                    'Complete CLAS/INTF main source for create/update, or the selected CLAS include for update (source="" with expectedSourceHash clears an existing include); an existing method body or complete METHOD…ENDMETHOD block for edit_method. Required for create/update/edit_method; omit for delete.',
+                    'Complete CLAS/INTF main source for create/update, or the selected CLAS include for update (source="" with expectedSourceHash clears an existing include); an existing method body or complete METHOD…ENDMETHOD block for edit_method. For edit_class_definition supply the replacement CLASS DEFINITION block; for edit_method_signature supply its METHODS clause. Required for create/update/edit_method/edit_class_definition/edit_method_signature; omit for delete/add_method/delete_method/change_method_visibility.',
                 },
                 package: {
                   type: 'string',
@@ -175,7 +175,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                   type: 'string',
                   pattern: '^[a-f0-9]{64}$',
                   description:
-                    'SHA-256 from SAPRead(format="editable") on the exact main source or selected include; required for existing source updates and edit_method. Omit only for create/delete or a new optional include verified absent under lock.',
+                    'SHA-256 from SAPRead(format="editable") on the exact main source or selected include; required for existing source updates and every class surgery action. Omit only for create/delete or a new optional include verified absent under lock.',
                 },
                 ...(fields.has('include')
                   ? {
@@ -190,7 +190,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                 method: {
                   type: 'string',
                   description:
-                    'Existing method name for edit_method. lhc_/lcl_ class~method selects implementations; ltc_ selects testclasses; explicit include overrides inference. Other names select main source. Read the exact selected resource for its expectedSourceHash.',
+                    'Existing method name for edit_method, edit_method_signature, delete_method and change_method_visibility; add_method takes a complete METHODS or CLASS-METHODS clause. Only edit_method routes local lhc_/lcl_ class~method to implementations and ltc_ to testclasses; explicit include overrides that inference. Other surgery actions use main source.',
                 },
               }
             : {}),

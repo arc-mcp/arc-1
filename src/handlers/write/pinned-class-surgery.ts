@@ -35,7 +35,7 @@ export async function handlePinnedClassSurgery(
       state.phase = cleanup.unlockFailed ? 'unlock' : 'session-close';
       throw new Error('Owning-session cleanup was not confirmed.');
     }
-    if (state.state !== 'saved-inactive' || !state.sourceHash)
+    if ((state.state !== 'saved-inactive' && !state.unchangedConfirmed) || !state.sourceHash)
       throw new AdtSafetyError('The class edit did not confirm a source save.');
     return textResult(
       toolJson({
@@ -48,7 +48,9 @@ export async function handlePinnedClassSurgery(
         ...(state.include ? { include: state.include } : {}),
         ...(state.recording?.request ? { transport: state.recording.request } : {}),
         ...(state.warnings ? { warnings: state.warnings } : {}),
-        next: 'Review the inactive source. SAPActivate activates this complete owner, including all existing inactive drafts/includes.',
+        next: state.unchangedConfirmed
+          ? 'The method already has the requested visibility; no source was saved.'
+          : 'Review the inactive source. SAPActivate activates this complete owner, including all existing inactive drafts/includes.',
       }),
     );
   } catch (error) {

@@ -75,6 +75,14 @@ function runtime(identity = auth(), mode: 'pinned' | 'aggregate' = 'pinned') {
   return buildMultiTargetConfig(base, r.targets[0], { mode, authorization: projectMultiTargetRequest(r, identity) });
 }
 
+const metadataInputs = [
+  { action: 'edit_class_definition', source: 'CLASS zcl_test DEFINITION. ENDCLASS.' },
+  { action: 'edit_method_signature', method: 'RUN', source: 'METHODS run.' },
+  { action: 'add_method', method: 'METHODS added.', visibility: 'public', abstract: false },
+  { action: 'delete_method', method: 'RUN' },
+  { action: 'change_method_visibility', method: 'RUN', visibility: 'private' },
+];
+
 describe('pinned write policy composition', () => {
   it.each(['', ' \r\n\t'])('routes blank include input to the handler refusal without SAP I/O: %j', async (source) => {
     const r = registry(),
@@ -111,6 +119,7 @@ describe('pinned write policy composition', () => {
     for (const request of requests) expect(request).not.toHaveBeenCalled();
   });
   it.each([
+    ...metadataInputs.map((input) => ({ ...input, include: undefined, expectedSourceHash: 'a'.repeat(64) })),
     { source: '', expectedSourceHash: 'a'.repeat(64) },
     { source: '* New include\n' },
     ...['definitions', 'implementations', 'macros', 'testclasses'].map((include) => ({
@@ -127,7 +136,7 @@ describe('pinned write policy composition', () => {
       source: 'body',
       expectedSourceHash: 'a'.repeat(64),
     })),
-  ])('prepares a valid include write through the pinned route and catalog: %j', async (input) => {
+  ])('prepares a valid class write through the pinned route and catalog: %j', async (input) => {
     const r = registry();
     const identity = auth();
     const rawArgs = Object.fromEntries(
@@ -215,7 +224,7 @@ describe('pinned write policy composition', () => {
     expect(JSON.stringify(result.result)).toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
   });
   it.each(['reader', 'no-write-grant', 'destination-readonly', 'global-readonly', 'aggregate', 'basic'] as const)(
-    'keeps deletion out of %s catalogs and direct calls',
+    'keeps deletion and class surgery out of %s catalogs and direct calls',
     async (kind) => {
       const instance = { ...base, allowWrites: kind !== 'global-readonly', multiTargetAllowBasicAuth: true };
       const r = registry(
@@ -235,21 +244,23 @@ describe('pinned write policy composition', () => {
       expect(multiTargetToolDefinitions(getToolDefinitions(config), config).some((t) => t.name === 'SAPWrite')).toBe(
         false,
       );
-      const result = await prepareMultiTargetCall({
-        options,
-        toolName: 'SAPWrite',
-        rawArgs: {
-          action: 'delete',
-          type: 'CLAS',
-          name: 'ZARC1_DELETE',
-          ...(kind === 'aggregate' ? { target: 'A4H/001' } : {}),
-        },
-        requestId: 'delete-denied',
-        authInfo: identity,
-      });
-      expect(result.handled).toBe(true);
-      if (!result.handled) throw new Error('Deletion escaped route refusal');
-      expect(JSON.stringify(result.result)).toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
+      for (const input of [{ action: 'delete' }, ...metadataInputs]) {
+        const result = await prepareMultiTargetCall({
+          options,
+          toolName: 'SAPWrite',
+          rawArgs: {
+            type: 'CLAS',
+            name: 'ZARC1_DELETE',
+            ...input,
+            ...(kind === 'aggregate' ? { target: 'A4H/001' } : {}),
+          },
+          requestId: 'class-action-denied',
+          authInfo: identity,
+        });
+        expect(result.handled).toBe(true);
+        if (!result.handled) throw new Error('Mutation escaped route refusal');
+        expect(JSON.stringify(result.result)).toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
+      }
     },
   );
   it('adds only the explicit formatter companions and setting action to a writable pinned catalog', () => {
@@ -404,7 +415,7 @@ describe('pinned write policy composition', () => {
       if (kind === 'writer') {
         expect(instructions).toContain('scoped read/write');
         expect(instructions).toContain(
-          'CLAS/INTF main-source writes, CLAS local-include replacements/method edits and owner deletion require both package policies',
+          'CLAS/INTF main-source writes, CLAS local-include replacements/method edits, main-source class surgery and owner deletion require both package policies',
         );
         expect(instructions).toContain('Activation affects the whole owner');
         expect(instructions).not.toContain('Writes, activation, transport/Git mutations');

@@ -1,4 +1,5 @@
 /** Pinned policy around the same class-action callback used by single-target writes. */
+import { verifiedClassStructure } from '../../adt/class-structure-evidence.js';
 import { updateSource, withLockedMutation } from '../../adt/crud.js';
 import { AdtSafetyError } from '../../adt/errors.js';
 import { throwIfRequestCancelled } from '../../adt/http-deadline.js';
@@ -25,21 +26,41 @@ export async function withPinnedClassEdit(
     edit({
       http,
       async read(url) {
-        if (url !== state.sourceUrl || state.writeAttempted)
+        if (url !== state.sourceUrl || state.writeAttempted || state.unchangedConfirmed)
           throw new AdtSafetyError('The editable read must select the admitted source resource before its save.');
         state.phase = 'source-read';
         checkOperation(ctx.client.safety, OperationType.Read, 'GetSource');
         const current = await http.get(url, { 'Cache-Control': 'no-cache', Accept: 'text/plain' });
         assertSourceHash(current.body, ctx.args.expectedSourceHash as string, url);
         state.readVerified = true;
+        state.readHash = sourceHash(current.body);
         state.phase = 'edit-preparation';
         return current.body;
       },
       async readMainAndStructure() {
-        throw new AdtSafetyError('Class-definition surgery requires its own qualified source/structure policy.');
+        if (state.include) throw new AdtSafetyError('Native class metadata selects main source only.');
+        const main = await this.read(state.sourceUrl);
+        state.phase = 'structure-read';
+        checkOperation(ctx.client.safety, OperationType.Read, 'GetClassStructure');
+        const metadata = await http.get(`${ctx.objectUrl}/objectstructure`, { 'Cache-Control': 'no-cache' });
+        const structure = verifiedClassStructure(metadata.body, main, ctx.name, ctx.objectUrl, ctx.client.sapClient);
+        state.phase = 'edit-preparation';
+        return { main, structure };
+      },
+      unchanged() {
+        if (
+          !state.readVerified ||
+          !state.readHash ||
+          state.writeAttempted ||
+          state.unchangedConfirmed ||
+          state.state !== 'unchanged'
+        )
+          throw new AdtSafetyError('An unchanged result requires a verified editable source without a save.');
+        state.unchangedConfirmed = true;
+        state.sourceHash = state.readHash;
       },
       async save(url, source, warnings) {
-        if (url !== state.sourceUrl || !state.readVerified || state.writeAttempted)
+        if (url !== state.sourceUrl || !state.readVerified || state.writeAttempted || state.unchangedConfirmed)
           throw new AdtSafetyError('One save of the freshly verified source resource is required.');
         checkOperation(ctx.client.safety, OperationType.Update, 'PinnedSave');
         throwIfRequestCancelled(context.requestPolicy);

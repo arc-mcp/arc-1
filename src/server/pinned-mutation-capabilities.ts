@@ -51,6 +51,24 @@ const rows: PinnedMutationCapability[] = [
       args.include === undefined ||
       (args.type === 'CLAS' && PINNED_CLASS_INCLUDE_NAMES.some((include) => include === args.include)),
   },
+  ...['edit_class_definition', 'edit_method_signature', 'add_method', 'delete_method', 'change_method_visibility'].map(
+    (action): PinnedMutationCapability => ({
+      tool: 'SAPWrite',
+      action,
+      resource: 'repository-source',
+      types: ['CLAS'],
+      fields: [
+        ...ownerFields,
+        'transport',
+        'expectedSourceHash',
+        ...(['edit_class_definition', 'edit_method_signature'].includes(action) ? ['source'] : []),
+        ...(action !== 'edit_class_definition' ? ['method'] : []),
+        ...(['add_method', 'change_method_visibility'].includes(action) ? ['visibility'] : []),
+        ...(action === 'add_method' ? ['abstract'] : []),
+      ],
+      accepts: () => true,
+    }),
+  ),
   {
     tool: 'SAPActivate',
     action: 'activate',

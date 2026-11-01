@@ -222,7 +222,7 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
     const spliced = spliceClassDefinition(main, structure, source);
     const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
     if (lintWarnings.blocked) return lintWarnings.result!;
-    await edit.save(srcUrl, spliced);
+    await edit.save(srcUrl, spliced, lintWarnings.warnings);
     return textResult(
       `Successfully updated DEFINITION of ${type} ${name}. Active version unchanged until activation; read with SAPRead(version="inactive") to verify, then SAPActivate.`,
     );
@@ -353,7 +353,7 @@ export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolRe
     const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
     if (lintWarnings.blocked) return lintWarnings.result!;
 
-    await edit.save(srcUrl, spliced);
+    await edit.save(srcUrl, spliced, lintWarnings.warnings);
     const stubNote = isAbstract ? ' (abstract — no IMPL stub inserted)' : '';
     return textResult(
       `Successfully added method "${methodName}" (${visibility}) to ${type} ${name}${stubNote}. Active version unchanged until activation; SAPActivate next.`,
@@ -395,7 +395,7 @@ export async function writeActionDeleteMethod(ctx: SapWriteContext): Promise<Too
     const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
     if (lintWarnings.blocked) return lintWarnings.result!;
 
-    await edit.save(srcUrl, spliced);
+    await edit.save(srcUrl, spliced, lintWarnings.warnings);
     const where = method.implementation ? ' (DEFINITION + IMPLEMENTATION)' : ' (DEFINITION only — was ABSTRACT)';
     return textResult(
       `Successfully deleted method "${method.name}" from ${type} ${name}${where}. Active version unchanged until activation; SAPActivate next.`,
@@ -449,6 +449,7 @@ export async function writeActionChangeMethodVisibility(ctx: SapWriteContext): P
 
     // Idempotent: already in the requested section → no write.
     if (method.visibility === target) {
+      edit.unchanged();
       return textResult(
         `Method "${method.name}" is already in the ${target.toUpperCase()} SECTION of ${type} ${name}. No change made.`,
       );
@@ -473,7 +474,7 @@ export async function writeActionChangeMethodVisibility(ctx: SapWriteContext): P
     const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
     if (lintWarnings.blocked) return lintWarnings.result!;
 
-    await edit.save(srcUrl, spliced);
+    await edit.save(srcUrl, spliced, lintWarnings.warnings);
     return textResult(
       `Successfully moved method "${method.name}" from ${method.visibility.toUpperCase()} to ${target.toUpperCase()} SECTION of ${type} ${name} (IMPLEMENTATION preserved). Active version unchanged until activation; SAPActivate next.`,
     );

@@ -10,6 +10,17 @@ import {
 } from './class-surgery.js';
 import type { SapWriteContext } from './context.js';
 
+export function isClassSurgeryAction(action: unknown): boolean {
+  return [
+    'edit_method',
+    'edit_class_definition',
+    'edit_method_signature',
+    'add_method',
+    'delete_method',
+    'change_method_visibility',
+  ].includes(String(action));
+}
+
 export function dispatchClassSurgery(ctx: SapWriteContext): Promise<ToolResult> {
   switch (ctx.args.action) {
     case 'edit_method':

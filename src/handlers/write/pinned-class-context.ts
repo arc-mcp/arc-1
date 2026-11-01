@@ -12,6 +12,7 @@ import {
   objectUrlForType,
 } from '../object-types.js';
 import { enforceAllowedPackageForObjectUrl } from '../write-helpers.js';
+import { isClassSurgeryAction } from './class-surgery-dispatch.js';
 import type { SapWriteContext } from './context.js';
 
 export interface PinnedClassState {
@@ -25,6 +26,8 @@ export interface PinnedClassState {
   sourceHash?: string;
   warnings?: string;
   readVerified: boolean;
+  readHash?: string;
+  unchangedConfirmed?: boolean;
   writeAttempted: boolean;
 }
 // Transient call state, never indexed by target/user and never reused across requests.
@@ -38,16 +41,20 @@ export function createPinnedClassContext(
 ): SapWriteContext {
   assertMutationContext(original.safety, context);
   assertPinnedOwner(args.type, args.name);
-  if (args.action !== 'edit_method' || args.type !== 'CLAS')
-    throw new AdtSafetyError('Only the admitted class method adapter is available.');
-  if (typeof args.method !== 'string' || !args.method.trim())
-    throw new AdtSafetyError('An existing class method name is required.');
-  const method = args.method.trim();
+  if (!isClassSurgeryAction(args.action) || args.type !== 'CLAS')
+    throw new AdtSafetyError('Only the admitted class surgery adapter is available.');
+  const needsMethod = args.action !== 'edit_class_definition';
+  if (needsMethod && (typeof args.method !== 'string' || !args.method.trim()))
+    throw new AdtSafetyError('A method name or add_method declaration is required.');
+  const method = typeof args.method === 'string' ? args.method.trim() : undefined;
   const include = normalizeClassWriteInclude(args.include);
   if (args.include !== undefined && !include)
     throw new AdtSafetyError('Select a supported class include or omit include for main source.');
-  const selectedInclude = include ?? detectLocalHandlerInclude(method);
-  if (typeof args.source !== 'string' || !args.source.trim())
+  if (args.include !== undefined && args.action !== 'edit_method')
+    throw new AdtSafetyError('This metadata surgery adapter selects main source only.');
+  const selectedInclude = args.action === 'edit_method' ? (include ?? detectLocalHandlerInclude(method!)) : undefined;
+  const needsSource = ['edit_method', 'edit_class_definition', 'edit_method_signature'].includes(String(args.action));
+  if (needsSource && (typeof args.source !== 'string' || !args.source.trim()))
     throw new AdtSafetyError('A non-empty source is required.');
   if (typeof args.expectedSourceHash !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedSourceHash))
     throw new AdtSafetyError('Read SAPRead(format="editable") and supply its expectedSourceHash before editing.');
@@ -67,14 +74,14 @@ export function createPinnedClassContext(
   const ctx: SapWriteContext = Object.freeze({
     mutationContext: context,
     client,
-    args: Object.freeze({ ...args, method }),
+    args: Object.freeze({ ...args, ...(method !== undefined ? { method } : {}) }),
     config,
     cachingLayer: undefined,
     cacheSecurity: { isPerUserClient: true },
     type: 'CLAS',
     name,
-    source: args.source,
-    hasSource: true,
+    source: typeof args.source === 'string' ? args.source : '',
+    hasSource: typeof args.source === 'string',
     include,
     includeProvided: args.include !== undefined,
     transport: requested,

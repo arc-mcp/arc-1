@@ -17,6 +17,7 @@ export interface ClassEdit {
   read(url: string): Promise<string>;
   readMainAndStructure(): Promise<{ main: string; structure: ClassStructure }>;
   save(url: string, source: string, warnings?: string): Promise<void>;
+  unchanged(): void;
 }
 
 export async function withClassEdit(
@@ -42,6 +43,7 @@ export async function withClassEdit(
       return await edit({
         http: session,
         read,
+        unchanged() {},
         async readMainAndStructure() {
           const main = await read(srcUrl);
           const structure = parseClassStructure(await read(`${objectUrl}/objectstructure`, false), name);

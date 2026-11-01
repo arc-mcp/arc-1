@@ -129,6 +129,10 @@ only the aggregate compatibility connection cannot write through that connection
 | `SAPWrite.create` | One CLAS or INTF; explicit package and complete source; required allowed request/task for a transportable package |
 | `SAPWrite.update` | CLAS/INTF main source or CLAS `definitions`, `implementations`, `macros`, `testclasses`; exact editable-source hash for existing source |
 | `SAPWrite.edit_method` | Existing CLAS main-source or local-include method; hash of the complete selected editable source |
+| `SAPWrite.edit_class_definition` | CLAS main source only; replacement definition block and complete editable-main hash; preserves the implementation and checks method symmetry |
+| `SAPWrite.edit_method_signature` | CLAS main source; existing method name, new METHODS clause and main hash; body preserved, intermediate signature changes skip lint |
+| `SAPWrite.add_method` | CLAS main source; METHODS clause, optional visibility/abstract flag and main hash; inserts the declaration and applicable body stub |
+| `SAPWrite.delete_method` / `change_method_visibility` | CLAS main source; existing method name and main hash; visibility moves additionally require the target section |
 | `SAPWrite.delete` | One CLAS/INTF owner; actual package and native recording checks before/under lock, followed by verified owner absence; omit source and source hash |
 | `SAPActivate` | One CLAS/INTF owner; activates all of that owner's existing inactive drafts and includes |
 | `SAPLint.set_formatter_settings` | Partial indentation/style patch of the mapped SAP user's formatter preferences on this target; native read/merge/write/read-back, not a package-owned object |
@@ -149,6 +153,14 @@ neighboring methods/classes and saves inactive source under the owning class loc
 and advisory syntax checks are skipped, as on single-target include edits; whole-owner activation
 performs SAP's syntax checks. This new include-method adapter has offline tests and still needs
 its own reviewed, artifact-bound PP qualification.
+
+Main-source class surgery verifies SAP's native structure against the same editable source under the
+class lock: owner, source resource/version, declaration/body inventory, names, visibility and exact
+native ranges must agree. Shared-line boundaries and individual chained declarations are refused
+when a whole-line edit would affect neighbors. Use a reviewed complete source update when structure
+cannot be verified. An already-correct visibility returns `unchanged` without a save. These new
+metadata actions are covered offline; their two-writer PP qualification is still pending. Definition
+replacement with `include` is not yet admitted; use the existing whole-include `update` action.
 
 Confirmed saves retain their source hash, selected transport and warnings when unlock or session
 closure fails. The result reports the failed cleanup phase and is not a retry instruction.
@@ -189,10 +201,10 @@ cleanup. Transportable deletion remains unqualified.
 Creates and edits save inactive source. Review it before activation. **Activation is whole-owner**,
 including drafts created previously or by another session; it is not method-only activation.
 Use `SAP_DENY_ACTIONS=SAPActivate` if your team must activate separately in ADT. Hidden actions,
-other types, class metadata surgery, batches, RAP/DDIC, publication, transport management and Git
+other types, procedural surgery, batches, RAP/DDIC, publication, transport management and Git
 are refused even if a client sends the call directly. Per-call lint-disable options are unavailable.
 ABAP Unit can execute newly authored code under the SAP user; deny `SAPDiagnose.unittest` unless
-that execution is intended. Global lint configuration applies to main-source saves; class-include
+that execution is intended. Global lint configuration applies to main-source saves except intermediate signature edits; class-include
 replacement and include-method edits skip lint and advisory syntax checks. `SAP_CHECK_BEFORE_WRITE`
 remains advisory for the paths that use it. SAP authorization is
 always required in addition to ARC-1 policy. Live qualification used SAP_BASIS 758 SP02 with
