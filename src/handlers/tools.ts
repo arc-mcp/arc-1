@@ -548,8 +548,7 @@ export function getToolDefinitions(
           columns: {
             type: 'array',
             items: { type: 'string' },
-            description:
-              'For TABLE_QUERY: columns to SELECT (default: all). Example: ["MATNR","BWART","BUDAT","MENGE"].',
+            description: 'TABLE_QUERY only: columns to select (default all), e.g. ["MATNR","BWART"].',
           },
           where: {
             type: 'array',
