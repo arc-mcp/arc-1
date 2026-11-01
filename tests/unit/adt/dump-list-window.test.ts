@@ -36,6 +36,12 @@ describe('feedUpdatedAt', () => {
     expect(feedUpdatedAt('<feed><updated>not a time</updated></feed>')).toBeUndefined();
     expect(feedUpdatedAt('<feed></feed>')).toBeUndefined();
   });
+  it('reads root metadata after entries and rejects ambiguous root clocks', () => {
+    const entry = '<entry><updated>2026-01-01T00:00:00Z</updated></entry>';
+    const clock = '<updated>2026-10-28T08:30:00Z</updated>';
+    expect(feedUpdatedAt(`<feed>${entry}${clock}</feed>`)?.toISOString()).toBe(CLOCK.toISOString());
+    expect(feedUpdatedAt(`<feed>${clock}${clock}${entry}</feed>`)).toBeUndefined();
+  });
 });
 
 describe('dayLimitedDumpListNote', () => {
@@ -58,7 +64,10 @@ describe('dayLimitedDumpListNote', () => {
 
   it('adds nothing when the requested range starts inside the window', () => {
     expect(dayLimitedDumpListNote({ ...base, from: '2026-10-27T08:30:00Z' })).toBeUndefined();
-    expect(dayLimitedDumpListNote({ ...base, from: '20261028000000', empty: true })).toBeUndefined();
+    expect(dayLimitedDumpListNote({ ...base, from: '20261028000000', empty: true })).toContain(
+      'ST22 display authorization',
+    );
+    expect(dayLimitedDumpListNote({ ...base, from: '20261028000000', empty: true })).not.toContain('last 24 hours');
   });
 
   it('adds nothing on 7.53 and later or when the release is unknown', () => {

@@ -1079,7 +1079,10 @@ export async function handleSAPDiagnose(
       });
       const result = textResult(toolJson(dumps));
       // The list stays a plain array; the window note is a separate text block after it.
-      const abapRelease = await dumpListRelease(client, options.configuredAbapRelease);
+      const abapRelease = await dumpListRelease(client, options.configuredAbapRelease, {
+        deadline: options.deadline,
+        signal: options.signal ?? getCurrentContext()?.signal,
+      });
       const note = dayLimitedDumpListNote({ abapRelease, from, to, feedClock, empty: dumps.length === 0 });
       if (note) result.content.push({ type: 'text', text: note });
       return result;
@@ -1258,10 +1261,14 @@ export async function handleSAPDiagnose(
  * caller. A startup probe under a restricted technical user can miss it; a read release is shared like
  * other lazily learned facts, so later lists skip the read.
  */
-async function dumpListRelease(client: AdtClient, configured: string | undefined): Promise<string | undefined> {
+async function dumpListRelease(
+  client: AdtClient,
+  configured: string | undefined,
+  request: { deadline?: number; signal?: AbortSignal },
+): Promise<string | undefined> {
   const known = getCachedFeatures()?.abapRelease ?? configured;
   if (known) return known;
-  const detected = await detectAbapRelease(client.http);
+  const detected = await detectAbapRelease(client.http, request);
   if (detected) cacheFeatureEvidence({ abapRelease: detected }, true);
   return detected;
 }

@@ -5,6 +5,7 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { handleSAPDiagnose } = await import('../../../src/handlers/diagnose.js');
 const { getCachedFeatures, resetCachedFeatures, setCachedFeatures } = await import(
   '../../../src/handlers/feature-cache.js'
 );
@@ -96,6 +97,30 @@ describe('SAPDiagnose dump list on a release with the 24-hour dump feed', () => 
 
     expect(result.content).toHaveLength(2);
     expect(componentReads()).toBe(0);
+  });
+  it('does not apply a global release override to an unprobed multi-target system', async () => {
+    mockSystem(EMPTY_FEED, COMPONENTS_750.replace('750;', '758;'));
+    const result = await list(
+      { from: '2026-10-01T00:00:00Z' },
+      {
+        ...DEFAULT_CONFIG,
+        abapRelease: '750',
+        multiTargetEndpoints: true,
+        targetId: 'A4H/001',
+      },
+    );
+    expect(result.isError).toBeUndefined();
+    expect(result.content).toHaveLength(1);
+    expect(componentReads()).toBe(1);
+  });
+  it('passes cancellation and the remaining deadline to lazy release detection', async () => {
+    mockSystem(EMPTY_FEED, COMPONENTS_750);
+    const client = createClient();
+    const get = vi.spyOn(client.http, 'get');
+    const options = { signal: new AbortController().signal, deadline: Date.now() + 5000 };
+    const result = await handleSAPDiagnose(client, { action: 'dumps' }, true, options);
+    expect(result.isError).toBeUndefined();
+    expect(get.mock.calls.find(([path]) => path.includes('/system/components'))?.[2]).toMatchObject(options);
   });
 
   it('adds nothing on 7.53 and later or when SAP does not report the release', async () => {

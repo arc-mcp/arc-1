@@ -654,6 +654,24 @@ describe('Feature Detection', () => {
       } as unknown as AdtHttpClient;
       await expect(detectAbapRelease(client)).resolves.toBeUndefined();
     });
+    it('carries the caller signal and deadline through both release reads', async () => {
+      const client = mockProbeClientWithSyntaxConfigs({ componentsBody: emptyComponentsFeed });
+      const request = { signal: new AbortController().signal, deadline: Date.now() + 5000 };
+      expect(await detectAbapRelease(client, request)).toBe('757');
+      for (const call of vi.mocked(client.get).mock.calls) expect(call[2]).toMatchObject({ ...request, probe: true });
+    });
+    it('does not retry release detection after caller cancellation', async () => {
+      const controller = new AbortController();
+      const get = vi.fn(async () => {
+        controller.abort();
+        throw new Error('cancelled');
+      });
+      const client = { get } as unknown as AdtHttpClient;
+      expect(await detectAbapRelease(client, { signal: controller.signal })).toBeUndefined();
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(await detectAbapRelease(client, { signal: controller.signal })).toBeUndefined();
+      expect(get).toHaveBeenCalledTimes(1);
+    });
 
     function makeComponentsXml(entries: Array<{ id: string; title: string }>): string {
       const items = entries
