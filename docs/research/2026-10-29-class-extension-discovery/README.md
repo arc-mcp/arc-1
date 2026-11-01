@@ -76,3 +76,18 @@ The fresh BTP rerun could not execute: authentication succeeded, then the stoppe
 HTTP 503 before all five tests. The earlier 920 evidence remains scoped to its recorded build.
 No SAP data or source mutations occurred. Independent review and CI results are recorded in the
 PR description after completion. Roadmap checked: no roadmap impact.
+
+## Native relation policy correction
+
+[Claude review 4](claude-review-4.md) found one P3 operator-policy gap beyond the original
+SAPRead-only hidden-read contract. The native class/interface provider now honors an explicit
+`SAPNavigate.relations` denial before any hidden native read and reports only that provider as
+denied. Independent source hooks remain available under their own SAPRead rules.
+
+Five regression cases fail without the guard and pass with it, covering CLAS/INTF no-send behavior
+and exact/glob/tool-wide denial in both summary and sources modes. The full suite passes
+**11,183 tests in 411 files**; typecheck, lint, policy, build and size/schema gates pass. Fresh
+750/758 loopback MCP replays pass with native relations allowed and denied; none-mode base hashes
+and all eight rendered hook-body hashes match. [Evidence](native-denial-replay.json) includes the
+corrected runtime-file fingerprints. BTP rerun availability and all prior scope limits remain
+unchanged. No SAP source/data mutations occurred. Roadmap rechecked: no roadmap impact.

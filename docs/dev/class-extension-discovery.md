@@ -2,7 +2,9 @@
 
 CLAS combines two independent providers in the request-local extension session. The source plug-in
 adapter checks the selected class main/local source; native Relation Explorer EXTED_OBJ checks
-identities bound to the owning class. Empty hooks do not imply an empty native result. In particular,
+identities bound to the owning class. Denying `SAPNavigate.relations` suppresses all native
+class/interface relation reads and reports that provider as denied; independent source hooks can
+still run under their own SAPRead permissions. Empty hooks do not imply an empty native result. In particular,
 CL_OO_ADT_ENHANCED_CLASS has a structural enhancement despite empty authored/hook source.
 
 The native provider requires exact activeContext, active root identity and parent/child references

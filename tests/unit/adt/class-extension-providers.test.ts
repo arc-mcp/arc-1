@@ -18,8 +18,9 @@ function setup(
   section: 'main' | 'definitions' = 'main',
   nativeGraph = false,
   context = 'EXTED_OBJ',
+  denyActions: string[] = [],
 ) {
-  const safety = defaultSafetyConfig();
+  const safety = { ...defaultSafetyConfig(), denyActions };
   const session = new ExtensionDiscoverySession(mode, request, safety);
   const get = vi.fn(async (path: string, _headers: unknown, options: AdtRequestOptions) => {
     expect(options).toBe(session.options);
@@ -89,6 +90,23 @@ describe('combined class providers', () => {
       'SEEF_ADT_TEST_SWITCH_01:off',
     );
   });
+  it.each(['SAPNavigate.relations', 'SAPNavigate.relat*', 'SAPNavigate'])(
+    'retains independent hooks without native reads when %s is denied',
+    async (deny) => {
+      for (const mode of ['summary', 'sources'] as const) {
+        const s = setup(mode, 'main', true, 'EXTED_OBJ', [deny]);
+        const result = await s.run();
+        expect(result.providers[0]).toMatchObject({ status: 'denied', reason: 'native_relation_action_denied' });
+        expect(result.providers[1]?.status).toBe('returned');
+        expect(s.session.stopped).toBe(false);
+        expect(s.post).not.toHaveBeenCalled();
+        expect(s.get).toHaveBeenCalledTimes(2);
+        expect(result.nodes).toHaveLength(mode === 'sources' ? 7 : 2);
+        expect(result.sources).toHaveLength(mode === 'sources' ? 8 : 0);
+        expect(result.edges.some((edge) => edge.kind === 'extends')).toBe(false);
+      }
+    },
+  );
   it('counts native source omissions when hook authorization stops the combined phase', async () => {
     const s = setup('sources', 'main', true);
     const get = s.get.getMockImplementation()!;

@@ -1,4 +1,5 @@
 /** Class-bound identity coverage is distinct from source-code hooks and local class sections. */
+import { isActionDenied } from '../server/deny-actions.js';
 import type { AdtClient } from './client.js';
 import { enhancementIncludeReferences, readEnhancementIncludeRevision } from './enhancement-include.js';
 import { readActiveClassEnhancementSource } from './enhancements.js';
@@ -108,6 +109,12 @@ export async function discoverClassIdentities(
     if (rootType !== 'CLAS' && rootType !== 'INTF') {
       provider.status = 'unsupported';
       provider.reason = 'unsupported_provider';
+      return;
+    }
+    if (isActionDenied('SAPNavigate', 'relations', client.safety.denyActions ?? [])) {
+      // The independent hook provider can still run; this policy denies only native relation discovery.
+      provider.status = 'denied';
+      provider.reason = 'native_relation_action_denied';
       return;
     }
     await session.read('ENHO', async () => undefined);

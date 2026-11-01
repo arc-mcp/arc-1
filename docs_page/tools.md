@@ -149,7 +149,8 @@ other BTP objects, releases and live principal propagation remain unqualified. C
 and BAdIs are outside this feature.
 
 CLAS combines selected-source hook coverage with a separate native `EXTED_OBJ` graph for the owning
-class. Main and local sections stay distinct. A class can have structural enhancements despite an
+class. Denying `SAPNavigate.relations` suppresses this native provider while independent hooks
+remain governed by their SAPRead rules. Main and local sections stay distinct. A class can have structural enhancements despite an
 empty hook/source response. Native graph edges retain their direction and ENHO types; the type
 alone does not identify enhancement technology. The native provider is qualified on 758 and BTP 920; 750's
 unsupported response remains explicit. Hook wire formats are qualified on both releases.
