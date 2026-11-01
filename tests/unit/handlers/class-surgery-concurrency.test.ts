@@ -326,3 +326,43 @@ ENDCLASS.`;
     expect(state.locked).toBe(false);
   },
 );
+
+it.each(['edit_method_signature', 'delete_method', 'change_method_visibility', 'add_method'])(
+  '%s refuses shared-line collateral damage under the owning lock',
+  async (action) => {
+    const sharedImplementationEnd = action === 'add_method';
+    const source = `CLASS zrace DEFINITION.
+  PUBLIC SECTION.
+    METHODS selected.${sharedImplementationEnd ? '' : ' METHODS neighbor.'}
+  PRIVATE SECTION.
+ENDCLASS.
+CLASS zrace IMPLEMENTATION.
+  METHOD selected.
+  ENDMETHOD.${sharedImplementationEnd ? ' ENDCLASS.' : '\nENDCLASS.'}`;
+    const xml = `<abapsource:objectStructureElement xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core" xmlns:atom="http://www.w3.org/2005/Atom" adtcore:type="CLAS/OC" adtcore:name="ZRACE">
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./source/main#start=1,0;end=5,8"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=6,0;end=${sharedImplementationEnd ? 8 : 9},8"/>
+<abapsource:objectStructureElement adtcore:type="CLAS/OM" adtcore:name="SELECTED" visibility="public" level="instance">
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./source/main#start=3,4;end=3,20"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=7,2;end=8,11"/>
+</abapsource:objectStructureElement></abapsource:objectStructureElement>`;
+    const state = backend({ sourceAtLock: source, structureAtLock: xml });
+    const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+      action,
+      type: 'CLAS',
+      name: 'ZRACE',
+      method: action === 'add_method' ? 'METHODS added.' : 'SELECTED',
+      ...(action === 'edit_method_signature' ? { source: 'METHODS selected IMPORTING value TYPE i.' } : {}),
+      ...(action === 'change_method_visibility' ? { visibility: 'private' } : {}),
+      expectedSourceHash: createHash('sha256').update(source).digest('hex'),
+      lintBeforeWrite: false,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('safely isolate');
+    expect(state.source).toBe(source);
+    expect(state.sends.some((s) => s.method === 'PUT')).toBe(false);
+    expect(state.sends.filter((s) => s.url.pathname.endsWith('/objectstructure')).every((s) => s.locked)).toBe(true);
+    expect(state.sends.some((s) => s.url.searchParams.get('_action') === 'UNLOCK')).toBe(true);
+    expect(state.locked).toBe(false);
+  },
+);

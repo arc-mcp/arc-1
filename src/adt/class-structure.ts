@@ -11,8 +11,8 @@
  *   - The `ec` column is the column AFTER the end token (half-open [sc, ec)).
  *
  * Splice strategy:
- *   - Whole-line splices for class-level and method-level blocks (we never need
- *     sub-line precision; ABAP statements occupy whole lines).
+ *   - Whole-line splices require verified class/method boundaries. Shared-line
+ *     neighboring statements are refused rather than included in a replacement.
  *   - When inserting/removing one METHOD pair, we must process IMPL ranges BEFORE
  *     DEFINITION ranges (they're at larger line numbers) so DEFINITION ranges
  *     stay valid even after the IMPL splice shifts later content.
@@ -22,6 +22,13 @@
  * the intended change).
  */
 
+import {
+  assertClassEditBoundary,
+  assertClassEndInsertionBoundary,
+  assertMethodDeclarationBoundary,
+  assertMethodImplementationBoundary,
+  assertSectionHeaderBoundary,
+} from './class-edit-boundaries.js';
 import type { ClassStructure, MethodStructure } from './types.js';
 
 // Bare names and interface-qualified names, including a registered namespace.
@@ -155,6 +162,7 @@ function replacementStart(source: string, declarationRow: number, replacement: s
  */
 export function spliceClassDefinition(source: string, structure: ClassStructure, newDefBlock: string): string {
   const r = structure.classDefinitionBlock;
+  assertClassEditBoundary(source, r, structure.className, 'definition');
   return spliceLines(source, replacementStart(source, r.sr, newDefBlock), r.er, newDefBlock);
 }
 
@@ -169,6 +177,7 @@ export function spliceMethodSignature(source: string, method: MethodStructure, n
     throw new Error(`spliceMethodSignature: method ${method.name} has no definition range`);
   }
   assertUnchainedDeclaration(source, method);
+  assertMethodDeclarationBoundary(source, method.definition, method.name);
   const r = method.definition;
   return spliceLines(source, replacementStart(source, r.sr, newSig), r.er, ensureClauseTerminator(newSig));
 }
@@ -207,6 +216,11 @@ export interface InsertMethodPairOpts {
  * block at all (rare, all-abstract), only the DEFINITION is touched.
  */
 export function insertMethodPair(source: string, structure: ClassStructure, opts: InsertMethodPairOpts): string {
+  assertClassEditBoundary(source, structure.classDefinitionBlock, structure.className, 'definition');
+  if (!opts.isAbstract && structure.classImplementationBlock) {
+    assertClassEditBoundary(source, structure.classImplementationBlock, structure.className, 'implementation');
+    assertClassEndInsertionBoundary(source, structure.classImplementationBlock.er);
+  }
   const anchor = findSectionAnchor(source, structure, opts.visibility);
   if (anchor === null) {
     throw new Error(
@@ -249,6 +263,8 @@ export function insertMethodPair(source: string, structure: ClassStructure, opts
  */
 export function removeMethodPair(source: string, method: MethodStructure): string {
   assertUnchainedDeclaration(source, method);
+  assertMethodDeclarationBoundary(source, method.definition, method.name);
+  if (method.implementation) assertMethodImplementationBoundary(source, method.implementation, method.name);
   let next = source;
   if (method.implementation) {
     next = removeLinesAndJoinSpacing(next, method.implementation.sr, method.implementation.er);
@@ -305,6 +321,7 @@ export function moveMethodDefinition(source: string, method: MethodStructure, ta
     throw new Error(`moveMethodDefinition: method ${method.name} has no definition range`);
   }
   assertUnchainedDeclaration(source, method);
+  assertMethodDeclarationBoundary(source, method.definition, method.name);
   const lines = splitLines(source);
   const { er } = method.definition;
   let sr = method.definition.sr;
@@ -359,8 +376,13 @@ export function findSectionAnchor(
   // Step 1: anchor after the LAST existing method in the target section.
   const methods = structure.methods.filter((m) => m.visibility === visibility && m.definition);
   if (methods.length > 0) {
-    const lastEr = Math.max(...methods.map((m) => m.definition.er));
-    return { afterLine: lastEr };
+    const last = methods.reduce((a, b) =>
+      a.definition.er > b.definition.er || (a.definition.er === b.definition.er && a.definition.ec > b.definition.ec)
+        ? a
+        : b,
+    );
+    assertMethodDeclarationBoundary(source, last.definition, last.name, true);
+    return { afterLine: last.definition.er };
   }
 
   // Step 2: anchor immediately after the SECTION header line within the
@@ -373,7 +395,10 @@ export function findSectionAnchor(
   const sectionRe = new RegExp(`^\\s*${visibility.toUpperCase()}\\s+SECTION\\s*\\.`, 'i');
   for (let i = defBlock.sr - 1; i < Math.min(defBlock.er, lines.length); i++) {
     const stripped = lines[i]!.replace(/"[^\n]*$/, '');
-    if (sectionRe.test(stripped)) return { afterLine: i + 1 };
+    if (sectionRe.test(stripped)) {
+      assertSectionHeaderBoundary(source, i + 1, visibility);
+      return { afterLine: i + 1 };
+    }
   }
   return null;
 }

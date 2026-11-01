@@ -180,3 +180,19 @@ include-method rejection before SAP; it now tests still-forbidden signature/incl
 a separate test confirms a present include without the requested method remains unchanged.
 The existing simulations do not exercise new include-method calls; extending and reviewing that
 live harness remains required.
+
+## Shared class-splice boundary checks
+
+Before admitting metadata-driven pinned class actions, the common single-target splice helpers now
+validate the whole lines they replace or use as insertion anchors. A selected METHODS declaration,
+METHOD body, class block or section header must contain the expected construct/name without an
+adjacent statement on a shared boundary line. Insertion before ENDCLASS also requires that statement
+to occupy its own code line. This prevents a native character range from deleting a neighboring
+statement when converted to whole-line splicing. Final chain-member insertion remains supported;
+individual chained-declaration edits retain their existing refusal.
+
+The new tests cover shared lines, wrong names/ranges, comments/string literals, CRLF/multiline
+preservation and chain insertion. Four actual handler cases prove refusal under the owning lock,
+without PUT and with unlock. Full validation: 430 files / 11,648 unit tests, three TypeScript projects,
+build, lint, policy and file/schema budgets pass. No additional pinned action is admitted here;
+owner/source-bound native structure validation and its policy adapter remain next. FEAT-93 stays open.
