@@ -851,13 +851,14 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(parsed.summary).toBe('Object ZCL_TEST is locked in transport A4HK900123 by DEVELOPER.');
     });
 
-    it('history falls back to assignment candidates when /transports has no current lock', async () => {
+    it.each(['S', ''])('history preserves fallback candidates with CTS result %s', async (status) => {
       const objectStructure = `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
         <adtcore:packageRef adtcore:name="Z_MY_PKG"/>
       </adtcore:objectReferences>`;
       const fallbackXml = `<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
         <asx:values><DATA>
           <DEVCLASS>Z_MY_PKG</DEVCLASS>
+          <RESULT>${status}</RESULT>
           <DLVUNIT>SAP</DLVUNIT>
           <RECORDING>X</RECORDING>
           <TRANSPORTS>
@@ -895,7 +896,8 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(parsed.relatedTransports).toEqual([]);
       expect(parsed.candidateTransports).toHaveLength(1);
       expect(parsed.candidateTransports[0]?.id).toBe('A4HK900500');
-      expect(parsed.summary).toContain('available for assignment');
+      if (status === 'S') expect(parsed.summary).toContain('available for assignment');
+      else expect(parsed.lockStatusUnknown).toBe(true);
     });
 
     it('history reports a lock found only by the transportchecks fallback', async () => {
