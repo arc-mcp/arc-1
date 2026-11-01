@@ -53,9 +53,11 @@
             "APLO",
             "SAJC",
             "SAJT",
+            "RONT",
+            "NONT",
             "TABL/DTI"
           ],
-          "description": "Repository or metadata type. TABL includes structures. KTD aliases SKTD; MESSAGES aliases MSAG. SYNTAX requires objectType+name. Server-driven: discovery-gated XML metadata, AFF JSON source; DTSC/DSFD/DTDC/DRTY use DDL text. ENQU: JSON. TABL/DTI: TABLE~INDEX, prefers pending JSON. DESD external schema; EVTB/EVTO event binding/object; CSNM CSN model; COTA communication target; DTSC/DTDC static/dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template."
+          "description": "Repository or metadata type. TABL includes structures. KTD aliases SKTD; MESSAGES aliases MSAG. SYNTAX requires objectType+name. Server-driven: discovery-gated XML metadata, AFF JSON source; DTSC/DSFD/DTDC/DRTY use DDL text. ENQU: JSON. TABL/DTI: TABLE~INDEX, prefers pending JSON. DESD external schema; EVTB/EVTO event binding/object; CSNM CSN model; COTA communication target; DTSC/DTDC static/dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template; RONT/NONT SAP object/node type."
         },
         "name": {
           "type": "string",
