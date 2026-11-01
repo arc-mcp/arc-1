@@ -131,6 +131,8 @@ async function remove(kind = 'PROG', overrides: Partial<typeof config> = {}) {
   owner = `/sap/bc/adt/programs/${kind === 'PROG' ? 'programs' : 'includes'}/zarc1_delete`;
   const effective = { ...config, ...overrides };
   const client = new AdtClient({ baseUrl: 'http://sap:8000', safety: { ...defaultSafetyConfig(), ...effective } });
+  if (fault === 'service-missing')
+    client.http.setDiscoveryMap(new Map([['/sap/bc/adt/programs/programs', ['application/xml']]]));
   const result = await handleToolCall(client, effective, 'SAPWrite', {
     action: 'delete',
     type,
@@ -139,6 +141,14 @@ async function remove(kind = 'PROG', overrides: Partial<typeof config> = {}) {
   });
   return { result, payload: JSON.parse(result.content[0].text) };
 }
+it('refuses program deletion when native discovery proves the pool service absent', async () => {
+  fault = 'service-missing';
+  const { result, payload } = await remove();
+  expect(result.isError).toBe(true);
+  expect(payload.state).toBe('unchanged');
+  expect(payload.message).toContain('native ADT textelements service');
+  expect(calls.filter((call) => call.method === 'DELETE' || call.path.startsWith(pool))).toHaveLength(0);
+});
 it('deletes a program while both native locks are held in the owning session', async () => {
   const { result, payload } = await remove();
   expect(result.isError, result.content[0].text).toBeUndefined();

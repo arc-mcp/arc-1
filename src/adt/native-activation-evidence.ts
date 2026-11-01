@@ -14,10 +14,15 @@ export function nativeInactiveReferences(xml: string): Array<ActivationReference
     for (const ref of object.children('ref', ioc)) {
       const uri = ref.attribute('uri', core),
         name = ref.attribute('name', core);
-      if (!uri || !name) throw new AdtSafetyError('Native preaudit reference has no object identity.');
+      if (!uri || name === undefined) throw new AdtSafetyError('Native preaudit reference has no object identity.');
       const type = ref.attribute('type', core),
         deleted = object.attribute('deleted', ioc);
-      refs.push({ uri, name, ...(type === undefined ? {} : { type }), ...(deleted === undefined ? {} : { deleted }) });
+      refs.push({
+        uri,
+        name: name.trim(),
+        ...(type === undefined ? {} : { type }),
+        ...(deleted === undefined ? {} : { deleted }),
+      });
     }
   }
   if (!refs.length) throw new AdtSafetyError('Native preaudit contains no identified objects.');

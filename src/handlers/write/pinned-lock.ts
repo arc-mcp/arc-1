@@ -6,6 +6,7 @@ import type { AdtHttpClient } from '../../adt/http.js';
 import { throwIfRequestCancelled } from '../../adt/http-deadline.js';
 import { mutationClient } from '../../adt/mutation-client.js';
 import type { PinnedMutationContext } from '../../adt/mutation-context.js';
+import { readPinnedFunctionOwner } from '../../adt/pinned-function-owner.js';
 import { verifyPinnedProgramOwner } from '../../adt/pinned-program-owner.js';
 import { type PinnedRecording, pinnedRecording, validatePinnedLock } from '../../adt/pinned-write-policy.js';
 import { enforceAllowedPackageForObjectUrl } from '../write-helpers.js';
@@ -21,7 +22,8 @@ export async function revalidatePinnedOwnerRecording(
 ): Promise<PinnedRecording> {
   const options = context.requestPolicy;
   const active = mutationClient(client, context, http);
-  const nativePackage = await verifyPinnedProgramOwner(active, owner);
+  const nativePackage =
+    (await readPinnedFunctionOwner(active, owner))?.packageName ?? (await verifyPinnedProgramOwner(active, owner));
   const actualPackage =
     nativePackage ?? (await enforceAllowedPackageForObjectUrl(active, owner, 'Pinned mutation', undefined, options));
   if (actualPackage !== pkg) throw new AdtSafetyError('The owner package changed since preflight.');

@@ -25,7 +25,7 @@ import { mutationResponsible } from '../../adt/mutation-client.js';
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
 import { isServerDrivenObjectType } from '../../adt/server-driven.js';
 import { getTransport } from '../../adt/transport.js';
-import { escapeXmlAttr, parseFunctionModuleProperties } from '../../adt/xml-parser.js';
+import { escapeXmlAttr } from '../../adt/xml-parser.js';
 import { validateAffHeader } from '../../aff/validator.js';
 import { activationDetailMatchesObject } from '../activation-results.js';
 import { guardCdsSyntax } from '../cds-hints.js';
@@ -79,9 +79,8 @@ import {
 import type { SapWriteContext } from './context.js';
 import { resolveCreateTransport } from './create-transport.js';
 import { createRepositoryObject, prepareCreationRecording, saveCreatedSource } from './creation.js';
+import { persistFunctionModuleProcessingMetadata } from './function-create-metadata.js';
 import { postCreateError } from './post-create-error.js';
-
-const FUNCTION_MODULE_MEDIA_TYPE = /^application\/vnd\.sap\.adt\.functions\.fmodules(?:\.v\d+)?\+xml\b/i;
 
 function normalizePackageOverride(rawPackage: unknown, fallback: string): string {
   if (rawPackage === undefined || rawPackage === null) {
@@ -138,40 +137,6 @@ function prepareFunctionModuleCreateSource(
   return { shouldWrite: true, source: stripped.source, warnings };
 }
 
-function getHeader(headers: Record<string, string>, name: string): string | undefined {
-  return Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
-}
-
-/**
- * Change only the processing attributes on the server-provided FUNC metadata
- * envelope. SAP creates a normal function-module shell first; processing type
- * is persisted by a subsequent locked metadata PUT (the same lifecycle used by
- * the ADT Properties → Specific view).
- */
-function rewriteFunctionModuleProcessingMetadata(
-  xml: string,
-  processingType: FunctionProcessingType,
-  updateTaskKind?: FunctionUpdateTaskKind,
-): string {
-  const rootMatch = /<fmodule:abapFunctionModule\b[^>]*>/i.exec(xml);
-  if (!rootMatch || rootMatch.index === undefined) {
-    throw new Error('FUNC processing metadata update failed: SAP did not return an abapFunctionModule envelope.');
-  }
-
-  const withoutProcessingAttributes = rootMatch[0]
-    .replace(/\s+fmodule:processingType\s*=\s*(?:"[^"]*"|'[^']*')/gi, '')
-    .replace(/\s+fmodule:updateTaskKind\s*=\s*(?:"[^"]*"|'[^']*')/gi, '');
-  const attributes = ` fmodule:processingType="${escapeXmlAttr(processingType)}"${
-    updateTaskKind === undefined ? '' : ` fmodule:updateTaskKind="${escapeXmlAttr(updateTaskKind)}"`
-  }`;
-  const rewrittenRoot = withoutProcessingAttributes.replace(
-    /<fmodule:abapFunctionModule/i,
-    (root) => `${root}${attributes}`,
-  );
-
-  return `${xml.slice(0, rootMatch.index)}${rewrittenRoot}${xml.slice(rootMatch.index + rootMatch[0].length)}`;
-}
-
 /** A confirmed create is not undone by a later write, verification, or unlock failure. */
 function functionModuleCreateError(
   ctx: SapWriteContext,
@@ -189,55 +154,6 @@ function functionModuleCreateError(
     `Inspect SAPRead(${identity}, version="inactive", includeSignature=true); do not repeat create. ${recovery} ` +
     'If an edit lock remains, release it in ADT/SM12 before retrying.';
   return postCreateError(ctx, cause, 'FUNC', object.name, hint);
-}
-
-async function persistFunctionModuleProcessingMetadata(
-  client: SapWriteContext['client'],
-  objectUrl: string,
-  processingType: FunctionProcessingType,
-  updateTaskKind: FunctionUpdateTaskKind | undefined,
-  transport: string | undefined,
-): Promise<void> {
-  const inactiveUrl = `${objectUrl}?version=inactive`;
-  const current = await client.getObjectMetadata(inactiveUrl);
-  const body = rewriteFunctionModuleProcessingMetadata(current.body, processingType, updateTaskKind);
-  // Send the bare media type: SAP returns "…fmodules.v3+xml; charset=utf-8"
-  // (v2 on 750), and on-prem backends are known to reject vendor media types
-  // carrying parameters — same reason `resolveObjectPackage` strips them.
-  const responseContentType = getHeader(current.headers, 'content-type');
-  const discoveredContentType = client.http.discoveryAcceptFor(objectUrl);
-  const contentType =
-    [responseContentType, discoveredContentType]
-      .find((candidate): candidate is string => candidate !== undefined && FUNCTION_MODULE_MEDIA_TYPE.test(candidate))
-      ?.split(';')[0]
-      ?.trim() ?? vendorContentTypeForType('FUNC');
-
-  await safeUpdateObject(
-    client.http,
-    client.safety,
-    objectUrl,
-    body,
-    contentType,
-    transport,
-    getCachedFeatures()?.abapRelease,
-  );
-
-  // A 2xx response alone is insufficient evidence: the collection POST accepts
-  // these attributes and still retains `normal` (live-verified on 758).
-  const persisted = await client.getObjectMetadata(inactiveUrl);
-  const { processingType: actualProcessingType, updateTaskKind: actualUpdateTaskKind } = parseFunctionModuleProperties(
-    persisted.body,
-  );
-  if (
-    actualProcessingType !== processingType ||
-    (updateTaskKind === undefined ? actualUpdateTaskKind !== undefined : actualUpdateTaskKind !== updateTaskKind)
-  ) {
-    throw new Error(
-      `SAP retained processingType="${actualProcessingType ?? 'unknown'}"${
-        actualUpdateTaskKind === undefined ? '' : ` and updateTaskKind="${actualUpdateTaskKind}"`
-      }.`,
-    );
-  }
 }
 
 async function resolveFunctionGroupCreatePackage(
@@ -757,7 +673,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   if (type === 'FUNC' && metadataProperties.processingType !== undefined) {
     try {
       await persistFunctionModuleProcessingMetadata(
-        client,
+        ctx,
         objectUrl,
         metadataProperties.processingType as FunctionProcessingType,
         metadataProperties.updateTaskKind as FunctionUpdateTaskKind | undefined,
@@ -1123,7 +1039,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       if (plan.type === 'FUNC' && plan.metadata.processingType !== undefined) {
         try {
           await persistFunctionModuleProcessingMetadata(
-            client,
+            ctx,
             plan.objectUrl,
             plan.metadata.processingType as FunctionProcessingType,
             plan.metadata.updateTaskKind as FunctionUpdateTaskKind | undefined,

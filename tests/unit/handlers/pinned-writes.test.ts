@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getMutationContext } from '../../../src/adt/mutation-http.js';
 import { resolvePinnedRequest } from '../../../src/adt/pinned-write-policy.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
@@ -6,6 +6,12 @@ import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
+
+const unexpected: string[] = [];
+beforeEach(() => {
+  unexpected.length = 0;
+});
+afterEach(() => expect(unexpected).toEqual([]));
 
 const { requestContext } = await import('../../../src/server/context.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
@@ -111,7 +117,14 @@ beforeEach(() => {
         200,
         `<class:abapClass xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="${pkg}"/></class:abapClass>`,
       );
-    return mockResponse(200, '', { 'x-csrf-token': 'test-token' });
+    if (
+      method === 'HEAD' ||
+      (method === 'POST' && ['/sap/bc/adt/oo/classes', '/sap/bc/adt/oo/interfaces'].includes(parsed.pathname)) ||
+      parsed.pathname === '/sap/bc/adt/core/http/sessions'
+    )
+      return mockResponse(200, '', { 'x-csrf-token': 'test-token' });
+    unexpected.push(`${method} ${path}`);
+    return mockResponse(599, 'Unexpected fixture request');
   });
 });
 function saves() {

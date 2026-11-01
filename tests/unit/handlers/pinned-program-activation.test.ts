@@ -44,6 +44,7 @@ beforeEach(() => {
   fault = '';
   expanded = undefined;
   cancel = undefined;
+  usedInclude = false;
   calls.length = 0;
   mockFetch.mockImplementation(async (url, init: any = {}) => {
     const uri = new URL(String(url)),
@@ -65,7 +66,12 @@ beforeEach(() => {
       );
     }
     if (path === pool) {
-      if (fault === 'pool-unreadable' && posts > 1) return mockResponse(503, '');
+      if (
+        (fault === 'pool-unreadable' && posts > 1) ||
+        fault === 'owner-pool-unreadable' ||
+        fault === 'native-error-pool-unreadable'
+      )
+        return mockResponse(503, '');
       return mockResponse(
         200,
         `<text:textElement xmlns:text="http://www.sap.com/adt/textelements" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${fault === 'pool-owner' ? 'ZFOREIGN' : name}" adtcore:type="PROG/PX" adtcore:version="${posts > 1 && fault !== 'pool-inactive' ? 'active' : 'inactive'}"/>`,
@@ -80,7 +86,7 @@ beforeEach(() => {
           200,
           `<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects" xmlns:adtcore="http://www.sap.com/adt/core">${expanded.map((ref) => `<ioc:entry><ioc:object ioc:deleted="${fault === 'ref-deleted' ? 'true' : fault === 'ref-deleted-invalid' ? 'maybe' : 'false'}"><ioc:ref adtcore:uri="${ref}" adtcore:type="${fault === 'ref-type' ? 'FUGR/I' : ref.includes('/textelements/') ? 'PROG/PX' : type === 'PROG' ? 'PROG/P' : 'PROG/I'}" adtcore:name="${fault === 'ref-name' ? 'ZFOREIGN' : name}" ${fault === 'ref-collision' ? 'xmlns:other="urn:foreign" other:name="ZFOREIGN"' : ''}/></ioc:object></ioc:entry>`).join('')}</ioc:inactiveObjects>`,
         );
-      if (fault === 'native-error')
+      if (fault.startsWith('native-error'))
         return mockResponse(
           200,
           '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><chkl:msg severity="error" shortText="Native activation refused"/></chkl:messages>',
@@ -106,9 +112,27 @@ async function activate(kind = 'PROG', refs?: (owner: string) => string[], selec
     client: '001',
     safety: { ...defaultSafetyConfig(), ...config },
   });
+  if (fault === 'pool-service-missing')
+    client.http.setDiscoveryMap(new Map([['/sap/bc/adt/programs/programs', ['application/xml']]]));
   const result = await handleToolCall(client, config, 'SAPActivate', { type, name });
   return { result, payload: JSON.parse(result.content[0].text) };
 }
+it.each(['owner-pool-unreadable', 'pool-service-missing'])(
+  'preserves confirmed owner-only activation when %s',
+  async (issue) => {
+    fault = issue;
+    const { result, payload } = await activate();
+    expect(result.isError, result.content[0].text).toBeUndefined();
+    expect(payload).toMatchObject({
+      state: 'activated',
+      success: true,
+      textPoolState: 'unknown',
+      scope: 'selected-program-only',
+    });
+    expect(payload.warnings).toContain('not selected');
+    expect(calls.filter((c) => c.path.startsWith(pool))).toHaveLength(issue === 'pool-service-missing' ? 0 : 1);
+  },
+);
 it.each(['PROG', 'INCL'])('activates the selected standalone %s through the native engine', async (kind) => {
   const { result, payload } = await activate(kind, (uri) => [uri]);
   expect(result.isError, result.content[0].text).toBeUndefined();
@@ -214,6 +238,7 @@ it.each(['%2f', '%2F'])('confirms namespaced uppercase pool identity with %s sep
 });
 it('accepts only the owned pool when native preaudit returns a pool-only prompt', async () => {
   const { result, payload } = await activate('PROG', () => [pool]);
+  expect(payload.scope).toBe('selected-program-text-pool-only');
   expect(result.isError, result.content[0].text).toBeUndefined();
   expect(payload.textPoolState).toBe('active');
   expect(calls.find((call) => call.path.includes('preauditRequested=false'))!.body).toContain(pool);
@@ -281,4 +306,32 @@ it('reports native include consumers without activating or authorizing them', as
   });
   expect(payload.warnings).toContain('consumers may be affected');
   expect(calls.some((call) => call.path.includes('/zconsumer') || call.body.includes('zconsumer'))).toBe(false);
+});
+
+it('retains native include consumers after an unconfirmed activation submission', async () => {
+  usedInclude = true;
+  fault = 'network';
+  const { result, payload } = await activate('INCL');
+  expect(result.isError).toBe(true);
+  expect(payload).toMatchObject({
+    state: 'activation-not-confirmed',
+    statusCode: 503,
+    includeUsage: { contextRefCount: 20, contexts: [{ name: 'ZCONSUMER', packageName: 'ZOUTSIDE' }] },
+  });
+  expect(posts).toBe(1);
+  expect(calls.some((call) => call.path.includes('/zconsumer') || call.body.includes('zconsumer'))).toBe(false);
+});
+
+it('does not describe failed owner activation as confirmed when optional pool inspection also fails', async () => {
+  fault = 'native-error-pool-unreadable';
+  const { result, payload } = await activate();
+  expect(result.isError).toBe(true);
+  expect(payload).toMatchObject({
+    state: 'activation-not-confirmed',
+    textPoolState: 'unknown',
+    messages: ['Native activation refused'],
+  });
+  expect(payload.warnings).toContain('Native activation was not confirmed');
+  expect(payload.warnings).not.toContain('confirmed owner activation');
+  expect(posts).toBe(1);
 });

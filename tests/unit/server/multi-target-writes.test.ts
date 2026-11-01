@@ -542,6 +542,20 @@ describe('pinned write policy composition', () => {
       multiTargetToolDefinitions(getToolDefinitions(aggregate), aggregate).some((t) => t.name === 'SAPWrite'),
     ).toBe(false);
   });
+
+  it.each(['SAPActivate', 'SAPActivate.activate', 'SAPActivate.act*'])(
+    'omits implicit text activation when %s is denied',
+    (deny) => {
+      const config = { ...runtime(), denyActions: [deny] };
+      const write = multiTargetToolDefinitions(getToolDefinitions(config), config).find(
+        (tool) => tool.name === 'SAPWrite',
+      )!;
+      expect((write.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).not.toContain(
+        'edit_text_symbols',
+      );
+      expect((write.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).toContain('update');
+    },
+  );
   it.each([
     { action: 'delete' },
     { type: 'PROG' },

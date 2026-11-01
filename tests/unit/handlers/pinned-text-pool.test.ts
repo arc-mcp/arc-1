@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { pinnedMutationContext } from '../../../src/adt/mutation-context.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import type { TextElementPart } from '../../../src/adt/text-elements.js';
 import { requestContext } from '../../../src/server/context.js';
@@ -7,6 +8,11 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { createPinnedTextPoolContext, pinnedTextPoolResult } = await import(
+  '../../../src/handlers/write/pinned-text-pool.js'
+);
+const { forgetPinnedSourceContext } = await import('../../../src/handlers/write/pinned-source-context.js');
+const { writeActionEditTextSymbols } = await import('../../../src/handlers/write/update-delete.js');
 const config = {
   ...DEFAULT_CONFIG,
   client: '001',
@@ -50,7 +56,7 @@ let cancel: AbortController | undefined;
 const count = (method: string, path?: string) =>
   calls.filter((call) => call.method === method && (path === undefined || call.path === path));
 const poolXml = () =>
-  `<rept:textElement xmlns:rept="http://www.sap.com/adt/textelements" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${fault === 'pool-owner' ? 'ZFOREIGN' : name}" adtcore:type="${fault === 'pool-type' ? 'FUGR/PX' : type === 'CLAS' ? 'CLAS/OCX' : 'PROG/PX'}" adtcore:version="${inactive.size || (fault === 'still-inactive' && activations) ? 'inactive' : 'active'}"><adtcore:packageRef adtcore:type="DEVC/K" adtcore:name="${transportable ? 'ZTEAM' : '$TMP'}"/></rept:textElement>`;
+  `<rept:textElement xmlns:rept="http://www.sap.com/adt/textelements" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${fault === 'pool-owner' ? 'ZFOREIGN' : name}" adtcore:type="${fault === 'pool-type' ? (type === 'FUGR' ? 'PROG/PX' : 'FUGR/PX') : type === 'CLAS' ? 'CLAS/OCX' : `${type}/PX`}" adtcore:version="${inactive.size || (fault === 'still-inactive' && activations) ? 'inactive' : 'active'}"><adtcore:packageRef adtcore:type="DEVC/K" adtcore:name="${transportable ? 'ZTEAM' : '$TMP'}"/></rept:textElement>`;
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -89,9 +95,10 @@ beforeEach(() => {
           '<exc:exception xmlns:exc="http://www.sap.com/abapxml/errors" type="ExceptionResourceLocked"><message>Pool locked</message></exc:exception>',
         );
       locked = true;
+      if (fault === 'lock-lost') throw new Error('Injected lost LOCK response');
       return mockResponse(
         200,
-        `<DATA><LOCK_HANDLE>pool-lock</LOCK_HANDLE><IS_LOCAL>${fault === 'locality' || transportable ? '' : 'X'}</IS_LOCAL><CORRNR>${transportable ? 'A4HK900002' : ''}</CORRNR></DATA>`,
+        `<DATA><LOCK_HANDLE>pool-lock</LOCK_HANDLE><IS_LOCAL>${fault === 'locality' || transportable ? '' : 'X'}</IS_LOCAL><CORRNR>${fault === 'lock-transport' ? 'A4HK900099' : transportable ? 'A4HK900002' : ''}</CORRNR></DATA>`,
         {},
         ['sap-contextid=pool-owner; Path=/'],
       );
@@ -102,7 +109,8 @@ beforeEach(() => {
     }
     if (path.includes('/http/sessions')) return mockResponse(fault === 'close' ? 503 : 200, '');
     if (path === owner && method === 'GET') {
-      const root = type === 'CLAS' ? 'class:abapClass' : 'program:abapProgram';
+      const root =
+        type === 'CLAS' ? 'class:abapClass' : type === 'FUGR' ? 'group:abapFunctionGroup' : 'program:abapProgram';
       const pkg =
         (fault === 'package-locked' && locked) || (fault === 'package-activation' && writes)
           ? 'ZDENIED'
@@ -111,7 +119,7 @@ beforeEach(() => {
             : '$TMP';
       return mockResponse(
         200,
-        `<${root} xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:program="http://www.sap.com/adt/programs/programs" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${name}" adtcore:type="${type === 'CLAS' ? 'CLAS/OC' : 'PROG/P'}" program:programType="executableProgram"><adtcore:packageRef adtcore:name="${pkg}" adtcore:type="DEVC/K"/></${root}>`,
+        `<${root} xmlns:group="http://www.sap.com/adt/functions/groups" xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:program="http://www.sap.com/adt/programs/programs" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${name}" adtcore:type="${type === 'CLAS' ? 'CLAS/OC' : type === 'FUGR' ? 'FUGR/F' : 'PROG/P'}" program:programType="executableProgram"><adtcore:packageRef adtcore:name="${pkg}" adtcore:type="DEVC/K"/></${root}>`,
       );
     }
     if (path.includes('/cts/transportchecks'))
@@ -119,6 +127,12 @@ beforeEach(() => {
         200,
         `<DATA><DEVCLASS>${transportable ? 'ZTEAM' : '$TMP'}</DEVCLASS><DLVUNIT>${transportable ? 'HOME' : 'LOCAL'}</DLVUNIT><OPERATION/><RESULT>S</RESULT><RECORDING>${transportable ? 'X' : ''}</RECORDING></DATA>`,
       );
+    if (path.includes('/cts/transportrequests/'))
+      if (path.endsWith('/a4hk900099'))
+        return mockResponse(
+          200,
+          '<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900099" tm:type="K" tm:status="D"/></tm:root>',
+        );
     if (path.includes('/cts/transportrequests/'))
       return mockResponse(
         200,
@@ -130,7 +144,8 @@ beforeEach(() => {
       let body = poolXml();
       if (fault === 'pool-malformed') body = body.replace('</rept:textElement>', '');
       if (fault === 'pool-doctype') body = `<!DOCTYPE textElement>${body}`;
-      if (fault === 'pool-package') body = body.replace('adtcore:name="$TMP"', 'adtcore:name="ZFOREIGN"');
+      if (fault === 'pool-package' || (fault === 'pool-after-unlock' && writes && !locked))
+        body = body.replace('adtcore:name="$TMP"', 'adtcore:name="ZFOREIGN"');
       if (fault === 'pool-no-package') body = body.replace(/<adtcore:packageRef[^>]*\/>/, '');
       return mockResponse(200, body);
     }
@@ -145,7 +160,11 @@ beforeEach(() => {
         if (fault === 'save-rejected' || fault === 'save-uncertain')
           return mockResponse(fault === 'save-rejected' ? 403 : 503, 'save refused or uncertain');
         writes++;
-        inactive.set(part, String(init.body));
+        if (fault !== 'save-nochange')
+          inactive.set(
+            part,
+            fault === 'save-dropped' ? String(init.body).replace(/^002=.*(?:\n|$)/m, '') : String(init.body),
+          );
         return mockResponse(200, '');
       }
       if (method === 'GET') {
@@ -165,6 +184,11 @@ beforeEach(() => {
     if (path === '/sap/bc/adt/activation' && method === 'POST') {
       activations++;
       if (fault === 'activation-503') return mockResponse(503, 'activation uncertain');
+      if (fault === 'activation-native-error')
+        return mockResponse(
+          200,
+          '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><chkl:msg type="E" shortText="Text element is not allowed here"/><chkl:properties activationExecuted="false"/></chkl:messages>',
+        );
       if (fault === 'activation-expand')
         return mockResponse(
           200,
@@ -191,12 +215,13 @@ async function write(
   source = replacement,
   extra: Record<string, unknown> = {},
   settings = config,
+  candidateProfile = false,
 ) {
   type = kind;
   if (typeof extra.name === 'string') name = extra.name;
   const key = encodeURIComponent(name.toLowerCase()).toLowerCase();
-  owner = `${type === 'CLAS' ? '/sap/bc/adt/oo/classes' : '/sap/bc/adt/programs/programs'}/${key}`;
-  pool = `/sap/bc/adt/textelements/${type === 'CLAS' ? 'classes' : 'programs'}/${key}`;
+  owner = `${type === 'CLAS' ? '/sap/bc/adt/oo/classes' : type === 'FUGR' ? '/sap/bc/adt/functions/groups' : '/sap/bc/adt/programs/programs'}/${key}`;
+  pool = `/sap/bc/adt/textelements/${type === 'CLAS' ? 'classes' : type === 'FUGR' ? 'functiongroups' : 'programs'}/${key}`;
   const client = new AdtClient({
     baseUrl: 'http://sap:8000',
     client: '001',
@@ -206,14 +231,26 @@ async function write(
     client.http.setDiscoveryMap(new Map([['/sap/bc/adt/programs/programs', ['application/xml']]]));
   if (fault === 'discovery-conflict')
     client.http.setDiscoveryMap(new Map([[pool.slice(0, pool.lastIndexOf('/')), ['application/x-incorrect']]]));
-  const result = await handleToolCall(client, settings, 'SAPWrite', {
+  const args = {
     action: 'edit_text_symbols',
     type,
     name,
     source,
     textPart: part,
     ...extra,
-  });
+  };
+  const result = await (async () => {
+    if (!candidateProfile) return handleToolCall(client, settings, 'SAPWrite', args);
+    // The native FUGR profile remains outside public admission until the full family is ready.
+    const context = pinnedMutationContext(client.safety, { deadline: Date.now() + 30_000 }, { unlockFailed: false });
+    const ctx = createPinnedTextPoolContext(client, args, settings, context);
+    try {
+      await writeActionEditTextSymbols(ctx);
+      return pinnedTextPoolResult(ctx);
+    } finally {
+      forgetPinnedSourceContext(ctx);
+    }
+  })();
   let payload: Record<string, any> = {};
   try {
     payload = JSON.parse(result.content[0].text);
@@ -224,6 +261,48 @@ async function write(
 }
 
 describe('pinned native text-part lifecycle', () => {
+  it.each([
+    ['save-nochange', replacement],
+    ['save-nochange', ''],
+    ['save-dropped', '@MaxLength:20\n001=First\n@MaxLength:20\n002=Second'],
+  ])('does not activate when a 200 %s fails to persist the requested text', async (issue, source) => {
+    fault = issue;
+    const { result, payload } = await write('PROG', 'symbols', source);
+    expect(result.isError).toBe(true);
+    expect(payload).toMatchObject({ state: 'text-saved-unverified', phase: 'text-readback' });
+    expect(payload.message).toContain('requested');
+    expect(writes).toBe(1);
+    expect(activations).toBe(0);
+  });
+  it.each(['symbols', 'selections', 'headings'] as const)(
+    'verifies the candidate FUGR %s part through the same pool lifecycle',
+    async (part) => {
+      inactive.set(part === 'headings' ? 'symbols' : 'headings', 'Other pending part');
+      const { payload } = await write('FUGR', part, replacements[part], {}, config, true);
+      expect(payload).toMatchObject({ state: 'text-saved-active', activePartVerified: true });
+      expect(active.get(part)).toBe(replacements[part]);
+      expect(active.get(part === 'headings' ? 'symbols' : 'headings')).toBe('Other pending part');
+      expect(count('PUT')).toHaveLength(1);
+      expect(calls.filter((c) => c.query.get('_action') === 'LOCK').map((c) => c.path)).toEqual([pool]);
+      expect(calls.some((c) => c.path === `${owner}/source/main`)).toBe(false);
+    },
+  );
+  it('skips an already active empty FUGR symbols part without creating a draft', async () => {
+    active.set('symbols', '');
+    const { payload } = await write('FUGR', 'symbols', '', {}, config, true);
+    expect(payload.state).toBe('unchanged');
+    expect(writes).toBe(0);
+    expect(activations).toBe(0);
+  });
+  it.each(['package-locked', 'pool-type', 'pool-owner'])(
+    'refuses candidate FUGR %s evidence before saving',
+    async (issue) => {
+      fault = issue;
+      await expect(write('FUGR', 'symbols', replacement, {}, config, true)).rejects.toThrow();
+      expect(writes).toBe(0);
+      expect(activations).toBe(0);
+    },
+  );
   it.each(['pool-no-package', 'discovery-conflict'])('uses independent owner proof with %s', async (condition) => {
     fault = condition;
     const { result, payload } = await write();
@@ -299,6 +378,16 @@ describe('pinned native text-part lifecycle', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it.each(['SAPActivate', 'SAPActivate.activate', 'SAPActivate.act*'])(
+    'honors %s for implicit text activation before SAP',
+    async (deny) => {
+      const { result } = await write('CLAS', 'symbols', replacement, {}, { ...config, denyActions: [deny] });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('unavailable');
+      expect(calls).toHaveLength(0);
+    },
+  );
+
   it('requires explicit source before SAP', async () => {
     const { result, payload } = await write('PROG', 'symbols', replacement, { source: undefined });
     expect(result.isError).toBe(true);
@@ -345,6 +434,8 @@ describe('pinned native text-part lifecycle', () => {
       'active',
     ]);
     expect(count('PUT')[0].headers.get('Cookie')).toContain('sap-contextid=pool-owner');
+    expect(count('PUT')[0].headers.get('Accept')).toBe(count('PUT')[0].headers.get('Content-Type'));
+    expect(count('PUT')[0].headers.get('Accept')).toBe(`application/vnd.sap.adt.textelements.${part}.v1`);
     expect(submissions[0].headers.get('Cookie')).toContain('sap-contextid=pool-owner');
     expect(calls.filter((call) => call.path.includes('/http/sessions'))).toHaveLength(1);
   });
@@ -384,9 +475,9 @@ describe('pinned native text-part lifecycle', () => {
     ['save-uncertain', 'text-save-unknown', 'text-save'],
     ['readback', 'text-saved-unverified', 'text-readback'],
     ['readback-oversized', 'text-saved-unverified', 'text-readback'],
-    ['activation-503', 'text-activation-unknown', 'text-activation'],
-    ['activation-empty', 'text-activation-unknown', 'text-activation'],
-    ['activation-expand', 'text-activation-unknown', 'text-activation'],
+    ['activation-503', 'text-activation-not-confirmed', 'text-pool-verification'],
+    ['activation-empty', 'text-activation-not-confirmed', 'text-pool-verification'],
+    ['activation-expand', 'text-activation-not-confirmed', 'text-pool-verification'],
     ['active-mismatch', 'text-activation-not-confirmed', 'text-pool-verification'],
     ['still-inactive', 'text-activation-not-confirmed', 'text-pool-verification'],
     ['unlock', 'text-saved-inactive', 'unlock'],
@@ -410,7 +501,80 @@ describe('pinned native text-part lifecycle', () => {
       expect(inactive.get('symbols')).toBe(replacement);
     }
     if (failure === 'close') expect(payload).toMatchObject({ activePartVerified: true, cleanupFailed: true });
+    if (failure === 'activation-empty')
+      expect(payload).toMatchObject({ textPoolState: 'active', activePartVerified: true });
+    if (failure === 'activation-503')
+      expect(payload).toMatchObject({ textPoolState: 'inactive', activePartVerified: false, statusCode: 503 });
     if (failure === 'unlock') expect(payload.cleanupFailed).toBe(true);
+  });
+
+  it('keeps native activation errors and read-only pool observations', async () => {
+    fault = 'activation-native-error';
+    const { result, payload } = await write();
+    expect(result.isError).toBe(true);
+    expect(payload).toMatchObject({
+      phase: 'text-pool-verification',
+      textPoolState: 'inactive',
+      activePartVerified: false,
+      nativeActivation: { success: false, messages: ['Text element is not allowed here'] },
+    });
+    expect(payload.message).toContain('Text element is not allowed here');
+    expect(activations).toBe(1);
+  });
+
+  it.each(['missing-transport', 'lock-transport', 'lock-lost'])(
+    'refuses %s before any text save or activation',
+    async (failure) => {
+      fault = failure;
+      transportable = failure !== 'lock-lost';
+      const { result, payload } = await write(
+        'PROG',
+        'symbols',
+        replacement,
+        failure === 'lock-transport' ? { transport: 'A4HK900002' } : {},
+      );
+      expect(result.isError).toBe(true);
+      expect(payload).toMatchObject({
+        state: 'unchanged',
+        retryable: false,
+        phase:
+          failure === 'missing-transport'
+            ? 'recording-preflight'
+            : failure === 'lock-transport'
+              ? 'locked-policy'
+              : 'lock',
+      });
+      expect(count('PUT')).toHaveLength(0);
+      expect(activations).toBe(0);
+      expect(calls.filter((call) => call.query.get('_action') === 'LOCK')).toHaveLength(
+        failure === 'missing-transport' ? 0 : 1,
+      );
+    },
+  );
+
+  it('refuses pool identity drift after unlock before activation', async () => {
+    fault = 'pool-after-unlock';
+    const { result, payload } = await write();
+    expect(result.isError).toBe(true);
+    expect(payload).toMatchObject({ phase: 'text-activation-preflight', state: 'text-saved-inactive' });
+    expect(count('PUT')).toHaveLength(1);
+    expect(activations).toBe(0);
+  });
+
+  it('reports no-op cleanup failure without inventing a skipped activation failure', async () => {
+    active.set('symbols', '');
+    fault = 'unlock';
+    const { result, payload } = await write('CLAS', 'symbols', '');
+    expect(result.isError).toBe(true);
+    expect(payload).toMatchObject({
+      phase: 'unlock',
+      state: 'unchanged',
+      activePartVerified: true,
+      cleanupFailed: true,
+    });
+    expect(payload.message).not.toContain('not sent');
+    expect(activations).toBe(0);
+    expect(count('PUT')).toHaveLength(0);
   });
 
   it.each([

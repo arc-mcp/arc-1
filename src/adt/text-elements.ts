@@ -17,7 +17,7 @@ import {
   withAdditionalMutationLock,
   withLockedMutation,
 } from './crud.js';
-import { activate } from './devtools.js';
+import { type ActivationResult, activate } from './devtools.js';
 import { AdtApiError, AdtError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { throwIfRequestCancelled } from './http-deadline.js';
@@ -29,10 +29,11 @@ import {
 } from './mutation-context.js';
 import { getMutationContext } from './mutation-http.js';
 import { nativeXmlRoot } from './native-xml-evidence.js';
+import { pinnedFunctionSelection } from './pinned-function-owner.js';
 import { pinnedTextPoolActivationOptions } from './pinned-text-pool-activation.js';
 import { assertPinnedSourceOwner } from './pinned-write-policy.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
-import { textPartChanges } from './text-part-changes.js';
+import { textPartChanges, textPartMatchesRequest } from './text-part-changes.js';
 import { TEXT_ELEMENT_COLLECTIONS, type TextElementObjectType, textElementsObject } from './text-pool-identity.js';
 import { parseXml } from './xml-parser.js';
 
@@ -54,6 +55,8 @@ export interface TextElementWriteResult {
   changes: string;
   state: 'active' | 'inactive' | 'unknown';
   unchanged: boolean;
+  activePartVerified?: boolean;
+  nativeActivation?: ActivationResult;
 }
 
 export const TEXT_ELEMENT_PARTS = Object.keys(TEXT_ELEMENT_CT) as TextElementPart[];
@@ -74,14 +77,14 @@ function assertPart(objectType: TextElementObjectType, part: TextElementPart): v
 /** False only when discovery is loaded AND says the collection is missing (e.g. NW 7.50).
  *  A not-yet-populated map answers true, so 757/758/816 is never false-blocked and a real
  *  404 surfaces from SAP instead. */
-function serviceAvailable(http: AdtHttpClient, objectType: TextElementObjectType): boolean {
+export function textElementsServiceAvailable(http: AdtHttpClient, objectType: TextElementObjectType): boolean {
   if (!http.hasDiscoveryData()) return true;
   return http.discoveryAcceptFor(`/sap/bc/adt/textelements/${TEXT_ELEMENT_COLLECTIONS[objectType]}`) !== undefined;
 }
 
 /** Fail clean when the ADT textelements service is absent. */
 export function assertTextElementsService(http: AdtHttpClient, objectType: TextElementObjectType): void {
-  if (!serviceAvailable(http, objectType)) {
+  if (!textElementsServiceAvailable(http, objectType)) {
     throw new AdtApiError(
       `Text elements for ${objectType} require the ADT textelements service (not available on this system).`,
       404,
@@ -92,7 +95,7 @@ export function assertTextElementsService(http: AdtHttpClient, objectType: TextE
 
 /** A known missing native service is a policy refusal, not an opaque post-submission failure. */
 function assertPinnedTextElementsService(http: AdtHttpClient, objectType: TextElementObjectType): void {
-  if (!serviceAvailable(http, objectType))
+  if (!textElementsServiceAvailable(http, objectType))
     throw new AdtSafetyError(
       `Pinned ${objectType} text-pool operations require the native ADT textelements service, which this target does not expose. Use ADT or a target with that service.`,
     );
@@ -180,13 +183,14 @@ export async function writeTextElementPart(
 
 export interface PinnedTextPoolWriteProfile {
   readonly mode: 'pinned-pp';
-  readonly ownerType: 'CLAS' | 'PROG';
+  readonly ownerType: 'CLAS' | 'PROG' | 'FUGR';
   readonly ownerName: string;
   readonly ownerPackage: string;
   readonly context: PinnedMutationContext;
   readonly lockPolicy: MutationLockPolicy;
   readonly validateActivationOwner: (session: AdtHttpClient) => Promise<void>;
   readonly onPhase: (phase: string, state?: string) => void;
+  readonly onResult?: (result: TextElementWriteResult) => void;
 }
 
 /** Shared native part-save protocol; policy supplies ownership/recording and verified activation. */
@@ -205,13 +209,17 @@ export async function writeTextElementPartWithPolicy(
   const pinned = profile.mode === 'pinned-pp' ? profile : undefined;
   if (
     pinned &&
-    (objectType === 'FUGR' ||
-      objectType !== pinned.ownerType ||
+    (objectType !== pinned.ownerType ||
       name !== pinned.ownerName ||
-      pinned.lockPolicy.afterUnlock)
+      pinned.lockPolicy.afterUnlock ||
+      pinned.lockPolicy.afterUnlockNeeded ||
+      pinned.lockPolicy.confirmedResourceDeletion)
   )
     throw new AdtSafetyError('Select the dedicated admitted text-pool ownership profile.');
-  if (pinned) assertPinnedSourceOwner(objectType, name);
+  if (pinned) {
+    if (objectType === 'FUGR') pinnedFunctionSelection(objectType, name);
+    else assertPinnedSourceOwner(objectType, name);
+  }
   if (pinned && Buffer.byteLength(source, 'utf8') > 1024 * 1024)
     throw new AdtSafetyError('Text-element source exceeds the 1 MiB verification bound.');
   checkOperation(safety, OperationType.Update, 'WriteTextElements');
@@ -228,6 +236,7 @@ export async function writeTextElementPartWithPolicy(
   else assertTextElementsService(http, objectType);
   const obj = textElementsObject(objectType, name);
   const result: TextElementWriteResult = { changes: '', state: 'unknown', unchanged: false };
+  pinned?.onResult?.(result);
   let saved = false,
     activationStarted = false,
     readback: string | undefined;
@@ -240,13 +249,15 @@ export async function writeTextElementPartWithPolicy(
       obj,
       {
         ...lockPolicy,
+        afterUnlockNeeded: () => !result.unchanged,
         afterUnlock: async (session) => {
           if (result.unchanged) return;
           activationStarted = true;
           if (pinned) {
-            if (objectType !== 'CLAS' && objectType !== 'PROG')
+            if (objectType !== 'CLAS' && objectType !== 'PROG' && objectType !== 'FUGR')
               throw new AdtSafetyError('Missing native text-pool owner adapter.');
             pinned.onPhase('text-activation-preflight');
+            let submitted = false;
             const options = pinnedTextPoolActivationOptions(
               session,
               safety,
@@ -256,19 +267,47 @@ export async function writeTextElementPartWithPolicy(
                 await pinned.validateActivationOwner(session);
                 await readOwnedTextPoolState(session, objectType, name, pinned.ownerPackage);
               },
-              () => pinned.onPhase('text-activation', 'text-activation-unknown'),
+              () => {
+                submitted = true;
+                pinned.onPhase('text-activation', 'text-activation-unknown');
+              },
             );
-            const activation = await activate(session, safety, obj, options);
-            if (!activation.success)
-              throw new AdtSafetyError('Text-pool activation was not confirmed. Inspect the pool before continuing.');
+            let activationError: unknown;
+            try {
+              const activation = await activate(session, safety, obj, options);
+              result.nativeActivation = {
+                ...activation,
+                messages: activation.messages.slice(0, 5).map((message) => message.slice(0, 500)),
+                ...(activation.details
+                  ? {
+                      details: activation.details
+                        .slice(0, 5)
+                        .map((detail) => ({ ...detail, text: detail.text.slice(0, 500) })),
+                    }
+                  : {}),
+              };
+            } catch (error) {
+              if (!submitted) throw error; // A known preflight refusal must not continue into verification.
+              activationError = error;
+            }
             pinned.onPhase('text-pool-verification', 'text-activation-not-confirmed');
             result.state = await readOwnedTextPoolState(session, objectType, name, pinned.ownerPackage);
+            const active = await readTextElementPart(session, safety, objectType, name, part, { version: 'active' });
+            result.activePartVerified = readback !== undefined && active === readback;
+            // Native failures remain failures, but the read-only observations are retained for recovery.
+            if (activationError) throw activationError;
+            if (!result.nativeActivation?.success)
+              throw new AdtSafetyError(
+                'SAP did not affirm text-pool activation execution.' +
+                  (result.nativeActivation?.messages.length
+                    ? ` SAP: ${result.nativeActivation.messages.join('; ')}`
+                    : ' Inspect the pool in ADT before continuing.'),
+              );
             if (result.state !== 'active')
               throw new AdtSafetyError(
                 `SAP still reports the text pool inactive.${objectType === 'PROG' ? ' A never-activated program requires an explicit first owner activation.' : ''}`,
               );
-            const active = await readTextElementPart(session, safety, objectType, name, part, { version: 'active' });
-            if (readback === undefined || active !== readback)
+            if (!result.activePartVerified)
               throw new AdtSafetyError(
                 'Active text-element content does not match the saved readback. Inspect before continuing.',
               );
@@ -315,6 +354,7 @@ export async function writeTextElementPartWithPolicy(
               throw new AdtSafetyError('The active empty-pool content could not be verified.');
             result.state = state;
             result.unchanged = true;
+            if (pinned) result.activePartVerified = true;
             pinned?.onPhase('complete', 'unchanged');
             return;
           }
@@ -336,6 +376,10 @@ export async function writeTextElementPartWithPolicy(
         );
         readback = after;
         result.changes = textPartChanges(part, before, after);
+        if (pinned && !textPartMatchesRequest(part, source, after))
+          throw new AdtSafetyError(
+            'SAP readback does not match the requested text-part entries or annotations. The part may have been saved, but activation was not requested. Inspect the native part in ADT before continuing.',
+          );
         pinned?.onPhase('unlock', 'text-saved-inactive');
       },
     );
@@ -447,7 +491,7 @@ export async function withActiveTextPoolForDelete<T>(
 ): Promise<T> {
   if (safety.multiTargetWrite)
     throw new AdtSafetyError('Pinned text-pool deletion requires its explicit owning-lock policy.');
-  if (!serviceAvailable(session, objectType)) return deleteOwner();
+  if (!textElementsServiceAvailable(session, objectType)) return deleteOwner();
   const uri = textElementsObject(objectType, name);
   const lock = await lockObject(session, safety, uri, 'MODIFY');
   try {
@@ -470,13 +514,14 @@ export async function withPinnedActiveTextPoolForDelete<T>(
   policy: MutationLockPolicy,
   deleteOwner: () => Promise<T>,
   expectedPackage?: string,
+  objectType: 'PROG' | 'FUGR' = 'PROG',
 ): Promise<T> {
   if (getMutationContext(session, safety)?.mode !== 'pinned-pp')
     throw new AdtSafetyError('Pinned text-pool deletion requires a registered mutation session.');
-  assertPinnedTextElementsService(session, 'PROG');
-  const uri = textElementsObject('PROG', name);
+  assertPinnedTextElementsService(session, objectType);
+  const uri = textElementsObject(objectType, name);
   return withAdditionalMutationLock(session, uri, policy, async () => {
-    await assertActiveTextPoolForDelete(session, uri, 'PROG', name, true, expectedPackage);
+    await assertActiveTextPoolForDelete(session, uri, objectType, name, true, expectedPackage);
     return deleteOwner();
   });
 }
@@ -493,7 +538,7 @@ async function assertActiveTextPoolForDelete(
   if (version === 'inactive') {
     if (fresh)
       throw new AdtSafetyError(
-        `PROG ${name} was not deleted because its text pool is inactive. Review the draft with its author in ADT and activate the intended pool there before retrying deletion. A new program may first need owner activation. Pinned SAPActivate does not offer direct REPT activation; deletion never activates drafts automatically.`,
+        `${objectType} ${name} was not deleted because its text pool is inactive. Review the draft with its author in ADT and activate the intended pool there before retrying deletion.${objectType === 'PROG' ? ' A new program may first need owner activation.' : ''} Pinned SAPActivate does not offer direct REPT activation; deletion never activates drafts automatically.`,
       );
     const hint =
       `${objectType} ${name} was not deleted because its text pool is inactive. ` +

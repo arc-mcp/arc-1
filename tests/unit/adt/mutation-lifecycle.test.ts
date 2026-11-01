@@ -55,6 +55,41 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('required mutation context', () => {
+  it('does not run post-unlock work while deleted-resource cleanup still awaits owning closure', async () => {
+    const { http, safety, context, cleanup } = fixture();
+    const fallback = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url, options) =>
+      String(url).includes('_action=UNLOCK')
+        ? mockResponse(
+            404,
+            '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><namespace id="com.sap.adt"/><type id="ExceptionResourceNotFound"/><message>Resource does not exist.</message></exc:exception>',
+          )
+        : fallback(url, options),
+    );
+    const afterUnlock = vi.fn();
+    await expect(
+      withLockedMutation(
+        http,
+        safety,
+        context,
+        owner,
+        {
+          beforeLock: () => {},
+          validateLock: async () => {},
+          confirmedResourceDeletion: () => true,
+          afterUnlock,
+        },
+        async () => 'deleted',
+      ),
+    ).rejects.toThrow('Unlock was not confirmed');
+    expect(afterUnlock).not.toHaveBeenCalled();
+    expect(cleanup).toMatchObject({
+      unlockFailed: false,
+      sessionClosed: true,
+      removedLocksAfterDelete: [{ uri: owner, statusCode: 404, absentAfterDelete: true }],
+    });
+  });
+
   it('runs post-unlock work on the same scoped session before its single close', async () => {
     const { http, safety, context, cleanup } = fixture();
     const posts = vi.spyOn(AdtHttpClient.prototype, 'post');

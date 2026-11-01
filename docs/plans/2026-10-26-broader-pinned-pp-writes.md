@@ -3,6 +3,10 @@
 Status: implementation in progress. Formatter, CLAS/INTF deletion, class-include updates, existing-include method edits and main-source class metadata surgery and standalone on-prem PROG/INCL CRUD, unit edits and owner activation are admitted in the draft. Program deletion retains the active-text-pool precheck and both owning-session locks. CLAS symbols and on-prem PROG text-part replacement now share the native engine with exact-pool activation and explicit active-content verification; their PP qualification is pending.
 Main source replacement and CLAS/INTF creation/deletion now enter through the shared write actions
 with explicit legacy/pinned native adapters. This later convergence is offline-tested only.
+The [sixth review follow-up](../research/2026-11-01-pinned-text-review-followup.md) fixes requested-text
+verification and activation/reporting issues; a new independent review remains required. Native
+FUGR/FUNC/group-INCL ownership and shared update/delete/text profiles are private candidates with
+offline tests and read-only metadata evidence. They are not yet advertised or qualified.
 The fresh local run at `77e41fdcd` qualifies include replacement and the refactored main method path;
 the later include-method and class metadata adapters, refactored transportable paths and remaining families still need qualification.
 The [combined PP run](../research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)

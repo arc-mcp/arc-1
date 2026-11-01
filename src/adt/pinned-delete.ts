@@ -5,6 +5,7 @@ import { AdtApiError, AdtSafetyError, classifySapDomainError, extractExceptionTy
 import { throwIfRequestCancelled } from './http-deadline.js';
 import { mutationClient } from './mutation-client.js';
 import { assertMutationContext, type MutationCleanupState, type PinnedMutationContext } from './mutation-context.js';
+import { pinnedFunctionSelection, readPinnedFunctionOwner } from './pinned-function-owner.js';
 import { type PinnedProgramOwnerEvidence, readPinnedProgramOwner } from './pinned-program-owner.js';
 import { assertPinnedSourceOwner, pinnedRecording, validatePinnedLock } from './pinned-write-policy.js';
 import { checkOperation, checkPackage, OperationType } from './safety.js';
@@ -24,6 +25,7 @@ export interface PinnedDeleteResult {
   includeUsage?: PinnedProgramOwnerEvidence['includeUsage'];
   warnings?: string;
   unlockFailures?: MutationCleanupState['unlockFailures'];
+  removedLocksAfterDelete?: MutationCleanupState['removedLocksAfterDelete'];
 }
 
 /**
@@ -33,7 +35,7 @@ export interface PinnedDeleteResult {
 export async function deletePinnedOwner(
   client: AdtClient,
   context: PinnedMutationContext,
-  input: { type: string; name: string; transport?: string },
+  input: { type: string; name: string; group?: string; transport?: string },
 ): Promise<PinnedDeleteResult> {
   const outcome: { state: PinnedDeleteResult['state']; message?: string } = { state: 'unchanged' };
   let phase = 'validation';
@@ -44,14 +46,19 @@ export async function deletePinnedOwner(
     assertMutationContext(client.safety, context);
     if (context.mode !== 'pinned-pp') throw new AdtSafetyError('A pinned mutation context is required.');
     checkOperation(client.safety, OperationType.Delete, 'PinnedDelete');
-    assertPinnedSourceOwner(input.type, input.name);
+    const functionOwner =
+      input.type === 'FUGR' || input.type === 'FUNC' || (input.type === 'INCL' && input.group !== undefined)
+        ? pinnedFunctionSelection(input.type, input.name, input.group)
+        : undefined;
+    if (!functionOwner) assertPinnedSourceOwner(input.type, input.name);
     const collection = {
       CLAS: 'oo/classes',
       INTF: 'oo/interfaces',
       PROG: 'programs/programs',
       INCL: 'programs/includes',
-    }[input.type];
-    const owner = `/sap/bc/adt/${collection}/${encodeURIComponent(input.name.toLowerCase())}`;
+    }[input.type as 'CLAS' | 'INTF' | 'PROG' | 'INCL'];
+    const owner =
+      functionOwner?.objectUrl ?? `/sap/bc/adt/${collection}/${encodeURIComponent(input.name.toLowerCase())}`;
     if (input.transport !== undefined && !input.transport.trim())
       throw new AdtSafetyError('An explicitly provided CTS request must not be empty.');
     const requested = input.transport?.trim().toUpperCase();
@@ -60,7 +67,7 @@ export async function deletePinnedOwner(
     const packageFor = async (activeClient: AdtClient) => {
       throwIfRequestCancelled(options);
       const evidence = await readPinnedProgramOwner(activeClient, owner);
-      const nativePackage = evidence?.packageName;
+      const nativePackage = (await readPinnedFunctionOwner(activeClient, owner))?.packageName ?? evidence?.packageName;
       includeUsage = evidence?.includeUsage;
       const pkg = nativePackage ?? (await activeClient.resolveObjectPackage(owner, undefined, options));
       if (!pkg) throw new AdtSafetyError('Deletion requires the actual native owner package.');
@@ -118,7 +125,7 @@ export async function deletePinnedOwner(
           }
           throw new AdtSafetyError('DELETE returned but the native owner still exists. Inspect before continuing.');
         };
-        if (input.type !== 'PROG') return performDelete();
+        if (input.type !== 'PROG' && input.type !== 'FUGR') return performDelete();
         phase = 'text-pool-preflight';
         return withPinnedActiveTextPoolForDelete(
           session,
@@ -134,7 +141,7 @@ export async function deletePinnedOwner(
               phase = 'text-pool-policy';
               const current = mutationClient(client, context, poolSession);
               if ((await packageFor(current)) !== pkg)
-                throw new AdtSafetyError('The program package changed before its text-pool check.');
+                throw new AdtSafetyError('The owner package changed before its text-pool check.');
               const fresh = await pinnedRecording(
                 poolSession,
                 client.safety,
@@ -152,6 +159,7 @@ export async function deletePinnedOwner(
           },
           performDelete,
           pkg,
+          input.type,
         );
       },
     );
@@ -188,6 +196,9 @@ export async function deletePinnedOwner(
     ...outcome,
     phase: cleanupFailed && !failed ? cleanupPhase : phase,
     retryable: false,
+    ...(context?.mode === 'pinned-pp' && context.cleanup?.removedLocksAfterDelete
+      ? { removedLocksAfterDelete: context.cleanup.removedLocksAfterDelete }
+      : {}),
     ...(includeUsage
       ? {
           includeUsage,

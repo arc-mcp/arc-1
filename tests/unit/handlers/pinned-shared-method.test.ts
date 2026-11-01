@@ -1,9 +1,15 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
+
+const unexpected: string[] = [];
+beforeEach(() => {
+  unexpected.length = 0;
+});
+afterEach(() => expect(unexpected).toEqual([]));
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const writeHelpers = await import('../../../src/handlers/write-helpers.js');
@@ -145,7 +151,8 @@ function backend(options: Options = {}) {
           : state.source,
       );
     }
-    throw new Error(`Unexpected ${method} ${parsed.pathname}`);
+    unexpected.push(`${method} ${parsed.pathname}`);
+    return mockResponse(599, 'Unexpected fixture request');
   });
   return state;
 }

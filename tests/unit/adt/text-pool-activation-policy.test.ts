@@ -11,6 +11,9 @@ const { AdtHttpClient } = await import('../../../src/adt/http.js');
 const { withLockedMutation } = await import('../../../src/adt/crud.js');
 const { activate } = await import('../../../src/adt/devtools.js');
 const { pinnedTextPoolActivationOptions } = await import('../../../src/adt/pinned-text-pool-activation.js');
+const { writeTextElementPart, activateTextPool, withActiveTextPoolForDelete } = await import(
+  '../../../src/adt/text-elements.js'
+);
 const pool = '/sap/bc/adt/textelements/programs/ZTEXT';
 const success =
   '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><chkl:properties activationExecuted="true"/></chkl:messages>';
@@ -63,6 +66,22 @@ function fixture() {
 }
 
 describe('internal exact-pool activation grants', () => {
+  it.each(['write', 'activate', 'delete'] as const)(
+    'refuses the legacy %s wrapper with multi-target safety before HTTP',
+    async (action) => {
+      const { http, safety } = fixture();
+      const deleteOwner = vi.fn();
+      await expect(
+        action === 'write'
+          ? writeTextElementPart(http, safety, 'PROG', 'ZTEXT', 'symbols', '001=Text')
+          : action === 'activate'
+            ? activateTextPool(http, safety, pool, 'ZTEXT', 'Activation failed')
+            : withActiveTextPoolForDelete(http, safety, 'PROG', 'ZTEXT', deleteOwner),
+      ).rejects.toThrow(/pinned|Pinned/);
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(deleteOwner).not.toHaveBeenCalled();
+    },
+  );
   it('requires the owning post-unlock phase and refuses a stale borrowed session', async () => {
     const { http, safety, run } = fixture();
     const validate = vi.fn(),
@@ -180,7 +199,7 @@ describe('internal exact-pool activation grants', () => {
           () => {},
         );
         if (body === '')
-          await expect(activate(session, safety, pool, options)).rejects.toThrow('Cannot verify malformed');
+          await expect(activate(session, safety, pool, options)).rejects.toThrow('did not affirm activation execution');
         else expect((await activate(session, safety, pool, options)).success).toBe(false);
       });
     }

@@ -305,9 +305,10 @@ Follow-up dispositions (new code remains subject to independent review and live 
 8. **Owner evidence:** a shared bounded XML reader preserves namespace bindings and refuses
    ambiguous attributes. Program/include roots, packages and contexts use their actual namespaces;
    SAPL contexts, including namespaced SAPL names, refuse even when typed PROG/P.
-9. **Tests:** remaining class/procedural mock-fetch assertions became explicit unexpected-request
-   records asserted after dispatch. Program/create mocks now use native prefixed identities and all
-   affected mocks assert no unexpected request. Added creation identity proof under lock,
+9. **Tests:** the class/procedural files changed in that follow-up moved mock-fetch assertions to
+   explicit unexpected-request records asserted after dispatch. Program/create mocks use native
+   prefixed identities. The sixth review found additional older fixtures; their corrections are
+   recorded in the next follow-up, rather than claiming all affected mocks were already covered. Added creation identity proof under lock,
    PROG/INCL failure and transportable rows, transportable deletion, pool CTS mismatch and lost/refused
    LOCK responses. Valid-owner DOCTYPE and isolated context-URI negatives exercise their intended guards.
 10. **Documentation:** correct the earlier test claim, link BTP setup to the actual capability
@@ -325,3 +326,8 @@ policy check, strict docs, the 899-file size ratchet/schema budgets, and 59 hist
 simulations passed. The initial full run caught the action-list expectation missing the intentionally
 admitted text operation; its correction and stronger refusal assertions are included in the passing
 full run. No new live deployment or mutation qualification is claimed.
+
+The [sixth review and follow-up](2026-11-01-pinned-text-review-followup.md) records three reproduced
+Medium findings, the fixes and remaining native qualification requirements. Its verbatim report is
+preserved separately. Native function ownership now has a private, unadvertised candidate backed by
+[GET-only metadata evidence](2026-11-01-pinned-function-resources.md); the family is not yet admitted.

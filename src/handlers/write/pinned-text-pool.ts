@@ -18,14 +18,16 @@ export function createPinnedTextPoolContext(
   const part = args.textPart ?? 'symbols';
   if (
     args.action !== 'edit_text_symbols' ||
-    (args.type !== 'CLAS' && args.type !== 'PROG') ||
+    (args.type !== 'CLAS' && args.type !== 'PROG' && args.type !== 'FUGR') ||
     typeof args.source !== 'string' ||
     !TEXT_ELEMENT_PARTS.includes(part as TextElementPart) ||
     (args.type === 'CLAS' && part !== 'symbols') ||
     args.include !== undefined ||
     args.expectedSourceHash !== undefined
   )
-    throw new AdtSafetyError('Select one admitted CLAS symbols or PROG text-part replacement with explicit source.');
+    throw new AdtSafetyError(
+      'Select one admitted CLAS symbols or PROG/FUGR text-part replacement with explicit source.',
+    );
   if (Buffer.byteLength(args.source, 'utf8') > 1024 * 1024)
     throw new AdtSafetyError('Text-element source exceeds the 1 MiB verification bound.');
   const ctx = createPinnedSourceContext(client, args, config, context, { wholeIncludeReplacement: false });
@@ -41,7 +43,7 @@ export async function writePinnedTextPool(ctx: SapWriteContext, part: TextElemen
     !state.textPool ||
     state.textPool.part !== part ||
     state.writeAttempted ||
-    (ctx.type !== 'CLAS' && ctx.type !== 'PROG')
+    (ctx.type !== 'CLAS' && ctx.type !== 'PROG' && ctx.type !== 'FUGR')
   )
     throw new AdtSafetyError('Text-pool editing requires its registered owner, package and recording context.');
   const { context, pkg, recording } = state;
@@ -70,6 +72,9 @@ export async function writePinnedTextPool(ctx: SapWriteContext, part: TextElemen
         if (next !== undefined) state.state = next;
         if (phase === 'text-save') state.writeAttempted = true;
       },
+      onResult: (result) => {
+        state.textPool!.result = result;
+      },
     },
   );
   state.textPool.result = result;
@@ -80,7 +85,11 @@ export async function writePinnedTextPool(ctx: SapWriteContext, part: TextElemen
 export function pinnedTextPoolResult(ctx: SapWriteContext) {
   const state = pinnedSourceState(ctx),
     pool = state.textPool;
-  if (pool?.result?.state !== 'active' || (state.state !== 'text-saved-active' && !state.unchangedConfirmed))
+  if (
+    pool?.result?.state !== 'active' ||
+    !pool.result.activePartVerified ||
+    (state.state !== 'text-saved-active' && !state.unchangedConfirmed)
+  )
     throw new AdtSafetyError('The active text-pool replacement was not verified.');
   return textResult(
     toolJson({
@@ -95,7 +104,7 @@ export function pinnedTextPoolResult(ctx: SapWriteContext) {
       ...(pool.result.changes ? { changes: pool.result.changes } : {}),
       next: pool.result.unchanged
         ? 'The selected symbols were already empty and active; no text was saved.'
-        : 'The saved part matches its active version. Text-pool activation also activates pending changes to its other text parts; the repository owner source was not activated.',
+        : 'The saved part matches its active version. Text-pool activation also selects pending changes to its other text parts; repository owner-source activation was not requested.',
     }),
   );
 }

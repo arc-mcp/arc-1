@@ -1,7 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
+
+const unexpected: string[] = [];
+beforeEach(() => {
+  unexpected.length = 0;
+});
+afterEach(() => expect(unexpected).toEqual([]));
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { handleSAPLint } = await import('../../../src/handlers/lint.js');
@@ -49,7 +55,8 @@ function fixture() {
       return mockResponse(204, '');
     }
     if (path === '/sap/bc/adt/abapsource/prettyprinter' && method === 'POST') return mockResponse(200, 'REPORT ztest.');
-    throw new Error(`Unexpected native request ${method} ${path}`);
+    unexpected.push(`native request ${method} ${path}`);
+    return mockResponse(599, 'Unexpected fixture request');
   });
   return { client, config, calls };
 }

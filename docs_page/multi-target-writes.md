@@ -136,7 +136,7 @@ only the aggregate compatibility connection cannot write through that connection
 | `SAPWrite.add_method` | CLAS main source; METHODS clause, optional visibility/abstract flag and main hash; abstractness comes from the clause, an explicit flag must agree, and a body stub is added only for a concrete method |
 | `SAPWrite.delete_method` / `change_method_visibility` | CLAS main source; existing method name and main hash; visibility moves additionally require the target section |
 | `SAPWrite.delete` | One CLAS/INTF or on-prem standalone PROG/INCL owner; PROG also holds the text-pool lock and refuses inactive pool drafts; actual package and native recording checks before/under lock, followed by verified owner absence; omit source and source hash |
-| `SAPActivate` | One CLAS/INTF or on-prem standalone PROG/INCL owner; includes its existing inactive class includes or native-reported program text pool, whose state is read afterward even when no pool was selected; results identify the actual scope; INCL does not select its users or their pools |
+| `SAPActivate` | One CLAS/INTF or on-prem standalone PROG/INCL owner; includes its existing inactive class includes or native-reported program text pool. A selected pool requires native state verification; an unselected pool is inspected when its service is available, with unavailable state reported as unknown. Results identify the actual scope, including pool-only confirmation; INCL does not select its users or their pools |
 | `SAPLint.set_formatter_settings` | Partial indentation/style patch of the mapped SAP user's formatter preferences on this target; native read/merge/write/read-back, not a package-owned object |
 
 Program/include creation, deletion and activation have offline tests in this draft; fresh PP
@@ -194,6 +194,10 @@ closure fails. The result reports the failed cleanup phase and is not a retry in
 
 Text-part writes use the native text-pool lock and replace the selected part completely. They
 read the current inactive part under that lock, preserving other parts, and report removed entries.
+Before activation, readback must preserve the requested keys, values and supported annotations;
+native key padding, line endings, trailing padding and resolved DDIC labels are handled explicitly.
+Ambiguous or mismatching readback leaves the save unverified and sends no activation. A pinned
+`SAPActivate` action denial also disables these writes because their native lifecycle includes activation.
 This representation has no optimistic source-hash precondition: read the part first and review the
 whole replacement. Source and verification bodies are limited to 1 MiB of UTF-8. The pool is
 unlocked before activation in the same SAP session. Only that pool is submitted; its other pending
@@ -201,6 +205,9 @@ text parts activate too. Fresh native metadata and an explicit active-version pa
 with the saved readback. A class's already-empty active symbols are a verified no-op; inactive empty
 drafts are not skipped. A never-activated program may need an explicit first owner activation.
 Unconfirmed activation or mismatching active content is incomplete and is never retried automatically.
+After an unconfirmed submitted activation, bounded read-only verification reports the observed pool
+state and active-part match when available; a matching read does not turn a native activation error
+into success. Native activation messages are retained in bounded form.
 Function-group text writes remain pending their ownership adapter. These new text-write paths still
 require fresh two-writer PP qualification; the
 [native read investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-text-pool-active-version.md)

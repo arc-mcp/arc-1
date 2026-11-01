@@ -3,6 +3,7 @@
 import type { ActivationResult } from '../../adt/devtools.js';
 import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
 import type { MutationCleanupState } from '../../adt/mutation-context.js';
+import type { PinnedProgramOwnerEvidence } from '../../adt/pinned-program-owner.js';
 import { getCurrentContext } from '../../server/context.js';
 import { errorResult, type ToolResult, toolJson } from '../shared.js';
 
@@ -21,14 +22,14 @@ export function isPinnedWriteRejection(error: unknown): boolean {
 export function rejectedPinnedSourceState(state: string, phase: string, includeInitialized?: boolean): string {
   if (phase === 'create') return 'creation-rejected';
   if (phase === 'include-initialization') return 'include-initialization-rejected';
-  // Text-pool PUT is not known atomic on error: native 400 responses can follow a committed part.
-  // Keep its submitted state unknown until an explicit readback, even for ordinary HTTP refusals.
   if (phase === 'source-save')
     return includeInitialized
       ? 'created-include-source-rejected'
       : state.startsWith('created-')
         ? 'created-source-rejected'
         : 'source-save-rejected';
+  // Text-pool PUT is not known atomic on error: native 400 responses can follow a committed part.
+  // Keep its submitted state unknown until an explicit readback, even for ordinary HTTP refusals.
   return state;
 }
 
@@ -48,6 +49,7 @@ export function pinnedFailure(
     textPart?: string;
     activePartVerified?: boolean;
     nativeActivation?: ActivationResult;
+    includeUsage?: PinnedProgramOwnerEvidence['includeUsage'];
     textPoolState?: 'active' | 'inactive' | 'unknown';
     next?: string;
   } = {},

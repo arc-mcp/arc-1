@@ -107,6 +107,8 @@ export interface MutationLockPolicy {
   validateLock: (session: AdtHttpClient, lock: LockResult) => Promise<void>;
   /** Native operations such as text-pool activation require unlock first, on this same SAP session. */
   afterUnlock?: (session: AdtHttpClient) => Promise<void>;
+  /** A verified no-op may have no post-unlock work; cleanup failures are still recorded. */
+  afterUnlockNeeded?: () => boolean;
   /** Native DELETE adapter only: true after successful DELETE and typed owner-absence readback. */
   confirmedResourceDeletion?: () => boolean;
 }
@@ -220,7 +222,7 @@ export async function withLockedMutation<T>(
         await unlockObject(owningSession, objectUrl, lock.lockHandle);
       } else await release(objectUrl, lock.lockHandle, policy);
     }
-    if (policy.afterUnlock) {
+    if (policy.afterUnlock && policy.afterUnlockNeeded?.() !== false) {
       if (context.mode === 'pinned-pp') {
         if (context.cleanup.unlockFailed || removedLocks.length)
           throw new AdtSafetyError('Unlock was not confirmed; the post-unlock operation was not sent.');
@@ -252,8 +254,15 @@ export async function withLockedMutation<T>(
         : undefined,
     );
   } finally {
-    if (context.mode === 'pinned-pp' && owningSessionClosed !== true)
-      for (const failure of removedLocks) recordUnlockFailure(failure);
+    if (context.mode === 'pinned-pp' && removedLocks.length) {
+      if (owningSessionClosed !== true) for (const failure of removedLocks) recordUnlockFailure(failure);
+      else
+        context.cleanup.removedLocksAfterDelete = removedLocks.map(({ uri }) => ({
+          uri,
+          statusCode: 404,
+          absentAfterDelete: true,
+        }));
+    }
   }
 }
 

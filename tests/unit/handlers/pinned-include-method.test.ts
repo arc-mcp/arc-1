@@ -1,9 +1,15 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
+
+const unexpected: string[] = [];
+beforeEach(() => {
+  unexpected.length = 0;
+});
+afterEach(() => expect(unexpected).toEqual([]));
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const quality = await import('../../../src/handlers/write-helpers.js');
@@ -65,14 +71,14 @@ function backend(local = 'lcl_worker', faults: Faults = {}, initial = source(loc
     requests.push({ path: path + uri.search, method, locked, headers: init.headers ?? {} });
     if (method === 'HEAD') return mockResponse(200, '', { 'x-csrf-token': 'token' });
     if (uri.searchParams.get('_action') === 'LOCK') {
-      expect(path).toBe(owner);
+      if (path !== owner) unexpected.push(`Wrong lock owner: ${path}`);
       locked = true;
       return mockResponse(200, '<DATA><LOCK_HANDLE>owner-lock</LOCK_HANDLE><IS_LOCAL>X</IS_LOCAL></DATA>', {
         'set-cookie': 'sap-contextid=owned; Path=/',
       });
     }
     if (uri.searchParams.get('_action') === 'UNLOCK') {
-      expect(path).toBe(owner);
+      if (path !== owner) unexpected.push(`Wrong lock owner: ${path}`);
       locked = false;
       return mockResponse(faults.unlockFailure ? 503 : 200, '');
     }
@@ -89,9 +95,9 @@ function backend(local = 'lcl_worker', faults: Faults = {}, initial = source(loc
       );
     const kind = includes.find((value) => path === `${owner}/includes/${value}`);
     if (kind) {
-      expect(locked).toBe(true);
+      if (!locked) unexpected.push(`Unlocked include access: ${method} ${path}`);
       if (method === 'PUT') {
-        expect(uri.searchParams.get('lockHandle')).toBe('owner-lock');
+        if (uri.searchParams.get('lockHandle') !== 'owner-lock') unexpected.push('Wrong include lock handle');
         if (faults.putStatus) return mockResponse(faults.putStatus, 'refused');
         stored.set(
           kind,
@@ -102,7 +108,7 @@ function backend(local = 'lcl_worker', faults: Faults = {}, initial = source(loc
         saved = true;
         return mockResponse(200, '');
       }
-      expect(method).toBe('GET'); // No include initialization or delete fallback.
+      if (method !== 'GET') unexpected.push(`Unexpected include mutation: ${method}`); // No include initialization or delete fallback.
       if (faults.missing)
         return mockResponse(
           404,
@@ -111,7 +117,8 @@ function backend(local = 'lcl_worker', faults: Faults = {}, initial = source(loc
       if (saved && faults.readbackStatus) return mockResponse(faults.readbackStatus, 'unavailable');
       return mockResponse(200, saved && faults.readbackMismatch ? 'foreign source' : stored.get(kind)!);
     }
-    throw new Error(`Unexpected SAP request: ${method} ${path}`);
+    unexpected.push(`${method} ${path}`);
+    return mockResponse(599, 'Unexpected fixture request');
   });
   return { originals, stored, requests };
 }

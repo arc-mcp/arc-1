@@ -3,6 +3,7 @@ import type { AdtClient } from '../../adt/client.js';
 import { AdtSafetyError } from '../../adt/errors.js';
 import { mutationClient } from '../../adt/mutation-client.js';
 import { assertMutationContext, type PinnedMutationContext } from '../../adt/mutation-context.js';
+import { pinnedFunctionSelection, readPinnedFunctionOwner } from '../../adt/pinned-function-owner.js';
 import { verifyPinnedProgramOwner } from '../../adt/pinned-program-owner.js';
 import { assertPinnedSourceOwner, type PinnedRecording, pinnedRecording } from '../../adt/pinned-write-policy.js';
 import type { TextElementPart, TextElementWriteResult } from '../../adt/text-elements.js';
@@ -41,11 +42,15 @@ export function createPinnedSourceContext(
   selection: { selectedInclude?: ClassWriteInclude; wholeIncludeReplacement: boolean; method?: string },
 ): SapWriteContext {
   assertMutationContext(original.safety, context);
-  assertPinnedSourceOwner(args.type, args.name);
+  const functionOwner =
+    args.type === 'FUGR' || args.type === 'FUNC' || (args.type === 'INCL' && args.group !== undefined)
+      ? pinnedFunctionSelection(args.type, args.name, args.group)
+      : undefined;
+  if (!functionOwner) assertPinnedSourceOwner(args.type, args.name);
   const { selectedInclude, wholeIncludeReplacement, method } = selection;
   const include = normalizeClassWriteInclude(args.include);
   const name = args.name as string;
-  const owner = objectUrlForType(args.type as string, name.toLowerCase());
+  const owner = functionOwner?.objectUrl ?? objectUrlForType(args.type as string, name.toLowerCase());
   const client = mutationClient(original, context);
   const requested = args.transport === undefined ? undefined : String(args.transport).trim().toUpperCase();
   const state: PinnedSourceState = {
@@ -80,7 +85,8 @@ export function createPinnedSourceContext(
     invalidateWrittenObject: () => {}, // Multi-target has no source cache.
     async enforcePackageForExistingObject() {
       state.phase = 'package-preflight';
-      const nativePackage = await verifyPinnedProgramOwner(client, owner);
+      const nativePackage =
+        (await readPinnedFunctionOwner(client, owner))?.packageName ?? (await verifyPinnedProgramOwner(client, owner));
       const pkg =
         nativePackage ??
         (await enforceAllowedPackageForObjectUrl(

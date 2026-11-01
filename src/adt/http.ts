@@ -335,7 +335,7 @@ export class AdtHttpClient {
   /** Close the SAP application context without changing the completed operation's result. */
   private async closeStatefulSession(options?: AdtRequestOptions): Promise<boolean | undefined> {
     const contextId = this.cookieJar.get('sap-contextid');
-    if (!contextId || contextId === '0') return;
+    if (!contextId || contextId === '0') return contextId === '0' ? true : undefined;
 
     // Eclipse ADT changes the same context to stateless while sending its dedicated close request.
     // This client belongs only to withStatefulSession(), so it is not reused after the transition.

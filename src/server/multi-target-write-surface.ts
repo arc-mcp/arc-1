@@ -3,6 +3,7 @@ import { isMutatingOperationType, isOperationAllowed, OperationType } from '../a
 import { ACTION_POLICY } from '../authz/policy.js';
 import { normalizeObjectType, stripLlmEmptyValues } from '../handlers/object-types.js';
 import { SAPWRITE_TYPES_BTP } from '../handlers/tool-registry.js';
+import { isActionDenied } from './deny-actions.js';
 import {
   type PinnedCompanionCapability,
   type PinnedMutationCapability,
@@ -53,6 +54,11 @@ function capabilityEnabled(capability: PinnedMutationCapability, config: ServerC
     !!policy &&
     isMutatingOperationType(policy.opType) &&
     isOperationAllowed(config, policy.opType) &&
+    !(
+      capability.tool === 'SAPWrite' &&
+      capability.action === 'edit_text_symbols' &&
+      isActionDenied('SAPActivate', 'activate', config.denyActions)
+    ) &&
     (!capability.types || capability.types.some((type) => typeAvailable(capability.tool, type, config)))
   );
 }

@@ -11,6 +11,7 @@ export async function deletePinnedRepositoryOwner(ctx: SapWriteContext) {
   const result = await deletePinnedOwner(ctx.client, ctx.mutationContext, {
     type: ctx.type,
     name: ctx.name,
+    ...(typeof ctx.args.group === 'string' ? { group: ctx.args.group } : {}),
     transport: ctx.transport,
   });
   return pinnedOperationResult(result, ctx.config, { action: 'delete', type: ctx.type, name: ctx.name });

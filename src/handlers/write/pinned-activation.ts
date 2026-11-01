@@ -7,7 +7,7 @@ import { pinnedMutationContext } from '../../adt/mutation-context.js';
 import { type PinnedProgramOwnerEvidence, readPinnedProgramOwner } from '../../adt/pinned-program-owner.js';
 import { assertPinnedSourceOwner, pinnedRecording } from '../../adt/pinned-write-policy.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
-import { readOwnedTextPoolState } from '../../adt/text-elements.js';
+import { readOwnedTextPoolState, textElementsServiceAvailable } from '../../adt/text-elements.js';
 import { getCurrentContext } from '../../server/context.js';
 import { objectUrlForType } from '../object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from '../shared.js';
@@ -23,10 +23,14 @@ export function validatePinnedActivationReferences(
   const canonical = (uri: string) => uri.replace(/%2f/gi, '%2F');
   const expectedName = decodeURIComponent(owner.slice(owner.lastIndexOf('/') + 1)).toUpperCase();
   const nativeType = { CLAS: 'CLAS/OC', INTF: 'INTF/OI', PROG: 'PROG/P', INCL: 'PROG/I' }[type];
-  const allowed = new Map([[canonical(owner), nativeType]]);
+  const allowed = new Map<string, string>([[canonical(owner), nativeType]]);
+  const includes = new Set<string>();
   if (type === 'CLAS')
-    for (const include of ['definitions', 'implementations', 'macros', 'testclasses'])
-      allowed.set(canonical(`${owner}/includes/${include}`), `CLAS/OCN/${include}`);
+    for (const include of ['definitions', 'implementations', 'macros', 'testclasses']) {
+      const uri = canonical(`${owner}/includes/${include}`);
+      includes.add(uri);
+      allowed.set(uri, 'CLAS/I');
+    }
   if (type === 'PROG') {
     const encodedName = owner.slice(owner.lastIndexOf('/') + 1);
     for (const name of [encodedName, encodeURIComponent(expectedName)])
@@ -39,8 +43,8 @@ export function validatePinnedActivationReferences(
     refs.some(
       (ref) =>
         !allowed.has(canonical(ref.uri)) ||
-        (ref.name !== undefined && ref.name !== expectedName) ||
-        (ref.type !== undefined && ref.type !== allowed.get(canonical(ref.uri))) ||
+        (!includes.has(canonical(ref.uri)) && ref.name !== undefined && ref.name.trim() !== expectedName) ||
+        (ref.type !== undefined && allowed.get(canonical(ref.uri)) !== ref.type) ||
         (ref.deleted !== undefined && ref.deleted !== 'false'),
     )
   ) {
@@ -53,9 +57,11 @@ export function validatePinnedActivationReferences(
 export async function handlePinnedActivation(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
   let submitted = false;
   let poolIncluded = false;
+  let ownerSelected = false;
   let nativeReported = false;
   let nativeActivation: ActivationResult | undefined;
   let textPoolState: 'active' | 'inactive' | 'unknown' | undefined;
+  let poolWarning: string | undefined;
   let includeUsage: PinnedProgramOwnerEvidence['includeUsage'];
   let phase = 'activation';
   try {
@@ -84,6 +90,7 @@ export async function handlePinnedActivation(client: AdtClient, args: Record<str
       name: name as string,
       validateReferences: async (refs) => {
         validatePinnedActivationReferences(owner, type, refs);
+        ownerSelected = refs.some((ref) => ref.uri.replace(/%2f/gi, '%2F') === owner.replace(/%2f/gi, '%2F'));
         const evidence = await readPinnedProgramOwner(client, owner);
         const currentPackage =
           evidence?.packageName ??
@@ -113,7 +120,17 @@ export async function handlePinnedActivation(client: AdtClient, args: Record<str
     if (type === 'PROG') {
       phase = 'text-pool-verification';
       textPoolState = 'unknown';
-      textPoolState = await readOwnedTextPoolState(http, 'PROG', name as string, pkg);
+      try {
+        if (poolIncluded || textElementsServiceAvailable(http, 'PROG'))
+          textPoolState = await readOwnedTextPoolState(http, 'PROG', name as string, pkg);
+        if (textPoolState === 'unknown')
+          poolWarning = 'The text pool was not selected; its native state is unavailable on this target.';
+      } catch (error) {
+        if (poolIncluded) throw error;
+        poolWarning =
+          'The text pool was not selected; its native state could not be read.' +
+          (result.success ? ' The confirmed owner activation is preserved.' : ' Native activation was not confirmed.');
+      }
       if (result.success && poolIncluded && textPoolState !== 'active')
         throw new AdtSafetyError('SAP reported activation, but the selected program text pool is still inactive.');
     }
@@ -126,6 +143,7 @@ export async function handlePinnedActivation(client: AdtClient, args: Record<str
       retryable: false,
       state: result.success ? 'activated' : 'activation-not-confirmed',
       ...(textPoolState === undefined ? {} : { textPoolState }),
+      ...(poolWarning ? { warnings: poolWarning } : {}),
       ...(includeUsage
         ? {
             includeUsage,
@@ -140,9 +158,11 @@ export async function handlePinnedActivation(client: AdtClient, args: Record<str
         : {}),
       scope:
         type === 'PROG'
-          ? poolIncluded
-            ? 'selected-program-with-native-owned-text-pool-expansion'
-            : 'selected-program-only'
+          ? poolIncluded && !ownerSelected
+            ? 'selected-program-text-pool-only'
+            : poolIncluded
+              ? 'selected-program-with-native-owned-text-pool-expansion'
+              : 'selected-program-only'
           : type === 'INCL'
             ? 'selected-standalone-include-only'
             : type === 'INTF'
@@ -154,6 +174,7 @@ export async function handlePinnedActivation(client: AdtClient, args: Record<str
     return pinnedFailure(error, submitted ? 'activation-not-confirmed' : 'unchanged', phase, false, {
       nativeActivation,
       textPoolState,
+      includeUsage,
       ...(nativeReported
         ? {
             warnings:

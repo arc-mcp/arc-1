@@ -94,9 +94,11 @@ export async function handlePinnedSourceWrite(
       include: state?.include,
       initialized: state?.includeInitialized,
       textPart: state?.textPool?.part,
-      activePartVerified: state?.textPool?.result?.state === 'active' ? true : undefined,
+      activePartVerified: state?.textPool?.result?.activePartVerified,
+      nativeActivation: state?.textPool?.result?.nativeActivation,
+      textPoolState: state?.textPool?.result?.state,
       next: state?.textPool
-        ? 'Read the selected text part and pool state before another write or activation.'
+        ? 'Read the selected text part with SAPRead and inspect the pool state in ADT before another write or activation.'
         : undefined,
     });
   } finally {

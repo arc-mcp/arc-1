@@ -1,9 +1,15 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
+
+const unexpected: string[] = [];
+beforeEach(() => {
+  unexpected.length = 0;
+});
+afterEach(() => expect(unexpected).toEqual([]));
 
 const { handlePinnedWrite } = await import('../../../src/handlers/write/pinned.js');
 const policy = {
@@ -41,7 +47,8 @@ it.each(['create', 'update', 'edit_method'])(
           200,
           '<class:abapClass xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="$TMP"/></class:abapClass>',
         );
-      throw new Error(`Unexpected ${method} ${path}`);
+      unexpected.push(`${method} ${path}`);
+      return mockResponse(599, 'Unexpected fixture request');
     });
     const client = new AdtClient({ baseUrl: 'http://sap:8000', safety: { ...defaultSafetyConfig(), ...config } });
     const result = await handlePinnedWrite(

@@ -7,6 +7,8 @@ export interface MutationCleanupState {
   unlockFailed: boolean;
   sessionClosed?: boolean;
   unlockFailures?: { uri: string; statusCode?: number; absentAfterDelete?: true }[];
+  /** Typed UNLOCK 404 after verified DELETE/absence, resolved only by confirmed owning-session closure. */
+  removedLocksAfterDelete?: { uri: string; statusCode: 404; absentAfterDelete: true }[];
 }
 
 interface SingleTargetMutationContext {

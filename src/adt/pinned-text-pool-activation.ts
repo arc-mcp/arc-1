@@ -5,6 +5,7 @@ import { AdtSafetyError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { throwIfRequestCancelled } from './http-deadline.js';
 import type { PinnedMutationContext } from './mutation-context.js';
+import { pinnedFunctionSelection } from './pinned-function-owner.js';
 import { assertPinnedSourceOwner } from './pinned-write-policy.js';
 import type { SafetyConfig } from './safety.js';
 import { textElementsObject } from './text-pool-identity.js';
@@ -22,15 +23,16 @@ const grants = new WeakMap<
 export function pinnedTextPoolActivationOptions(
   http: AdtHttpClient,
   safety: SafetyConfig,
-  objectType: 'CLAS' | 'PROG',
+  objectType: 'CLAS' | 'PROG' | 'FUGR',
   name: string,
   validateOwnerAndPool: () => Promise<void>,
   beforeSubmit: () => void,
 ): ActivationOptions {
   const context = pinnedPostUnlockContext(http, safety);
-  if (objectType !== 'CLAS' && objectType !== 'PROG')
+  if (objectType !== 'CLAS' && objectType !== 'PROG' && objectType !== 'FUGR')
     throw new AdtSafetyError('The text-pool owner requires its dedicated native ownership adapter.');
-  assertPinnedSourceOwner(objectType, name);
+  if (objectType === 'FUGR') pinnedFunctionSelection(objectType, name);
+  else assertPinnedSourceOwner(objectType, name);
   const uri = textElementsObject(objectType, name);
   const options: ActivationOptions = Object.freeze({
     preaudit: false,

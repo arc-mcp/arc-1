@@ -1042,7 +1042,13 @@ export function parseActivationOutcome(xml: string, requireExecutionEvidence = f
   }
 
   if (requireExecutionEvidence) {
-    if (!nativeActivationExecuted(xml))
+    let confirmed = false;
+    try {
+      confirmed = nativeActivationExecuted(xml);
+    } catch (error) {
+      if (!(error instanceof AdtSafetyError)) throw error;
+    }
+    if (!confirmed)
       throw new AdtSafetyError(
         'SAP did not affirm activation execution. Inspect the active and inactive owner before continuing.' +
           (messages.length
