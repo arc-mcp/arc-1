@@ -142,11 +142,13 @@ the supporting reads on otherwise writable pinned connections.
 Formatter settings reads and patches require SAP's preferred representation to be native v5. Patches preserve untouched attributes visible in that XML,
 and refuse older representations or unrecognized metadata before writing. This does not establish
 preservation of hidden native storage, such as a dormant case mode under style `none`.
-The current adapter also refuses native `toUpper` and `toLower` styles before a write; its supported
-styles are `keywordUpper`, `keywordLower`, `keywordAuto` and `none`. Older versions omit
-preferences that SAP's PUT can reset; there is no fallback. Strong native
-ETags are used when available; otherwise the result reports `native-unconditional`, so concurrent
-updates to the same user's preferences can overwrite each other. An uncertain outcome is not a
+The current adapter refuses settings reads and patches when native style is `toUpper` or `toLower`;
+users in either state cannot use this adapter to read or change their preferences. The accepted
+styles are `keywordUpper`, `keywordLower`, `keywordAuto` and `none`, but only `keywordUpper` and
+`keywordLower` were exercised by the v5 live run. Older versions omit preferences that SAP's PUT
+can reset; there is no fallback. The adapter sends strong native ETags when supplied, but native
+conditional-write enforcement is not qualified. Every live preference write was
+`native-unconditional`, so concurrent updates to the same user's preferences can overwrite each other. An uncertain outcome is not a
 rollback; read the settings before deciding whether another update is appropriate. The
 [formatter qualification record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-formatter.md)
 records the historical v2 limits and a later v5 run at `1b234d3a4`, with in-run native author/source

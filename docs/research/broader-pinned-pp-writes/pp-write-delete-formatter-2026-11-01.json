@@ -347,10 +347,196 @@
     "Primary style was keywordUpper before and during the patch; direct native evidence proves an indentation change and preservation of all five seeded optional v5 preferences. The secondary changes style to keywordLower.",
     "Preservation covers the v5 XML representation, not hidden native storage such as a dormant case mode under style none. Historical v2 preference losses cannot be reconstructed.",
     "All live preference writes reported native-unconditional; concurrent edits by the same SAP user are not protected.",
-    "The native source and preferred v5 contract are A4H release-bound; other releases, future preferred formats, toUpper/toLower styles and conditional ETag enforcement are not qualified.",
+    "The native source and preferred v5 contract are A4H release-bound; other releases, future preferred formats, keywordAuto/none/toUpper/toLower styles and conditional ETag enforcement are not qualified.",
     "Native draft visibility is limited to the primary reader; another user may have hidden drafts. Fixture ownership uses native metadata/source, not TADIR.",
     "The operator verified deployment provenance separately; the harness does not attest deployed bytes or all installed third-party dependencies.",
     "Harness ran in a detached OS session with regular-file logs and stopped by SIGTERM to its PID only. Terminal/process-group signals and broken output pipes remain excluded.",
     "The temporary SAP role definition existed before the run and remains unchanged; its assignment/profile were restored. The unused candidate CF package/droplet remain as build artifacts."
+  ],
+  "privateEvidenceBreakdown": {
+    "deletionRpcReceipts": 103,
+    "formatterRpcReceipts": 61,
+    "nativeOperationReceipts": 23,
+    "durableNativeBaselineDocuments": 2,
+    "baselineDocumentNames": [
+      "native-formatter-baseline.json",
+      "native-formatter-seed.json"
+    ]
+  },
+  "initialAssertions": [
+    {
+      "label": "writerB",
+      "at": "2026-11-01T04:03:08.207Z",
+      "assertions": [
+        {
+          "test": "token.signature_audience_expiry",
+          "pass": true
+        },
+        {
+          "test": "token.user_principal",
+          "pass": true
+        },
+        {
+          "test": "token.exact_local_scopes",
+          "pass": true
+        },
+        {
+          "test": "token.expected_identity",
+          "pass": true
+        },
+        {
+          "test": "anonymous_0.http_401",
+          "pass": true
+        },
+        {
+          "test": "anonymous_1.http_401",
+          "pass": true
+        },
+        {
+          "test": "aggregate.initialize.http",
+          "pass": true
+        },
+        {
+          "test": "alias.initialize.http",
+          "pass": true
+        },
+        {
+          "test": "aggregate.initialize.protocol",
+          "pass": true
+        },
+        {
+          "test": "aggregate.tools_list.protocol",
+          "pass": true
+        },
+        {
+          "test": "alias.same_tool_projection",
+          "pass": true
+        },
+        {
+          "test": "aggregate.no_mutation_tools",
+          "pass": true
+        },
+        {
+          "test": "catalog.call.success",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "label": "writerA",
+      "at": "2026-11-01T04:03:57.377Z",
+      "assertions": [
+        {
+          "test": "token.signature_audience_expiry",
+          "pass": true
+        },
+        {
+          "test": "token.user_principal",
+          "pass": true
+        },
+        {
+          "test": "token.exact_local_scopes",
+          "pass": true
+        },
+        {
+          "test": "token.expected_identity",
+          "pass": true
+        },
+        {
+          "test": "anonymous_0.http_401",
+          "pass": true
+        },
+        {
+          "test": "anonymous_1.http_401",
+          "pass": true
+        },
+        {
+          "test": "aggregate.initialize.http",
+          "pass": true
+        },
+        {
+          "test": "alias.initialize.http",
+          "pass": true
+        },
+        {
+          "test": "aggregate.initialize.protocol",
+          "pass": true
+        },
+        {
+          "test": "aggregate.tools_list.protocol",
+          "pass": true
+        },
+        {
+          "test": "alias.same_tool_projection",
+          "pass": true
+        },
+        {
+          "test": "aggregate.no_mutation_tools",
+          "pass": true
+        },
+        {
+          "test": "catalog.call.success",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "label": "readerA",
+      "at": "2026-11-01T04:04:22.541Z",
+      "assertions": [
+        {
+          "test": "token.signature_audience_expiry",
+          "pass": true
+        },
+        {
+          "test": "token.user_principal",
+          "pass": true
+        },
+        {
+          "test": "token.exact_local_scopes",
+          "pass": true
+        },
+        {
+          "test": "token.expected_identity",
+          "pass": true
+        },
+        {
+          "test": "anonymous_0.http_401",
+          "pass": true
+        },
+        {
+          "test": "anonymous_1.http_401",
+          "pass": true
+        },
+        {
+          "test": "aggregate.initialize.http",
+          "pass": true
+        },
+        {
+          "test": "alias.initialize.http",
+          "pass": true
+        },
+        {
+          "test": "aggregate.initialize.protocol",
+          "pass": true
+        },
+        {
+          "test": "aggregate.tools_list.protocol",
+          "pass": true
+        },
+        {
+          "test": "alias.same_tool_projection",
+          "pass": true
+        },
+        {
+          "test": "aggregate.no_mutation_tools",
+          "pass": true
+        },
+        {
+          "test": "catalog.call.success",
+          "pass": true
+        }
+      ]
+    }
   ]
 }

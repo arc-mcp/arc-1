@@ -126,16 +126,19 @@ SAP user or explicit all-users selection, mutually exclusive; qualify native fil
 preserve existing state fields. Restore prior trace state in tests, including other operators'
 filters. Formatter patches preserve unrelated native XML/style data and reject unknown shapes.
 The current adapter requires native v5: source inspection found that older GET representations omit
-preferences that PUT replaces. There is no lossy-version fallback; current v5 qualification remains pending.
+preferences that PUT replaces. There is no lossy-version fallback. The
+[combined qualification](../research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
+records native v5 preservation and two-writer behavior at `1b234d3a4`.
 SAP documents formatter preferences as user-specific for the selected system connection, not global
 system settings. The [native adapter evidence](../research/2026-11-01-broader-pinned-pp-writes-formatter.md)
-corrects that earlier assumption and records a two-identity MCP-visible run. Claude identified
-missing in-run actor/backend proof; a stronger current-revision run is required. This does not accept
-the broader ADR.
+corrects that earlier assumption. The later combined run supplies native actor/source evidence
+and primary-user native preference readback; secondary native preference readback, other styles
+and releases remain unqualified. This does not accept the broader ADR.
 The [CLAS/INTF deletion integration](../research/2026-11-01-broader-pinned-pp-writes-deletion.md)
 reuses native DELETE and the shared owning-session lifecycle with fresh recording/package checks
 and a typed native absence readback. Claude accepted the corrected production delta at source
-level; typed absence and the integrated operations still require current-revision PP qualification. It does not qualify other object families' deletion prechecks.
+level. The combined run qualifies typed absence and integrated local CLAS/INTF operations at
+`1b234d3a4`; transportable deletion and other families' deletion prechecks remain unqualified.
 Quickfix application returns deltas; source persistence still goes through guarded SAPWrite.
 
 ## Upgrade and acceptance

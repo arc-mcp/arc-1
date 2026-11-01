@@ -217,7 +217,9 @@ The formatter and local CLAS/INTF deletion adapters now have a
 [combined two-writer PP qualification](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
 at `1b234d3a4`: native authorship/source binding, typed absence, v5 optional-preference preservation
 for the primary user, MCP-visible secondary isolation and verified cleanup. Actual Claude Code
-Opus 5.5 max accepted that controlled run with documented operating constraints. This closes the
+Opus 5.5 max accepted running that controlled qualification with documented operating constraints.
+Its subsequent evidence review found no High/Medium issues; minor documentation and harness
+recovery fixes are recorded with the review. This closes the
 previous local deletion/v5 run gap, not broader PR readiness. Remaining work includes transportable
 deletion, other types/includes/surgery, DDIC/RAP, batches, package/API/publication, CTS, tracing and
 classic FLP, with their operation-specific adapters and PP qualification. Secondary native preference

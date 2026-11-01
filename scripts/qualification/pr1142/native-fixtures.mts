@@ -7,9 +7,11 @@ import { durable } from './durable-journal.mjs';
 import { actors, root, target, validateFixtures } from './fixture-contract.mjs';
 import { cleanupNativeFixture, nativeAbsent, nativeIdentity } from './native-fixture-operations.mjs';
 import { configuration, validateConfiguration } from './qualification-config.mjs';
+import { retainNativeWorkerOnInterrupt } from './process-boundaries.mjs';
 import { verifyRunManifest } from './run-manifest.mjs';
 import { assertSafeDiagnosticEnvironment, privateJson } from './safe-io.mjs';
 
+retainNativeWorkerOnInterrupt();
 assertSafeDiagnosticEnvironment();
 validateConfiguration(configuration);
 await verifyRunManifest(configuration.root);

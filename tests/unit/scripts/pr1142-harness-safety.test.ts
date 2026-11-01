@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,46 @@ import {
 import { checkForwardWork, QualificationShutdown } from '../../../scripts/qualification/pr1142/shutdown.mjs';
 
 describe('PR1142 real harness safety boundaries', () => {
+  it.each(['broken-output', 'native-interrupt'])('lets an in-flight worker finish after %s', async (boundary) => {
+    const root = await mkdtemp(join(tmpdir(), 'pr1142-process-boundary-'));
+    const marker = join(root, 'completed');
+    const module = new URL('../../../scripts/qualification/pr1142/process-boundaries.mjs', import.meta.url).href;
+    const script = `
+        import { writeFile } from 'node:fs/promises';
+        import { journalSafeEmitter, retainNativeWorkerOnInterrupt } from ${JSON.stringify(module)};
+        const emit = journalSafeEmitter();
+        if (process.env.ARC1_TEST_BOUNDARY === 'native-interrupt') retainNativeWorkerOnInterrupt();
+        emit('ready');
+        for await (const chunk of process.stdin) break;
+        emit('continuing');
+        await new Promise(resolve => setTimeout(resolve, 30));
+        emit('cleanup');
+        await writeFile(process.env.ARC1_TEST_MARKER, 'complete');
+      `;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const child = execFile(
+          process.execPath,
+          ['--import', 'tsx', '--input-type=module', '--eval', script],
+          {
+            env: { ...process.env, ARC1_TEST_BOUNDARY: boundary, ARC1_TEST_MARKER: marker },
+            timeout: 10000,
+          },
+          (error) => (error ? reject(error) : resolve()),
+        );
+        child.stdin?.on('error', () => {});
+        child.stdout?.once('data', () => {
+          if (boundary === 'broken-output') child.stdout?.destroy();
+          else child.kill('SIGINT');
+          setTimeout(() => child.stdin?.end('finish'), 50);
+        });
+      });
+      expect(await readFile(marker, 'utf8')).toBe('complete');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it.each(['native-fixtures.mts', 'native-formatter.mts'])(
     'boots the real %s worker and refuses disabled TLS without native access',
     async (script) => {

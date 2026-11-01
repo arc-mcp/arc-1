@@ -55,7 +55,7 @@ calls and refused out-of-root reads are retained in the report rather than omitt
 | F1: broken pipes, terminal/process-group signals | Run used a detached OS session, regular private log files and PID-only SIGTERM. `stopped` reported zero active operations, discarded in-memory sessions, and the process exited. These constraints are now explicit in the harness README; arbitrary crash safety is not claimed. |
 | F2: lossy v5 write can block automatic restoration | A manual inspection/restoration plan was prepared before the run and is documented in the README. No loss or manual intervention occurred. Apparent foreign edits remain protected. |
 | F3: parent journal missing after a mid-formatter crash | Follow-up bookkeeping accepts an attempted formatter phase and records recovery without manufacturing a completed qualification. A regression covers the actual recovery function and preserves the incomplete parent result. This change happened after the recorded live revision. |
-| F4: native `toUpper`/`toLower` styles | Explicitly documented as refused before writing; the current four-style API is unchanged. No broader style qualification is claimed. |
+| F4: native `toUpper`/`toLower` styles | Settings reads and patches are refused in these native states; the current four-style API is unchanged. Only `keywordUpper` and `keywordLower` have v5 live evidence. |
 | F5: primary style was already uppercase | Recorded accurately above: native primary mutation proof is indentation; secondary style change has MCP evidence. |
 | F6: hidden storage and uninspected case-mode helper | Preservation claims are limited to v5 XML attributes. The helper behavior is no longer described as source-inspected. The live keyword-case oracle supplies behavioral evidence for the tested settings. |
 
@@ -76,9 +76,35 @@ reconstruct those earlier values. The separate legacy single-target v2 writer re
 Native draft visibility is limited to what the primary reader can see. Missing ownership receipts
 or foreign fixture edits still make cleanup refuse rather than overwrite uncertain work.
 
-The post-run recovery-journal correction passed all nine harness safety tests, all 35 fault
-simulations, typecheck, lint, strict documentation build and file/schema budgets. Production `src/`
-is unchanged from the live revision; its earlier full unit run passed 394 files / 10,878 tests.
+At `741b31b02`, the post-run recovery-journal correction passed all nine harness safety tests,
+all 35 fault simulations, typecheck, lint, strict documentation build and file/schema budgets.
+That commit's production `src/` is unchanged from the live revision; its earlier full unit run
+passed 394 files / 10,878 tests.
+
+## Evidence follow-up and recovery corrections
+
+The [verbatim follow-up by Claude Code Opus 5.5 max](broader-pinned-pp-writes/claude-evidence-review-20261101.md)
+found no High/Medium issue and accepted retaining the delta and continuing development, without
+merge approval. Its eight Low findings led to these changes:
+
+- Documentation distinguishes approval to run from review of results, settings-read refusals from
+  write refusals, API-accepted styles from live-tested styles, and recovery from forward completion.
+  Plan, ADR and inventory now identify the qualified revision and remaining scope.
+- Repeated recovery preserves the previous result, including failures, in parent history.
+  Restore-only writes `recoveryFinishedAt`; a journal lacking forward completion stays interrupted.
+  Baseline-less crashes cannot have changed preferences and need not produce recovery evidence.
+- A new offline simulation passes a captured mid-run journal through the real composition wrapper
+  and durable files. It preserves a foreign change on the first recovery, then verifies successful
+  restoration and retained failed history on the second. It does not simulate an actual process kill.
+- The emitter tolerates stdout errors and native workers retain in-flight work on SIGINT. Two real
+  subprocess tests exercise broken stdout and SIGINT with the same hooks and `tsx` loader. They do
+  not execute SAP cleanup. Detached operation, regular-file logs and PID-only SIGTERM remain required;
+  SIGHUP and process-group SIGTERM remain outside the qualified operating contract.
+
+The machine record now includes all 39 sanitized initial assertions and defines the 189 hashed
+private evidence files: 103 deletion RPC receipts, 61 formatter RPC receipts, 23 native operation
+receipts, and two durable native baseline documents. The extra two are not extra SAP calls.
+None of these corrections creates new live evidence or changes the original run/harness binding.
 
 Transportable deletion and the remaining object/include, DDIC/RAP, activation/batch, package/API,
 publication, CTS, tracing and classic FLP families need implementation or qualification. Git and

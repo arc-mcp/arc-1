@@ -63,8 +63,9 @@ display-only role is insufficient. Preserve the before-state and restore tempora
 
 Run in a detached OS session with stdout/stderr redirected to regular private files. Stop only with
 `kill -TERM <harness-pid>`, targeting that PID rather than its process group. Do not use terminal
-Ctrl-C, pipe output through `tee`, or close an attached terminal: group signals can kill native workers,
-stdout errors can terminate the harness, and SIGHUP is not handled. These are operating constraints,
+Ctrl-C, pipe output through `tee`, or close an attached terminal. Native workers now retain in-flight
+work on SIGINT, and stdout failure no longer aborts cleanup; subprocess tests cover those boundaries.
+SIGHUP and process-group SIGTERM can still kill workers, and full terminal shutdown is not qualified. These are operating constraints,
 not tested crash recovery guarantees. With PID-only SIGTERM, forward qualification stops at the next
 cooperative boundary and existing restoration/cleanup continue with the frozen tokens.
 `stopping` is not completion. Wait for `stopped` with
@@ -79,8 +80,11 @@ same-user edit; the recorded concurrency mode makes that limitation explicit. Se
 restoration is checked through MCP for the two exposed fields; only the primary has native XML
 byte-level evidence. Recovery also restores the saved pre-seed document. The deletion journal's
 current restoration fields are updated without erasing the original failed qualification. If a crash
-left only `formatterAttempted`, `formatterRecovery` records the outcome without manufacturing a
-completed formatter or deletion result. Separate
+left only `formatterAttempted` after the formatter baseline was saved, `formatterRecovery` records
+the outcome without manufacturing a completed formatter or deletion result. Earlier crashes cannot
+have changed preferences and may refuse restore-only without recording recovery. Repeated recovery
+preserves the previous result in history. Recovery uses `recoveryFinishedAt` and marks interrupted
+formatter journals without adding a forward `finishedAt`. Separate
 `restorationStatus` values distinguish not-required, verified and incomplete work. No claim of
 repository absence is made for the formatter's source-only probe.
 

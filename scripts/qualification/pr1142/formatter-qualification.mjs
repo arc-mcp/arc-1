@@ -425,7 +425,10 @@ export async function qualify({
           record('native.seed_restore_failure', false, safeFailure(error));
         }
         journal.assertions = [...(action.restoreOnly === true ? (journal.assertions ?? []) : []), ...assertions];
-        journal.finishedAt = new Date().toISOString();
+        if (action.restoreOnly === true) {
+          journal.recoveryFinishedAt = new Date().toISOString();
+          if (!journal.finishedAt) journal.interrupted = true;
+        } else journal.finishedAt = new Date().toISOString();
         try {
           await save();
         } catch (error) {

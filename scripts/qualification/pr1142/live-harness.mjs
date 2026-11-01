@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { exchangeForeignUser } from './foreign-user.mjs';
 import { guardedMcpChecks, validateScenario } from './mcp-checks.mjs';
 import { clientCredentialsToken, postToken } from './oauth-requests.mjs';
+import { journalSafeEmitter } from './process-boundaries.mjs';
 import { qualify } from './qualification.mjs';
 import { configuration, validateConfiguration } from './qualification-config.mjs';
 import { verifierEntry, verifyRunManifest } from './run-manifest.mjs';
@@ -27,8 +28,7 @@ import { QualificationShutdown } from './shutdown.mjs';
 
 // Provider debug output can contain user identifiers. Import SDKs only after disabling it.
 process.env.DEBUG = '';
-const emit = (event, details = {}) =>
-  process.stdout.write(`${JSON.stringify({ event, at: new Date().toISOString(), ...details })}\n`);
+const emit = journalSafeEmitter();
 const sessions = new Map();
 const pending = new Map();
 const reservedLabels = new Map();

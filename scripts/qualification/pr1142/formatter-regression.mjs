@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { durable } from './durable-journal.mjs';
 import { qualify } from './formatter-qualification.mjs';
+import { qualify as composedQualify } from './qualification.mjs';
 
 const actors = [
   { label: 'writerA', email: 'first@example.test', sapUser: 'FIRST', letter: 'A', write: true },
@@ -31,6 +32,7 @@ const scenarios = [
   'wrong-format-case',
   'restore-binding-refusal',
   'abort-forward',
+  'interrupted-composed-recovery',
 ];
 for (const scenario of scenarios) {
   const root = await mkdtemp(join(tmpdir(), 'arc1-formatter-harness-test-'));
@@ -71,6 +73,7 @@ for (const scenario of scenarios) {
         sourceHash: 'c'.repeat(64),
         nativeIdentity: { createdBy: a.sapUser, version: 'active' },
       }));
+    let interruptedSnapshot;
     let phase,
       output,
       requests = 0,
@@ -197,6 +200,12 @@ for (const scenario of scenarios) {
     });
     const journalOverride = async (path, value, exclusive) => {
       if (
+        scenario === 'interrupted-composed-recovery' &&
+        phase === 'primary-patch' &&
+        value.plan === 'formatter-two-user-v2'
+      )
+        interruptedSnapshot = structuredClone({ journal: value, values });
+      if (
         scenario === 'cleanup-journal-failure' &&
         phase === 'restore-writerB' &&
         value.restored?.writerB === true &&
@@ -207,8 +216,8 @@ for (const scenario of scenarios) {
       }
       return durable(path, value, exclusive);
     };
-    const invoke = (extra) =>
-      qualify({
+    const invoke = (extra, composed = false) =>
+      (composed ? composedQualify : qualify)({
         action: { plan: 'formatter-two-user-v2', ...extra },
         sessions,
         baseUrl,
@@ -236,6 +245,49 @@ for (const scenario of scenarios) {
       await invoke({ restoreOnly: true });
       assert.equal(output.failed, 0, JSON.stringify(output.failures));
       assert.equal(mutations, 4);
+    } else if (scenario === 'interrupted-composed-recovery') {
+      assert.equal(output.failed, 0);
+      assert.ok(interruptedSnapshot);
+      assert.equal(interruptedSnapshot.journal.finishedAt, undefined);
+      await durable(`${root}/formatter-qualification.json`, interruptedSnapshot.journal);
+      await rm(`${root}/formatter-attempt-writerB.json`);
+      const { runId, sourceRevision, harnessSha256, target } = interruptedSnapshot.journal;
+      const parent = {
+        plan: 'delete-two-user-v1',
+        runId,
+        sourceRevision,
+        harnessSha256,
+        target,
+        formatterAttempted: true,
+        fixtures: sentinels,
+        assertions: [{ test: 'source.active', pass: true }],
+      };
+      await durable(`${root}/deletion-qualification.json`, parent, true);
+      Object.assign(values, structuredClone(interruptedSnapshot.values));
+      values.writerA.style = 'keywordLower'; // A foreign edit must survive the first recovery.
+      await invoke({ restoreOnly: true }, true);
+      assert.ok(output.failed > 0);
+      assert.equal(values.writerA.style, 'keywordLower');
+      const failedRecovery = JSON.parse(
+        await readFile(`${root}/deletion-qualification.json`, 'utf8'),
+      ).formatterRecovery;
+      assert.ok(failedRecovery.failed > 0);
+      Object.assign(values, structuredClone(interruptedSnapshot.values));
+      await invoke({ restoreOnly: true }, true);
+      assert.equal(output.failed, 0, JSON.stringify(output.failures));
+      assert.deepEqual(values, { writerA: baseline, writerB: baseline });
+      const recovered = JSON.parse(await readFile(`${root}/deletion-qualification.json`, 'utf8'));
+      assert.deepEqual(recovered.formatterRestorationHistory, [failedRecovery]);
+      assert.equal(recovered.formatterRecovery.failed, 0);
+      assert.deepEqual(recovered.fixtures, parent.fixtures);
+      assert.deepEqual(recovered.assertions, parent.assertions);
+      for (const field of ['formatter', 'finishedAt', 'passed', 'failed', 'allAbsent'])
+        assert.equal(recovered[field], undefined);
+      const formatterJournal = JSON.parse(await readFile(`${root}/formatter-qualification.json`, 'utf8'));
+      assert.equal(formatterJournal.finishedAt, undefined);
+      assert.equal(formatterJournal.interrupted, true);
+      assert.equal(typeof formatterJournal.recoveryFinishedAt, 'string');
+      assert.ok(formatterJournal.assertions.some((a) => !a.pass));
     } else if (scenario === 'restore-binding-refusal') {
       assert.equal(output.failed, 0);
       const saved = JSON.parse(await readFile(`${root}/formatter-qualification.json`, 'utf8'));

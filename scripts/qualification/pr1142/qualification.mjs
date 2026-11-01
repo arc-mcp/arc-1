@@ -24,11 +24,14 @@ export async function recordFormatterRecovery(root, result, load = privateJson, 
     throw new HarnessError('RECOVERY_PARENT_BINDING_MISMATCH');
   if (!parent.formatter && parent.formatterAttempted !== true)
     throw new HarnessError('RECOVERY_PARENT_FORMATTER_MISSING');
-  (parent.formatterRestorationHistory ??= []).push({
-    at: new Date().toISOString(),
-    restored: parent.formatter?.restored,
-    restorationStatus: parent.formatter?.restorationStatus,
-  });
+  if (parent.formatterRecovery) (parent.formatterRestorationHistory ??= []).push({ ...parent.formatterRecovery });
+  else if (parent.formatter)
+    (parent.formatterRestorationHistory ??= []).push({
+      at: new Date().toISOString(),
+      restored: parent.formatter.restored,
+      restorationStatus: parent.formatter.restorationStatus,
+      nativeSeedRestored: parent.formatter.nativeSeedRestored,
+    });
   // Keep the original qualification failures; recovery success does not qualify the test run.
   // A crash can leave only formatterAttempted; never manufacture a completed formatter result.
   if (parent.formatter) {
@@ -42,7 +45,7 @@ export async function recordFormatterRecovery(root, result, load = privateJson, 
 export async function qualify(context) {
   if (context.action.plan === 'formatter-two-user-v2' && context.action.restoreOnly === true) {
     const result = await formatter(context);
-    await recordFormatterRecovery(configuration.root, result);
+    await recordFormatterRecovery(context.configurationOverride?.root ?? configuration.root, result);
     return result;
   }
   return deletion({

@@ -5,9 +5,11 @@ import { durable } from './durable-journal.mjs';
 import { digest } from './fixture-contract.mjs';
 import { assertSeededPreferences, nativeFormatterFixture } from './native-formatter-fixture.mjs';
 import { configuration, validateConfiguration } from './qualification-config.mjs';
+import { retainNativeWorkerOnInterrupt } from './process-boundaries.mjs';
 import { verifyRunManifest } from './run-manifest.mjs';
 import { assertSafeDiagnosticEnvironment, privateJson } from './safe-io.mjs';
 
+retainNativeWorkerOnInterrupt();
 assertSafeDiagnosticEnvironment();
 validateConfiguration(configuration);
 await verifyRunManifest(configuration.root);
