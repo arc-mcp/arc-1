@@ -2,9 +2,7 @@
 
 A consolidated security reference for ARC-1 operators. This guide covers hardening, authentication, authorization, and incident response. It references detailed setup guides where appropriate rather than duplicating their content.
 
-For procurement and security assessment, start with **[Security & Trust](security.md)**.
-Dependency checks, SBOM coverage, release verification, and current enforcement gaps are covered
-in **[Dependency & Release Security](dependency-security.md)**.
+Reviewing ARC-1 for your organization? Start with the **[Security Review](security.md)**.
 
 ---
 
@@ -538,49 +536,102 @@ This is the most critical on-premise PP compromise scenario -- a compromised Clo
 
 ## 13. Dependency & Supply-Chain Security
 
-Dependency and release evidence now has a dedicated, prominent page:
-**[Dependency & Release Security](dependency-security.md)**.
+What you can verify depends on what you deploy, so use the evidence for that artifact. A clean scan
+means the scanner found nothing it knows about at that time. It does not prove that no vulnerability
+or malicious package exists.
 
-It covers the CI checks and their enforcement, production npm SBOM scope, Docker/BTP/MCPB
-differences, reproducible deployment, operator verification, and remaining improvements.
-This section remains here so existing links continue to work.
+### What each artifact comes with
 
-| Control | Workflow | Severity gate |
+| Artifact | What you can check | What it does not cover |
 |---|---|---|
-| Dependabot — root npm + BTP AppRouter npm + GitHub Actions + Docker | `.github/dependabot.yml` | weekly + same-day security advisories |
-| `npm audit` PR gates via `audit-ci` | `.github/workflows/test.yml` (root + `btp/approuter`) | fail on `high` / `critical`, subject to the expiring advisory exception below |
-| GitHub Dependency Review (PR diff) | `.github/workflows/dependency-review.yml` | fails on `high`; license allow/deny lists |
-| CodeQL SAST (JavaScript/TypeScript) | GitHub Default Setup | findings on Security tab; PR check fails on `High or higher` |
+| BTP build from source | Your commit and lockfiles, using the [commands below](#btp-builds-from-source) | The running app: Cloud Foundry installs the dependencies again during staging |
+| npm package | [npm provenance](https://docs.npmjs.com/generating-provenance-statements) and `arc-1-<version>-sbom.cdx.json` on the GitHub Release (best effort) | Your install: the package has no lockfile, so `npm install arc-1@<version>` can resolve other transitive versions than the SBOM lists |
+| Docker image | The image digest, which you can scan yourself | Signed provenance: BuildKit's attestation is unsigned and `gh attestation verify` finds nothing. There is no image SBOM |
+| Single-file executables | `SHA256SUMS.txt` on the GitHub Release | Publisher identity: the binaries are not code-signed, and there is no SBOM |
+| MCPB bundle | The release asset, smoke-tested at build | No signature or bundle SBOM. The build removes `better-sqlite3`, so the npm SBOM does not match it exactly |
+| Extensions | Your own code and dependencies | They run inside the ARC-1 process and are in no ARC-1 inventory. See [Extensions](extensions.md) |
+
+For a repeatable install, keep your own lockfile and use `npm ci`, or pin the Docker image by digest.
+
+### BTP builds from source
+
+`mta.yaml` runs `npm ci` and `npm run build`, but leaves `node_modules` out of the MTAR. The Node.js
+buildpack then installs the dependencies again during staging. So there are two stages to record:
+your build and the staging.
+
+Run these commands from a clean checkout of the commit you approved. They read the lockfiles and
+install nothing. `npm audit` sends package names and versions to your configured npm registry. It
+exits non-zero on a `high` or `critical` finding, and when the audit itself fails.
+
+```bash
+git status --short   # must print nothing
+git rev-parse HEAD
+npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx --sbom-type=application > arc-1.cdx.json
+npm audit --package-lock-only --audit-level=high
+
+# Only if you deploy the optional AppRouter, which has its own lockfile:
+npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx --sbom-type=application --prefix btp/approuter > approuter.cdx.json
+npm audit --package-lock-only --audit-level=high --prefix btp/approuter
+```
+
+Keep these with your build record:
+
+- The commit and any local patches
+- The SBOMs and audit results
+- Node, npm and MBT versions used for the build
+- The MTAR checksum (`sha256sum mta_archives/*.mtar`)
+- Stack, buildpack, Node and npm versions from the staging log
+
+These commands describe the lockfiles, not the staged app. If you need the installed tree or OS
+packages, collect them with your platform tools. Do not put `cf env` output, service keys or other
+credentials in the record.
+
+### What runs in CI
+
+| Control | Where | What it does |
+|---|---|---|
+| Dependabot — root npm + BTP AppRouter npm + GitHub Actions + Docker | `.github/dependabot.yml` | weekly version updates; security updates open separately when an advisory is published, with no guaranteed turnaround |
+| `npm audit` checks via `audit-ci` | `.github/workflows/test.yml` (root + `btp/approuter`) | fails the job on `high` / `critical` |
+| GitHub Dependency Review (PR diff) | `.github/workflows/dependency-review.yml` | `Dependency security` fails on newly introduced `high` / `critical` advisories in any dependency scope; `Dependency licenses` fails on denied licenses |
+| CodeQL SAST (JavaScript/TypeScript, Actions, Python) | GitHub Default Setup | findings on the Security tab and the PR |
 | Trivy container scan — dev push | `.github/workflows/docker.yml` | non-gating; SARIF uploaded to Security tab |
-| Trivy container scan — scheduled | `.github/workflows/security-scan.yml` | **gating amd64 + arm64 maintenance signal** on `HIGH` / `CRITICAL`; SARIF uploaded |
+| Trivy container scan — scheduled | `.github/workflows/security-scan.yml` | fails the scheduled run on `HIGH` / `CRITICAL` for amd64 + arm64; SARIF uploaded. It builds a fresh image, so it says nothing about an image you already deployed |
 | Trivy container scan — release | `.github/workflows/release.yml` | scan and SARIF upload are non-gating; neither can strand the Docker artifact |
-| Workflow-level `permissions: contents: read` | all workflows | minimum `GITHUB_TOKEN` scope |
-| Third-party action SHA pinning | `googleapis/release-please-action`, `docker/*`, `aquasecurity/trivy-action` | mitigates the `tj-actions/changed-files` 2024 supply-chain compromise class |
+| Explicit `GITHUB_TOKEN` permissions | all workflows, per workflow or per job | write scopes only where a job publishes or uploads |
+| Third-party action SHA pinning | `googleapis/release-please-action`, `docker/*`, `aquasecurity/trivy-action` | mitigates the `tj-actions/changed-files` 2025 supply-chain compromise class; most GitHub-owned actions stay on version tags |
 | npm provenance | `.github/workflows/release.yml` (`npm publish --provenance`) | every release tarball is Sigstore-attested |
 | npm production SBOM | `.github/workflows/release.yml` (`npm sbom --package-lock-only --omit=dev`) | best-effort, non-gating CycloneDX JSON release asset |
-| `SECURITY.md` policy | repo root | private vulnerability reporting + severity-tiered response SLAs |
+| `SECURITY.md` policy | repo root | private vulnerability reporting + best-effort response targets |
+
+!!! warning "These checks report problems. They do not block merges."
+
+    The `main` ruleset requires a pull request and blocks force pushes and branch deletion, but it
+    requires no status check or code-scanning result (checked 2026-11-01). A red check is visible
+    on the PR, and GitHub still allows the merge. Recheck with
+    `gh api repos/arc-mcp/arc-1/rules/branches/main`. See [SEC-20](roadmap.md#sec-20).
 
 Docker BuildKit does not automatically invalidate a cached `RUN apk upgrade` when Alpine's
 package repository changes. ARC-1 therefore names the final Dockerfile stage `runtime` and every
 CI image build uses `no-cache-filters: runtime` plus `pull: true`. The comparatively expensive
 native-module builder stage stays cached, while the runtime package upgrade is re-executed and can
-pick up newly published OS security fixes.
+pick up newly published OS security fixes. This does not repair an image you already deployed: move
+to the new digest.
 
 ### Dependency audit policy
 
 The lockfile now resolves `node-forge` to **1.4.2**, which includes the
 [RSA verification fix and PEM Buffer compatibility repair](https://github.com/digitalbazaar/forge/blob/v1.4.2/CHANGELOG.md).
 The temporary `GHSA-86w9-cpqp-85rv` risk exception has been removed from `audit-ci.json`.
-High/critical advisories, including a reintroduction of that advisory, and audit failures block CI.
+High/critical advisories, including a reintroduction of that advisory, and audit failures fail the CI job.
 
 Run `npm run audit:ci` and `npm run audit:ci -- --directory btp/approuter` to reproduce the PR
-gates. Both audit production and development dependencies with the existing optional dependency
+checks. Both audit production and development dependencies with the existing optional dependency
 omission. The separate, version-specific BSD license selection in Dependency Review is not a
 vulnerability exception. Dependabot, GitHub Dependency Review, and container scans remain enabled.
 
 ### GitHub-native security features (verified enabled)
 
-These toggles live on the repo’s Settings → Code security page. REST-exposed scanning/update settings were rechecked **2026-10-04**; UI-only grouped-update and malware-alert settings below retain the **2026-05-08** observation and need an administrator to reconfirm.
+These toggles live on the repo’s Settings → Code security page. REST-exposed scanning/update settings were rechecked **2026-11-01**; UI-only grouped-update and malware-alert settings below retain the **2026-05-08** observation and need an administrator to reconfirm.
 
 | Feature | API verification | Status |
 |---|---|---|
@@ -603,10 +654,14 @@ User-account-level recommendation (cannot be enforced via repo settings): the pr
 ### Verifying the chain as an operator
 
 ```bash
-# 1. npm package — verify the published tarball was built from this repo
-npm install arc-1
-npm audit signatures arc-1
-# Expected: "audited <N> packages — verified <N> packages with Sigstore"
+# Run these in a new, empty directory, on a machine without SAP credentials.
+
+# 1. npm package — verify registry signatures and provenance of the installed tree.
+# --ignore-scripts skips the native better-sqlite3 build: this is for inspection, not for running.
+npm init -y
+npm install --ignore-scripts --save-exact arc-1@<version>
+npm audit signatures
+# Expected: every package has a verified registry signature; some also have verified attestations.
 
 # 2. npm package — download and inspect the production dependency SBOM
 VERSION=<version>
@@ -625,8 +680,9 @@ jq -e --arg version "$VERSION" '
 npm audit --audit-level=high
 # Nonzero exit means advisories at or above the threshold need review.
 
-# 4. Docker image — scan locally with the same scanner CI uses
-trivy image ghcr.io/arc-mcp/arc-1:<version> \
+# 4. Docker image — scan the digest you deploy with the same scanner CI uses
+trivy image ghcr.io/arc-mcp/arc-1@sha256:<digest> \
+  --platform linux/amd64 \
   --severity HIGH,CRITICAL \
   --exit-code 1
 # Nonzero exit means HIGH/CRITICAL findings need review.
@@ -635,12 +691,8 @@ trivy image ghcr.io/arc-mcp/arc-1:<version> \
 open https://github.com/arc-mcp/arc-1/security/advisories
 ```
 
-The release SBOM describes the production npm graph resolved from the root `package-lock.json`.
-It does not inventory Alpine packages in the Docker image, the assembled MCPB contents, or
-dynamically loaded extensions. Those artifacts need their own build-output SBOMs; do not use the
-npm SBOM as evidence for their full contents.
-
-SBOM publication is deliberately **non-gating**. A generation, validation, or GitHub upload error
+The release SBOM covers only the production npm graph from the root `package-lock.json`. Its
+publication is deliberately **non-gating**. A generation, validation, or GitHub upload error
 remains visible in the `publish-npm-sbom` job, but `continue-on-error: true` prevents it from failing
 or blocking the npm, Docker, MCPB, or MCP Registry release. Maintainers can regenerate and attach a
 missing asset later.
@@ -649,9 +701,7 @@ missing asset later.
 
 See [`SECURITY.md`](https://github.com/arc-mcp/arc-1/blob/main/SECURITY.md). Preferred channel is GitHub [Private Vulnerability Reporting](https://github.com/arc-mcp/arc-1/security/advisories/new); fallback is email. Do **not** open a public issue or post on the SAP Community before the maintainers acknowledge the report — that bypasses coordinated disclosure and can put deployed instances at risk.
 
-### Roadmap
+### Open items
 
-This section corresponds to roadmap entry **SEC-11 (Tier 1: Foundation)**. Future tiers extend the chain:
-
-- **Tier 2 (Attestation)** — the production npm CycloneDX release asset is complete. Image/MCPB SBOM coverage, Cosign keyless image signing, and OpenSSF Scorecard remain in [`docs/plans/2026-05-08-dependency-security-tier2-attestation.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier2-attestation.md).
-- **Tier 3 (Active Defense)** — Socket.dev PR review, vulnerability triage runbook, formal non-adoption decisions for Renovate / Snyk / SLSA L3. Plan in [`docs/plans/2026-05-08-dependency-security-tier3-defense.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier3-defense.md).
+Mandatory checks, Socket policy and SBOMs for other artifacts are parked on the roadmap as
+[SEC-20](roadmap.md#sec-20), [SEC-21](roadmap.md#sec-21) and [SEC-22](roadmap.md#sec-22).

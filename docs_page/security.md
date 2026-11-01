@@ -1,91 +1,143 @@
-# Security & Trust
+# Security Review
 
-ARC-1 connects AI clients to SAP development APIs. Enterprise approval depends on the
-software artifact, the deployed configuration, and the customer's client/model environment.
-This page gives security reviewers a starting point and links to the supporting evidence.
+Use this page to decide whether your organization can approve ARC-1. It answers the questions
+security reviewers, SAP owners and BTP administrators usually ask. Each answer ends with what your
+team has to decide, and the page ends with a decision record you can copy into your ticket.
 
-!!! tip "Reviewing ARC-1 for your organization?"
+Approve one concrete setup: a version or commit, its configuration, and the MCP client and model
+provider that connect to it. This site follows `main`, so read the docs from the tag you deploy.
 
-    Start with [Dependency & Release Security](dependency-security.md) for dependency checks,
-    SBOM coverage, and artifact verification. Use the [Hardening Guide](security-guide.md) for
-    deployment controls and the [Security Assessment](security-assessment.md) for plain-language
-    answers and a checklist you can copy into your review.
-
-## Security posture at a glance
-
-| Review area | Available control | Evidence and boundary |
-|---|---|---|
-| SAP changes and data access | Writes, table preview, free SQL, transport mutations, and Git mutations require separate opt-ins | [Authorization & Roles](authorization.md). Package restrictions apply to writes; reads rely on SAP authorization. |
-| User identity | XSUAA/OIDC for MCP authentication; Principal Propagation for per-user SAP identity | [Authentication](enterprise-auth.md) and [Principal Propagation](principal-propagation-setup.md). MCP authentication alone does not establish per-user identity in SAP. |
-| Dependencies and releases | Dependency update automation, vulnerability checks, npm provenance, production npm SBOM | [Dependency & Release Security](dependency-security.md). Coverage and enforcement differ by artifact and workflow. |
-| Auditability | Structured events, central redaction, stderr/file/BTP Audit Log sinks | [Audit logging](security-guide.md#9-audit-logging). Storage access, forwarding, retention, and incident monitoring need operator configuration. |
-| Vulnerability handling | Private reports, advisories, supported-version policy, severity-based response targets | [Security policy](https://github.com/arc-mcp/arc-1/blob/main/SECURITY.md). Targets are best-effort, non-contractual. |
-| Design review | Public engineering threat model, residual risks, and remediation history | [Security model](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md) and [review record](https://github.com/arc-mcp/arc-1/blob/main/docs/security-review-2026-06.md). These are maintainer-led, AI-assisted engineering records. |
-
-Use documentation from the source revision of the artifact being evaluated. The website follows
-`main` and can describe changes that have not been released. The linked engineering review is a
-historical record with an ongoing risk register, not an independent audit of every release.
-This evidence pack does not establish ISO 27001 certification, a SOC 2 report, or SAP certification.
-
-## Where data goes and who controls it
+## Where your data goes
 
 ```mermaid
 flowchart TB
-    Model[Customer-selected model provider] <-->|Prompts and tool results| Client[MCP client]
-    Client <-->|Authenticated MCP over HTTPS| ARC[Customer-operated ARC-1]
-    ARC <-->|SAP API requests and responses| SAP[SAP system]
-    ARC --> Logs[Configured logs and optional source cache]
-    Identity[Customer identity provider and BTP services] --> ARC
+    Model[Model provider] <-->|Prompts and tool results| Client[MCP client]
+    Client <-->|MCP over HTTPS| ARC[ARC-1, run by you]
+    ARC <-->|SAP API calls| SAP[SAP system]
+    ARC --> Logs[Logs and optional cache]
+    Identity[Identity provider and BTP services] --> ARC
 ```
 
-The diagram describes a shared HTTP deployment. Local stdio uses process input/output and has
-no MCP HTTP authentication. BTP destinations and Cloud Connector depend on the selected topology.
+This shows a shared HTTP deployment. Local stdio runs as a process on the user's machine and has no
+MCP authentication.
 
-| Boundary | What must be assessed | Owner |
-|---|---|---|
-| MCP client and model | SAP source, metadata, errors, and approved business-data results can become model input. Review retention, training use, region, other connected tools, and user approvals. | Customer's AI/platform team and selected provider |
-| ARC-1 hosting and network | TLS, ingress/egress, host patches, secrets, backups, monitoring, and access to the deployed configuration | Customer's platform/BTP team |
-| SAP permissions | Least-privileged SAP roles, accessible systems and data, trust configuration, and transport/change process | Customer's SAP Basis and security team |
-| ARC-1 software | Server-side permission checks, release contents, vulnerability handling, and documented limitations | ARC-1 maintainer |
-| Logs and cache | Logs contain operational metadata despite redaction. An explicitly selected SQLite cache stores source bodies in cleartext; use an encrypted volume or memory/none as appropriate. | Customer's operations and data owners; see [Caching](caching.md#security) |
+## Questions and answers
 
-Self-hosting ARC-1 does not keep returned SAP information out of the customer's model provider.
-ARC-1's SAP permissions also cannot control how a client uses information after receiving it.
-Include the entire client/model path in the approval.
+### Can SAP data leave our environment?
 
-## Enterprise assessment
+Yes. ARC-1 returns tool results to the MCP client, and the client can send them to its model
+provider. Results can include source code, metadata, error details and, if you enable it, table
+data. Running ARC-1 on your own BTP account does not change this, and ARC-1 cannot control what the
+client does next. The [MCP specification](https://modelcontextprotocol.io/specification/2025-11-25#security-and-trust-safety)
+leaves user consent to the client application.
 
-Use the [Security Assessment](security-assessment.md) for short answers to common customer
-questions, a deployment checklist, and a decision record you can copy into an approval ticket.
-It covers data flow, permissions, dependencies, logs, updates, and available assurance.
+**Decide (AI or platform team):** which client and model provider you approve, and whether their
+retention, training and region terms fit that data.
 
-Record the selected source revision, the customer's actual configuration, and any conditions
-for approval. A supported capability is not evidence that it is enabled in a deployment.
+### Whose SAP permissions apply?
 
-## Recommended initial deployment
+With [Principal Propagation](principal-propagation-setup.md), each user works in SAP as their own
+SAP user. Signing in to ARC-1 does not do this by itself. With a shared technical user, everyone
+gets that user's permissions and SAP sees only that one user.
 
-1. Evaluate in a development SAP system with an approved MCP client/model configuration.
-2. Use per-user identity and least-privileged SAP roles. For production Principal Propagation,
-   set `SAP_PP_STRICT=true` explicitly and follow the [BTP topology guide](btp-overview.md).
-3. Keep writes, business-data preview, free SQL, transport writes, and Git writes off until the
-   relevant use case is approved. Keep optional extensions and experimental UI off initially.
-4. For BTP builds from a clone, approve an exact source commit, retain the lockfiles, and capture
-   [build and staging evidence](dependency-security.md#btp-builds-from-source). For other
-   distributions, approve the artifact identity and scan its contents. Recheck the evidence
-   when vulnerability information changes.
-5. Verify denial cases, audit attribution, log handling, and the upgrade/rollback process in the
-   intended environment. Enable additional capabilities through the customer's change process.
+**Decide (SAP Basis and security):** use Principal Propagation if you need individual identities,
+and test it with two users who have different SAP roles.
 
-Read-only access still exposes source and metadata and can produce SAP workload, including
-checks and tests. Prompt injection in SAP content remains a risk: the server ceiling limits
-permitted operations, but does not establish that an allowed request matches the human's intent.
-MCP also assigns responsibilities to the host/client for consent and handling tool results; see
-the [MCP security principles](https://modelcontextprotocol.io/specification/2025-11-25#security-and-trust-safety).
+### What can the AI read or change?
 
-## Reporting and security updates
+Writes, table preview, free SQL, transport changes and Git changes are all off by default. An
+administrator enables each one separately, and SAP authorization still applies. Three limits remain:
 
-Use [private vulnerability reporting](https://github.com/arc-mcp/arc-1/security/advisories/new)
-or the fallback contact in [SECURITY.md](https://github.com/arc-mcp/arc-1/blob/main/SECURITY.md).
-Track [published advisories](https://github.com/arc-mcp/arc-1/security/advisories) and
-[release notes](release-notes.md). The [newsletter](newsletter.md) is an additional update
-channel; it does not replace advisory monitoring or the customer's patch process.
+- The package allowlist restricts writes, not reads.
+- Read-only access still exposes source code and metadata, and checks such as ATC create load on SAP.
+- SAP content can contain prompt injection. These limits decide what is allowed, not whether an
+  allowed request is what the user meant.
+
+**Decide (SAP owner):** which capabilities each use case needs. See
+[Authorization & Roles](authorization.md) and the [Hardening Guide](security-guide.md).
+
+### What is logged or stored?
+
+ARC-1 writes audit events to stderr, a file or the BTP Audit Log. Redaction removes sensitive
+values, but logs still show users, tools and errors. The default cache stays in memory. If you
+select `ARC1_CACHE=sqlite`, source code is stored on disk unencrypted.
+
+**Decide (operations and data owners):** who can read the logs, how long they are kept, and which
+cache mode you allow. See [audit logging](security-guide.md#9-audit-logging) and
+[cache security](caching.md#security).
+
+### How are dependencies checked?
+
+The project uses Dependabot, `npm audit`, Dependency Review, CodeQL and Trivy. They report problems,
+but none of them is required for merging. What you can verify also differs by artifact: the
+published npm SBOM, for example, does not describe a BTP build or the optional AppRouter.
+
+**Decide (build or BTP owner):** approve an exact commit or image digest, keep the
+[evidence for that artifact](security-guide.md#13-dependency-supply-chain-security), and recheck it
+when new advisories appear.
+
+### Who fixes vulnerabilities, and which version should we approve?
+
+The maintainer takes [private reports](https://github.com/arc-mcp/arc-1/security/advisories/new) and
+publishes [advisories](https://github.com/arc-mcp/arc-1/security/advisories) and fixes. Only the
+latest 1.x minor line gets fixes. Response targets are
+[best effort](https://github.com/arc-mcp/arc-1/blob/main/SECURITY.md), and there is no support contract.
+
+Check the advisories before you approve a version. For example,
+[GHSA-6935-r3wv-f646](https://github.com/arc-mcp/arc-1/security/advisories/GHSA-6935-r3wv-f646)
+(high) let a client gain access without the user's approval on XSUAA deployments up to 1.7.0. It
+is fixed in 1.8.0, and 1.9.0 or later is recommended. On BTP the upgrade also needs an
+[XSUAA callback update](xsuaa-setup.md#upgrading-an-existing-deployment), and it does not revoke
+tokens that were already issued.
+
+**Decide (deployment owner):** who watches advisories, who deploys updates, and who responds to
+incidents. See [Updating](updating.md) and [BTP Administration](btp-administration.md).
+
+### What independent assurance exists?
+
+There is no independent audit, ISO 27001 certificate, SOC 2 report or SAP certification. The project
+publishes its [threat model](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md) and
+[security review record](https://github.com/arc-mcp/arc-1/blob/main/docs/security-review-2026-06.md).
+Both are maintainer-led and AI-assisted.
+
+**Decide (security team):** whether that meets your approval requirements.
+
+## A safe first deployment
+
+1. Start in a development SAP system, with an approved client and model.
+2. Deploy an approved commit or image digest, and keep its
+   [evidence](security-guide.md#13-dependency-supply-chain-security).
+3. Use per-user identity and least-privilege SAP roles. For production Principal Propagation, set
+   `SAP_PP_STRICT=true` explicitly. See [BTP deployment options](btp-overview.md).
+4. Leave writes, table preview, free SQL, transport writes and Git writes off until a use case needs
+   them. Leave extensions and the web UI off too.
+5. Test that a denied action is refused, that audit events name the real user, and that you can
+   update and roll back.
+
+## Record your decision
+
+Copy this into your own ticket. Tick an item only after checking your actual deployment, and revisit
+the record when the version, permissions, client or model provider changes.
+
+```text
+ARC-1 security review
+
+Review date and reviewer:
+Approved ARC-1 version and source commit or image digest:
+BTP environment and SAP system/client:
+Approved MCP client and model provider:
+Deployment/update owner:
+Incident contact:
+
+[ ] Client, model provider and permitted data approved
+[ ] SAP identity and permissions tested
+[ ] Enabled and disabled capabilities recorded
+[ ] Advisories checked for this version
+[ ] Dependency, build and staging evidence reviewed
+[ ] Log access, retention and cache settings agreed
+[ ] Updates, advisory monitoring and incident response assigned
+
+Decision: approved / approved with conditions / open
+Conditions or open questions:
+Next review date:
+```

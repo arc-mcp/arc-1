@@ -58,9 +58,4 @@ We commit to:
 
 ## Hardening Recommendations for Operators
 
-This policy covers vulnerability *reporting*. For enterprise assessment, start with
-[Security & Trust](https://docs.arc-1-mcp.com/security/) and
-[Dependency & Release Security](https://docs.arc-1-mcp.com/dependency-security/).
-For runtime hardening recommendations (auth modes, safety flags, audit logging, network policy,
-secrets management, incident-response playbooks), see the
-[Security Best Practices Guide](https://docs.arc-1-mcp.com/security-guide/).
+This policy covers vulnerability *reporting*. To review ARC-1 for your organization, start with the [Security Review](https://docs.arc-1-mcp.com/security/). For runtime hardening recommendations (auth modes, safety flags, audit logging, network policy, secrets management, incident-response playbooks), see the [Security Best Practices Guide](https://docs.arc-1-mcp.com/security-guide/).

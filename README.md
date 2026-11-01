@@ -8,9 +8,7 @@ ARC-1 connects AI assistants (Claude, GitHub Copilot, Copilot Studio, and any MC
 [![CodeQL](https://github.com/arc-mcp/arc-1/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/arc-mcp/arc-1/security/code-scanning)
 [![Dependency Review](https://github.com/arc-mcp/arc-1/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/arc-mcp/arc-1/actions/workflows/dependency-review.yml)
 
-**[Full Documentation](https://docs.arc-1-mcp.com/)** | **[Quickstart](https://docs.arc-1-mcp.com/quickstart/)** | **[Security & Trust](https://docs.arc-1-mcp.com/security/)** | **[Tool Reference](https://docs.arc-1-mcp.com/tools/)** | **[ARC-1 Updates](https://docs.arc-1-mcp.com/newsletter/)** | **[Blog Series](https://blog.zeis.de/tags/ai-abap-development-series/)**
-
-**Enterprise security review:** start with [controls and data flows](https://docs.arc-1-mcp.com/security/), then [dependency checks, SBOM coverage, and release verification](https://docs.arc-1-mcp.com/dependency-security/).
+**[Full Documentation](https://docs.arc-1-mcp.com/)** | **[Quickstart](https://docs.arc-1-mcp.com/quickstart/)** | **[Security Review](https://docs.arc-1-mcp.com/security/)** | **[Tool Reference](https://docs.arc-1-mcp.com/tools/)** | **[ARC-1 Updates](https://docs.arc-1-mcp.com/newsletter/)** | **[Blog Series](https://blog.zeis.de/tags/ai-abap-development-series/)**
 
 > 📬 **Stay current with ARC-1** — get major releases, upgrade and security notes, practical guides, and occasional questions where your feedback can shape what comes next. **[Join ARC-1 Updates →](https://docs.arc-1-mcp.com/newsletter/)**
 
@@ -34,7 +32,7 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 - **HTTP security headers (helmet) on by default** — HSTS, CSP, X-Frame-Options, CORP, X-Content-Type-Options. COOP is deliberately not set so popup-based OAuth flows (Copilot Studio) keep working. No flag to disable.
 - **Opt-in CORS for browser MCP clients** — `ARC1_ALLOWED_ORIGINS` (comma-separated, exact match). Off by default; native MCP clients don't need it
 - **Layered rate limiting** — three layers out of the box: per-IP OAuth and shared MCP HTTP edge limits (Layer 1; MCP inherits the historical derived cap unless `ARC1_MCP_HTTP_RATE_LIMIT` overrides it), per-user MCP quota (Layer 2, **off by default** — multi-user deployments opt in via `ARC1_RATE_LIMIT=60`), and a server-wide SAP-bound semaphore (Layer 3, default 10, **on**). Honors `Retry-After` on 429/503 from SAP / BTP gateways. See the [Rate Limiting Guide](https://docs.arc-1-mcp.com/rate-limiting/)
-- **Dependency and release evidence** — Dependabot, npm audit and Dependency Review checks, CodeQL, Trivy container scanning, npm provenance, and a best-effort CycloneDX SBOM for the release's production npm lockfile graph. The [dependency security page](https://docs.arc-1-mcp.com/dependency-security/) documents check enforcement, artifact coverage, verification steps, and gaps. Vulnerability response targets are [best-effort and non-contractual](SECURITY.md).
+- **Dependency and release evidence** — Dependabot, npm audit and Dependency Review checks, CodeQL, Trivy container scanning, npm provenance, and a best-effort CycloneDX SBOM for the release's production npm lockfile graph. [Section 13 of the security guide](https://docs.arc-1-mcp.com/security-guide/#13-dependency-supply-chain-security) lists what each artifact covers, how to verify it, and the gaps. Vulnerability response targets are [best-effort and non-contractual](SECURITY.md).
 
 ### Authentication
 

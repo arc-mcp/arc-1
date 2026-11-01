@@ -50,10 +50,8 @@ nav:
   - Home: index.md
   - Newsletter: newsletter.md
   - Quickstart: quickstart.md
-  - Security & Trust:
-      - Enterprise Overview: security.md
-      - Security Assessment: security-assessment.md
-      - Dependency & Release Security: dependency-security.md
+  - Security:
+      - Security Review: security.md
       - Hardening Guide: security-guide.md
   - Agent Plugin: agent-plugin.md
   - Install in Claude: install-in-claude.md
