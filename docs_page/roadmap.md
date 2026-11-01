@@ -217,6 +217,9 @@ The [formatter adapter](https://github.com/arc-mcp/arc-1/blob/main/docs/research
 has pinned handler/companion integration and restored direct-native checks. Its 241-assertion
 two-identity run establishes MCP-visible state on the configured route; Claude identified missing
 in-run actor/backend proof. A stronger current-revision PP run remains required.
+Read-only native source inspection also found that v2 omits preferences replaced by PUT. The pinned
+adapter now requires v5 and needs fresh review/live evidence; older-version compatibility and the
+separate legacy single-target preservation fix remain deferred.
 A [CLAS/INTF deletion candidate](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-deletion.md)
 reuses native DELETE and the shared lock/session lifecycle, with fresh policy checks and verified
 absence. Handler/catalog admission is implemented. Historical direct-native checks used the earlier

@@ -60,6 +60,33 @@ function setup(body = xml(), etag?: string) {
 }
 
 describe('pinned native formatter patch candidate', () => {
+  it('preserves the newer Workbench preferences exposed by the complete v5 representation', async () => {
+    const attributes =
+      'p:keepIdentifier="true" p:formatMethodCalls="true" p:condenseMethodCalls="true" p:formatValue="true" p:defaultAutoStyle="keywordLower"';
+    const test = setup(xml('true', 'keywordUpper', attributes));
+    const before = parsePinnedFormatterDocument(test.reply().body).unrelated;
+    expect(await test.patch({ indentation: false, style: 'keywordLower' })).toMatchObject({
+      ok: true,
+      state: 'updated',
+    });
+    expect(parsePinnedFormatterDocument(String(test.put.mock.calls[0][1])).unrelated).toEqual(before);
+    expect(test.get.mock.calls[0][1]).toEqual({ Accept: '*/*' });
+  });
+
+  it.each([1, 2, 3, 4, 6])(
+    'refuses an unqualified v%s representation before PUT instead of resetting omitted preferences',
+    async (version) => {
+      const test = setup();
+      test.get.mockResolvedValue({
+        ...test.reply(),
+        headers: { 'content-type': `application/vnd.sap.adt.ppsettings.v${version}+xml` },
+      });
+      expect(await test.patch({ indentation: false })).toMatchObject({ ok: false, phase: 'read', state: 'unchanged' });
+      expect(test.put).not.toHaveBeenCalled();
+      expect(test.get).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('preserves native attributes, namespaces, comments and unselected style while changing indentation', async () => {
     const body = xml('true', 'keywordLower', 'extra="A &amp; B" xmlns:x="urn:other" x:flag="keep"').replace(
       '/>',
@@ -79,18 +106,14 @@ describe('pinned native formatter patch candidate', () => {
       FORMATTER_SETTINGS_PATH,
       expect.stringContaining('<!--native comment-->'),
       FORMATTER_SETTINGS_CONTENT_TYPE,
-      { Accept: FORMATTER_SETTINGS_CONTENT_TYPE, 'If-Match': '"version-1"' },
+      { Accept: '*/*', 'If-Match': '"version-1"' },
       test.context.requestPolicy,
     );
     const saved = parsePinnedFormatterDocument(String(test.put.mock.calls[0][1]));
     expect(saved.unrelated).toEqual({ '{}extra': 'A & B', '{urn:other}flag': 'keep' });
     expect(test.get).toHaveBeenCalledTimes(2);
     for (const call of test.get.mock.calls)
-      expect(call).toEqual([
-        FORMATTER_SETTINGS_PATH,
-        { Accept: FORMATTER_SETTINGS_CONTENT_TYPE },
-        test.context.requestPolicy,
-      ]);
+      expect(call).toEqual([FORMATTER_SETTINGS_PATH, { Accept: '*/*' }, test.context.requestPolicy]);
   });
 
   it.each([undefined, 'W/"weak"'])(

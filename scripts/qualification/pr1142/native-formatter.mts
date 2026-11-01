@@ -26,10 +26,11 @@ assert.equal(client.username, configuration.actors[0].sapUser);
 assert.equal(client.sapClient, '001');
 const response = await client.http.get(
   '/sap/bc/adt/abapsource/prettyprinter/settings',
-  { Accept: 'application/vnd.sap.adt.ppsettings.v2+xml', 'Cache-Control': 'no-cache' },
+  { Accept: '*/*', 'Cache-Control': 'no-cache' },
   { deadline: Date.now() + 30000, noReplay: true, retryTransientErrors: false },
 );
 assert.equal(response.statusCode, 200);
+assert.equal(response.headers['content-type']?.split(';')[0], 'application/vnd.sap.adt.ppsettings.v5+xml');
 assert.ok(Buffer.byteLength(response.body) < 16384);
 const document = parseXml(response.body);
 const settings = document.PrettyPrinterSettings as Record<string, string>;

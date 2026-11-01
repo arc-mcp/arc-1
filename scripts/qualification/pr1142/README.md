@@ -1,7 +1,9 @@
 # PR 1142 live qualification harness
 
 This is the reviewable harness for the next CLAS/INTF deletion and formatter run. It has not yet
-produced live qualification evidence. The historical class and formatter records use earlier
+produced live qualification evidence. The native formatter reader requires the complete v5
+representation; historical v2 checks cannot establish preservation of newer preferences.
+The historical class and formatter records use earlier
 harnesses and revisions; this source does not retroactively attest them.
 
 The live command `{"command":"qualify","plan":"delete-two-user-v1"}` creates four disposable

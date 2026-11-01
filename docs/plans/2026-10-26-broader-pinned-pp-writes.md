@@ -445,6 +445,9 @@ Verify the native scope of formatter settings through PP. The current parser map
 to `keywordUpper` and the writer emits only two fields; do not describe that as preserving native
 fields. For the pinned adapter, patch only explicitly requested supported settings into the native
 document, preserve untouched fields/style values, and refuse an unrecognized document shape.
+Read-only native inspection subsequently found that older GET versions omit preferences replaced by
+PUT. The current pinned adapter therefore requires v5, with no older-version fallback; the native
+qualification reader must inspect that complete representation too.
 Confirm readback, keeping single-target changes separate unless a shared fix is explicitly reviewed.
 Report that it is a settings change, with no claim of DEVCLASS isolation. `format` returns source;
 it does not save it. `apply_quickfix` retains its existing write-scope classification but returns

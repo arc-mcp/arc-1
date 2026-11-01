@@ -139,7 +139,9 @@ destinations, aggregate routes and Basic targets. `format` returns formatted sou
 Use `SAP_DENY_ACTIONS=SAPLint.set_formatter_settings` to prohibit preference changes while retaining
 the supporting reads on otherwise writable pinned connections.
 
-Formatter patches preserve untouched native fields and refuse unrecognized metadata. Strong native
+Formatter patches require the native v5 settings representation, preserve untouched native fields
+and refuse older representations or unrecognized metadata before writing. Older versions omit
+preferences that SAP's PUT can reset; there is no fallback. Strong native
 ETags are used when available; otherwise the result reports `native-unconditional`, so concurrent
 updates to the same user's preferences can overwrite each other. An uncertain outcome is not a
 rollback; read the settings before deciding whether another update is appropriate. The

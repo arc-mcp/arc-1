@@ -11,7 +11,10 @@ import { decodeXmlEntities } from './xml-entities.js';
 import { escapeXmlAttr } from './xml-parser.js';
 
 export const FORMATTER_SETTINGS_PATH = '/sap/bc/adt/abapsource/prettyprinter/settings';
-export const FORMATTER_SETTINGS_CONTENT_TYPE = 'application/vnd.sap.adt.ppsettings.v2+xml';
+// Older representations omit preferences that the native PUT still replaces.
+// Ask for SAP's preferred representation and require this qualified version.
+// Pinning GET's Accept to v5 could silently hide fields of a future preferred version.
+export const FORMATTER_SETTINGS_CONTENT_TYPE = 'application/vnd.sap.adt.ppsettings.v5+xml';
 const namespace = 'http://www.sap.com/adt/prettyprintersettings';
 const styles = new Set(['keywordUpper', 'keywordLower', 'keywordAuto', 'none']);
 const xmlOptions = {
@@ -131,7 +134,7 @@ function validatePatch(patch: Partial<PrettyPrinterSettings>): void {
 
 function readDocument(response: AdtResponse) {
   if (response.headers['content-type']?.split(';')[0].trim().toLowerCase() !== FORMATTER_SETTINGS_CONTENT_TYPE)
-    throw new AdtSafetyError('The native formatter endpoint did not return the qualified v2 XML representation.');
+    throw new AdtSafetyError('The native formatter endpoint did not return the qualified v5 XML representation.');
   return parsePinnedFormatterDocument(response.body);
 }
 
@@ -140,7 +143,7 @@ export async function getPinnedFormatterSettings(
   safety: SafetyConfig,
 ): Promise<PrettyPrinterSettings> {
   checkOperation(safety, OperationType.Read, 'GetPrettyPrinterSettings');
-  return readDocument(await http.get(FORMATTER_SETTINGS_PATH, { Accept: FORMATTER_SETTINGS_CONTENT_TYPE })).settings;
+  return readDocument(await http.get(FORMATTER_SETTINGS_PATH, { Accept: '*/*' })).settings;
 }
 
 function strongEtag(response: AdtResponse): string | undefined {
@@ -187,7 +190,7 @@ export async function patchPinnedFormatterSettings(
     // Capture the validated values before the first asynchronous native read.
     patch = { indentation: patch.indentation, style: patch.style };
     const scoped = mutationHttp(http, safety, context);
-    const headers = { Accept: FORMATTER_SETTINGS_CONTENT_TYPE };
+    const headers = { Accept: '*/*' };
     outcome.phase = 'read';
     throwIfRequestCancelled(context.requestPolicy);
     const response = await scoped.get(FORMATTER_SETTINGS_PATH, headers);

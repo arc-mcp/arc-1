@@ -23,7 +23,9 @@ evidence for formatter preferences.
 
 `src/adt/pinned-formatter.ts` requires a registered pinned mutation context and enabled write policy.
 All GET/PUT calls use the scoped HTTP facade, one finite deadline and cancellation signal, and disabled
-replay/transient retries. The helper patches only explicit supported fields into the native v2 XML.
+replay/transient retries. The current helper patches only explicit supported fields into native v5 XML.
+Earlier revisions used v2; the read-only investigation below found that representation insufficient
+to preserve newer preferences. Older representations are now refused without a PUT or fallback.
 It retains other attributes and comments, resolves XML entities exactly once, handles attribute
 whitespace correctly, and rejects missing/duplicate fields, unknown styles/shapes, foreign namespaces,
 unsupported declarations and invalid entity references. Parsing is bounded to 16 KiB after the HTTP
@@ -38,6 +40,42 @@ Read-back cannot prevent a concurrent same-user preference update from being ove
 Results distinguish unchanged, updated, rejected and unconfirmed outcomes. A timeout/network failure,
 429 or 5xx after submission does not imply rollback or safe retry. Native diagnostics are not copied
 into the result. No fictitious repository owner or package check is introduced.
+
+### Complete representation correction
+
+Read-only source and endpoint inspection on A4H/001 on 1 November found an additional native
+contract defect after the earlier production source review. `CL_SEDI_ADT_RES_PP_SETTINGS` exposes
+`keepIdentifier` and `formatMethodCalls` only from v3, `condenseMethodCalls` and `defaultAutoStyle`
+from v4, and `formatValue` from v5. Its PUT passes all of these fields to
+`CL_SEDI_PRETTY_PRINTER.SET_WB_SETTINGS`, including initial values for omitted fields; that method
+saves them. The `SEDI_ADT_PP_SETTINGS` transformation omits default values when serializing and
+does not merge missing values from the user's stored preferences. Consequently, merging a v2
+GET document cannot preserve nondefault preferences that were omitted from that representation.
+
+The current pinned adapter requests SAP's preferred representation with `Accept: */*` and requires
+v5 for initial GET, PUT and read-back. It does not force an older response if SAP prefers a future
+version. It preserves all unrelated native attributes and refuses other response types before submission. No compatibility
+fallback is claimed for older SAP services. The independent native qualification reader also uses
+v5. Unit regression coverage includes all five newer preferences with nondefault values and each
+older representation's rejection plus an unknown future version. Current-revision mutation/PP qualification and review are still
+required; these read-only checks are not a successful live v5 write test.
+
+The preferred read returned v5. The read-only v2 and v5 responses for the primary user were byte-identical and contained no optional
+preferences at the time of inspection. This does not reconstruct either user's earlier preferences.
+The historical v2 restoration checks below establish only the fields visible in v2, not preservation
+of the hidden newer fields. The legacy single-target adapter remains separate and still uses v2;
+its version/preservation fix needs separate compatibility review as required by the plan.
+
+Source inspection also confirms that the formatter POST uses Workbench settings. Its case-mode
+helper infers case from submitted source only for automatic mode; explicit keyword-upper/lower
+settings should therefore produce distinct keyword case. This supports the new behavioral oracle
+but does not replace executing it through PP.
+
+The [read-only contract record](broader-pinned-pp-writes/formatter-v5-contract-2026-11-01.json)
+contains endpoint results and source hashes; SAP implementation bodies remain outside the repository.
+The v5 correction passes the full unit suite (391 files / 10,852 tests), typecheck, build, lint and
+strict documentation build. The 29 harness fault simulations also pass. A focused actual Claude
+review of this correction and the stronger live run remain pending.
 
 ## Direct native test and restoration
 
