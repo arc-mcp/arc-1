@@ -1,5 +1,7 @@
 # BDEF live assertion repair
 
+**Follow-up:** [Current cache-fixture repair and BTP requalification](2026-11-01-cache-fixture-and-btp-requalification.md) records the completed CI result and nine fresh BTP cases on this unchanged runtime. Earlier results below are retained as historical evidence.
+
 The original final CI run on `92ca5bb41`
 ([run 41280502545](https://github.com/arc-mcp/arc-1/actions/runs/41280502545))
 completed with two integration failures: the new BDEF assertion and the existing
