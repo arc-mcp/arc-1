@@ -1214,6 +1214,14 @@ export const SAPDiagnoseSchema = z
         message: 'objects is only supported for atc and cannot be combined with name, type, or url.',
       });
     }
+    if (input.action === 'atc' && input.objects === undefined && input.url !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['url'],
+        message:
+          'SAPDiagnose action="atc" does not accept url. Select the object with type and name, or pass objects for a batch.',
+      });
+    }
     if (input.action === 'unittest' && input.type !== undefined) {
       const type = input.type.toUpperCase().split('/')[0];
       if (!['CLAS', 'PROG', 'FUGR', 'DEVC'].includes(type ?? '')) {
