@@ -722,7 +722,8 @@ async function handleSAPReadBase(
           throw inner;
         });
         if (!fallback) throw error;
-        const note = describeEnhancementIncludeRevision(fallback);
+        extensionBase.source = fallback.source;
+        const note = [versionWarning, describeEnhancementIncludeRevision(fallback)].filter(Boolean).join('\n\n');
         if (args.grep) return grepText(fallback.source, note);
         return cachedTextResult(fallback.source, false, false, note);
       }

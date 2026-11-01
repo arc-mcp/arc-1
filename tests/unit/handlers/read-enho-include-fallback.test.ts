@@ -5,6 +5,8 @@ import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { enhancementIncludeName, isEnhancementIncludeName } = await import('../../../src/adt/enhancement-include.js');
+const { CachingLayer } = await import('../../../src/cache/caching-layer.js');
+const { MemoryCache } = await import('../../../src/cache/memory.js');
 
 const name = 'ZD0120_FUELLEN';
 const include = enhancementIncludeName(name);
@@ -75,6 +77,7 @@ describe('SAPRead ENHO: source plug-ins via the enhancement include (SAP_BASIS 7
       },
     });
     expect(data.note).toContain('enhancement include');
+    expect(data).not.toHaveProperty('switchSupported');
     expect(calls).toEqual([
       `/sap/bc/adt/enhancements/enhoxhb/${name}`,
       '/sap/bc/adt/repository/informationsystem/search',
@@ -167,7 +170,7 @@ describe('SAPRead INCL on an enhancement include', () => {
     const calls = setup();
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'INCL', name: include });
     expect(result.isError, result.content[0]?.text).toBeUndefined();
-    expect(result.content[0]?.text).toContain('Source read from revision 00000');
+    expect(result.content[0]?.text).toContain('Source read from active revision 00000');
     expect(result.content[0]?.text).toContain('transport A4HK900123');
     expect(result.content[0]?.text).toContain(source);
     expect(calls).toEqual([`${includeBase}/source/main`, `${includeBase}/source/main/versions`, contentPath('00000')]);
@@ -182,7 +185,62 @@ describe('SAPRead INCL on an enhancement include', () => {
     });
     expect(result.isError, result.content[0]?.text).toBeUndefined();
     expect(result.content[0]?.text).toContain('BKNA1-INDTYP');
-    expect(result.content[0]?.text).toContain('Source read from revision 00000');
+    expect(result.content[0]?.text).toContain('Source read from active revision 00000');
+  });
+
+  it('applies a line range to source, with provenance outside the numbered lines', async () => {
+    setup();
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+      type: 'INCL',
+      name: include,
+      lineStart: 2,
+      lineEnd: 3,
+    });
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain('Source read from active revision');
+    expect(result.content[0]?.text).toContain('BKNA1-INDTYP');
+    expect(result.content[0]?.text).toContain('CLEAR FT.');
+    expect(result.content[0]?.text).not.toContain('ENDENHANCEMENT.');
+  });
+
+  it('does not substitute a revision for an editable source snapshot', async () => {
+    const calls = setup();
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+      type: 'INCL',
+      name: include,
+      format: 'editable',
+    });
+    expect(result.isError).toBe(true);
+    expect(calls).toEqual([`${includeBase}/source/main`]);
+  });
+
+  it.each(['active', 'auto'] as const)('preserves draft semantics for version=%s', async (version) => {
+    const calls = setup();
+    const client = createClient();
+    vi.spyOn(client, 'getInactiveObjects').mockResolvedValue([
+      { name: include, type: 'PROG/I', uri: includeBase, user: 'TEST', transport: '' },
+    ]);
+    const result = await handleToolCall(
+      client,
+      DEFAULT_CONFIG,
+      'SAPRead',
+      {
+        type: 'INCL',
+        name: include,
+        version,
+      },
+      undefined,
+      undefined,
+      new CachingLayer(new MemoryCache()),
+    );
+    if (version === 'active') {
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('unactivated draft');
+      expect(result.content[0]?.text).toContain('Source read from active revision');
+    } else {
+      expect(result.isError).toBe(true);
+      expect(calls.some((path) => path.includes('/versions'))).toBe(false);
+    }
   });
 
   it('leaves ordinary includes and inactive reads on the direct route', async () => {

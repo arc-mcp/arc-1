@@ -7,15 +7,13 @@
  * and reads one revision; the callers decide when a fallback is appropriate.
  */
 import type { AdtClient } from './client.js';
+import { canonicalRevisionSourcePath } from './path-safety.js';
 import type { RevisionInfo } from './types.js';
 
 /** `ENHNAME` is CHAR 30; the kernel pads it with `=` and appends `E` for the include name. */
 const ENHANCEMENT_NAME_LENGTH = 30;
 /** Padded names only: a 30-character implementation name would produce an ordinary-looking include. */
 const ENHANCEMENT_INCLUDE_RE = /^[A-Z0-9_/]+=+E$/;
-/** The active version is listed as revision `00000`; other ids are historical versions. */
-const ACTIVE_REVISION_ID = '00000';
-
 /** Name of the enhancement include that stores the plug-in of an enhancement implementation. */
 export function enhancementIncludeName(enhancementName: string): string {
   const name = enhancementName.trim().toUpperCase();
@@ -35,8 +33,8 @@ export interface EnhancementIncludeRevision {
 }
 
 /**
- * Read the active revision of an enhancement include through the revisions feed. Returns
- * `undefined` when the feed lists no revision. SAP errors propagate unchanged so the caller can
+ * Read one verified active content link for this include. Atom ids may be URNs; feed order does
+ * not distinguish history from active source or drafts. SAP errors propagate so the caller can
  * decide whether the original ENHO or include failure is the better message.
  */
 export async function readEnhancementIncludeRevision(
@@ -44,9 +42,13 @@ export async function readEnhancementIncludeRevision(
   includeName: string,
 ): Promise<EnhancementIncludeRevision | undefined> {
   const feed = await client.getRevisions('INCL', includeName);
-  const revision = feed.revisions.find((entry) => entry.id === ACTIVE_REVISION_ID) ?? feed.revisions[0];
-  if (!revision) return undefined;
-  const source = await client.getRevisionSource(revision.uri);
+  const active = feed.revisions.filter((entry) => /\/versions\/[^/]+\/00000\/content$/i.test(entry.uri));
+  if (active.length !== 1) return undefined;
+  const revision = active[0];
+  const path = canonicalRevisionSourcePath(revision.uri);
+  const name = path?.match(/^\/sap\/bc\/adt\/programs\/includes\/([^/]+)\/source\/main\/versions\//i)?.[1];
+  if (!path || !name || decodeURIComponent(name).toUpperCase() !== includeName.toUpperCase()) return undefined;
+  const source = await client.getRevisionSource(path);
   const { id, author, timestamp, transport, versionTitle } = revision;
   return {
     include: includeName,
@@ -58,5 +60,5 @@ export async function readEnhancementIncludeRevision(
 /** One-line provenance note for callers that return plain source text. */
 export function describeEnhancementIncludeRevision(read: EnhancementIncludeRevision): string {
   const transport = read.revision.transport ? `, transport ${read.revision.transport}` : '';
-  return `Source read from revision ${read.revision.id} (${read.revision.timestamp}${transport}) of enhancement include ${read.include}; the direct include read is not served on this SAP release.`;
+  return `Source read from active revision ${read.revision.id} (${read.revision.timestamp}${transport}) of enhancement include ${read.include}; the direct include read failed.`;
 }
