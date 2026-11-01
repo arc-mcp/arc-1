@@ -1,9 +1,10 @@
 # Pinned PP formatter adapter candidate — 1 November 2026
 
-This is a native-adapter checkpoint for draft PR #1142. `SAPLint.set_formatter_settings`, `format`
-and `get_formatter_settings` are **not yet admitted** on multi-target routes. The normal single-target
-implementation is unchanged apart from correcting its scope description. Claude review, pinned
-handler integration, companion-read projection and PP qualification remain outstanding.
+This record began as the native-adapter checkpoint at `70ab1f7b4` for draft PR #1142. The subsequent
+integration admits `SAPLint.set_formatter_settings`, `format` and `get_formatter_settings` only on
+writable pinned PP connections. The normal single-target implementation is unchanged apart from
+correcting its scope description. The integration is still awaiting Claude review and live PP
+qualification; it is not a completed release acceptance.
 
 ## Scope correction
 
@@ -73,3 +74,23 @@ Before admission, integrate the partial-patch handler without using the legacy p
 defaults; add only the reviewed formatter companions to writable pinned catalogs; retain all existing
 reader/aggregate/Basic surfaces; qualify the two-user PP behavior; and complete the requested actual
 Claude Code Opus 5.5 max review. This checkpoint is not parity or merge acceptance.
+
+### Handler and companion integration
+
+The following delta routes all three SAP-backed formatter actions through an explicit pinned handler.
+It rechecks selected-target identity and effective write policy, preserves the normal scopes (`write`
+for settings, `read` for companions), and refuses to enter the legacy handler when multi-target state
+is present but incomplete. Raw fields and input validation are checked before PP preparation. The
+existing Zod schema remains authoritative for loose boolean normalization, including `"false"` and `0`.
+
+The capability matrix now contains five mutations. The two formatter companions have a separate
+explicit read table, bounded to normal read/intelligence policies and writable pinned exposure.
+Catalog action projection does not simulate a fully populated invocation; required mutation inputs
+can therefore be rejected early without accidentally hiding the action. Annotations are finalized
+after functional scopes and deny actions. Reader, writes-off destination, global-readonly, aggregate
+and Basic route tests keep their original formatter action lists and refuse direct hidden calls.
+
+This integration adds 32 tests across route preparation and the real dispatch/native-HTTP boundary.
+The full suite passed **389 files / 10,758 tests**, plus typecheck, build, lint and file/schema budgets.
+The native candidate evidence above remains valid for its protocol, but does not substitute for the
+new handler's upcoming two-identity PP qualification or the pending Claude review.

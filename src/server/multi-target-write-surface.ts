@@ -1,8 +1,11 @@
 /** Reviewed mutation surface; independent of tool advertisement and general single-target schemas. */
-import { isMutatingOperationType, isOperationAllowed } from '../adt/safety.js';
+import { isMutatingOperationType, isOperationAllowed, OperationType } from '../adt/safety.js';
 import { ACTION_POLICY } from '../authz/policy.js';
 import {
+  type PinnedCompanionCapability,
   type PinnedMutationCapability,
+  pinnedCompanionCapability,
+  pinnedCompanionToolSurface,
   pinnedMutationCapability,
   pinnedMutationToolSurface,
 } from './pinned-mutation-capabilities.js';
@@ -32,5 +35,30 @@ export function pinnedMutationAllowed(tool: string, args: Record<string, unknown
 export function pinnedMutationSurface(tool: string, config: ServerConfig) {
   return pinnedWriteEnabled(config)
     ? pinnedMutationToolSurface(tool, (capability) => capabilityEnabled(capability, config))
+    : undefined;
+}
+
+function companionEnabled(capability: PinnedCompanionCapability, config: ServerConfig): boolean {
+  const policy = ACTION_POLICY[`${capability.tool}.${capability.action}`];
+  return (
+    !!policy &&
+    policy.scope === 'read' &&
+    (policy.opType === OperationType.Read || policy.opType === OperationType.Intelligence) &&
+    isOperationAllowed(config, policy.opType)
+  );
+}
+
+export function pinnedCompanionAllowed(tool: string, args: Record<string, unknown>, config: ServerConfig): boolean {
+  if (!pinnedWriteEnabled(config)) return false;
+  const capability = pinnedCompanionCapability(tool, args.action);
+  if (!capability || !companionEnabled(capability, config)) return false;
+  if (Object.entries(args).some(([key, value]) => value !== undefined && !capability.fields.includes(key)))
+    return false;
+  return capability.accepts(args);
+}
+
+export function pinnedCompanionSurface(tool: string, config: ServerConfig) {
+  return pinnedWriteEnabled(config)
+    ? pinnedCompanionToolSurface(tool, (capability) => companionEnabled(capability, config))
     : undefined;
 }

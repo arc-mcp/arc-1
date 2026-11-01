@@ -1,4 +1,6 @@
 /** Explicit admitted combinations. Pending PR 2 adapters must not be inferred from the single-target registry. */
+import { SAPLintSchema } from '../handlers/schemas.js';
+
 export interface PinnedMutationCapability {
   readonly tool: 'SAPWrite' | 'SAPActivate' | 'SAPManage' | 'SAPTransport' | 'SAPDiagnose' | 'SAPLint';
   readonly action: string;
@@ -45,6 +47,16 @@ const rows: PinnedMutationCapability[] = [
     fields: ownerFields,
     accepts: () => true,
   },
+  {
+    tool: 'SAPLint',
+    action: 'set_formatter_settings',
+    resource: 'settings',
+    fields: ['action', 'indentation', 'style'],
+    accepts: (args) => {
+      const parsed = SAPLintSchema.safeParse(args);
+      return parsed.success && (parsed.data.indentation !== undefined || parsed.data.style !== undefined);
+    },
+  },
 ];
 export const PINNED_MUTATION_CAPABILITIES: readonly PinnedMutationCapability[] = Object.freeze(
   rows.map((row) =>
@@ -69,4 +81,39 @@ export function pinnedMutationToolSurface(tool: string, enabled: (capability: Pi
     types: [...new Set(capabilities.flatMap((entry) => entry.types ?? []))],
     fields: new Set(capabilities.flatMap((entry) => entry.fields)),
   };
+}
+
+export type PinnedCompanionCapability = Pick<PinnedMutationCapability, 'tool' | 'action' | 'fields' | 'accepts'>;
+
+/** New supporting reads are visible only on writable pinned PP connections, with their normal read scope. */
+export const PINNED_READ_COMPANIONS: readonly PinnedCompanionCapability[] = Object.freeze([
+  Object.freeze({
+    tool: 'SAPLint' as const,
+    action: 'get_formatter_settings',
+    fields: Object.freeze(['action']),
+    accepts: (args: Record<string, unknown>) => SAPLintSchema.safeParse(args).success,
+  }),
+  Object.freeze({
+    tool: 'SAPLint' as const,
+    action: 'format',
+    fields: Object.freeze(['action', 'source']),
+    accepts: (args: Record<string, unknown>) => {
+      const parsed = SAPLintSchema.safeParse(args);
+      return parsed.success && typeof parsed.data.source === 'string' && parsed.data.source.length > 0;
+    },
+  }),
+]);
+
+export function pinnedCompanionCapability(tool: string, action: unknown): PinnedCompanionCapability | undefined {
+  return PINNED_READ_COMPANIONS.find((entry) => entry.tool === tool && entry.action === action);
+}
+
+export function pinnedCompanionToolSurface(tool: string, enabled: (capability: PinnedCompanionCapability) => boolean) {
+  const capabilities = PINNED_READ_COMPANIONS.filter((entry) => entry.tool === tool && enabled(entry));
+  return capabilities.length
+    ? {
+        actions: capabilities.map((entry) => entry.action),
+        fields: new Set(capabilities.flatMap((entry) => entry.fields)),
+      }
+    : undefined;
 }

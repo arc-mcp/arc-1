@@ -7,8 +7,13 @@ import type { ToolDefinition } from '../handlers/tools.js';
 import type { TargetDescriptor } from './destination-registry.js';
 import { TARGET_CATALOG_MAX_OFFSET, TARGET_CATALOG_MAX_QUERY_LENGTH } from './multi-target-catalog.js';
 import { TARGET_ID_PATTERN } from './multi-target-identity.js';
-import { pinnedMutationAllowed, pinnedMutationSurface } from './multi-target-write-surface.js';
-import { pinnedMutationCapability } from './pinned-mutation-capabilities.js';
+import {
+  pinnedCompanionAllowed,
+  pinnedCompanionSurface,
+  pinnedMutationAllowed,
+  pinnedMutationSurface,
+} from './multi-target-write-surface.js';
+import { pinnedCompanionCapability, pinnedMutationCapability } from './pinned-mutation-capabilities.js';
 import type { ServerConfig } from './types.js';
 
 export const MULTI_TARGET_TOOLS = new Set([
@@ -107,6 +112,8 @@ export function multiTargetInvocationDecision(
   const action = invocationPolicyKey(toolName, args) ?? (toolName === 'SAPActivate' ? 'activate' : undefined);
   if (pinnedMutationCapability(toolName, action))
     return pinnedMutationAllowed(toolName, args, config) ? 'allowed' : 'forbidden';
+  if (pinnedCompanionCapability(toolName, action))
+    return pinnedCompanionAllowed(toolName, args, config) ? 'allowed' : 'forbidden';
   if (!MULTI_TARGET_TOOLS.has(toolName)) return 'forbidden';
   if (toolName === 'SAPQuery' && action === 'long_text' && config.systemType === 'btp') return 'forbidden';
   const actionRule = MULTI_TARGET_ACTION_RULES.get(toolName);
@@ -182,8 +189,10 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
     };
   }
   const mutationSurface = pinnedMutationSurface(tool.name, config);
+  const companionSurface = pinnedCompanionSurface(tool.name, config);
+  const expandedFields = new Set([...(mutationSurface?.fields ?? []), ...(companionSurface?.fields ?? [])]);
   const hasReaderSurface = MULTI_TARGET_TOOLS.has(tool.name);
-  if (!hasReaderSurface && !mutationSurface) return undefined;
+  if (!hasReaderSurface && !mutationSurface && !companionSurface) return undefined;
   const schema = tool.inputSchema;
   const properties = (schema.properties as Record<string, unknown> | undefined) ?? {};
   const field = tool.name === 'SAPRead' ? 'type' : 'action';
@@ -193,14 +202,19 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
   }
   const values = definition.enum
     .map(String)
-    .filter((value) => isMultiTargetInvocationAllowed(tool.name, { [field]: value }, config));
+    .filter(
+      (value) =>
+        mutationSurface?.actions.includes(value) ||
+        companionSurface?.actions.includes(value) ||
+        isMultiTargetInvocationAllowed(tool.name, { [field]: value }, config),
+    );
   if (values.length === 0) return undefined;
   const actionRule = MULTI_TARGET_ACTION_RULES.get(tool.name);
   const prunedProperties = Object.fromEntries(
     Object.entries(properties).filter(([name]) =>
       hasReaderSurface
-        ? !actionRule?.omittedProperties.has(name) || mutationSurface?.fields.has(name)
-        : mutationSurface?.fields.has(name),
+        ? !actionRule?.omittedProperties.has(name) || expandedFields.has(name)
+        : expandedFields.has(name),
     ),
   );
   const mutates = values.some((value) => !!pinnedMutationCapability(tool.name, value));

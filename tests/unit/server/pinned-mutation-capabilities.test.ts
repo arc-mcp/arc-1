@@ -21,7 +21,15 @@ const writer = {
     serverAllowedTransports: ['*'],
   },
 };
-const admitted = ['SAPWrite.create', 'SAPWrite.update', 'SAPWrite.edit_method', 'SAPActivate.activate'];
+const admitted = [
+  'SAPWrite.create',
+  'SAPWrite.update',
+  'SAPWrite.edit_method',
+  'SAPActivate.activate',
+  'SAPLint.set_formatter_settings',
+];
+const validArguments = (tool: string, action?: string) =>
+  tool === 'SAPLint' ? { action, style: 'none' } : { action, type: 'CLAS' };
 
 describe('pinned mutation capability matrix', () => {
   it('pins the reviewed action, type, representation and raw-field contracts', () => {
@@ -53,6 +61,12 @@ describe('pinned mutation capability matrix', () => {
         resource: 'whole-owner',
         types: ['CLAS', 'INTF'],
         fields: ['action', 'type', 'name'],
+      },
+      {
+        tool: 'SAPLint',
+        action: 'set_formatter_settings',
+        resource: 'settings',
+        fields: ['action', 'indentation', 'style'],
       },
     ]);
   });
@@ -118,7 +132,7 @@ describe('pinned mutation capability matrix', () => {
     for (const [key, policy] of Object.entries(ACTION_POLICY)) {
       if (!['C', 'U', 'D', 'A', 'W', 'X'].includes(policy.opType)) continue;
       const [tool, action] = key.split('.');
-      expect(multiTargetInvocationDecision(tool, { action, type: 'CLAS' }, writer), key).toBe(
+      expect(multiTargetInvocationDecision(tool, validArguments(tool, action), writer), key).toBe(
         admitted.includes(key) || key === 'SAPActivate' ? 'allowed' : 'forbidden',
       );
     }
@@ -135,7 +149,7 @@ describe('pinned mutation capability matrix', () => {
             ? { ...writer, multiTargetWrite: undefined }
             : { ...writer, [gate]: false };
       for (const entry of PINNED_MUTATION_CAPABILITIES) {
-        expect(pinnedMutationAllowed(entry.tool, { action: entry.action, type: 'CLAS' }, config)).toBe(false);
+        expect(pinnedMutationAllowed(entry.tool, validArguments(entry.tool, entry.action), config)).toBe(false);
         expect(pinnedMutationSurface(entry.tool, config)).toBeUndefined();
       }
     },
@@ -162,7 +176,11 @@ describe('pinned mutation capability matrix', () => {
     for (const entry of PINNED_MUTATION_CAPABILITIES) {
       for (const field of ['target', 'include', 'objects', 'recursive', 'responsible', 'activate']) {
         expect(
-          pinnedMutationAllowed(entry.tool, { action: entry.action, type: 'CLAS', [field]: { nested: true } }, writer),
+          pinnedMutationAllowed(
+            entry.tool,
+            { ...validArguments(entry.tool, entry.action), [field]: { nested: true } },
+            writer,
+          ),
         ).toBe(false);
       }
       expect(pinnedMutationAllowed(entry.tool, { action: entry.action, type: 'PROG' }, writer)).toBe(false);

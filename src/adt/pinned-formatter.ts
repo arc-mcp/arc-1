@@ -1,4 +1,4 @@
-/** Native formatter patch candidate. Not admitted by the multi-target capability table yet. */
+/** Native formatter patch/read adapter for the pinned PP formatter capability. */
 import { XMLBuilder, XMLParser, XMLValidator } from 'fast-xml-parser';
 import type { PrettyPrinterSettings } from './devtools.js';
 import { AdtApiError, AdtSafetyError } from './errors.js';
@@ -133,6 +133,14 @@ function readDocument(response: AdtResponse) {
   if (response.headers['content-type']?.split(';')[0].trim().toLowerCase() !== FORMATTER_SETTINGS_CONTENT_TYPE)
     throw new AdtSafetyError('The native formatter endpoint did not return the qualified v2 XML representation.');
   return parsePinnedFormatterDocument(response.body);
+}
+
+export async function getPinnedFormatterSettings(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+): Promise<PrettyPrinterSettings> {
+  checkOperation(safety, OperationType.Read, 'GetPrettyPrinterSettings');
+  return readDocument(await http.get(FORMATTER_SETTINGS_PATH, { Accept: FORMATTER_SETTINGS_CONTENT_TYPE })).settings;
 }
 
 function strongEtag(response: AdtResponse): string | undefined {

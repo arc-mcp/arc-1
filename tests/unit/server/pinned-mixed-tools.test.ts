@@ -11,7 +11,7 @@ import { filterToolsByAuthScope } from '../../../src/server/tool-auth.js';
 import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 
 // Exercise future adapter registration without admitting any of these operations in production.
-// The real matrix's four-row contract is checked separately in pinned-mutation-capabilities.test.ts.
+// The real matrix's exact contract is checked separately in pinned-mutation-capabilities.test.ts.
 vi.mock('../../../src/server/pinned-mutation-capabilities.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../src/server/pinned-mutation-capabilities.js')>();
   const fixtures: PinnedMutationCapability[] = [
@@ -164,6 +164,8 @@ describe('mixed-tool pinned admission plumbing (synthetic capability registratio
       'lint',
       'lint_and_fix',
       'list_rules',
+      'format',
+      'get_formatter_settings',
       'set_formatter_settings',
     ]);
     const transport = tools.find((tool) => tool.name === 'SAPTransport')!;

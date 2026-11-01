@@ -87,7 +87,7 @@ export function buildMultiTargetServerInstructions(options: MultiTargetServerOpt
     'Data preview and SQL require instance, destination, XSUAA scope, and SAP authorization consent.',
     'Offline SAPLint, read-only transport inspection, ATC, and ABAP Unit are available; ATC and Unit execute SAP workloads.',
     writable
-      ? 'CLAS/INTF main-source writes require both package policies; updates require an editable source hash. Activation affects the whole owner and its existing inactive drafts. Transport/Git management and all other mutations remain unavailable.'
+      ? 'CLAS/INTF main-source writes require both package policies; updates require an editable source hash. Activation affects the whole owner and its existing inactive drafts. SAP formatting and formatter preferences use the mapped SAP user and are not package-bound. Transport/Git management and other mutations remain unavailable.'
       : 'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable.',
     NATIVE_NAVIGATION_INSTRUCTIONS,
   ].join('\n');

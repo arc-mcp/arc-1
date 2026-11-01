@@ -8,8 +8,13 @@ import { parseDestinationAllowlist } from '../../../src/server/multi-target-dest
 import { projectMultiTargetRequest } from '../../../src/server/multi-target-request-projection.js';
 import { buildMultiTargetConfig } from '../../../src/server/multi-target-runtime.js';
 import { buildMultiTargetServerInstructions, prepareMultiTargetCall } from '../../../src/server/multi-target-server.js';
-import { multiTargetToolDefinitions } from '../../../src/server/multi-target-tools.js';
+import {
+  finalizeMultiTargetToolAnnotations,
+  multiTargetToolDefinitions,
+} from '../../../src/server/multi-target-tools.js';
+import { PINNED_READ_COMPANIONS } from '../../../src/server/pinned-mutation-capabilities.js';
 import { NATIVE_NAVIGATION_INSTRUCTIONS } from '../../../src/server/server-instructions.js';
+import { filterToolsByAuthScope } from '../../../src/server/tool-auth.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 const base = {
@@ -68,6 +73,141 @@ function runtime(identity = auth(), mode: 'pinned' | 'aggregate' = 'pinned') {
 }
 
 describe('pinned write policy composition', () => {
+  it('adds only the explicit formatter companions and setting action to a writable pinned catalog', () => {
+    expect(PINNED_READ_COMPANIONS.map(({ tool, action, fields }) => ({ tool, action, fields }))).toEqual([
+      { tool: 'SAPLint', action: 'get_formatter_settings', fields: ['action'] },
+      { tool: 'SAPLint', action: 'format', fields: ['action', 'source'] },
+    ]);
+    const config = runtime();
+    const catalog = multiTargetToolDefinitions(getToolDefinitions(config), config);
+    const lint = catalog.find((tool) => tool.name === 'SAPLint')!;
+    expect((lint.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).toEqual([
+      'lint',
+      'lint_and_fix',
+      'list_rules',
+      'format',
+      'get_formatter_settings',
+      'set_formatter_settings',
+    ]);
+    expect(lint.inputSchema.properties).toHaveProperty('indentation');
+    expect(lint.inputSchema.properties).toHaveProperty('style');
+    expect(lint.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    const denied = finalizeMultiTargetToolAnnotations(
+      filterToolsByAuthScope(catalog, ['read', 'write'], ['SAPLint.set_formatter_settings']),
+    );
+    const readLint = denied.find((tool) => tool.name === 'SAPLint')!;
+    expect((readLint.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).not.toContain(
+      'set_formatter_settings',
+    );
+    expect(readLint.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+  });
+
+  it.each(['reader', 'destination-readonly', 'aggregate', 'basic', 'global-readonly'] as const)(
+    'keeps formatter calls and companions out of the %s route',
+    async (kind) => {
+      const instance = { ...base, allowWrites: kind !== 'global-readonly', multiTargetAllowBasicAuth: true };
+      const r = registry(
+        kind === 'destination-readonly' || kind === 'basic' ? { 'arc1.allow_writes': 'false' } : {},
+        instance,
+        kind === 'basic' ? 'BasicAuthentication' : 'PrincipalPropagation',
+      );
+      const identity = kind === 'reader' ? auth([], ['read']) : auth();
+      const options = {
+        mode: kind === 'aggregate' ? ('aggregate' as const) : ('pinned' as const),
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: instance,
+        authorization: projectMultiTargetRequest(r, identity),
+      };
+      const config = buildMultiTargetConfig(instance, r.targets[0], options);
+      const lint = multiTargetToolDefinitions(getToolDefinitions(config), config).find(
+        (tool) => tool.name === 'SAPLint',
+      )!;
+      expect((lint.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).toEqual([
+        'lint',
+        'lint_and_fix',
+        'list_rules',
+      ]);
+      expect(lint.inputSchema.properties).not.toHaveProperty('indentation');
+      expect(lint.inputSchema.properties).not.toHaveProperty('style');
+      for (const args of [
+        { action: 'format', source: 'REPORT ztest.' },
+        { action: 'get_formatter_settings' },
+        { action: 'set_formatter_settings', indentation: false },
+      ]) {
+        const result = await prepareMultiTargetCall({
+          options,
+          toolName: 'SAPLint',
+          rawArgs: { ...args, ...(kind === 'aggregate' ? { target: 'A4H/001' } : {}) },
+          requestId: 'formatter-denied',
+          authInfo: identity,
+        });
+        expect(result.handled).toBe(true);
+        if (!result.handled) throw new Error('Formatter reached preparation on a read-only route');
+        expect(JSON.stringify(result.result)).toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
+      }
+    },
+  );
+
+  it.each([
+    { action: 'set_formatter_settings' },
+    { action: 'set_formatter_settings', style: 'unknown' },
+    { action: 'set_formatter_settings', indentation: 'maybe' },
+    { action: 'set_formatter_settings', indentation: false, user: 'OTHER' },
+    { action: 'get_formatter_settings', user: 'OTHER' },
+    { action: 'format', source: {} },
+    { action: 'format' },
+    { action: 'format', source: 'REPORT ztest.', target: 'OTHER/001' },
+  ])('rejects invalid/hidden formatter inputs before PP preparation: %j', async (rawArgs) => {
+    const r = registry();
+    const identity = auth();
+    const result = await prepareMultiTargetCall({
+      options: {
+        mode: 'pinned',
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: base,
+        authorization: projectMultiTargetRequest(r, identity),
+      },
+      toolName: 'SAPLint',
+      rawArgs,
+      requestId: 'formatter-invalid',
+      authInfo: identity,
+    });
+    expect(result.handled).toBe(true);
+    if (!result.handled) throw new Error('Invalid formatter arguments reached preparation');
+    expect(JSON.stringify(result.result)).toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
+  });
+
+  it.each([
+    { action: 'set_formatter_settings', indentation: false },
+    { action: 'set_formatter_settings', indentation: 'false' },
+    { action: 'set_formatter_settings', indentation: 0 },
+    { action: 'set_formatter_settings', style: 'none' },
+    { action: 'get_formatter_settings' },
+    { action: 'format', source: 'REPORT ztest.' },
+  ])('prepares supported formatter inputs without weakening their route policy: %j', async (rawArgs) => {
+    const r = registry();
+    const identity = auth();
+    const result = await prepareMultiTargetCall({
+      options: {
+        mode: 'pinned',
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: base,
+        authorization: projectMultiTargetRequest(r, identity),
+      },
+      toolName: 'SAPLint',
+      rawArgs,
+      requestId: 'formatter-valid',
+      authInfo: identity,
+    });
+    expect(result.handled).toBe(false);
+    if (result.handled) throw new Error('Valid formatter arguments were refused');
+    expect(result.activeConfig.multiTargetWrite?.enabled).toBe(true);
+    expect(result.selectedTarget.target).toBe('A4H/001');
+  });
+
   it.each(['writer', 'reader', 'aggregate'] as const)(
     'retains native navigation and accurate mutation guidance for %s connections',
     (kind) => {

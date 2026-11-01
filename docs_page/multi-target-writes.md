@@ -4,7 +4,7 @@ Multi-target writes use the existing pinned URL and the existing `SAP_ALLOW_WRIT
 They require Principal Propagation (PP), target-filtered authorization, destination opt-in,
 and a separate exact write grant. Enabling the global switch alone grants no multi-target writes.
 
-| Connection | Reads | Scoped object writes |
+| Connection | Reads | Built-in mutations |
 |---|---|---|
 | Pinned PP `/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp` | Subject to access grants and SAP authorization | Only when every write gate below agrees |
 | Aggregate `/multi/mcp` | Explicit target on each call | Never |
@@ -51,7 +51,7 @@ Keep the destination's real `sap-sysid`, `sap-client`, URL, Cloud Connector loca
 `arc1.target_alias` from the existing setup. On read-only target `QAS/001`, omit all three write
 properties. A pinned URL names the public target ID, including its alias if configured.
 
-**Both package lists apply.** A package must match the global list and the destination list.
+**Both package lists apply to repository writes.** A package must match the global list and the destination list.
 Here, `ZTEAM_OTHER` is not writable merely because it matches the global subtree. Conversely, a
 destination cannot permit a package excluded globally. Existing-object checks use the real SAP
 package, not a package supplied by the caller. Package subtree lookup failures deny the write.
@@ -130,6 +130,20 @@ only the aggregate compatibility connection cannot write through that connection
 | `SAPWrite.update` | CLAS/INTF main source; `expectedSourceHash` from `SAPRead(format="editable")` |
 | `SAPWrite.edit_method` | Existing CLAS main-source method; hash of the complete editable main source |
 | `SAPActivate` | One CLAS/INTF owner; activates all of that owner's existing inactive drafts and includes |
+| `SAPLint.set_formatter_settings` | Partial indentation/style patch of the mapped SAP user's formatter preferences on this target; native read/merge/write/read-back, not a package-owned object |
+
+Writable pinned PP connections also expose `SAPLint.format` and `get_formatter_settings` with their
+normal `read` scope. These supporting reads remain hidden on reader connections, read-only
+destinations, aggregate routes and Basic targets. `format` returns formatted source without saving it.
+Use `SAP_DENY_ACTIONS=SAPLint.set_formatter_settings` to prohibit preference changes while retaining
+the supporting reads on otherwise writable pinned connections.
+
+Formatter patches preserve untouched native fields and refuse unrecognized metadata. Strong native
+ETags are used when available; otherwise the result reports `native-unconditional`, so concurrent
+updates to the same user's preferences can overwrite each other. An uncertain outcome is not a
+rollback; read the settings before deciding whether another update is appropriate. The
+[formatter qualification record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-formatter.md)
+distinguishes implementation, direct native evidence and pending PP acceptance in draft PR #1142.
 
 Creates and edits save inactive source. Review it before activation. **Activation is whole-owner**,
 including drafts created previously or by another session; it is not method-only activation.
