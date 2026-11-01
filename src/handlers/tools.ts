@@ -444,9 +444,14 @@ export function getToolDefinitions(
           method: {
             type: 'string',
             description:
-              'For CLAS: read a method (e.g., "get_name", "zif_order~process", "lhc_travel~accept") or use "*" to list methods. Without include=, lhc_*/lcl_* use implementations, ltc_* uses testclasses, and others use MAIN; explicit include= wins. ' +
-              (btp ? '' : 'For SOBJ: BOR method name to read. If omitted, returns the full BOR method catalog. ') +
-              'Not used with other types.',
+              'CLAS: method body; "*" lists methods. Without include, lhc_x~m/lcl_x~m use implementations, ltc_x~m testclasses, others MAIN. Explicit include wins. ' +
+              (btp ? '' : 'SOBJ: method implementation; omit for catalog.'),
+          },
+          methodView: {
+            type: 'string',
+            enum: ['signature'],
+            description:
+              'CLAS: own MAIN declaration with parameters/exceptions. Bare method only; no locals, interfaces, inheritance or other selectors. Omit for body.',
           },
           grep: {
             type: 'string',
@@ -485,7 +490,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['text', 'structured', 'editable'],
             description:
-              'Default text; DEVC returns array then listing metadata, diff a patch. structured: CLAS metadata+includes, DEVC {objects,listing}, diff JSON. editable: fresh {source,sourceHash} for guarded SAPWrite; omit version/method/grep, select CLAS include.',
+              'Default text. structured: CLAS metadata+includes (omit method), DEVC {objects,listing}, diff JSON. editable: fresh {source,sourceHash} for guarded SAPWrite; omit version/method/grep, select CLAS include.',
           },
           version: {
             type: 'string',
