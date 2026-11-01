@@ -530,6 +530,8 @@ export interface ObjectTransportHistory {
   object: { type: string; name: string; uri: string };
   /** Transport currently holding a lock on this object (if any). */
   lockedTransport?: string;
+  /** Package/lock lookup failed or SAP returned ambiguous holders; absence of a lock is unverified. */
+  lockStatusUnknown?: true;
   /** Current parent request holding the object lock; contains at most one entry. */
   relatedTransports: Array<{ id: string; description: string; owner: string; status: string }>;
   /** Requests the object could be assigned to; these do not imply object membership or history. */
