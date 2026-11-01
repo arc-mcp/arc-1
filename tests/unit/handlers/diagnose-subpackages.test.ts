@@ -107,6 +107,7 @@ describe.each([false, true])('SAPDiagnose includeSubpackages (BTP=%s, #1132)', (
           includeSubpackages: value === undefined ? undefined : [true, 'true', 1].includes(value),
         }),
         expect.anything(),
+        expect.anything(),
       );
     },
   );

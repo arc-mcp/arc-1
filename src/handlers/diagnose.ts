@@ -62,6 +62,7 @@ import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import type {
   DumpDetail,
   FixAffectedObject,
+  SystemType,
   TracedObjectType,
   TracedProcessType,
   TraceRequestCreateOptions,
@@ -642,7 +643,7 @@ export async function handleSAPDiagnose(
   client: AdtClient,
   args: Record<string, unknown>,
   minimalErrors: boolean,
-  options: { deadline?: number; signal?: AbortSignal } = {},
+  options: { deadline?: number; signal?: AbortSignal; configuredSystemType?: SystemType } = {},
 ): Promise<ToolResult> {
   const action = String(args.action ?? '');
   const name = String(args.name ?? '');
@@ -854,7 +855,12 @@ export async function handleSAPDiagnose(
     }
     case 'unittest_ci':
     case 'atc_ci':
-      return handleCiQuality(client, args, (c, a, o) => handleSAPDiagnose(c, a, minimalErrors, o));
+      return handleCiQuality(
+        client,
+        args,
+        (c, a, o) => handleSAPDiagnose(c, a, minimalErrors, o),
+        options.configuredSystemType,
+      );
     case 'atc': {
       if (args.objects !== undefined) {
         const objects = (args.objects as { type: AtcBatchObject['type']; name: string }[]).map((object) => ({
@@ -874,7 +880,7 @@ export async function handleSAPDiagnose(
       if (!type || !name)
         return errorResult(
           '"type" and "name" are required for "atc" (e.g. type="CLAS", name="ZCL_FOO"), or pass "objects" for a batch. ' +
-            'For whole packages use action="atc_ci".',
+            'For packages use action="atc", type="DEVC", name=<package>; BTP also supports action="atc_ci".',
         );
       const objectUrl = objectUrlForType(type, name);
       const variant = args.variant as string | undefined;
