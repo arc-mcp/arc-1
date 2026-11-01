@@ -85,6 +85,9 @@ sequence.
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
 | [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P3 | M | Revisit on trigger | Security |
+| [SEC-20](#sec-20) | Require dependency and CodeQL security checks on `main` | P1 | XS | Ready | Security |
+| [SEC-21](#sec-21) | Socket policy calibration | P3 | S | Revisit on trigger | Security |
+| [SEC-22](#sec-22) | SBOMs for the Docker image, MCPB bundle and executables | P3 | S | Revisit on trigger | Security |
 | [SEC-19](#sec-19) | Registered agent identity and downstream tool scopes | P2 | L | Needs research | Auth / Security |
 | [COMPAT-22](#compat-22) | Integration Suite remote MCP gateway validation | P2 | M | Needs research | Compatibility |
 | [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
@@ -531,6 +534,62 @@ source. This is an existing policy coverage limit, documented during
 SAP metadata for implicit dependencies and test representative releases. Choose a bounded proof or
 explicit refusal for affected functions; do not infer full lineage from the present graph or add a
 hard-coded table list without proving its completeness.
+
+<a id="sec-20"></a>
+### SEC-20 — Require dependency and CodeQL security checks on `main`
+
+- **Priority / effort / status:** P1 / XS / Ready
+- **Category:** Security
+
+**Remaining gap.** Security checks report on PRs, but no ruleset requires them. A red
+`Dependency security` check or a high CodeQL finding does not stop a merge. The `main` ruleset only
+has deletion, non-fast-forward and pull-request rules (checked 2026-11-01).
+
+**Resume with.** Add a ruleset for the default branch with two rules:
+
+- Required status check `Dependency security` from GitHub Actions (integration ID `15368`). Leave
+  "require branches to be up to date" off: it would force a re-merge and full CI on every open PR.
+- A `code_scanning` rule for CodeQL with security alerts at `high_or_higher` and general alerts at
+  `none`. Do not require the `CodeQL` status check instead.
+
+Before enabling it, watch the merge panel on a normal PR, a release PR and a Dependabot PR:
+
+- Release PRs only run their workflows after a maintainer approves them:
+  [#1093](https://github.com/arc-mcp/arc-1/pull/1093) never ran Dependency Review,
+  [#1079](https://github.com/arc-mcp/arc-1/pull/1079) did. The required check waits until then.
+- `CodeQL` was `neutral` on #1079 although every analysis passed. Confirm that does not block.
+- [GitHub exempts Dependabot PRs](https://docs.github.com/en/code-security/concepts/code-scanning/merge-protection#exceptions-and-limitations)
+  analyzed by default setup from code-scanning rules, so only `Dependency security` applies there.
+
+Afterwards, prove that a harmless failing check is refused, and update the warning in
+[section 13](security-guide.md#13-dependency-supply-chain-security).
+
+<a id="sec-21"></a>
+### SEC-21 — Socket policy calibration
+
+- **Priority / effort / status:** P3 / S / Revisit on trigger
+- **Category:** Security
+
+**Remaining gap.** The Socket GitHub App reports on every PR, but ARC-1 has not verified that its
+dashboard policy blocks anything on a real dependency change.
+
+**Resume when.** A customer asks for malicious-package blocking, or SEC-20 is in place and adding
+Socket to it would be useful. Review results on real dependency PRs first, block known malware, and
+keep behavior signals such as install scripts and network access as warnings because legitimate
+packages trigger them. Add `Socket Security: Pull Request Alerts` to the required checks only after that.
+
+<a id="sec-22"></a>
+### SEC-22 — SBOMs for the Docker image, MCPB bundle and executables
+
+- **Priority / effort / status:** P3 / S / Revisit on trigger
+- **Category:** Security
+
+**Remaining gap.** Releases publish an SBOM for the root npm production graph only. It does not
+describe Alpine packages in the image, the MCPB after `better-sqlite3` is removed, or the executables.
+Scheduled scans also rebuild the image, so they say nothing about an already published digest.
+
+**Resume when.** A customer deploying one of these artifacts needs its inventory. Generate each
+SBOM from the built artifact, keep the release non-gating, and do not reuse the npm SBOM.
 
 <a id="sec-19"></a>
 ### SEC-19 — Registered agent identity and downstream tool scopes

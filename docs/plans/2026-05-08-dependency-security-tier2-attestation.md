@@ -1,12 +1,7 @@
 # Dependency Security — Tier 2: Supply-Chain Attestation
 
-> **Reassessment (2026-09-07):** use the
-> [enterprise acceptance research](../research/2026-09-07-enterprise-security-acceptance.md)
-> for current evidence and implementation order. The recipes below are historical proposals,
-> not verified current commands. Signing/provenance alone does not establish a SLSA level;
-> inventories must match each platform/artifact, and npm consumers do not inherit the producer's
-> lockfile. Preserve the non-gating SBOM/release-scan contract. The existing `workflow_dispatch`
-> publishes npm and must not be used as a dry-run verification step.
+> **Status (2026-11-01):** historical proposal. Verify every command before reuse. The release
+> `workflow_dispatch` publishes npm, so never use it as a dry run. Remaining SBOM ideas: roadmap SEC-22.
 
 ## Overview
 

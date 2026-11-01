@@ -1,12 +1,8 @@
 # Dependency Security — Tier 3: Active Supply-Chain Defense
 
-> **Reassessment (2026-09-07):** use the
-> [enterprise acceptance research](../research/2026-09-07-enterprise-security-acceptance.md)
-> for current costs, eligibility and priorities. Socket's OSS program now offers Business;
-> Snyk also has a conditional OSS program, so earlier blanket non-adoption claims need review.
-> Malicious-package checks need not wait for the attestation tier. Validate any policy schema
-> against current vendor documentation, and test with harmless fixtures rather than installing
-> suspicious or malicious packages. No SLSA level follows automatically from signing/provenance.
+> **Status (2026-11-01):** historical proposal. The Socket GitHub App already reports on PRs without
+> a `socket.yml`; remaining work is roadmap SEC-21. Recheck vendor terms before reuse, and test with
+> harmless fixtures, never real malicious packages.
 
 ## Overview
 
