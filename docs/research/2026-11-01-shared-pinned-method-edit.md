@@ -144,3 +144,38 @@ independent native actor/source checks and deletion. Production bytes match the 
 checkpoint; its test/documentation follow-ups are included. All temporary access and configuration
 were restored. This closes the pending main-method PP rerun, without qualifying metadata surgery,
 include method editing or the remaining PR 2 families.
+
+## Existing-include method adapter and cleanup alignment
+
+A subsequent implementation extends the same pinned lifecycle to `edit_method` on an existing
+class include. The request factory binds one exact source URI before SAP I/O, using the shared
+local-prefix inference and explicit selector precedence. Both the fresh hash read and the only
+save must match that URI. The handler derives pinned include URLs from the canonical owner; the
+single-target URL behavior stays unchanged. Missing includes refuse method surgery and are never
+initialized. Success and incomplete-save results identify the selected include and its actual
+read-back hash. Method-name/shape guards and neighboring-source preservation are shared with main
+edits. Metadata surgery still cannot request `readMainAndStructure` through this adapter.
+
+The include fragment keeps the legacy lint/advisory-syntax skip; activation remains separate.
+Tests traverse real dispatch, native owning-session policy and actual splicing, including explicit
+selectors, three inferred prefixes, override precedence, duplicate method names in two local
+classes, stale/missing hashes, missing includes, package/recording drift, uncertain saves and cleanup
+failures. Route/catalog tests cover every selector and inference family. The fixture places method
+blocks in every selected resource to test routing; it does not claim SAP accepts every such layout.
+
+Main create/update, include replacement and shared method editing now consistently report failed
+unlock/session closure without losing confirmed source hashes or a verified recording parent.
+Confirmed main-save warnings survive cleanup failure; uncertain saves do not gain a confirmed
+hash or saved-source warnings. Fault tests cover create/update/edit_method and both existing and
+initialized includes, with one save and one cleanup attempt. No automatic replay was introduced.
+
+These production changes follow the completed `77e41fdcd` run. That historical run does not qualify
+these new bytes or include-method edits; a fresh reviewed artifact and PP run remain required.
+
+Author validation of the include-method/cleanup checkpoint passed **429 files / 11,621 tests**,
+all three typecheck projects, build, lint, strict docs, policy and file/schema budgets, plus all
+**59 existing qualification simulations**. The first full run found an outdated test expecting
+include-method rejection before SAP; it now tests still-forbidden signature/include routing, and
+a separate test confirms a present include without the requested method remains unchanged.
+The existing simulations do not exercise new include-method calls; extending and reviewing that
+live harness remains required.

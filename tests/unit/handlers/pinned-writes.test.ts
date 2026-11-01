@@ -10,6 +10,7 @@ import { AdtClient, mockFetch } from './setup-undici-mock.js';
 const { requestContext } = await import('../../../src/server/context.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { handlePinnedWrite } = await import('../../../src/handlers/write/pinned.js');
+const writeHelpers = await import('../../../src/handlers/write-helpers.js');
 const { handlePinnedActivation, validatePinnedActivationReferences } = await import(
   '../../../src/handlers/write/pinned-activation.js'
 );
@@ -526,6 +527,80 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     });
     expect(result.cleanup).toContain(closed ? 'was closed' : 'was not confirmed');
   });
+  it.each(
+    ['create', 'update', 'edit_method'].flatMap((action) =>
+      ['unlock', 'close', 'both'].map((failure) => ({ action, failure })),
+    ),
+  )('retains confirmed source, warnings and parent request on cleanup failure: %j', async ({ action, failure }) => {
+    pkg = 'ZTEAM';
+    local = '';
+    failUnlock = failure !== 'close';
+    vi.spyOn(writeHelpers, 'runPreWriteLint').mockReturnValue({
+      blocked: false,
+      warnings: 'Saved-source lint warning',
+    });
+    const fallback = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url: unknown, options: any) => {
+      const response = await fallback(url, options);
+      if (String(url).includes('_action=LOCK')) response.headers.set('set-cookie', 'sap-contextid=owned; Path=/');
+      if (String(url).includes('/http/sessions') && failure !== 'unlock') return mockResponse(503, '');
+      return response;
+    });
+    const input = {
+      ...update(),
+      action,
+      transport: 'A4HK900002',
+      ...(action === 'create' ? { package: 'ZTEAM', expectedSourceHash: undefined } : {}),
+      ...(action === 'edit_method' ? { method: 'value', source: 'result = 2.' } : {}),
+    };
+    const result = await handlePinnedWrite(client(), input, config);
+    expect(result.isError).toBe(true);
+    expect(payload(result)).toMatchObject({
+      error: 'PINNED_WRITE_INCOMPLETE',
+      state: 'saved-inactive',
+      sourceHash: sourceHash(source),
+      phase: failure === 'close' ? 'session-close' : 'unlock',
+      sessionClosed: failure === 'unlock',
+      transport: 'A4HK900001',
+      warnings: 'Saved-source lint warning',
+      retryable: false,
+    });
+    expect(source).toContain('result = 2.');
+    expect(saves()).toHaveLength(1);
+    expect(requests.filter((r) => r.path.includes('_action=UNLOCK'))).toHaveLength(1);
+    expect(requests.filter((r) => r.path.includes('/http/sessions'))).toHaveLength(1);
+  });
+  it.each(['update', 'edit_method'])(
+    'retains selected parent but no confirmed hash/warnings after uncertain %s',
+    async (action) => {
+      pkg = 'ZTEAM';
+      local = '';
+      failSave = 503;
+      vi.spyOn(writeHelpers, 'runPreWriteLint').mockReturnValue({ blocked: false, warnings: 'Not saved' });
+      const result = payload(
+        await handlePinnedWrite(
+          client(),
+          {
+            ...update(),
+            action,
+            transport: 'A4HK900002',
+            ...(action === 'edit_method' ? { method: 'value', source: 'result = 2.' } : {}),
+          },
+          config,
+        ),
+      );
+      expect(result).toMatchObject({
+        state: 'source-save-unknown',
+        phase: 'source-save',
+        transport: 'A4HK900001',
+        retryable: false,
+      });
+      expect(result.sourceHash).toBeUndefined();
+      expect(result.warnings).toBeUndefined();
+      expect(source).toBe(initial);
+      expect(saves()).toHaveLength(1);
+    },
+  );
   it('preserves a created stub when SAP rejects its source', async () => {
     failSave = 422;
     const result = payload(

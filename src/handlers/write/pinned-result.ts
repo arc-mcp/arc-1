@@ -18,6 +18,7 @@ export function pinnedFailure(
     include?: string;
     initialized?: boolean;
     warnings?: string;
+    transport?: string;
   } = {},
 ): ToolResult {
   const context = getCurrentContext();

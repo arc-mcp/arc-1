@@ -5,12 +5,19 @@ import { mutationClient } from '../../adt/mutation-client.js';
 import { assertMutationContext, type PinnedMutationContext } from '../../adt/mutation-context.js';
 import { assertPinnedOwner, type PinnedRecording, pinnedRecording } from '../../adt/pinned-write-policy.js';
 import type { ServerConfig } from '../../server/types.js';
-import { objectUrlForType } from '../object-types.js';
+import {
+  type ClassWriteInclude,
+  detectLocalHandlerInclude,
+  normalizeClassWriteInclude,
+  objectUrlForType,
+} from '../object-types.js';
 import { enforceAllowedPackageForObjectUrl } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
 
 export interface PinnedClassState {
   readonly context: PinnedMutationContext;
+  readonly sourceUrl: string;
+  readonly include?: ClassWriteInclude;
   phase: string;
   state: string;
   pkg?: string;
@@ -31,10 +38,15 @@ export function createPinnedClassContext(
 ): SapWriteContext {
   assertMutationContext(original.safety, context);
   assertPinnedOwner(args.type, args.name);
-  if (args.action !== 'edit_method' || args.type !== 'CLAS' || args.include !== undefined)
-    throw new AdtSafetyError('Only the admitted main-source method adapter is available.');
-  if (typeof args.method !== 'string' || !args.method.trim() || /^(?:lhc_|lcl_|ltc_)/i.test(args.method.trim()))
-    throw new AdtSafetyError('An admitted global-class method name is required.');
+  if (args.action !== 'edit_method' || args.type !== 'CLAS')
+    throw new AdtSafetyError('Only the admitted class method adapter is available.');
+  if (typeof args.method !== 'string' || !args.method.trim())
+    throw new AdtSafetyError('An existing class method name is required.');
+  const method = args.method.trim();
+  const include = normalizeClassWriteInclude(args.include);
+  if (args.include !== undefined && !include)
+    throw new AdtSafetyError('Select a supported class include or omit include for main source.');
+  const selectedInclude = include ?? detectLocalHandlerInclude(method);
   if (typeof args.source !== 'string' || !args.source.trim())
     throw new AdtSafetyError('A non-empty source is required.');
   if (typeof args.expectedSourceHash !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedSourceHash))
@@ -45,6 +57,8 @@ export function createPinnedClassContext(
   const requested = args.transport === undefined ? undefined : String(args.transport).trim().toUpperCase();
   const state: PinnedClassState = {
     context,
+    sourceUrl: selectedInclude ? `${owner}/includes/${selectedInclude}` : `${owner}/source/main`,
+    include: selectedInclude,
     state: 'unchanged',
     phase: 'validation',
     readVerified: false,
@@ -53,7 +67,7 @@ export function createPinnedClassContext(
   const ctx: SapWriteContext = Object.freeze({
     mutationContext: context,
     client,
-    args: Object.freeze({ ...args }),
+    args: Object.freeze({ ...args, method }),
     config,
     cachingLayer: undefined,
     cacheSecurity: { isPerUserClient: true },
@@ -61,8 +75,8 @@ export function createPinnedClassContext(
     name,
     source: args.source,
     hasSource: true,
-    include: undefined,
-    includeProvided: false,
+    include,
+    includeProvided: args.include !== undefined,
     transport: requested,
     lintOverride: undefined,
     preflightOverride: undefined,

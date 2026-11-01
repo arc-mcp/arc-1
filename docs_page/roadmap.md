@@ -217,7 +217,9 @@ Remaining work is transportable deletion/includes, other object types and class/
 DDIC/RAP, batches, package/API/publication, CTS, runtime tracing and classic FLP, each with its
 resource policy, tests and PP qualification. Broader class metadata surgery also requires positive
 owner/source/name/range checks; the existing declaration-chain refusal is only a partial guard.
-Source-save cleanup results need consistent transport/warning/close-failure reporting. Secondary
+Source-save cleanup results now retain transport/warnings and report close failures consistently.
+Existing-include method edits share the main-method lifecycle and have offline tests; their PP
+qualification remains pending. Secondary
 native formatter-preference proof, untested native styles, other releases and the separate legacy
 v2 preservation issue remain evidence limits. Aggregate, Basic and read-only connections stay
 mutation-free. Git and custom extensions/plugins remain excluded.

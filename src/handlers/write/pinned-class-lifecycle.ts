@@ -25,8 +25,8 @@ export async function withPinnedClassEdit(
     edit({
       http,
       async read(url) {
-        if (url !== ctx.srcUrl || state.writeAttempted)
-          throw new AdtSafetyError('The editable read must select the admitted main source before its save.');
+        if (url !== state.sourceUrl || state.writeAttempted)
+          throw new AdtSafetyError('The editable read must select the admitted source resource before its save.');
         state.phase = 'source-read';
         checkOperation(ctx.client.safety, OperationType.Read, 'GetSource');
         const current = await http.get(url, { 'Cache-Control': 'no-cache', Accept: 'text/plain' });
@@ -39,8 +39,8 @@ export async function withPinnedClassEdit(
         throw new AdtSafetyError('Class-definition surgery requires its own qualified source/structure policy.');
       },
       async save(url, source, warnings) {
-        if (url !== ctx.srcUrl || !state.readVerified || state.writeAttempted)
-          throw new AdtSafetyError('One save of the freshly verified main source is required.');
+        if (url !== state.sourceUrl || !state.readVerified || state.writeAttempted)
+          throw new AdtSafetyError('One save of the freshly verified source resource is required.');
         checkOperation(ctx.client.safety, OperationType.Update, 'PinnedSave');
         throwIfRequestCancelled(context.requestPolicy);
         state.phase = 'source-save';

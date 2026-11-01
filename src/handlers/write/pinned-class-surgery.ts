@@ -45,6 +45,7 @@ export async function handlePinnedClassSurgery(
         action: args.action,
         state: state.state,
         sourceHash: state.sourceHash,
+        ...(state.include ? { include: state.include } : {}),
         ...(state.recording?.request ? { transport: state.recording.request } : {}),
         ...(state.warnings ? { warnings: state.warnings } : {}),
         next: 'Review the inactive source. SAPActivate activates this complete owner, including all existing inactive drafts/includes.',
@@ -56,6 +57,8 @@ export async function handlePinnedClassSurgery(
       sourceHash: state?.sourceHash,
       sessionClosed: cleanup.sessionClosed,
       warnings: state?.warnings,
+      transport: state?.recording?.request,
+      include: state?.include,
     });
   } finally {
     if (ctx) forgetPinnedClassContext(ctx);

@@ -54,7 +54,7 @@ describe('pinned mutation capability matrix', () => {
         action: 'edit_method',
         resource: 'repository-source',
         types: ['CLAS'],
-        fields: ['action', 'type', 'name', 'source', 'transport', 'method', 'expectedSourceHash'],
+        fields: ['action', 'type', 'name', 'source', 'transport', 'method', 'expectedSourceHash', 'include'],
       },
       {
         tool: 'SAPActivate',
@@ -207,23 +207,23 @@ describe('pinned mutation capability matrix', () => {
       'LCL_LOCAL~SAVE',
       'LTC_LOCAL~SAVE',
     ]) {
-      expect(pinnedMutationAllowed('SAPWrite', { action: 'edit_method', method }, writer)).toBe(false);
+      expect(pinnedMutationAllowed('SAPWrite', { action: 'edit_method', type: 'CLAS', method }, writer)).toBe(true);
     }
     expect(pinnedMutationAllowed('SAPActivate', { type: 'CLAS' }, writer)).toBe(true);
   });
 
-  it('limits include replacement to the four explicit CLAS update selectors', () => {
+  it.each(['update', 'edit_method'])('limits %s includes to the four explicit CLAS selectors', (selectedAction) => {
     for (const include of ['definitions', 'implementations', 'macros', 'testclasses']) {
-      const args = { action: 'update', type: 'CLAS', include };
+      const args = { action: selectedAction, type: 'CLAS', include };
       expect(pinnedMutationAllowed('SAPWrite', args, writer)).toBe(true);
       for (const type of ['INTF', 'PROG', undefined])
         expect(pinnedMutationAllowed('SAPWrite', { ...args, type }, writer)).toBe(false);
-      for (const action of ['create', 'delete', 'edit_method'])
+      for (const action of ['create', 'delete', 'edit_method_signature'])
         expect(pinnedMutationAllowed('SAPWrite', { ...args, action }, writer)).toBe(false);
       expect(pinnedMutationAllowed('SAPWrite', args, { ...writer, allowWrites: false })).toBe(false);
       expect(pinnedMutationAllowed('SAPWrite', args, { ...writer, ppStrict: false })).toBe(false);
     }
     for (const include of ['main', 'text_symbols', 'DEFINITIONS', '../source/main'])
-      expect(pinnedMutationAllowed('SAPWrite', { action: 'update', type: 'CLAS', include }, writer)).toBe(false);
+      expect(pinnedMutationAllowed('SAPWrite', { action: selectedAction, type: 'CLAS', include }, writer)).toBe(false);
   });
 });

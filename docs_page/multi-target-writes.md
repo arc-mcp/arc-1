@@ -128,18 +128,30 @@ only the aggregate compatibility connection cannot write through that connection
 |---|---|
 | `SAPWrite.create` | One CLAS or INTF; explicit package and complete source; required allowed request/task for a transportable package |
 | `SAPWrite.update` | CLAS/INTF main source or CLAS `definitions`, `implementations`, `macros`, `testclasses`; exact editable-source hash for existing source |
-| `SAPWrite.edit_method` | Existing CLAS main-source method; hash of the complete editable main source |
+| `SAPWrite.edit_method` | Existing CLAS main-source or local-include method; hash of the complete selected editable source |
 | `SAPWrite.delete` | One CLAS/INTF owner; actual package and native recording checks before/under lock, followed by verified owner absence; omit source and source hash |
 | `SAPActivate` | One CLAS/INTF owner; activates all of that owner's existing inactive drafts and includes |
 | `SAPLint.set_formatter_settings` | Partial indentation/style patch of the mapped SAP user's formatter preferences on this target; native read/merge/write/read-back, not a package-owned object |
 
 For an existing class include, read `SAPRead(type="CLAS", name=..., include=..., format="editable")`
-and pass that include's hash to update. Omit `include` for main source. An omitted hash can initialize
+and pass that include's hash to update or `edit_method`. Omit `include` for main source. An omitted hash can initialize
 a new optional include only after native absence is verified under the class lock; it cannot replace
 an existing include. To clear an existing include, send exactly `source=""` with its current `expectedSourceHash`.
 Empty source without a hash and whitespace-only source are refused. Results retain a partial
 initialization if the following save fails. Activation still affects the complete class and its drafts.
-This draft's include addition has offline tests; its [native/PP qualification is pending](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-includes.md).
+The [two-writer local include replacement run](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-includes.md) passed at `77e41fdcd`; transportable includes remain unqualified.
+
+For `edit_method`, `lhc_class~method` and `lcl_class~method` infer `implementations`, while
+`ltc_class~method` infers `testclasses`. An explicit supported `include` wins. Read that exact
+include with `format="editable"` first: a main-source hash does not authorize an include edit.
+The adapter edits only an existing method; it never initializes a missing include. It preserves
+neighboring methods/classes and saves inactive source under the owning class lock. Fragment lint
+and advisory syntax checks are skipped, as on single-target include edits; whole-owner activation
+performs SAP's syntax checks. This new include-method adapter has offline tests and still needs
+its own reviewed, artifact-bound PP qualification.
+
+Confirmed saves retain their source hash, selected transport and warnings when unlock or session
+closure fails. The result reports the failed cleanup phase and is not a retry instruction.
 
 Writable pinned PP connections also expose `SAPLint.format` and `get_formatter_settings` with their
 normal `read` scope. These supporting reads remain hidden on reader connections, read-only
@@ -177,7 +189,7 @@ cleanup. Transportable deletion remains unqualified.
 Creates and edits save inactive source. Review it before activation. **Activation is whole-owner**,
 including drafts created previously or by another session; it is not method-only activation.
 Use `SAP_DENY_ACTIONS=SAPActivate` if your team must activate separately in ADT. Hidden actions,
-other types, include method surgery, batches, RAP/DDIC, publication, transport management and Git
+other types, class metadata surgery, batches, RAP/DDIC, publication, transport management and Git
 are refused even if a client sends the call directly. Per-call lint-disable options are unavailable.
 ABAP Unit can execute newly authored code under the SAP user; deny `SAPDiagnose.unittest` unless
 that execution is intended. Global lint configuration applies; `SAP_CHECK_BEFORE_WRITE` remains advisory. SAP authorization is

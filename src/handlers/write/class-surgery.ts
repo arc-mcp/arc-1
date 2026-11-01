@@ -75,7 +75,11 @@ export async function writeActionEditMethod(ctx: SapWriteContext): Promise<ToolR
   const resolvedInclude: ClassWriteInclude | undefined = include ?? detectedInclude;
 
   return withClassEdit(ctx, async (edit) => {
-    const writeUrl = resolvedInclude ? classIncludeUrl(name, resolvedInclude) : srcUrl;
+    const writeUrl = resolvedInclude
+      ? ctx.mutationContext.mode === 'pinned-pp'
+        ? `${objectUrl}/includes/${resolvedInclude}`
+        : classIncludeUrl(name, resolvedInclude)
+      : srcUrl;
     let currentSource: string;
     try {
       currentSource = await edit.read(writeUrl);

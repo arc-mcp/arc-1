@@ -46,8 +46,10 @@ const rows: PinnedMutationCapability[] = [
     action: 'edit_method',
     resource: 'repository-source',
     types: ['CLAS'],
-    fields: [...sourceFields, 'method', 'expectedSourceHash'],
-    accepts: (args) => !/^(?:lhc_|lcl_|ltc_)/i.test(String(args.method ?? '')),
+    fields: [...sourceFields, 'method', 'expectedSourceHash', 'include'],
+    accepts: (args) =>
+      args.include === undefined ||
+      (args.type === 'CLAS' && PINNED_CLASS_INCLUDE_NAMES.some((include) => include === args.include)),
   },
   {
     tool: 'SAPActivate',

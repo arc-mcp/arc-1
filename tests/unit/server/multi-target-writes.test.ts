@@ -110,35 +110,57 @@ describe('pinned write policy composition', () => {
     });
     for (const request of requests) expect(request).not.toHaveBeenCalled();
   });
-  it.each([{ source: '', expectedSourceHash: 'a'.repeat(64) }, { source: '* New include\n' }])(
-    'prepares a valid include update through the pinned route and catalog: %j',
-    async (input) => {
-      const r = registry();
-      const identity = auth();
-      const rawArgs = { action: 'update', type: 'CLAS', name: 'ZARC1_INCLUDE', include: 'definitions', ...input };
-      const result = await prepareMultiTargetCall({
-        options: {
-          mode: 'pinned',
-          registry: r,
-          target: r.targets[0],
-          instanceConfig: base,
-          authorization: projectMultiTargetRequest(r, identity),
-        },
-        toolName: 'SAPWrite',
-        rawArgs,
-        requestId: 'include-valid',
-        authInfo: identity,
-      });
-      expect(result.handled).toBe(false);
-      if (result.handled) throw new Error('Valid include request was refused');
-      expect(result.args).toMatchObject(rawArgs);
-      const write = multiTargetToolDefinitions(getToolDefinitions(runtime()), runtime()).find(
-        (t) => t.name === 'SAPWrite',
-      )!;
-      const validate = new Ajv2020({ strictTypes: false, allowUnionTypes: true }).compile(write.inputSchema);
-      expect(validate(rawArgs), JSON.stringify(validate.errors)).toBe(true);
-    },
-  );
+  it.each([
+    { source: '', expectedSourceHash: 'a'.repeat(64) },
+    { source: '* New include\n' },
+    ...['definitions', 'implementations', 'macros', 'testclasses'].map((include) => ({
+      action: 'edit_method',
+      include,
+      method: 'lcl_worker~run',
+      source: 'body',
+      expectedSourceHash: 'a'.repeat(64),
+    })),
+    ...['lhc_worker~run', 'lcl_worker~run', 'ltc_worker~run'].map((method) => ({
+      action: 'edit_method',
+      include: undefined,
+      method,
+      source: 'body',
+      expectedSourceHash: 'a'.repeat(64),
+    })),
+  ])('prepares a valid include write through the pinned route and catalog: %j', async (input) => {
+    const r = registry();
+    const identity = auth();
+    const rawArgs = Object.fromEntries(
+      Object.entries({
+        action: 'update',
+        type: 'CLAS',
+        name: 'ZARC1_INCLUDE',
+        include: 'definitions',
+        ...input,
+      }).filter(([, value]) => value !== undefined),
+    );
+    const result = await prepareMultiTargetCall({
+      options: {
+        mode: 'pinned',
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: base,
+        authorization: projectMultiTargetRequest(r, identity),
+      },
+      toolName: 'SAPWrite',
+      rawArgs,
+      requestId: 'include-valid',
+      authInfo: identity,
+    });
+    expect(result.handled).toBe(false);
+    if (result.handled) throw new Error('Valid include request was refused');
+    expect(result.args).toMatchObject(rawArgs);
+    const write = multiTargetToolDefinitions(getToolDefinitions(runtime()), runtime()).find(
+      (t) => t.name === 'SAPWrite',
+    )!;
+    const validate = new Ajv2020({ strictTypes: false, allowUnionTypes: true }).compile(write.inputSchema);
+    expect(validate(rawArgs), JSON.stringify(validate.errors)).toBe(true);
+  });
   it.each(['CLAS', 'INTF'])('prepares %s deletion without source or hash', async (type) => {
     const r = registry();
     const identity = auth();
@@ -382,7 +404,7 @@ describe('pinned write policy composition', () => {
       if (kind === 'writer') {
         expect(instructions).toContain('scoped read/write');
         expect(instructions).toContain(
-          'CLAS/INTF main-source writes, CLAS local-include replacements and owner deletion require both package policies',
+          'CLAS/INTF main-source writes, CLAS local-include replacements/method edits and owner deletion require both package policies',
         );
         expect(instructions).toContain('Activation affects the whole owner');
         expect(instructions).not.toContain('Writes, activation, transport/Git mutations');
@@ -506,7 +528,7 @@ describe('pinned write policy composition', () => {
     { action: 'delete' },
     { type: 'PROG' },
     { include: 'main' },
-    { method: 'lcl_helper~run' },
+    { include: 'text_symbols' },
     { target: 'A4H/001' },
     { lintBeforeWrite: false },
     { objects: [] },

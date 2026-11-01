@@ -43,6 +43,8 @@ export async function handlePinnedWrite(
   let savedHash: string | undefined;
   let include: ClassWriteInclude | undefined;
   let includeInitialized: boolean | undefined;
+  let recordingRequest: string | undefined;
+  let warnings: string | undefined;
   try {
     // The HTTP gate validates all raw fields before Zod strips unknown fields. Recheck capability here.
     checkOperation(client.safety, OperationType.Update, 'PinnedWrite');
@@ -92,7 +94,7 @@ export async function handlePinnedWrite(
         );
       return result.warnings;
     };
-    let warnings = include ? undefined : lint(source);
+    warnings = include ? undefined : lint(source);
     let pkg: string;
     if (action === 'create') {
       if (typeof args.package !== 'string' || !args.package.trim())
@@ -112,6 +114,7 @@ export async function handlePinnedWrite(
       requested,
       options,
     );
+    recordingRequest = recording.request;
     if (action === 'create') {
       throwIfRequestCancelled(options);
       phase = 'create';
@@ -195,13 +198,10 @@ export async function handlePinnedWrite(
         state = 'saved-inactive';
         savedHash = sourceHash(source);
       });
-    if (cleanup.unlockFailed)
-      return pinnedFailure(new Error('Unlock failed'), state, 'unlock', true, {
-        sourceHash: savedHash,
-        sessionClosed: cleanup.sessionClosed,
-        include,
-        initialized: includeInitialized,
-      });
+    if (cleanup.unlockFailed || cleanup.sessionClosed === false) {
+      phase = cleanup.unlockFailed ? 'unlock' : 'session-close';
+      throw new Error('Owning-session cleanup was not confirmed.');
+    }
     return textResult(
       toolJson({
         target: config.targetId,
@@ -233,6 +233,8 @@ export async function handlePinnedWrite(
       sessionClosed: cleanup.sessionClosed,
       include,
       initialized: includeInitialized,
+      transport: recordingRequest,
+      warnings: savedHash ? warnings : undefined,
     });
   }
 }

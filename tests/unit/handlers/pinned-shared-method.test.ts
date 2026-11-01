@@ -188,9 +188,9 @@ it('uses one locked shared edit and returns the native normalized source hash', 
 it.each([
   { expectedSourceHash: undefined },
   { expectedSourceHash: 'bad' },
-  { method: 'ltc_x~test' },
-  { method: ' lhc_x~value' },
-  { include: 'implementations' },
+  { method: '' },
+  { include: 'main' },
+  { include: 'text_symbols' },
   { action: 'add_method' },
 ])('refuses unsupported or incomplete input before SAP: %j', async (changes) => {
   backend();

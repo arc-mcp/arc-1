@@ -271,6 +271,38 @@ describe('pinned class include handler and native lock policy', () => {
     expect(requests.filter((r) => r.path.includes('_action=UNLOCK'))).toHaveLength(1);
   });
 
+  it.each(
+    [false, true].flatMap((initialized) => ['unlock', 'close', 'both'].map((failure) => ({ initialized, failure }))),
+  )('retains include and parent evidence on cleanup failure: %j', async ({ initialized, failure }) => {
+    transportable = true;
+    unlockFailure = failure !== 'close';
+    if (initialized) stored = undefined;
+    const fallback = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url: unknown, options: any) => {
+      const response = await fallback(url, options);
+      if (String(url).includes('_action=LOCK')) response.headers.set('set-cookie', 'sap-contextid=owned; Path=/');
+      if (String(url).includes('/http/sessions') && failure !== 'unlock') return mockResponse(503, '');
+      return response;
+    });
+    const { result, body } = await invoke({
+      transport: 'A4HK900002',
+      ...(initialized ? { expectedSourceHash: undefined } : {}),
+    });
+    expect(result.isError).toBe(true);
+    expect(body).toMatchObject({
+      state: 'saved-inactive',
+      sourceHash: sourceHash(stored!),
+      include: 'definitions',
+      initialized,
+      transport: 'A4HK900001',
+      phase: failure === 'close' ? 'session-close' : 'unlock',
+      sessionClosed: failure === 'unlock',
+      retryable: false,
+    });
+    expect(requests.filter((r) => r.method === 'PUT')).toHaveLength(1);
+    expect(requests.filter((r) => r.path.includes('_action=UNLOCK'))).toHaveLength(1);
+    expect(requests.filter((r) => r.path.includes('/http/sessions'))).toHaveLength(1);
+  });
   it.each([false, true])('retains saved include evidence when unlock fails (initialized=%s)', async (initialized) => {
     if (initialized) stored = undefined;
     unlockFailure = true;
@@ -328,7 +360,7 @@ describe('pinned class include handler and native lock policy', () => {
     { type: 'INTF' },
     { action: 'create', package: '$TMP', expectedSourceHash: undefined },
     { action: 'delete', source: undefined, expectedSourceHash: undefined },
-    { action: 'edit_method', method: 'VALUE' },
+    { action: 'edit_method_signature', method: 'VALUE' },
     { include: 'main' },
     { include: 'text_symbols' },
     { include: '../source/main' },
