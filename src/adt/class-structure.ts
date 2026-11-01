@@ -168,6 +168,7 @@ export function spliceMethodSignature(source: string, method: MethodStructure, n
   if (!method.definition) {
     throw new Error(`spliceMethodSignature: method ${method.name} has no definition range`);
   }
+  assertUnchainedDeclaration(source, method);
   const r = method.definition;
   return spliceLines(source, replacementStart(source, r.sr, newSig), r.er, ensureClauseTerminator(newSig));
 }
@@ -247,6 +248,7 @@ export function insertMethodPair(source: string, structure: ClassStructure, opts
  * range) only have their DEFINITION line range removed.
  */
 export function removeMethodPair(source: string, method: MethodStructure): string {
+  assertUnchainedDeclaration(source, method);
   let next = source;
   if (method.implementation) {
     next = removeLinesAndJoinSpacing(next, method.implementation.sr, method.implementation.er);
@@ -302,6 +304,7 @@ export function moveMethodDefinition(source: string, method: MethodStructure, ta
   if (!method.definition) {
     throw new Error(`moveMethodDefinition: method ${method.name} has no definition range`);
   }
+  assertUnchainedDeclaration(source, method);
   const lines = splitLines(source);
   const { er } = method.definition;
   let sr = method.definition.sr;
@@ -323,6 +326,21 @@ export function moveMethodDefinition(source: string, method: MethodStructure, ta
     if (lineNo === targetAfterLine) out.push(...clause); // re-insert after the anchor
   }
   return joinLines(out, eol);
+}
+
+/** Native chain ranges can include every earlier declaration in the same statement. */
+function assertUnchainedDeclaration(source: string, method: MethodStructure): void {
+  const { sr, er } = method.definition;
+  const declaration = stripDeclarationComments(
+    splitLines(source)
+      .slice(sr - 1, er)
+      .join('\n'),
+  ).trim();
+  if (/^(?:CLASS-METHODS|METHODS)\s*:/i.test(declaration)) {
+    throw new Error(
+      'Chained METHODS declarations cannot be edited individually. Use a complete class source update to preserve neighboring declarations.',
+    );
+  }
 }
 
 // ─── findSectionAnchor ────────────────────────────────────────────────

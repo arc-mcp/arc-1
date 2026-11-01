@@ -180,8 +180,17 @@ It passed 474 focused tests, 55 simulations and all typecheck projects; 2,469 sn
 The available failed-run timestamps leave **954,253 ms** between the last successful RPC receipt
 and cleanup's first phase, then **3,539 ms** through the final journal. The first cleanup worker
 started 894 ms after that phase. This is an unobserved interval, not a measured fetch duration:
-the configured timeout was 330,000 ms, and the records cannot explain the excess wall time or
+the configured timeout was 330,000 ms. The RPC records alone cannot explain the excess wall time or
 establish a network/backend cause. The failed request rejected without a recorded status or body.
+
+A subsequent read of the host's macOS power log found lid-closed sleep beginning at
+06:57:47 UTC, a maintenance wake at 07:13:43 UTC, and sleep again at 07:13:45 UTC.
+The reported sleep lasted 956 seconds; cleanup began within one second of the maintenance wake.
+This explains the wall-clock gap without recovering the missing fetch error or establishing a
+backend defect. The selected original power events and their hash are retained privately; their
+sanitized observation is in the attempt record. The qualification remains failed. The next run
+requires an awake host, including an open laptop lid; an idle-sleep assertion cannot prevent
+explicit lid-closed sleep.
 
 The follow-up adds bounded error classifications and both elapsed clocks to failed RPC receipts,
 separate save/read-back phase labels, and a negative control that checks the successful save is

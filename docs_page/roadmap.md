@@ -222,7 +222,12 @@ check, which passed. A primary-writer PP attempt passed 386 assertions before a 
 failed; the second writer and owner activation were not reached. The preserved partial fixture was
 independently verified and removed. Further negative controls and diagnostic coverage address the
 review's diagnostic and test findings; follow-up review and a complete fresh PP run remain required.
+The host power log explains the failed run's long gap as lid-closed sleep; the precise fetch error
+was not captured. A fresh run requires an awake host and remains necessary for qualification.
 No additional family is qualified by this incomplete attempt.
+Research for class surgery found overlapping native declaration ranges for chained `METHODS`.
+The shared signature/delete/visibility helpers now refuse those individual edits before saving;
+the broader pinned class-surgery adapter and its source/structure checks remain outstanding.
 The formatter and local CLAS/INTF deletion adapters now have a
 [combined two-writer PP qualification](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
 at `1b234d3a4`: native authorship/source binding, typed absence, v5 optional-preference preservation

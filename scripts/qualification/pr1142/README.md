@@ -110,6 +110,12 @@ the native cleanup worker requires a fresh lowercase UUID as its third argument.
 Do not clear attempt journals or retry a whole run blindly. Directory and file fsyncs provide local
 durability, not a guarantee against disk failure. Check the separate cloud/access rollback ledger too.
 
+Keep the host awake throughout qualification and cleanup. On macOS, keep the laptop lid open and
+use an idle-sleep assertion scoped to the harness process; it does not prevent explicit lid-closed
+sleep. A failed include run's 956-second gap coincided with recorded clamshell sleep and ended at a
+maintenance wake. Its missing fetch cause remains unknown and its qualification remains failed.
+Host suspension is not a tested recovery mode; inspect preserved receipts before any new attempt.
+
 Local fault simulations (no SAP, CF or credential access):
 
 ```sh

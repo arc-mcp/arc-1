@@ -114,7 +114,37 @@
       "cleanupToFinishedMs": 3539,
       "cleanupPhaseToWorkerMs": 894,
       "configuredFetchTimeoutMs": 330000,
-      "limit": "The failed fetch start, rejection time, cause and actual elapsed time were not captured. The unobserved interval includes the request and surrounding runtime activity; it cannot be attributed to network, backend, suspension or timer delay from these records."
+      "limit": "The failed fetch start, rejection time, cause and actual elapsed time were not captured. These RPC records alone cannot explain the gap; the later host power observation below records sleep covering the interval without recovering the failed fetch cause."
+    },
+    "hostPowerObservation": {
+      "observedAt": "2026-11-01T12:09:49.135616+00:00",
+      "source": "pmset -g log",
+      "selection": "Only Sleep/DarkWake events between 2026-11-01 07:50 and 08:20 local time (+01:00)",
+      "sourceFileSha256": "6fefca343ea501cd1c8257e2d79c6212f2a1dc7a12ac0368b07f7c80bea9bf05",
+      "events": [
+        {
+          "at": "2026-11-01T06:57:47Z",
+          "kind": "sleep",
+          "reason": "Clamshell Sleep",
+          "reportedDurationSeconds": 956
+        },
+        {
+          "at": "2026-11-01T07:13:43Z",
+          "kind": "dark-wake",
+          "reason": "SleepService"
+        },
+        {
+          "at": "2026-11-01T07:13:45Z",
+          "kind": "sleep",
+          "reason": "Sleep Service Back to Sleep"
+        }
+      ],
+      "correlation": {
+        "lastSuccessfulRpcAt": "2026-11-01T06:57:49.222Z",
+        "cleanupPhaseAt": "2026-11-01T07:13:43.475Z",
+        "cleanupStartedWithinOneSecondOfWake": true
+      },
+      "assessment": "Host sleep covers the long unobserved interval. This explains the wall-clock gap; it does not recover the failed fetch cause/status, prove a backend defect, or turn the failed qualification into a pass."
     }
   },
   "manualRecovery": {

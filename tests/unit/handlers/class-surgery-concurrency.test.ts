@@ -34,6 +34,7 @@ interface Send {
 function backend(
   options: {
     sourceAtLock?: string;
+    structureAtLock?: string;
     readStatus?: number;
     putStatus?: number;
     unlockStatus?: number;
@@ -58,7 +59,10 @@ function backend(
     if (method === 'GET' && path.pathname.endsWith('/objectstructure'))
       return response(
         200,
-        fixture(state.source === initial || path.searchParams.get('version') === 'active' ? 'active.xml' : 'draft.xml'),
+        options.structureAtLock ??
+          fixture(
+            state.source === initial || path.searchParams.get('version') === 'active' ? 'active.xml' : 'draft.xml',
+          ),
       );
     if (
       method === 'GET' &&
@@ -271,3 +275,54 @@ it('preserves a concurrent local include draft', async () => {
   expect(state.source).toContain("DATA(value) = 'new'");
   expect(state.sends.find((s) => s.method === 'PUT')?.url.pathname).toBe(`${objectPath}/includes/implementations`);
 });
+
+it.each(['edit_method_signature', 'delete_method', 'change_method_visibility'])(
+  '%s refuses native overlapping chain ranges under lock without a source PUT',
+  async (action) => {
+    const chained = `CLASS zrace DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS:
+      first,
+      second.
+  PRIVATE SECTION.
+ENDCLASS.
+CLASS zrace IMPLEMENTATION.
+  METHOD first.
+  ENDMETHOD.
+  METHOD second.
+  ENDMETHOD.
+ENDCLASS.`;
+    const structure = `<abapsource:objectStructureElement xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core" xmlns:atom="http://www.w3.org/2005/Atom" adtcore:type="CLAS/OC" adtcore:name="ZRACE">
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./source/main#start=1,0;end=7,8"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=8,0;end=13,8"/>
+<abapsource:objectStructureElement adtcore:type="CLAS/OM" adtcore:name="FIRST" visibility="public" level="static">
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./source/main#start=3,4;end=4,12"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=9,2;end=10,12"/>
+</abapsource:objectStructureElement>
+<abapsource:objectStructureElement adtcore:type="CLAS/OM" adtcore:name="SECOND" visibility="public" level="static">
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./source/main#start=3,4;end=5,13"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=11,2;end=12,12"/>
+</abapsource:objectStructureElement>
+</abapsource:objectStructureElement>`;
+    const state = backend({ sourceAtLock: chained, structureAtLock: structure });
+    const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+      action,
+      type: 'CLAS',
+      name: 'ZRACE',
+      method: 'SECOND',
+      ...(action === 'edit_method_signature' ? { source: 'CLASS-METHODS second.' } : {}),
+      ...(action === 'change_method_visibility' ? { visibility: 'private' } : {}),
+      expectedSourceHash: createHash('sha256').update(chained).digest('hex'),
+      lintBeforeWrite: false,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('Chained METHODS declarations');
+    expect(state.source).toBe(chained);
+    expect(state.sends.some((send) => send.method === 'PUT')).toBe(false);
+    const structureReads = state.sends.filter((send) => send.url.pathname.endsWith('/objectstructure'));
+    expect(structureReads).toHaveLength(1);
+    expect(structureReads[0]?.locked).toBe(true);
+    expect(state.sends.some((send) => send.url.searchParams.get('_action') === 'UNLOCK')).toBe(true);
+    expect(state.locked).toBe(false);
+  },
+);
