@@ -69,7 +69,9 @@ The class authorization tests now inject unresolved retry evidence inside the fa
 retaining main's independently tested successful CSRF/auth recovery semantics.
 
 Fresh read-only public class replays pass all eight cases on each 750/758 target, preserving
-none-mode base blocks. [Sanitized evidence](main-integration-replay.json) binds runtime-file hashes.
+none-mode base blocks. Fresh, isolated loopback HTTP MCP checks also pass schema discovery and
+four class observations on each target, with cache disabled and all write/data gates off.
+[Sanitized evidence](main-integration-replay.json) binds runtime-file hashes.
 The fresh BTP rerun could not execute: authentication succeeded, then the stopped system returned
 HTTP 503 before all five tests. The earlier 920 evidence remains scoped to its recorded build.
 No SAP data or source mutations occurred. Independent review and CI results are recorded in the

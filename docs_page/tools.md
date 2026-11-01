@@ -165,7 +165,6 @@ return the main hook example's eight bodies and three replacement edges. Structu
 local authored sources return 403 for the tested identity; these stay denied without generated
 fallback. INTF returns unsupported context. BTP principal propagation remains unqualified here.
 
-
 Method, grep, line-window and class-include reads default to none. An explicit mode on a partial
 read describes its **owning object/source**, without claiming the extension bodies match the
 base filter. Inactive base reads report `unsupported_version` and do not substitute active
@@ -511,15 +510,16 @@ navigation links). A failed source read returns an error, not successful partial
 
 ARC-1 resolves a different enhancement subtype through repository search only after
 an unsupported BAdI read. This needs search permission as well as read permission.
-When the generic `enhoxh` route fails inside SAP — on SAP_BASIS 750 for every source-code
-plug-in, on 750 and 758 for class enhancements — ARC-1 reads the active revision of the
-implementation's enhancement include (the name padded with `=` to 30 characters plus `E`) and
-returns it as `source` together with `enhancementInclude` (include name, revision id, author,
-timestamp, transport) and a `note`; technology, description, package, enhanced object and hook
-positions remain unavailable there. `SAPRead(type="INCL")` on such an include, whose direct read
-fails on 750 and 758, falls back the same way and prefixes the source with a provenance note. Both
-need read permission only; an explicit `version="inactive"` include read is not served from
-revisions.
+A qualified source-unavailable failure can use the implementation's generated enhancement include
+(the name padded with `=` to 30 characters plus `E`). The fallback is qualified on 750/758; ordinary
+server errors, authorization, throttling and network failures do not authorize it. ARC-1 requires
+one exact active revision (`00000`) with matching REPS/include identity and canonical content URI;
+missing active entries never select a historical or inactive version. The source is returned with
+`enhancementInclude` provenance and a `note`; technology, description, package, enhanced object and
+hook positions remain unavailable. `SAPRead(type="INCL")` applies the same checks when a generated
+include's direct read is unavailable, prefixes source with provenance and preserves draft warnings.
+An explicit inactive include read is not served from revisions. Both routes obey the INCL,
+VERSIONS and VERSION_SOURCE deny rules in addition to the requested read action.
 Some other enhancement implementations still fail inside SAP; use SE80/SE19 or Eclipse's SAP GUI
 integration when the error identifies an unavailable ADT route. Only BAdI implementations
 are writable ([BAdI implementation writes](#badi-implementation-writes-enho)); ENHO source filtering
