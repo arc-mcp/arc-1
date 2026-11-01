@@ -33,6 +33,7 @@ const scenarios = [
   'restore-binding-refusal',
   'abort-forward',
   'interrupted-composed-recovery',
+  'pre-baseline-composed-refusal',
 ];
 for (const scenario of scenarios) {
   const root = await mkdtemp(join(tmpdir(), 'arc1-formatter-harness-test-'));
@@ -73,7 +74,8 @@ for (const scenario of scenarios) {
         sourceHash: 'c'.repeat(64),
         nativeIdentity: { createdBy: a.sapUser, version: 'active' },
       }));
-    let interruptedSnapshot;
+    let interruptedSnapshot, firstJournal;
+    let nativeCalls = 0;
     let phase,
       output,
       requests = 0,
@@ -189,16 +191,26 @@ for (const scenario of scenarios) {
         headers: { 'content-type': 'application/json', 'cache-control': 'private, no-store' },
       });
     };
-    const nativeOverride = async (mode) => ({
-      status: 'complete',
-      seeded: mode === 'seed',
-      sentinelFields: ['keepIdentifier', 'formatMethodCalls', 'condenseMethodCalls', 'formatValue', 'defaultAutoStyle'],
-      unrelatedPreserved: scenario !== 'wrong-native-during',
-      originalBytesRestored:
-        values.writerA.indentation === baseline.indentation && values.writerA.style === baseline.style,
-      mode,
-    });
+    const nativeOverride = async (mode) => {
+      nativeCalls++;
+      return {
+        status: 'complete',
+        seeded: mode === 'seed',
+        sentinelFields: [
+          'keepIdentifier',
+          'formatMethodCalls',
+          'condenseMethodCalls',
+          'formatValue',
+          'defaultAutoStyle',
+        ],
+        unrelatedPreserved: scenario !== 'wrong-native-during',
+        originalBytesRestored:
+          values.writerA.indentation === baseline.indentation && values.writerA.style === baseline.style,
+        mode,
+      };
+    };
     const journalOverride = async (path, value, exclusive) => {
+      if (value.plan === 'formatter-two-user-v2' && !firstJournal) firstJournal = structuredClone(value);
       if (
         scenario === 'interrupted-composed-recovery' &&
         phase === 'primary-patch' &&
@@ -245,6 +257,10 @@ for (const scenario of scenarios) {
       await invoke({ restoreOnly: true });
       assert.equal(output.failed, 0, JSON.stringify(output.failures));
       assert.equal(mutations, 4);
+      const recoveredJournal = JSON.parse(await readFile(`${root}/formatter-qualification.json`, 'utf8'));
+      assert.equal(recoveredJournal.finishedAt, JSON.parse(bytes).finishedAt);
+      assert.equal(recoveredJournal.interrupted, undefined);
+      assert.equal(typeof recoveredJournal.recoveryFinishedAt, 'string');
     } else if (scenario === 'interrupted-composed-recovery') {
       assert.equal(output.failed, 0);
       assert.ok(interruptedSnapshot);
@@ -267,7 +283,9 @@ for (const scenario of scenarios) {
       values.writerA.style = 'keywordLower'; // A foreign edit must survive the first recovery.
       await invoke({ restoreOnly: true }, true);
       assert.ok(output.failed > 0);
-      assert.equal(values.writerA.style, 'keywordLower');
+      assert.deepEqual(values.writerA, { indentation: false, style: 'keywordLower' });
+      assert.equal(mutations, 4, 'Foreign changes must prevent a recovery PUT entirely');
+      assert.ok(output.failures.some((failure) => failure.test === 'restore-writerA.owned_state'));
       const failedRecovery = JSON.parse(
         await readFile(`${root}/deletion-qualification.json`, 'utf8'),
       ).formatterRecovery;
@@ -288,6 +306,32 @@ for (const scenario of scenarios) {
       assert.equal(formatterJournal.interrupted, true);
       assert.equal(typeof formatterJournal.recoveryFinishedAt, 'string');
       assert.ok(formatterJournal.assertions.some((a) => !a.pass));
+    } else if (scenario === 'pre-baseline-composed-refusal') {
+      assert.equal(output.failed, 0);
+      assert.deepEqual(firstJournal.baseline, {});
+      await durable(`${root}/formatter-qualification.json`, firstJournal);
+      const { runId, sourceRevision, harnessSha256, target } = firstJournal;
+      await durable(
+        `${root}/deletion-qualification.json`,
+        {
+          plan: 'delete-two-user-v1',
+          runId,
+          sourceRevision,
+          harnessSha256,
+          target,
+          formatterAttempted: true,
+        },
+        true,
+      );
+      const parentBytes = await readFile(`${root}/deletion-qualification.json`, 'utf8');
+      const formatterBytes = await readFile(`${root}/formatter-qualification.json`, 'utf8');
+      const before = { requests, nativeCalls, mutations };
+      await invoke({ restoreOnly: true }, true);
+      assert.equal(output.journalOwned, false);
+      assert.ok(output.failures.some((failure) => failure.code === 'RESTORE_WRITERA_SHAPE'));
+      assert.deepEqual({ requests, nativeCalls, mutations }, before);
+      assert.equal(await readFile(`${root}/deletion-qualification.json`, 'utf8'), parentBytes);
+      assert.equal(await readFile(`${root}/formatter-qualification.json`, 'utf8'), formatterBytes);
     } else if (scenario === 'restore-binding-refusal') {
       assert.equal(output.failed, 0);
       const saved = JSON.parse(await readFile(`${root}/formatter-qualification.json`, 'utf8'));

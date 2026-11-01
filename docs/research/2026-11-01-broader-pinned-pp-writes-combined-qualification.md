@@ -106,6 +106,14 @@ private evidence files: 103 deletion RPC receipts, 61 formatter RPC receipts, 23
 receipts, and two durable native baseline documents. The extra two are not extra SAP calls.
 None of these corrections creates new live evidence or changes the original run/harness binding.
 
+The [next verbatim review at `550cd0288`](broader-pinned-pp-writes/claude-recovery-review-20261101.md)
+closed all eight findings and again accepted continued development, with no High/Medium issues.
+Its five further Low suggestions add stronger offline assertions: zero writes and intact indentation
+on foreign-change refusal; composed recovery before any baseline; original restoration history;
+and unchanged forward completion for an already-finished journal. Real parent/worker entrypoint
+probes now complement the isolated hook tests, stopping before native access. Tracking prose names
+the tested formatter cases and includes accepted-but-untested styles among the remaining gaps.
+
 Transportable deletion and the remaining object/include, DDIC/RAP, activation/batch, package/API,
 publication, CTS, tracing and classic FLP families need implementation or qualification. Git and
 custom plugins remain excluded. FEAT-93 stays open; this result is not merge approval for PR #1142.

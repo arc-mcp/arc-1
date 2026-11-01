@@ -64,7 +64,9 @@ display-only role is insufficient. Preserve the before-state and restore tempora
 Run in a detached OS session with stdout/stderr redirected to regular private files. Stop only with
 `kill -TERM <harness-pid>`, targeting that PID rather than its process group. Do not use terminal
 Ctrl-C, pipe output through `tee`, or close an attached terminal. Native workers now retain in-flight
-work on SIGINT, and stdout failure no longer aborts cleanup; subprocess tests cover those boundaries.
+work on SIGINT, and stdout failure no longer aborts cleanup. Subprocess tests exercise these hooks;
+additional real-entrypoint probes check installation after an intentional startup/TLS refusal.
+Those probes do not execute SAP cleanup.
 SIGHUP and process-group SIGTERM can still kill workers, and full terminal shutdown is not qualified. These are operating constraints,
 not tested crash recovery guarantees. With PID-only SIGTERM, forward qualification stops at the next
 cooperative boundary and existing restoration/cleanup continue with the frozen tokens.

@@ -3,7 +3,6 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
 import { McpSession } from '../../../scripts/qualification/pr1142/mcp-checks.mjs';
 import { recordFormatterRecovery } from '../../../scripts/qualification/pr1142/qualification.mjs';
@@ -60,25 +59,93 @@ describe('PR1142 real harness safety boundaries', () => {
   });
 
   it.each(['native-fixtures.mts', 'native-formatter.mts'])(
-    'boots the real %s worker and refuses disabled TLS without native access',
+    'the real %s entrypoint installs its interrupt hook before refusing unsafe TLS',
     async (script) => {
-      const execute = promisify(execFile);
+      const root = await mkdtemp(join(tmpdir(), 'pr1142-worker-entrypoint-'));
+      const marker = join(root, 'completed');
+      const preload = join(root, 'observe-refusal.mjs');
       const filename = fileURLToPath(new URL(`../../../scripts/qualification/pr1142/${script}`, import.meta.url));
-      await expect(
-        execute(process.execPath, ['--import', 'tsx', filename], {
-          env: {
-            ...process.env,
-            NODE_TLS_REJECT_UNAUTHORIZED: '0',
-            TEST_SAP_URL: 'https://example.invalid',
-            TEST_SAP_USER: 'OFFLINE_TEST',
-            TEST_SAP_PASSWORD: 'offline-test-only',
-            DOTENV_CONFIG_QUIET: 'true',
-          },
-          timeout: 10000,
-        }),
-      ).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining('TLS_VERIFICATION_REQUIRED') });
+      await writeFile(
+        preload,
+        `
+        import { writeFileSync } from 'node:fs';
+        process.on('uncaughtException', (error) => {
+          if (error.code !== 'TLS_VERIFICATION_REQUIRED') process.exit(2);
+          process.stdin.once('data', () => { writeFileSync(process.env.ARC1_TEST_MARKER, 'complete'); process.exit(0); });
+          process.stdout.write('ARC1_TEST_TLS_BLOCKED\\n');
+        });
+      `,
+      );
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const child = execFile(
+            process.execPath,
+            ['--import', 'tsx', '--import', preload, filename],
+            {
+              env: {
+                ...process.env,
+                NODE_TLS_REJECT_UNAUTHORIZED: '0',
+                TEST_SAP_URL: 'https://example.invalid',
+                TEST_SAP_USER: 'OFFLINE_TEST',
+                TEST_SAP_PASSWORD: 'offline-test-only',
+                DOTENV_CONFIG_QUIET: 'true',
+                ARC1_TEST_MARKER: marker,
+              },
+              timeout: 10000,
+            },
+            (error) => (error ? reject(error) : resolve()),
+          );
+          let observed = '',
+            sent = false;
+          child.stdin?.on('error', () => {});
+          child.stdout?.on('data', (chunk) => {
+            observed += String(chunk);
+            if (!sent && observed.includes('ARC1_TEST_TLS_BLOCKED')) {
+              sent = true;
+              child.kill('SIGINT');
+              setTimeout(() => child.stdin?.end('finish'), 50);
+            }
+          });
+        });
+        expect(await readFile(marker, 'utf8')).toBe('complete');
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
     },
   );
+
+  it('the real parent entrypoint survives closed stdout while reporting a startup refusal', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pr1142-parent-entrypoint-'));
+    const marker = join(root, 'observed.json');
+    const preload = join(root, 'observe-exit.mjs');
+    const filename = fileURLToPath(new URL('../../../scripts/qualification/pr1142/live-harness.mjs', import.meta.url));
+    await writeFile(
+      preload,
+      `
+      import { writeFileSync } from 'node:fs';
+      const uncaught = [];
+      process.on('uncaughtExceptionMonitor', error => uncaught.push(error.code ?? error.message));
+      process.on('exit', exitCode => writeFileSync(process.env.ARC1_TEST_MARKER, JSON.stringify({ exitCode, uncaught })));
+    `,
+    );
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const child = execFile(
+          process.execPath,
+          ['--import', preload, filename],
+          {
+            env: { ...process.env, NODE_TLS_REJECT_UNAUTHORIZED: '0', ARC1_TEST_MARKER: marker },
+            timeout: 10000,
+          },
+          (error) => (error?.code === 1 ? resolve() : reject(error ?? new Error('Expected unsafe TLS refusal'))),
+        );
+        child.stdout?.destroy();
+      });
+      expect(JSON.parse(await readFile(marker, 'utf8'))).toEqual({ exitCode: 1, uncaught: [] });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 
   it('updates restoration evidence without erasing the original failed qualification', async () => {
     const binding = { runId: 'run', sourceRevision: 'revision', harnessSha256: 'hash', target: 'PR1142/001' };
@@ -86,7 +153,12 @@ describe('PR1142 real harness safety boundaries', () => {
       ...binding,
       plan: 'delete-two-user-v1',
       failed: 3,
-      formatter: { failed: 2, restored: { writerA: false } },
+      formatter: {
+        failed: 2,
+        restored: { writerA: false },
+        restorationStatus: { writerA: 'incomplete' },
+        nativeSeedRestored: false,
+      },
     };
     const load = async (path: string) =>
       structuredClone(
@@ -106,6 +178,14 @@ describe('PR1142 real harness safety boundaries', () => {
       failed: 3,
       formatter: { failed: 2, restored: result.restored, nativeSeedRestored: true },
     });
+    expect(write.mock.calls[0][1].formatterRestorationHistory).toEqual([
+      {
+        at: expect.any(String),
+        restored: parent.formatter.restored,
+        restorationStatus: parent.formatter.restorationStatus,
+        nativeSeedRestored: false,
+      },
+    ]);
     write.mockClear();
     await expect(recordFormatterRecovery('/private', { ...result, runId: 'foreign' }, load, write)).rejects.toThrow(
       'RECOVERY_PARENT_BINDING_MISMATCH',
