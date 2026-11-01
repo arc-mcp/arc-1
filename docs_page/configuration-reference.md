@@ -413,9 +413,10 @@ Optional pre-write validation layers and tool/schema selection.
 Parser findings can also reflect unsupported abaplint grammar. For an existing object, check the full
 proposed source with `SAPRead(type="SYNTAX", objectType, name, source)` before changing SAP-accepted code.
 For a confirmed parser gap, standard writes can use `lintBeforeWrite=false` for one call; pinned writes
-require an administrator's lint-policy review. An administrator can make just `parser_error` advisory
-through `SAP_ABAPLINT_CONFIG`: `{"rules":{"parser_error":{"severity":"Warning"}}}`. This is instance-wide
-and does not relax structural parser errors. `SAP_CHECK_BEFORE_WRITE` remains non-blocking feedback.
+require an administrator's lint-policy review. To make just `parser_error` advisory, an administrator
+can put `{"rules":{"parser_error":{"severity":"Warning"}}}` in the JSON file `SAP_ABAPLINT_CONFIG` points
+to. That file must be present in the deployed app. This is instance-wide and does not relax structural
+parser errors. `SAP_CHECK_BEFORE_WRITE` remains non-blocking feedback.
 
 ---
 

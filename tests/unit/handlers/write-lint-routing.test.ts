@@ -59,13 +59,21 @@ describe('pre-write lint uses the supplied object type', () => {
     expect(lint.result?.content[0]?.text).toContain(`SAPRead(type="SYNTAX", objectType="${type}"`);
     expect(lint.result?.content[0]?.text).not.toContain('Fix these errors');
     expect(lint.result?.content[0]?.text).not.toContain('lint_and_fix');
+    expect(lint.result?.content[0]?.text).toContain('lintBeforeWrite=false');
+    expect(lint.result?.content[0]?.text).toContain('do not rewrite');
   });
 
-  it('keeps fixable non-parser errors blocking with autofix guidance', () => {
-    const lint = runPreWriteLint('DATA: BEGIN OF stru, field TYPE i, END OF other.', 'PROG', 'Z_TEST', config);
+  it.each([
+    ['begin_end_names', 'DATA: BEGIN OF stru, field TYPE i, END OF other.'],
+    ['unreachable_code', 'REPORT z_test.\nSTART-OF-SELECTION.\nRETURN.\nWRITE / 1.'],
+    ['identical_conditions', 'REPORT z_test.\nIF 1 = 1.\nWRITE / 1.\nELSEIF 1 = 1.\nWRITE / 2.\nENDIF.'],
+  ])('keeps non-parser %s errors blocking and asks for genuine errors to be corrected', (rule, source) => {
+    const lint = runPreWriteLint(source, 'PROG', 'Z_TEST', config);
     expect(lint.blocked).toBe(true);
-    expect(lint.result?.content[0]?.text).toContain('[begin_end_names]');
+    expect(lint.result?.content[0]?.text).toContain(`[${rule}]`);
+    expect(lint.result?.content[0]?.text).toContain('Correct genuine errors');
     expect(lint.result?.content[0]?.text).toContain('lint_and_fix');
+    expect(lint.result?.content[0]?.text).toContain('lintBeforeWrite=false');
     expect(lint.result?.content[0]?.text).not.toContain('grammar abaplint does not support');
   });
 

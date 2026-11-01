@@ -1258,7 +1258,7 @@ export function runPreWriteLint(
           'or grammar abaplint does not support. For an existing object, check the proposed source with ' +
           `SAPRead(type="SYNTAX", objectType=${JSON.stringify(type)}, name=${JSON.stringify(name)}, source=<full source>). ` +
           'Correct what SAP rejects; do not rewrite statements SAP accepts just to satisfy abaplint. '
-        : 'Check the target SAP release and lint configuration. ';
+        : 'Correct genuine errors; check the target SAP release and lint configuration if a finding looks wrong. ';
       const fixAdvice = hasOtherFindings
         ? `Use SAPLint action="lint_and_fix" for fixable ${hasParserFindings ? 'non-parser ' : ''}findings. `
         : '';
