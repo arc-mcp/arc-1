@@ -10,9 +10,9 @@
  * Uses parsed statement boundaries, including multi-class includes without a complete structure tree.
  */
 
-import { Comment, MemoryFile, Objects, Registry, Statements, Version } from '@abaplint/core';
+import { Comment, MemoryFile, Objects, Registry, Statements, Unknown, Version } from '@abaplint/core';
 import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
-import { methodInventory } from './method-inventory.js';
+import { methodHeaderName, methodInventory } from './method-inventory.js';
 import { methodNotFoundMessage } from './method-suggestions.js';
 
 const DEFAULT_VERSION = Version.Cloud;
@@ -142,6 +142,7 @@ export function extractMethod(
     };
   }
 
+  const implementations = listing.methods.filter((m) => m.startLine > 0 && m.endLine >= m.startLine);
   const upperName = methodName.toUpperCase();
   const hasTilde = methodName.includes('~');
 
@@ -152,7 +153,7 @@ export function extractMethod(
   //   CLASS lhc_task IMPLEMENTATION.    METHOD approve_project. ENDMETHOD.
   // …then `find()` would silently pick whichever appears first in source order.
   // Detect the multi-class match early and ask the caller to qualify.
-  const exactCandidates = listing.methods.filter((m) => m.name.toUpperCase() === upperName);
+  const exactCandidates = implementations.filter((m) => m.name.toUpperCase() === upperName);
   if (exactCandidates.length > 1) {
     const distinctClasses = Array.from(
       new Set(exactCandidates.map((c) => (c.containingClass ?? '').trim()).filter((c) => c.length > 0)),
@@ -186,7 +187,7 @@ export function extractMethod(
   }
 
   // ── Step 2: exact match ──
-  let method = listing.methods.find((m) => m.name.toUpperCase() === upperName);
+  let method = implementations.find((m) => m.name.toUpperCase() === upperName);
 
   // ── Step 3: qualified-class match (lhc_project~approve_project) ──
   // Only fires when caller passed a tilde AND the exact lookup above didn't
@@ -197,7 +198,7 @@ export function extractMethod(
     const tildeIdx = methodName.indexOf('~');
     const lhsUpper = methodName.slice(0, tildeIdx).toUpperCase();
     const rhsUpper = methodName.slice(tildeIdx + 1).toUpperCase();
-    const qualifiedMatches = listing.methods.filter(
+    const qualifiedMatches = implementations.filter(
       (m) => (m.containingClass ?? '').toUpperCase() === lhsUpper && m.name.toUpperCase() === rhsUpper,
     );
     if (qualifiedMatches.length === 1) {
@@ -222,7 +223,7 @@ export function extractMethod(
   // ── Step 4: existing fuzzy interface match — unchanged ──
   if (!method) {
     // Fuzzy: user said "process", we try to match "*~process"
-    const candidates = listing.methods.filter((m) => {
+    const candidates = implementations.filter((m) => {
       const parts = m.name.toUpperCase().split('~');
       return parts.length === 2 && parts[1] === upperName;
     });
@@ -252,7 +253,12 @@ export function extractMethod(
       startLine: 0,
       endLine: 0,
       success: false,
-      error: methodNotFoundMessage(className, methodName, listing.methods, method),
+      error: methodNotFoundMessage(
+        className,
+        methodName,
+        listing.methods,
+        method ?? listing.methods.find((m) => m.name.toUpperCase() === upperName),
+      ),
     };
   }
 
@@ -297,19 +303,41 @@ function methodBoundaries(
   const last = statements.at(-1);
   // extractMethod selects whole lines. Refuse when a neighboring statement shares those lines.
   const boundaries = statements.filter(
-    (s) => s.get() instanceof Statements.MethodImplementation || s.get() instanceof Statements.EndMethod,
+    (s) => methodHeaderName(s) !== undefined || s.get() instanceof Statements.EndMethod,
   );
   if (
-    !(first?.get() instanceof Statements.MethodImplementation) ||
+    !first ||
+    methodHeaderName(first) === undefined ||
     !(last?.get() instanceof Statements.EndMethod) ||
     boundaries.length !== 2 ||
-    statements
-      .slice(1, -1)
-      .some((statement) =>
-        /^(?:CLASS(?:\s|$)|ENDCLASS\b|INTERFACE\s|ENDINTERFACE\b|FORM\s|ENDFORM\b|MODULE\s|ENDMODULE\b|REPORT\s|PROGRAM\s|FUNCTION\s|ENDFUNCTION\b)/i.test(
-          statement.concatTokens(),
-        ),
-      )
+    statements.slice(1, -1).some((statement) => {
+      const kind = statement.get();
+      return (
+        [
+          Statements.ClassDefinition,
+          Statements.ClassImplementation,
+          Statements.ClassDeferred,
+          Statements.EndClass,
+          Statements.Interface,
+          Statements.InterfaceDeferred,
+          Statements.EndInterface,
+          Statements.Form,
+          Statements.FormDefinition,
+          Statements.EndForm,
+          Statements.Module,
+          Statements.EndModule,
+          Statements.Report,
+          Statements.Program,
+          Statements.FunctionModule,
+          Statements.FunctionPool,
+          Statements.EndFunction,
+        ].some((boundary) => kind instanceof boundary) ||
+        (kind instanceof Unknown &&
+          /^(?:CLASS(?:\s|$)|ENDCLASS\b|INTERFACE\s|ENDINTERFACE\b|FORM\s|ENDFORM\b|MODULE\s|ENDMODULE\b|REPORT\s|PROGRAM\s|FUNCTION(?:-|\s)|ENDFUNCTION\b)/i.test(
+            statement.concatTokens(),
+          ))
+      );
+    })
   )
     return undefined;
   const lines = source.split('\n');

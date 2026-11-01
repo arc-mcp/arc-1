@@ -8,6 +8,7 @@ import type { ServerConfig } from '../../server/types.js';
 import { type ClassWriteInclude, normalizeClassWriteInclude, objectUrlForType } from '../object-types.js';
 import { enforceAllowedPackageForObjectUrl } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
+import { verifyPinnedProgramOwner } from './pinned-program-owner.js';
 
 export interface PinnedSourceState {
   readonly context: PinnedMutationContext;
@@ -77,6 +78,7 @@ export function createPinnedSourceContext(
     invalidateWrittenObject: () => {}, // Multi-target has no source cache.
     async enforcePackageForExistingObject() {
       state.phase = 'package-preflight';
+      const nativePackage = await verifyPinnedProgramOwner(client, owner);
       const pkg = await enforceAllowedPackageForObjectUrl(
         client,
         owner,
@@ -85,6 +87,8 @@ export function createPinnedSourceContext(
         context.requestPolicy,
       );
       if (!pkg) throw new AdtSafetyError('The owner package could not be verified.');
+      if (nativePackage !== undefined && nativePackage !== pkg)
+        throw new AdtSafetyError('The native owner package could not be consistently verified.');
       state.pkg = pkg;
       state.phase = 'recording-preflight';
       state.recording = await pinnedRecording(

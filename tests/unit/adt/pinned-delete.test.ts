@@ -26,6 +26,7 @@ let deleteStatus: number;
 let readbackStatus: number;
 let readbackBody: string;
 let unlockStatus: number;
+let closeStatus: number;
 let retainOwner: boolean;
 let recordingCalls: number;
 let afterDelete: (() => void) | undefined;
@@ -63,6 +64,7 @@ beforeEach(() => {
   readbackBody =
     '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><namespace id="com.sap.adt"/><type id="ExceptionResourceNotFound"/><message>Resource does not exist.</message></exc:exception>';
   unlockStatus = 200;
+  closeStatus = 200;
   retainOwner = false;
   recordingCalls = 0;
   afterDelete = undefined;
@@ -85,10 +87,12 @@ beforeEach(() => {
         200,
         '<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900001" tm:type="K" tm:status="D"><tm:task tm:number="A4HK900002" tm:status="D"/></tm:request></tm:root>',
       );
+    if (parsed.pathname === '/sap/bc/adt/core/http/sessions') return mockResponse(closeStatus, '');
     if (path.includes('_action=LOCK'))
       return mockResponse(
         200,
         `<DATA><LOCK_HANDLE>owner-lock</LOCK_HANDLE><CORRNR>${pkg === '$TMP' ? '' : 'A4HK900001'}</CORRNR>${local === 'missing' ? '' : `<IS_LOCAL>${local}</IS_LOCAL>`}</DATA>`,
+        { 'set-cookie': 'sap-contextid=delete-owner; Path=/' },
       );
     if (path.includes('_action=UNLOCK')) return mockResponse(unlockStatus, '');
     if (method === 'DELETE') {
@@ -207,6 +211,25 @@ describe('bounded pinned owner deletion', () => {
     });
     expect(requests.filter((r) => r.path.includes('_action=UNLOCK'))).toHaveLength(1);
   });
+  it.each([false, true])(
+    'reports session-close failure without losing the primary deletion outcome (%s)',
+    async (rejectDelete) => {
+      closeStatus = 503;
+      if (rejectDelete) deleteStatus = 403;
+      const c = client();
+      expect(await deletePinnedOwner(c, context(c), input)).toMatchObject({
+        ok: false,
+        state: rejectDelete ? 'delete-rejected' : 'deleted',
+        phase: rejectDelete ? 'delete' : 'session-close',
+        cleanupFailed: true,
+        cleanupPhase: 'session-close',
+        sessionClosed: false,
+        ...(rejectDelete ? { statusCode: 403 } : {}),
+      });
+      expect(requests.filter((r) => r.path.split('?')[0] === '/sap/bc/adt/core/http/sessions')).toHaveLength(1);
+      expect(deletes()).toHaveLength(1);
+    },
+  );
   it('keeps the cancellation budget off the owning-session cleanup', async () => {
     const controller = new AbortController();
     afterDelete = () => controller.abort();

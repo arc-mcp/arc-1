@@ -214,7 +214,8 @@ restoration passed. The recorded failed attempt remains failed. Actual Opus 5.5 
 finding dispositions are linked from the evidence; this is not whole-PR acceptance.
 
 Main updates now share the existing update handler; standalone on-prem PROG/INCL update and unit-edit
-adapters have offline tests. Their create/delete/activation and function-group ownership paths remain pending.
+adapters have offline tests and native standalone-owner metadata checks; the latest independent
+review still requires its follow-up fixes to be reviewed. Their create/delete/activation and function-group ownership paths remain pending.
 CLAS/INTF creation and deletion also enter through the shared actions with explicit native profiles.
 Remaining work includes the additional object-specific mutation adapters,
 all refactored transportable-object paths, other object types and qualification of class/procedural surgery,

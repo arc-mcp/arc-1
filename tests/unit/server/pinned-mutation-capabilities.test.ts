@@ -237,6 +237,14 @@ describe('pinned mutation capability matrix', () => {
     expect(surface.actions).not.toContain('edit_unit');
     expect(surface.actions).not.toContain('add_unit');
     expect(surface.fields.has('unit')).toBe(false);
+    const defensiveConfig = { ...writer, systemType: 'btp' as const };
+    const tool = multiTargetToolDefinitions(getToolDefinitions(defensiveConfig), defensiveConfig).find(
+      (entry) => entry.name === 'SAPWrite',
+    )!;
+    expect(tool.description).not.toMatch(/PROG|INCL|edit_unit|add_unit/);
+    expect(JSON.stringify((tool.inputSchema.properties as Record<string, unknown>).source)).not.toMatch(
+      /PROG|INCL|edit_unit|add_unit/,
+    );
   });
 
   it('derives advertised actions, types and fields from the admitted combinations', () => {

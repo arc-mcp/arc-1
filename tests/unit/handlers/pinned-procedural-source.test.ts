@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
+import { requestContext } from '../../../src/server/context.js';
 import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
@@ -34,6 +35,7 @@ let stored = original,
   saved = false,
   fault = '',
   transportable = false;
+let cancellation: AbortController | undefined;
 const requests: { path: string; method: string; locked: boolean; body: string }[] = [];
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -42,6 +44,7 @@ beforeEach(() => {
   locked = false;
   saved = false;
   fault = '';
+  cancellation = undefined;
   transportable = false;
   requests.length = 0;
   mockFetch.mockImplementation(async (url, init: any = {}) => {
@@ -65,11 +68,27 @@ beforeEach(() => {
       return mockResponse(fault === 'unlock' ? 503 : 200, '');
     }
     if (path.includes('/http/sessions')) return mockResponse(fault === 'close' ? 503 : 200, '');
-    if (path === owner && method === 'GET')
+    if (path === owner && method === 'GET') {
+      const include = owner.includes('/includes/');
+      const activeFault = !fault.endsWith('-locked') || locked ? fault.replace(/-locked$/, '') : '';
+      const root = include && activeFault !== 'owner-root' ? 'abapInclude' : 'abapProgram';
+      const name = activeFault === 'owner-name' ? 'ZOTHER' : decodeURIComponent(owner.split('/').at(-1)!).toUpperCase();
+      const nativeType = activeFault === 'owner-type' ? 'FUGR/I' : `PROG/${include ? 'I' : 'P'}`;
+      const pkg =
+        activeFault === 'owner-package'
+          ? ''
+          : `<adtcore:packageRef adtcore:type="DEVC/K" adtcore:name="${fault === 'package' && locked ? 'ZFOREIGN' : transportable ? 'ZTEAM' : '$TMP'}"/>`;
+      const context =
+        activeFault === 'owner-group'
+          ? '<adtcore:contextRef adtcore:type="FUGR/I" adtcore:name="SAPLZFOO" adtcore:uri="/sap/bc/adt/functions/groups/zfoo/source/main"/>'
+          : activeFault === 'owner-container'
+            ? '<adtcore:containerRef adtcore:type="FUGR/F"/>'
+            : '';
       return mockResponse(
         200,
-        `<program:abapProgram xmlns:program="http://www.sap.com/adt/programs/programs" xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="${fault === 'package' && locked ? 'ZFOREIGN' : transportable ? 'ZTEAM' : '$TMP'}"/></program:abapProgram>`,
+        `<program:${root} xmlns:program="http://www.sap.com/adt/programs/${include ? 'includes' : 'programs'}" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${name}" adtcore:type="${nativeType}" ${include ? '' : `program:programType="${activeFault === 'owner-kind' ? 'functionPool' : 'executableProgram'}"`}>${pkg}${context}</program:${root}>`,
       );
+    }
     if (path.includes('transportchecks'))
       return mockResponse(
         200,
@@ -81,7 +100,7 @@ beforeEach(() => {
         '<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900001" tm:type="K" tm:status="D"><tm:task tm:number="A4HK900002" tm:status="D"/></tm:request></tm:root>',
       );
     if (path === `${owner}/source/main`) {
-      expect(locked).toBe(true);
+      if (method === 'GET' && fault === 'cancel-read') cancellation!.abort();
       if (method === 'GET')
         return mockResponse(
           fault === 'read' || (saved && fault === 'readback-status') ? 503 : 200,
@@ -100,6 +119,7 @@ beforeEach(() => {
 async function invoke(type = 'PROG', action = 'edit_unit', extra: Record<string, unknown> = {}, settings = config) {
   const name = typeof extra.name === 'string' ? extra.name : 'ZARC1_PROGRAM';
   owner = `/sap/bc/adt/programs/${type === 'PROG' ? 'programs' : 'includes'}/${encodeURIComponent(name.toLowerCase()).toLowerCase()}`;
+  const requestStart = requests.length;
   const result = await handleToolCall(
     new AdtClient({ baseUrl: 'http://sap:8000', client: '001', safety: { ...defaultSafetyConfig(), ...settings } }),
     settings,
@@ -114,6 +134,12 @@ async function invoke(type = 'PROG', action = 'edit_unit', extra: Record<string,
       ...extra,
     },
   );
+  expect(
+    requests
+      .slice(requestStart)
+      .filter((r) => r.path.split('?')[0] === `${owner}/source/main`)
+      .every((r) => r.locked),
+  ).toBe(true);
   const text = result.content[0].text;
   return { result, body: text.startsWith('{') ? JSON.parse(text) : { message: text } };
 }
@@ -267,3 +293,95 @@ it.each(['update', 'edit_unit', 'add_unit'])(
     expect(requests).toHaveLength(0);
   },
 );
+
+it.each(['LZFOOF01', '/NS/LZFOOF01', 'SAPLZFOO', '/NS/SAPLZFOO'])(
+  'refuses generated/function-group source names before SAP: %s',
+  async (name) => {
+    for (const type of ['PROG', 'INCL']) {
+      const { result } = await invoke(type, 'edit_unit', { name });
+      expect(result.isError).toBe(true);
+      expect(requests).toHaveLength(0);
+    }
+  },
+);
+it.each(['owner-root', 'owner-name', 'owner-type', 'owner-package', 'owner-group', 'owner-container'])(
+  'requires positive native INCL identity and ownership: %s',
+  async (failure) => {
+    fault = failure;
+    const { result } = await invoke('INCL');
+    expect(result.isError).toBe(true);
+    expect(requests.some((r) => r.path.includes('_action=LOCK') || r.method === 'PUT')).toBe(false);
+  },
+);
+it('refuses a non-procedural native program kind', async () => {
+  fault = 'owner-kind';
+  expect((await invoke()).result.isError).toBe(true);
+  expect(requests.some((r) => r.path.includes('_action=LOCK') || r.method === 'PUT')).toBe(false);
+});
+it.each(['owner-type-locked', 'owner-name-locked', 'owner-group-locked'])(
+  'rechecks native source ownership under the lock: %s',
+  async (failure) => {
+    fault = failure;
+    expect((await invoke('INCL')).result.isError).toBe(true);
+    expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+    expect(requests.some((r) => r.path.includes('_action=UNLOCK'))).toBe(true);
+    expect(locked).toBe(false);
+  },
+);
+it.each(['edit_unit', 'add_unit'])(
+  'runs actual configured lint under the lock before %s can save invalid ABAP',
+  async (action) => {
+    const lint = quality.runPreWriteLint;
+    const lintLocks: boolean[] = [];
+    vi.spyOn(quality, 'runPreWriteLint').mockImplementation((...args) => {
+      lintLocks.push(locked);
+      return lint(...args);
+    });
+    const unit = action === 'add_unit' ? 'added' : 'selected';
+    const { result } = await invoke(
+      'PROG',
+      action,
+      { unit, source: `FORM ${unit}.\nTHIS IS NOT VALID ABAP.\nENDFORM.` },
+      { ...config, lintBeforeWrite: true },
+    );
+    expect(result.isError).toBe(true);
+    expect(lintLocks).toEqual([true]);
+    expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+    expect(locked).toBe(false);
+  },
+);
+it.each(['before', 'read'])(
+  'cancels procedural edits at %s without a PUT and releases any owning lock',
+  async (point) => {
+    cancellation = new AbortController();
+    if (point === 'before') cancellation.abort();
+    else fault = 'cancel-read';
+    const { result } = await requestContext.run({ requestId: 'procedural-cancel', signal: cancellation.signal }, () =>
+      invoke(),
+    );
+    expect(result.isError).toBe(true);
+    expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+    if (point === 'before') expect(requests).toHaveLength(0);
+    else expect(requests.some((r) => r.path.includes('_action=UNLOCK'))).toBe(true);
+    expect(locked).toBe(false);
+  },
+);
+it('edits using the exact hash returned by SAPRead editable', async () => {
+  owner = '/sap/bc/adt/programs/programs/zarc1_program';
+  const client = new AdtClient({
+    baseUrl: 'http://sap:8000',
+    client: '001',
+    safety: { ...defaultSafetyConfig(), ...config },
+  });
+  const read = await handleToolCall(client, config, 'SAPRead', {
+    type: 'PROG',
+    name: 'ZARC1_PROGRAM',
+    format: 'editable',
+  });
+  expect(read.isError, read.content[0].text).toBeUndefined();
+  const snapshot = JSON.parse(read.content[0].text);
+  expect(snapshot.source).toBe(original);
+  const { result } = await invoke('PROG', 'edit_unit', { expectedSourceHash: snapshot.sourceHash });
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(stored).toBe(original.replace("'old'", "'new'"));
+});

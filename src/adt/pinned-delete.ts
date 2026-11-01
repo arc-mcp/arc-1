@@ -16,7 +16,7 @@ export interface PinnedDeleteResult {
   statusCode?: number;
   message?: string;
   cleanupFailed?: boolean;
-  cleanupPhase?: 'unlock';
+  cleanupPhase?: 'unlock' | 'session-close';
   cleanup?: string;
   sessionClosed?: boolean;
 }
@@ -119,24 +119,35 @@ export async function deletePinnedOwner(
           ? 'SAP rejected the deletion. Inspect the current owner and native status before continuing.'
           : 'SAP did not confirm the complete deletion operation. Inspect the owner and reported phase before deciding the next action; do not automatically retry.';
   }
-  const cleanupFailed = context?.mode === 'pinned-pp' && context.cleanup?.unlockFailed === true;
+  const cleanupPhase =
+    context?.mode !== 'pinned-pp'
+      ? undefined
+      : context.cleanup?.unlockFailed
+        ? ('unlock' as const)
+        : context.cleanup?.sessionClosed === false
+          ? ('session-close' as const)
+          : undefined;
+  const cleanupFailed = cleanupPhase !== undefined;
   if (cleanupFailed && !failed)
-    outcome.message = 'The owner is confirmed absent, but lock cleanup failed. Verify the SAP lock before continuing.';
+    outcome.message =
+      'The owner is confirmed absent, but session/lock cleanup failed. Verify SAP cleanup before continuing.';
   return {
     ok: outcome.state === 'deleted' && !cleanupFailed && !failed,
     ...outcome,
-    phase: cleanupFailed && !failed ? 'unlock' : phase,
+    phase: cleanupFailed && !failed ? cleanupPhase : phase,
     retryable: false,
     ...(statusCode === undefined ? {} : { statusCode }),
     ...(cleanupFailed
       ? {
           cleanupFailed: true,
-          cleanupPhase: 'unlock' as const,
+          cleanupPhase,
           sessionClosed: context.cleanup.sessionClosed,
           cleanup:
-            context.cleanup.sessionClosed === true
-              ? 'Unlock failed; the owning session was closed. Verify the SAP lock before continuing.'
-              : 'Unlock failed; session closure was not confirmed. Verify the SAP lock before continuing.',
+            cleanupPhase === 'session-close'
+              ? 'Unlock succeeded, but session closure failed. Verify the SAP session before continuing.'
+              : context.cleanup.sessionClosed === true
+                ? 'Unlock failed; the owning session was closed. Verify the SAP lock before continuing.'
+                : 'Unlock failed; session closure was not confirmed. Verify the SAP lock before continuing.',
         }
       : {}),
   };

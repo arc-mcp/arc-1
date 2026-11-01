@@ -17,7 +17,7 @@ Implementation starts with [ADR-0011](../adr/0011-broader-pinned-pp-mutations.md
 [Existing CLAS two-writer PP evidence and remaining qualification](../research/2026-11-01-broader-pinned-pp-writes-pp-qualification.md).
 [CLAS/INTF deletion integration and qualification limits](../research/2026-11-01-broader-pinned-pp-writes-deletion.md).
 [Class-local include implementation and local two-writer qualification](../research/2026-11-01-broader-pinned-pp-writes-includes.md).
-[Shared source adapters and second review dispositions](../research/2026-11-01-pinned-source-adapters.md).
+[Shared source adapters and review dispositions](../research/2026-11-01-pinned-source-adapters.md).
 [Main-source class metadata adapter and remaining qualification](../research/2026-11-01-pinned-class-metadata.md).
 Proposed title: `feat: expand pinned PP writes across built-in development operations`.
 [Research and owner decisions](../research/2026-10-26-multi-target-write-parity.md).

@@ -573,3 +573,19 @@ it.each(['edit_method_signature', 'delete_method', 'change_method_visibility', '
     }
   },
 );
+
+it('derives ABSTRACT from the added declaration when the flag is omitted', async () => {
+  const { result } = await invoke('add_method', { method: 'METHODS added ABSTRACT.' });
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(stored).toContain('METHODS added ABSTRACT.');
+  expect(stored).not.toMatch(/\bMETHOD added\./i);
+});
+it.each([
+  { method: 'METHODS added ABSTRACT.', abstract: false },
+  { method: 'METHODS added.', abstract: true },
+])('refuses a contradictory ABSTRACT flag: %j', async (extra) => {
+  const { result } = await invoke('add_method', extra);
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toContain('abstract flag must match');
+  expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+});

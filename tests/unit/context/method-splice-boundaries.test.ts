@@ -17,6 +17,23 @@ CLASS zexample IMPLEMENTATION.
 ENDCLASS.`;
 
 describe('method replacement boundaries', () => {
+  it.each([
+    'program = sy-repid.',
+    "class = 'ZCL_X'.",
+    "function = 'Z_FM'.",
+    'form = 1.',
+    'module = 1.',
+    'report = 1.',
+    'interface ?= ref.',
+    'CLASS zcl DEFINITION LOAD.',
+    'INTERFACE zif LOAD.',
+  ])('allows normal method statements named like a boundary: %s', (statement) => {
+    const original = source.replace('result = 1.', statement);
+    const result = spliceMethod(original, 'zexample', 'value', `${statement}\nresult = 2.`, Version.v758);
+    expect(result.success, result.error).toBe(true);
+    expect(result.newSource).toContain(statement);
+    expect(result.newSource).toContain('result = 99.');
+  });
   it('leaves body syntax to lint while preserving the selected boundaries', () => {
     const result = spliceMethod(source, 'zexample', 'value', 'result = 2');
     expect(result.success).toBe(true);

@@ -23,6 +23,7 @@
  */
 
 import { Expressions, Statements } from '@abaplint/core';
+import { methodHeaderName } from '../context/method-inventory.js';
 import {
   assertClassDefinitionReplacement,
   assertClassEditBoundary,
@@ -444,6 +445,37 @@ export interface MethodDiff {
  * exempts ABSTRACT METHODS, EVENTS, INTERFACES, ALIASES from the symmetry
  * check — only concrete methods that need a METHOD…ENDMETHOD block in IMPL.
  */
+/** Compare explicit interface body requirements without resolving inherited interface semantics. */
+function interfaceAbstractModes(
+  statements: ReturnType<typeof parseClassSourceStatements>,
+  className: string,
+): Map<string, string> {
+  const modes = new Map<string, string>();
+  let selected = false;
+  for (const statement of statements) {
+    if (statement.get() instanceof Statements.ClassDefinition)
+      selected =
+        statement.findFirstExpression(Expressions.ClassName)?.concatTokens().toUpperCase() === className.toUpperCase();
+    else if (statement.get() instanceof Statements.EndClass) selected = false;
+    else if (selected && statement.get() instanceof Statements.InterfaceDef) {
+      const name = statement.findFirstExpression(Expressions.InterfaceName)?.concatTokens().toUpperCase();
+      if (!name) continue;
+      const abstract = statement.findFirstExpression(Expressions.AbstractMethods);
+      const names = abstract
+        ?.findAllExpressions(Expressions.MethodName)
+        .map((node) => node.concatTokens().toUpperCase())
+        .sort();
+      const tail = statement
+        .getTokens()
+        .slice(2, 5)
+        .map((token) => token.getStr().toUpperCase())
+        .join(' ');
+      modes.set(name, tail === 'ALL METHODS ABSTRACT' ? '*' : (names?.join(',') ?? ''));
+    }
+  }
+  return modes;
+}
+
 export function diffMethodSets(structure: ClassStructure, newDefBlock: string, currentSource?: string): MethodDiff {
   assertClassDefinitionReplacement(newDefBlock, structure.className);
   const oldNames = new Set(structure.methods.map((m) => m.name));
@@ -459,16 +491,30 @@ export function diffMethodSets(structure: ClassStructure, newDefBlock: string, c
   }
   if (currentSource !== undefined) {
     const interfaces = new Set(declared.filter((d) => d.isInterface).map((d) => d.name));
+    const previousStatements = parseClassSourceStatements(currentSource);
+    const previousModes = interfaceAbstractModes(previousStatements, structure.className);
+    const nextModes = interfaceAbstractModes(parseClassSourceStatements(newDefBlock), structure.className);
+    const previousInterfaces = new Set(previousModes.keys());
+    for (const [name, previousMode] of previousModes)
+      if (nextModes.has(name) && nextModes.get(name) !== previousMode)
+        throw new AdtSafetyError(
+          `Changing ABSTRACT METHODS for interface ${name} requires reviewing its implementations. Use a complete source update.`,
+        );
     let selectedImplementation = false;
-    for (const statement of parseClassSourceStatements(currentSource)) {
+    for (const statement of previousStatements) {
       if (statement.get() instanceof Statements.ClassImplementation)
         selectedImplementation =
           statement.findFirstExpression(Expressions.ClassName)?.concatTokens().toUpperCase() ===
           structure.className.toUpperCase();
       else if (statement.get() instanceof Statements.EndClass) selectedImplementation = false;
-      else if (selectedImplementation && statement.get() instanceof Statements.MethodImplementation) {
-        const method = statement.findFirstExpression(Expressions.MethodName)?.concatTokens().toUpperCase();
-        if (method?.includes('~') && !declaredNames.has(method) && !interfaces.has(method.split('~')[0]!))
+      else if (selectedImplementation && methodHeaderName(statement)) {
+        const method = methodHeaderName(statement)!.toUpperCase();
+        if (
+          method?.includes('~') &&
+          !declaredNames.has(method) &&
+          previousInterfaces.has(method.split('~')[0]!) &&
+          !interfaces.has(method.split('~')[0]!)
+        )
           throw new AdtSafetyError(
             `The new definition removes the interface declaration for existing body ${method} (orphan implementation). Keep its INTERFACES or METHODS declaration, or use a complete source update.`,
           );
@@ -508,7 +554,9 @@ export function parseDefinitionBlockDeclarations(defBlock: string): DeclaredMeth
       const match = /^(CLASS-EVENTS|EVENTS|INTERFACES|ALIASES)\s+(\S+)/i.exec(statement.concatTokens());
       if (match)
         out.push({
-          name: match[2]!.replace(/\.$/, '').toUpperCase(),
+          name: (
+            statement.findFirstExpression(Expressions.InterfaceName)?.concatTokens() ?? match[2]!.replace(/[.,]$/, '')
+          ).toUpperCase(),
           isAbstract: false,
           isEvent: /EVENTS/i.test(match[1]!),
           isInterface: match[1]!.toUpperCase() === 'INTERFACES',

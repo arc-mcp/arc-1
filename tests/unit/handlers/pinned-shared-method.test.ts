@@ -111,7 +111,7 @@ function backend(options: Options = {}) {
       if (!options.unlockFailure) state.locked = false;
       return mockResponse(options.unlockFailure ? 503 : 200, '');
     }
-    if (method === 'GET' && parsed.pathname === owner) {
+    if (method === 'GET' && parsed.pathname.toLowerCase() === owner) {
       state.packages++;
       return mockResponse(
         200,
@@ -125,7 +125,7 @@ function backend(options: Options = {}) {
         `<DATA><DEVCLASS>$TMP</DEVCLASS><DLVUNIT>${options.recordingDrift && state.recordings > 1 ? 'HOME' : 'LOCAL'}</DLVUNIT><OPERATION/><RESULT>S</RESULT><RECORDING/></DATA>`,
       );
     }
-    if (parsed.pathname === `${owner}/source/main`) {
+    if (parsed.pathname.toLowerCase() === `${owner}/source/main`) {
       if (method === 'PUT') {
         state.puts++;
         if (options.networkFailure) throw new TypeError('fetch failed');
@@ -336,4 +336,26 @@ it('saves a valid spliced class with real lint enabled', async () => {
   expect(state.puts).toBe(1);
   expect(state.unlocks).toBe(1);
   expect(state.closes).toBe(1);
+});
+
+it.each([
+  'program = sy-repid.',
+  "class = 'ZCL_X'.",
+  "function = 'Z_FM'.",
+  'interface ?= ref.',
+  'CLASS zcl DEFINITION LOAD.',
+])('both write profiles preserve valid keyword-named statements: %s', async (statement) => {
+  for (const pinned of [false, true]) {
+    const state = backend();
+    state.source = initial.replace('result = 1.', statement);
+    const result = await call(
+      { source: `${statement}\nresult = 2.`, expectedSourceHash: sourceHash(state.source) },
+      pinned ? {} : { multiTargetWrite: undefined, multiTargetEndpoints: false, targetId: undefined },
+    );
+    expect(result.isError, result.content[0].text).toBeUndefined();
+    expect(state.puts).toBe(1);
+    expect(state.source).toContain(statement);
+    expect(state.source).toContain('result = 99.');
+    expect(state.requests.filter((r) => r.method === 'PUT').every((r) => r.locked)).toBe(true);
+  }
 });

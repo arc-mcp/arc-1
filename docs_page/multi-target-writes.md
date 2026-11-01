@@ -130,9 +130,9 @@ only the aggregate compatibility connection cannot write through that connection
 | `SAPWrite.update` | CLAS/INTF main source, on-prem standalone PROG/INCL source, or CLAS `definitions`, `implementations`, `macros`, `testclasses`; exact editable-source hash for existing source |
 | `SAPWrite.edit_unit` / `add_unit` | On-prem standalone PROG/INCL; complete named FORM or MODULE block and hash of the complete owner source; add appends at physical EOF |
 | `SAPWrite.edit_method` | Existing CLAS main-source or local-include method; hash of the complete selected editable source |
-| `SAPWrite.edit_class_definition` | CLAS main definition block with complete main-source hash, or whole selected include replacement; main edits preserve the implementation and refuse missing/orphan bodies, removed interface declarations and changes to ABSTRACT that need a body change |
+| `SAPWrite.edit_class_definition` | CLAS main definition block with complete main-source hash, or whole selected include replacement; main edits preserve the implementation, compare declared bodies and existing direct interface declarations, and refuse explicit method/interface ABSTRACT changes that need a complete source update |
 | `SAPWrite.edit_method_signature` | CLAS main source; existing method name, new METHODS clause and main hash; body preserved, intermediate signature changes skip lint |
-| `SAPWrite.add_method` | CLAS main source; METHODS clause, optional visibility/abstract flag and main hash; inserts the declaration and applicable body stub |
+| `SAPWrite.add_method` | CLAS main source; METHODS clause, optional visibility/abstract flag and main hash; abstractness comes from the clause, an explicit flag must agree, and a body stub is added only for a concrete method |
 | `SAPWrite.delete_method` / `change_method_visibility` | CLAS main source; existing method name and main hash; visibility moves additionally require the target section |
 | `SAPWrite.delete` | One CLAS/INTF owner; actual package and native recording checks before/under lock, followed by verified owner absence; omit source and source hash |
 | `SAPActivate` | One CLAS/INTF owner; activates all of that owner's existing inactive drafts and includes |
@@ -161,11 +161,18 @@ and advisory syntax checks are skipped, as on single-target include edits; whole
 performs SAP's syntax checks. This new include-method adapter has offline tests and still needs
 its own reviewed, artifact-bound PP qualification.
 
+Standalone procedural edits require fresh native PROG/P or PROG/I metadata with the exact name and
+its own package, checked before locking and again under the lock. Generated `L*` (also namespaced)
+and `SAPL*` names, container/group aliases, mismatched metadata and unresolved ownership refuse.
+Executable programs, subroutine pools and module pools are recognized; this does not qualify their
+live writes. Include usage contexts do not authorize edits to the programs that use the include.
+
 Main-source class surgery verifies SAP's native structure against the same editable source under the
 class lock: owner, source resource/version, declaration/body inventory, names, visibility and exact
 native ranges must agree. Shared-line boundaries and individual chained declarations are refused
 when a whole-line edit would affect neighbors. Use a reviewed complete source update when structure
-cannot be verified. An already-correct visibility returns `unchanged` without a save. These new
+cannot be verified, including inherited-interface metadata that cannot be matched to a direct local
+declaration. Structural checks do not replace SAP semantic validation. An already-correct visibility returns `unchanged` without a save. These new
 metadata actions are covered offline; their two-writer PP qualification is still pending. With `include`, `edit_class_definition` replaces that whole include through the same protocol as
 `update`; it does not splice a local definition. It can initialize a verified missing include or clear
 an existing include with an exact hash. It keeps its existing trailing-newline normalization.

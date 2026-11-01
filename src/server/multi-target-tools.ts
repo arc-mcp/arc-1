@@ -136,6 +136,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
     const surface = pinnedMutationSurface(tool.name, config);
     if (!surface) return undefined;
     const write = tool.name === 'SAPWrite';
+    const procedural = surface.types.includes('PROG');
     const fields = surface.fields;
     const properties = Object.fromEntries(
       Object.entries(tool.inputSchema.properties as Record<string, unknown>).filter(([key]) => fields.has(key)),
@@ -143,7 +144,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
     return {
       ...tool,
       description: write
-        ? 'Create/delete CLAS/INTF, update CLAS/INTF/PROG/INCL main source or replace a CLAS local include on this pinned PP target. edit_method edits an existing method in main source or a selected/inferred class include. On-prem edit_unit/add_unit replace/append one FORM or MODULE in a standalone PROG/INCL. Main-source class definition/signature edits, method add/delete and visibility moves use verified native main-source structure. Existing source requires expectedSourceHash from SAPRead(format="editable"); a missing optional include can be initialized under the class lock without a hash. Delete takes no source/hash and verifies native owner absence. Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate currently accepts CLAS/INTF and activates their complete owner, including existing inactive includes. PROG/INCL activation is not yet available on this pinned route.'
+        ? `Create/delete CLAS/INTF, update ${surface.types.join('/')} main source or replace a CLAS local include on this pinned PP target. edit_method edits an existing method in main source or a selected/inferred class include. ${procedural ? 'On-prem edit_unit/add_unit replace/append one FORM or MODULE in a standalone PROG/INCL. ' : ''}Main-source class definition/signature edits, method add/delete and visibility moves use verified native main-source structure. Existing source requires expectedSourceHash from SAPRead(format="editable"); a missing optional include can be initialized under the class lock without a hash. Delete takes no source/hash and verifies native owner absence. Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate currently accepts CLAS/INTF and activates their complete owner, including existing inactive includes.${procedural ? ' PROG/INCL activation is not yet available on this pinned route.' : ''}`
         : 'Activate one CLAS/INTF owner on this pinned PP target, including ALL its existing inactive drafts and includes. Additional owners are refused. This is not method-only activation.',
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
       inputSchema: {
@@ -154,13 +155,11 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
             ? {
                 name: {
                   type: 'string',
-                  description:
-                    'Uppercase owner name; CLAS/INTF at most 30 characters, existing PROG/INCL identifiers at most 40; optional registered namespace.',
+                  description: `Uppercase owner name; CLAS/INTF at most 30 characters${procedural ? ', existing standalone PROG/INCL identifiers at most 40' : ''}; optional registered namespace.`,
                 },
                 source: {
                   type: 'string',
-                  description:
-                    'Complete CLAS/INTF source for create/update, or complete PROG/INCL source for update; one FORM…ENDFORM or MODULE…ENDMODULE block for edit_unit/add_unit, or the selected CLAS include for update (source="" with expectedSourceHash clears an existing include); an existing method body or complete METHOD…ENDMETHOD block for edit_method. For edit_class_definition supply the main CLASS DEFINITION block or the whole selected include; for edit_method_signature supply its METHODS clause. Required for create/update/edit_method/edit_unit/add_unit/edit_class_definition/edit_method_signature; omit for delete/add_method/delete_method/change_method_visibility.',
+                  description: `Complete CLAS/INTF source for create/update${procedural ? ', or complete PROG/INCL source for update; one FORM…ENDFORM or MODULE…ENDMODULE block for edit_unit/add_unit' : ''}, or the selected CLAS include for update (source="" with expectedSourceHash clears an existing include); an existing method body or complete METHOD…ENDMETHOD block for edit_method. For edit_class_definition supply the main CLASS DEFINITION block or the whole selected include; for edit_method_signature supply its METHODS clause. Required for create/update/edit_method/${procedural ? 'edit_unit/add_unit/' : ''}edit_class_definition/edit_method_signature; omit for delete/add_method/delete_method/change_method_visibility.`,
                 },
                 package: {
                   type: 'string',

@@ -610,3 +610,42 @@ describe('isMethodRedefinition', () => {
     expect(isMethodRedefinition(clause)).toBe(expected);
   });
 });
+
+it.each([
+  ['INTERFACES: lif_a, lif_b.', 'lif_a~run'],
+  ['INTERFACES: lif_a, lif_b.', 'lif_a~/ns/run'],
+  ['INTERFACES zif_child.', 'zif_parent~run'],
+])('preserves unchanged interface declarations: %s', (declaration, method) => {
+  const definition = `CLASS zcl_owner DEFINITION.\nPUBLIC SECTION.\n${declaration}\nENDCLASS.`;
+  const source = `${definition}\nCLASS zcl_owner IMPLEMENTATION.\nMETHOD ${method}.\nENDMETHOD.\nENDCLASS.`;
+  const structure: ClassStructure = {
+    className: 'ZCL_OWNER',
+    classDefinitionBlock: { sr: 1, sc: 0, er: 4, ec: 9 },
+    methods: [],
+    attributes: [],
+  };
+  expect(() => diffMethodSets(structure, definition, source)).not.toThrow();
+  expect(parseDefinitionBlockDeclarations(definition).map((d) => d.name)).toEqual(
+    declaration.includes(':') ? ['LIF_A', 'LIF_B'] : ['ZIF_CHILD'],
+  );
+});
+
+it.each(['ABSTRACT METHODS run', 'ALL METHODS ABSTRACT'])(
+  'refuses changing interface %s in either direction',
+  (option) => {
+    const definition = 'CLASS zcl_owner DEFINITION ABSTRACT.\nPUBLIC SECTION.\nINTERFACES lif_x.\nENDCLASS.';
+    const changed = definition.replace('lif_x.', `lif_x ${option}.`);
+    const structure: ClassStructure = {
+      className: 'ZCL_OWNER',
+      classDefinitionBlock: { sr: 1, sc: 0, er: 4, ec: 9 },
+      methods: [],
+      attributes: [],
+    };
+    for (const [before, after] of [
+      [definition, changed],
+      [changed, definition],
+    ])
+      expect(() => diffMethodSets(structure, after!, before!)).toThrow(/Changing ABSTRACT METHODS/);
+    expect(() => diffMethodSets(structure, changed, changed)).not.toThrow();
+  },
+);

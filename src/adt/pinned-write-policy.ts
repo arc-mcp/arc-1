@@ -55,9 +55,12 @@ export function assertPinnedSourceOwner(
     (type !== 'PROG' && type !== 'INCL') ||
     typeof name !== 'string' ||
     !/^(?:\/[A-Z0-9_]+\/)?[A-Z][A-Z0-9_]*$/.test(name) ||
-    name.length > 40
+    name.length > 40 ||
+    /^(?:L|SAPL)/.test(name.replace(/^\/[A-Z0-9_]+\//, ''))
   )
-    throw new AdtSafetyError('Select one uppercase PROG or INCL source owner (maximum 40 characters).');
+    throw new AdtSafetyError(
+      'Select one uppercase standalone PROG or INCL source owner (maximum 40 characters). L* and SAPL* generated/function-group names require their dedicated adapter.',
+    );
 }
 
 /** Caller-selected tasks must be modifiable; lock evidence only proves parent membership. */

@@ -129,7 +129,7 @@ ENDMODULE.`,
 
     const missingEnd = spliceUnit(PROGRAM, 'ZUNIT_SURGERY', 'beta', "FORM beta.\n  WRITE 'new'.");
     expect(missingEnd.success).toBe(false);
-    expect(missingEnd.error).toContain('must end with ENDFORM');
+    expect(missingEnd.error).toContain('incomplete ABAP structure');
   });
 
   it('rejects replacement payloads containing an additional procedural block', () => {
@@ -186,4 +186,21 @@ describe('insertUnit', () => {
     expect(result.newSource).toBe('');
     expect(result.error).toBeTruthy();
   });
+});
+
+it.each(['FORM', 'MODULE'] as const)('rejects statements hidden after an END%s terminator', (kind) => {
+  const opening = `${kind} selected${kind === 'MODULE' ? ' OUTPUT' : ''}.`;
+  const original = `${opening}\nEND${kind}.`;
+  for (const tail of [
+    `PERFORM foreign. " END${kind}.`,
+    `DATA end${kind.toLowerCase()}.`,
+    `CLASS lcl_x DEFINITION. ENDCLASS. " END${kind}.`,
+  ]) {
+    const payload = `${opening}\nEND${kind}. ${tail}`;
+    expect(spliceUnit(original, 'ZOWNER', 'selected', payload).success).toBe(false);
+    expect(insertUnit('REPORT zowner.', 'ZOWNER', 'selected', payload).success).toBe(false);
+  }
+  const commented = `${opening}\nEND${kind}. " trailing comment`;
+  expect(spliceUnit(original, 'ZOWNER', 'selected', commented).success).toBe(true);
+  expect(insertUnit('REPORT zowner.', 'ZOWNER', 'selected', commented).success).toBe(true);
 });

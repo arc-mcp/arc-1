@@ -129,25 +129,26 @@ function replacementError(
     return `Replacement declares ${replacementKind} "${replacementName}", but the selected unit is "${unit.name}".`;
   }
 
-  const terminator = unit.kind === 'FORM' ? /ENDFORM\s*\.\s*$/i : /ENDMODULE\s*\.\s*$/i;
-  if (!terminator.test(trimmed)) {
-    return `Replacement source must end with END${unit.kind}.`;
-  }
-
   // The opening/terminator checks alone would accept two concatenated units as
   // one replacement. Parse the fragment too and require the selected unit to
   // be the only structure and to span every supplied line.
-  let replacementUnits: EditableUnitInfo[];
+  let replacementUnits: LocatedUnit[];
   try {
-    replacementUnits = listEditableUnits(trimmed, `${objectName}_replacement`, abaplintVersion);
+    replacementUnits = locateUnits(trimmed, `${objectName}_replacement`, abaplintVersion);
   } catch (error) {
     return `Could not parse replacement source with abaplint: ${error instanceof Error ? error.message : String(error)}`;
   }
-  const replacementLineCount = trimmed.replace(/\r\n/g, '\n').split('\n').length;
+  const replacementLines = trimmed.replace(/\r\n/g, '\n').split('\n');
+  const replacementLineCount = replacementLines.length;
+  const tail = replacementUnits[0]
+    ? replacementLines[replacementUnits[0].endLine - 1]?.slice(replacementUnits[0].endColumn - 1)
+    : undefined;
   if (
     replacementUnits.length !== 1 ||
     replacementUnits[0]?.startLine !== 1 ||
-    replacementUnits[0]?.endLine !== replacementLineCount
+    replacementUnits[0]?.endLine !== replacementLineCount ||
+    tail === undefined ||
+    !/^[ \t]*(?:"[^\r\n]*)?$/.test(tail)
   ) {
     return `Replacement source must contain exactly one complete ${unit.kind} ${unit.name}...END${unit.kind} block.`;
   }

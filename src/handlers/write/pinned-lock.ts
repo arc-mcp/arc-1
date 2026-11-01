@@ -7,6 +7,7 @@ import { mutationClient } from '../../adt/mutation-client.js';
 import type { PinnedMutationContext } from '../../adt/mutation-context.js';
 import { type PinnedRecording, pinnedRecording, validatePinnedLock } from '../../adt/pinned-write-policy.js';
 import { enforceAllowedPackageForObjectUrl } from '../write-helpers.js';
+import { verifyPinnedProgramOwner } from './pinned-program-owner.js';
 
 export function pinnedSourceLockPolicy(
   client: AdtClient,
@@ -24,14 +25,17 @@ export function pinnedSourceLockPolicy(
     },
     validateLock: async (http, lock) => {
       onPhase('locked-policy');
+      const active = mutationClient(client, context, http);
+      const nativePackage = await verifyPinnedProgramOwner(active, owner);
       const actualPackage = await enforceAllowedPackageForObjectUrl(
-        mutationClient(client, context, http),
+        active,
         owner,
         'Pinned write under lock',
         undefined,
         options,
       );
-      if (actualPackage !== pkg) throw new AdtSafetyError('The owner package changed since preflight.');
+      if (actualPackage !== pkg || (nativePackage !== undefined && nativePackage !== actualPackage))
+        throw new AdtSafetyError('The owner package changed since preflight.');
       const fresh = await pinnedRecording(http, client.safety, owner, pkg, '', recording.request, options);
       if (fresh.local !== recording.local || fresh.request !== recording.request)
         throw new AdtSafetyError('Recording context changed since preflight.');

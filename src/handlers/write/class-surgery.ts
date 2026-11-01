@@ -15,6 +15,7 @@ import {
   insertMethodPair,
   isMethodRedefinition,
   moveMethodDefinition,
+  parseDefinitionBlockDeclarations,
   removeMethodPair,
   spliceClassDefinition,
   spliceMethodSignature,
@@ -289,7 +290,12 @@ export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolRe
   if (methodName.includes('~') && visibility !== 'public') {
     return errorResult('Interface method redefinitions must keep public visibility. Use visibility="public".');
   }
-  const isAbstract = args.abstract === true;
+  const declaration = parseDefinitionBlockDeclarations(clause).find((entry) => entry.name === methodName.toUpperCase());
+  const isAbstract = declaration?.isAbstract === true;
+  if (args.abstract !== undefined && args.abstract !== isAbstract)
+    return errorResult(
+      'The abstract flag must match ABSTRACT in the METHODS declaration. Correct the clause or the flag.',
+    );
   // MAIN-only action: include= is rejected at the schema layer (not in
   // SAPWRITE_INCLUDE_AWARE_ACTIONS). Defensive guard for direct CLI calls.
   if (includeProvided) {
@@ -319,7 +325,7 @@ export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolRe
     // half, so inserting a concrete declaration there would leave it unimplemented.
     if (!isAbstract && !structure.classImplementationBlock) {
       return errorResult(
-        `CLAS ${name} has no IMPLEMENTATION block (purely abstract class). Pass abstract=true to add an abstract method, or add the IMPLEMENTATION half first via edit_class_definition.`,
+        `CLAS ${name} has no IMPLEMENTATION block (purely abstract class). Use a METHODS ... ABSTRACT. declaration for an abstract method, or add the IMPLEMENTATION half through a complete source update.`,
       );
     }
 
