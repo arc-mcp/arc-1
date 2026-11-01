@@ -54,8 +54,17 @@ function isMethodDeclaration(statement: Nodes.StatementNode): boolean {
   if (!(statement.get() instanceof Unknown)) return false;
   const tokens = statement.getTokens();
   if (
-    !/^(?:CLASS-)?METHODS$/i.test(tokens[0]?.getStr() ?? '') ||
+    !/^METHODS$/i.test(tokens[0]?.getStr() ?? '') ||
     !/^(?:\/[A-Z0-9_]+\/)?[A-Z_][A-Z0-9_]*~\/[A-Z0-9_]+\/[A-Z_][A-Z0-9_]*$/i.test(tokens[1]?.getStr() ?? '')
+  )
+    return false;
+  if (
+    !/^(?:FINAL\s+)?REDEFINITION\s*\.$/i.test(
+      tokens
+        .slice(2)
+        .map((token) => token.getStr())
+        .join(' '),
+    )
   )
     return false;
   const normalized = parseClassSourceStatements(
@@ -100,9 +109,15 @@ export function assertMethodImplementationBoundary(source: string, range: LineRa
 }
 
 /** Inserting a stub before ENDCLASS must not split another statement on that row. */
-export function assertClassEndInsertionBoundary(source: string, row: number): void {
-  const statements = blockStatements(source, { sr: row, er: row });
-  if (statements.length !== 1 || !(statements[0]?.get() instanceof Statements.EndClass)) refuse();
+export function classEndInsertionRow(source: string, range: LineRange): number {
+  const statements = blockStatements(source, range);
+  const last = statements.at(-1);
+  if (!(last?.get() instanceof Statements.EndClass)) refuse();
+  const row = last.getStart().getRow();
+  if (statements.at(-2)?.getEnd().getRow() === row) refuse();
+  const line = source.split(/\r?\n/)[range.sr + row - 2]!;
+  if (line.slice(0, last.getStart().getCol() - 1).trim()) refuse();
+  return range.sr + row - 1;
 }
 
 /** Insertion after a declaration/section must not land inside a statement spanning that line. */
@@ -137,7 +152,7 @@ export function assertMethodDeclarationReplacement(source: string, name: string)
     assertMethodDeclarationBoundary(source, { sr: 1, sc: 0, er: source.split(/\r?\n/).length, ec: 0 }, name);
   } catch {
     throw new AdtSafetyError(
-      `Replacement must contain exactly one unchained METHODS or CLASS-METHODS declaration for ${name}.`,
+      `Replacement must contain exactly one unchained METHODS or CLASS-METHODS declaration for ${name}, recognized by the installed boundary parser. If SAP supports syntax newer than this parser, use a complete source update.`,
     );
   }
 }

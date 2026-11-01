@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { isIncludeSaveResult } from '../../../scripts/qualification/pr1142/include-qualification.mjs';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
-import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+import { requestContext } from '../../../src/server/context.js';
+import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { mockFetch } from './setup-undici-mock.js';
 
@@ -40,6 +41,8 @@ let recordingChange: boolean;
 let unlockFailure: boolean;
 let transportable: boolean;
 let locked: boolean;
+let cancel: AbortController | undefined;
+let cancelAfterInit: boolean;
 const requests: Array<{ path: string; method: string; body: string }> = [];
 const typedAbsence =
   '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><type id="ExceptionResourceNotFound"/></exc:exception>';
@@ -47,6 +50,8 @@ beforeEach(() => {
   vi.restoreAllMocks();
   vi.resetAllMocks();
   stored = original;
+  cancel = undefined;
+  cancelAfterInit = false;
   absence = typedAbsence;
   initFailure = 0;
   putFailure = 0;
@@ -92,6 +97,7 @@ beforeEach(() => {
       if (method === 'POST') {
         if (initFailure) return mockResponse(initFailure, '');
         stored = '';
+        if (cancelAfterInit) cancel?.abort();
         return mockResponse(201, '');
       }
       if (method === 'PUT') {
@@ -99,6 +105,7 @@ beforeEach(() => {
         stored = readbackMismatch ? '* Another edit\n' : body;
         return mockResponse(200, '');
       }
+      if (!cancelAfterInit) cancel?.abort();
       return stored === undefined ? mockResponse(404, absence) : mockResponse(200, stored);
     }
     return mockResponse(200, '', { 'x-csrf-token': 'test-token' });
@@ -113,7 +120,7 @@ const args = (extra: Record<string, unknown> = {}) => ({
   expectedSourceHash: sourceHash(original),
   ...extra,
 });
-async function invoke(extra: Record<string, unknown> = {}, settings = config) {
+async function invoke(extra: Record<string, unknown> = {}, settings: ServerConfig = config) {
   const client = new AdtClient({ baseUrl: 'http://sap:8000', safety: { ...defaultSafetyConfig(), ...settings } });
   const result = await handleToolCall(client, settings, 'SAPWrite', args(extra));
   const text = result.content[0].text;
@@ -462,4 +469,108 @@ describe('shared whole-include definition replacement', () => {
       sessionClosed: true,
     });
   });
+});
+
+for (const route of ['pinned', 'legacy']) {
+  it.each([
+    'METHOD lif_x~run.\nENDMETHOD. " pretty printer',
+    'METHOD lif_x~run.\nENDMETHOD .',
+    'METHOD lif_x~run. ENDMETHOD.',
+  ])(`${route} refuses ambiguous formatted include bodies without PUT (%s)`, async (first) => {
+    stored = `CLASS lcl_worker IMPLEMENTATION. " note\n${first}\nENDCLASS.\nCLASS lcl_neighbor IMPLEMENTATION.\nMETHOD lif_x~run.\nENDMETHOD.\nENDCLASS.`;
+    const settings =
+      route === 'pinned'
+        ? config
+        : {
+            ...config,
+            targetId: undefined,
+            multiTargetWrite: undefined,
+            multiTargetEndpoints: false,
+            ppEnabled: false,
+            ppStrict: false,
+          };
+    const { result } = await invoke(
+      {
+        action: 'edit_method',
+        include: 'implementations',
+        method: 'lif_x~run',
+        source: 'RETURN.',
+        expectedSourceHash: sourceHash(stored),
+      },
+      settings,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Ambiguous');
+    expect(includeWrites()).toHaveLength(0);
+  });
+  it(`${route} refuses an include method replacement escaping its class`, async () => {
+    stored = 'CLASS lcl_worker IMPLEMENTATION.\nMETHOD run.\nENDMETHOD.\nENDCLASS.';
+    const settings =
+      route === 'pinned'
+        ? config
+        : {
+            ...config,
+            targetId: undefined,
+            multiTargetWrite: undefined,
+            multiTargetEndpoints: false,
+            ppEnabled: false,
+            ppStrict: false,
+          };
+    const { result } = await invoke(
+      {
+        action: 'edit_method',
+        include: 'implementations',
+        method: 'lcl_worker~run',
+        source: 'DATA(x) = 1.\nENDCLASS.\nCLASS lcl_foreign IMPLEMENTATION.',
+        expectedSourceHash: sourceHash(stored),
+      },
+      settings,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Replacement must contain only');
+    expect(includeWrites()).toHaveLength(0);
+  });
+}
+it.each(['save', 'initialization'])('omits an unconfirmed recording on a transportable %s rejection', async (phase) => {
+  transportable = true;
+  if (phase === 'save') putFailure = 403;
+  else {
+    stored = undefined;
+    initFailure = 403;
+  }
+  const { result, body } = await invoke({
+    transport: 'A4HK900001',
+    ...(phase === 'initialization' ? { expectedSourceHash: undefined } : {}),
+  });
+  expect(result.isError).toBe(true);
+  expect(body.error).toBe('PINNED_WRITE_REFUSED');
+  expect(body.transport).toBeUndefined();
+});
+
+it.each([true, false])(
+  'honors cancellation before whole-include save/initialization (existing=%s)',
+  async (existing) => {
+    cancel = new AbortController();
+    if (!existing) stored = undefined;
+    const { result, body } = await requestContext.run({ requestId: 'include-cancel', signal: cancel.signal }, () =>
+      invoke(existing ? {} : { expectedSourceHash: undefined }),
+    );
+    expect(result.isError).toBe(true);
+    expect(body.state).toBe('unchanged');
+    expect(includeWrites()).toHaveLength(0);
+    expect(requests.some((r) => r.path.includes('UNLOCK'))).toBe(true);
+  },
+);
+
+it('retains confirmed include creation when cancellation prevents its source PUT', async () => {
+  cancel = new AbortController();
+  cancelAfterInit = true;
+  stored = undefined;
+  const { result, body } = await requestContext.run({ requestId: 'include-init-cancel', signal: cancel.signal }, () =>
+    invoke({ expectedSourceHash: undefined }),
+  );
+  expect(result.isError).toBe(true);
+  expect(body).toMatchObject({ state: 'created-include-source-not-saved', initialized: true });
+  expect(body.sourceHash).toBeUndefined();
+  expect(includeWrites().map((request) => request.method)).toEqual(['POST']);
 });

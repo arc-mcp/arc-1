@@ -130,7 +130,7 @@ it('refuses a body-only edit whose line range includes another method', () => {
   );
   const result = spliceMethod(original, 'ZCL_DEMO', 'first', '    RETURN.');
   expect(result.success).toBe(false);
-  expect(result.error).toContain('Ambiguous method name');
+  expect(result.error).toContain('Cannot isolate the selected method');
 });
 
 it('preserves a split closing statement', () => {

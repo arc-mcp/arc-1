@@ -8,7 +8,7 @@ import {
   TEXT_ELEMENT_PARTS,
   type TextElementPart,
 } from '../../adt/client.js';
-import { deleteObject, lockObject, safeUpdateSource, unlockObject } from '../../adt/crud.js';
+import { deleteObject, lockObject, unlockObject } from '../../adt/crud.js';
 import { getBadiEnhancementImplementation } from '../../adt/enhancement-impl.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, findFmHeader, spliceFmSignature } from '../../adt/fm-signature.js';
@@ -36,6 +36,7 @@ import {
 import { replaceClassInclude } from './class-include.js';
 import type { SapWriteContext } from './context.js';
 import { writeMetadataUpdate } from './metadata-update.js';
+import { replaceOwnerSource } from './source-update.js';
 
 function isDeleteDependencyError(err: AdtApiError): boolean {
   const clean = AdtApiError.extractCleanMessage(err.responseBody ?? err.message).toLowerCase();
@@ -59,12 +60,10 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     source,
     hasSource,
     include,
-    transport,
     lintOverride,
     preflightOverride,
     checkOverride,
     objectUrl,
-    srcUrl,
     invalidateWrittenObject,
     enforcePackageForExistingObject,
   } = ctx;
@@ -170,21 +169,15 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
   };
   // A signature-only FUNC edit derives its replacement from fresh bytes under the lock.
   // A failed read aborts; there is no empty-body fallback or unlocked source read.
-  const replacement = needsCurrentFunctionSource
-    ? (current: string, session: AdtHttpClient) => checkSource(prepareFunctionSource(current), session)
-    : await checkSource(effectiveSource);
+  const replacement =
+    needsCurrentFunctionSource || ctx.mutationContext.mode === 'pinned-pp'
+      ? (current: string, session: AdtHttpClient) =>
+          checkSource(needsCurrentFunctionSource ? prepareFunctionSource(current) : effectiveSource, session)
+      : await checkSource(effectiveSource);
 
-  // If safeUpdateSource throws (lock conflict, network error, etc.), checkNotes
-  // is intentionally discarded — pre-check warnings only matter when the write succeeded.
-  await safeUpdateSource(
-    client.http,
-    client.safety,
-    objectUrl,
-    srcUrl,
-    replacement,
-    transport,
-    getCachedFeatures()?.abapRelease,
-    args.expectedSourceHash as string | undefined,
+  // Only a confirmed source save retains its quality notes in the pinned result.
+  await replaceOwnerSource(ctx, replacement, () =>
+    mergePreWriteWarnings(preflightWarnings.warnings, lintWarnings.warnings, checkNotes, fmParamStripWarning),
   );
   invalidateWrittenObject(type, name);
   const msg = `Successfully updated ${type} ${name}.`;

@@ -1,6 +1,6 @@
 # PR 2: broader built-in writes on pinned PP targets
 
-Status: implementation in progress. Formatter, CLAS/INTF deletion, class-include updates, existing-include method edits and main-source class metadata surgery are admitted in the draft.
+Status: implementation in progress. Formatter, CLAS/INTF deletion, class-include updates, existing-include method edits and main-source class metadata surgery and standalone on-prem PROG/INCL updates/unit edits are admitted in the draft.
 The fresh local run at `77e41fdcd` qualifies include replacement and the refactored main method path;
 the later include-method and class metadata adapters, refactored transportable paths and remaining families still need qualification.
 The [combined PP run](../research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
@@ -15,6 +15,7 @@ Implementation starts with [ADR-0011](../adr/0011-broader-pinned-pp-mutations.md
 [Existing CLAS two-writer PP evidence and remaining qualification](../research/2026-11-01-broader-pinned-pp-writes-pp-qualification.md).
 [CLAS/INTF deletion integration and qualification limits](../research/2026-11-01-broader-pinned-pp-writes-deletion.md).
 [Class-local include implementation and local two-writer qualification](../research/2026-11-01-broader-pinned-pp-writes-includes.md).
+[Shared source adapters and second review dispositions](../research/2026-11-01-pinned-source-adapters.md).
 [Main-source class metadata adapter and remaining qualification](../research/2026-11-01-pinned-class-metadata.md).
 Proposed title: `feat: expand pinned PP writes across built-in development operations`.
 [Research and owner decisions](../research/2026-10-26-multi-target-write-parity.md).

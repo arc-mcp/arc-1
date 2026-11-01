@@ -24,6 +24,8 @@ const writer = {
 const admitted = [
   'SAPWrite.create',
   'SAPWrite.update',
+  'SAPWrite.edit_unit',
+  'SAPWrite.add_unit',
   'SAPWrite.edit_method',
   'SAPWrite.edit_class_definition',
   'SAPWrite.edit_method_signature',
@@ -35,7 +37,9 @@ const admitted = [
   'SAPLint.set_formatter_settings',
 ];
 const validArguments = (tool: string, action?: string) =>
-  tool === 'SAPLint' ? { action, style: 'none' } : { action, type: 'CLAS' };
+  tool === 'SAPLint'
+    ? { action, style: 'none' }
+    : { action, type: action === 'edit_unit' || action === 'add_unit' ? 'PROG' : 'CLAS' };
 
 describe('pinned mutation capability matrix', () => {
   it('pins the reviewed action, type, representation and raw-field contracts', () => {
@@ -51,9 +55,16 @@ describe('pinned mutation capability matrix', () => {
         tool: 'SAPWrite',
         action: 'update',
         resource: 'repository-source',
-        types: ['CLAS', 'INTF'],
+        types: ['CLAS', 'INTF', 'PROG', 'INCL'],
         fields: ['action', 'type', 'name', 'source', 'transport', 'expectedSourceHash', 'include'],
       },
+      ...['edit_unit', 'add_unit'].map((action) => ({
+        tool: 'SAPWrite',
+        action,
+        resource: 'repository-source',
+        types: ['PROG', 'INCL'],
+        fields: ['action', 'type', 'name', 'source', 'transport', 'unit', 'expectedSourceHash'],
+      })),
       {
         tool: 'SAPWrite',
         action: 'edit_method',
@@ -203,6 +214,31 @@ describe('pinned mutation capability matrix', () => {
     },
   );
 
+  it('admits existing procedural sources only on on-premise targets', () => {
+    for (const type of ['PROG', 'INCL']) {
+      for (const action of ['update', 'edit_unit', 'add_unit']) {
+        const args = {
+          action,
+          type,
+          name: 'ZARC1_PROGRAM',
+          source: 'FORM selected. ENDFORM.',
+          expectedSourceHash: 'a'.repeat(64),
+          ...(action === 'update' ? {} : { unit: 'selected' }),
+        };
+        expect(multiTargetInvocationDecision('SAPWrite', args, writer)).toBe('allowed');
+        expect(multiTargetInvocationDecision('SAPWrite', args, { ...writer, systemType: 'btp' })).toBe('forbidden');
+      }
+      for (const action of ['create', 'delete', 'edit_method'])
+        expect(pinnedMutationAllowed('SAPWrite', { action, type }, writer)).toBe(false);
+      expect(pinnedMutationAllowed('SAPActivate', { type }, writer)).toBe(false);
+    }
+    const surface = pinnedMutationSurface('SAPWrite', { ...writer, systemType: 'btp' })!;
+    expect(surface.types).toEqual(['CLAS', 'INTF']);
+    expect(surface.actions).not.toContain('edit_unit');
+    expect(surface.actions).not.toContain('add_unit');
+    expect(surface.fields.has('unit')).toBe(false);
+  });
+
   it('derives advertised actions, types and fields from the admitted combinations', () => {
     const tools = multiTargetToolDefinitions(getToolDefinitions(writer), writer);
     for (const name of ['SAPWrite', 'SAPActivate']) {
@@ -229,7 +265,7 @@ describe('pinned mutation capability matrix', () => {
           ),
         ).toBe(false);
       }
-      expect(pinnedMutationAllowed(entry.tool, { action: entry.action, type: 'PROG' }, writer)).toBe(false);
+      expect(pinnedMutationAllowed(entry.tool, { action: entry.action, type: 'TABL' }, writer)).toBe(false);
     }
     for (const action of ['update', 'edit_method']) {
       expect(pinnedMutationAllowed('SAPWrite', { action, package: '$TMP' }, writer)).toBe(false);

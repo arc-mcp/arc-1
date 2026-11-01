@@ -4,6 +4,7 @@ import { AdtSafetyError } from './errors.js';
 
 const config = Config.getDefault(undefined, LanguageVersion.Normal);
 export function parseClassSourceStatements(source: string): Nodes.StatementNode[] {
+  if (/\r(?!\n)/.test(source)) throw new AdtSafetyError('Bare carriage returns are not supported; use LF or CRLF.');
   const registry = new Registry(config);
   registry.addFile(new MemoryFile('zboundary.prog.abap', source));
   registry.parse();

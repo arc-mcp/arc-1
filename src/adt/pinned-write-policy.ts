@@ -45,6 +45,21 @@ export function assertPinnedOwner(type: unknown, name: unknown): asserts type is
   }
 }
 
+/** Existing program/include identifiers use the native PROGNAME storage envelope (CHAR 40). */
+export function assertPinnedSourceOwner(
+  type: unknown,
+  name: unknown,
+): asserts type is 'CLAS' | 'INTF' | 'PROG' | 'INCL' {
+  if (type === 'CLAS' || type === 'INTF') return assertPinnedOwner(type, name);
+  if (
+    (type !== 'PROG' && type !== 'INCL') ||
+    typeof name !== 'string' ||
+    !/^(?:\/[A-Z0-9_]+\/)?[A-Z][A-Z0-9_]*$/.test(name) ||
+    name.length > 40
+  )
+    throw new AdtSafetyError('Select one uppercase PROG or INCL source owner (maximum 40 characters).');
+}
+
 /** Caller-selected tasks must be modifiable; lock evidence only proves parent membership. */
 export async function resolvePinnedRequest(
   http: AdtHttpClient,

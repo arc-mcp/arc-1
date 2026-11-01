@@ -37,7 +37,7 @@ it.each(['legacy', 'pinned', 'missing'] as const)(
     } as unknown as SapWriteContext;
     const edit = vi.fn();
     await expect(withClassEdit(ctx, edit)).rejects.toThrow(
-      mode === 'pinned' ? 'pinned class surgery lifecycle' : 'mutation context',
+      mode === 'pinned' ? 'pinned source lifecycle' : 'mutation context',
     );
     expect(edit).not.toHaveBeenCalled();
     expect(mockFetch).not.toHaveBeenCalled();

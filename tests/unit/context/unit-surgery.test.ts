@@ -40,6 +40,28 @@ describe('procedural ABAP unit surgery', () => {
     }
   });
 
+  it.each([
+    ['REPORT zunit_surgery. FORM selected.\nENDFORM.', 'FORM selected.\nENDFORM.'],
+    ['FORM selected.\nENDFORM. FORM neighbor.\nENDFORM.', 'FORM selected.\nENDFORM.'],
+    ['MODULE selected OUTPUT.\nENDMODULE. MODULE neighbor OUTPUT.\nENDMODULE.', 'MODULE selected OUTPUT.\nENDMODULE.'],
+  ])('refuses replacing a unit that shares a boundary line with a neighbor (%s)', (source, replacement) => {
+    const result = spliceUnit(source, 'ZUNIT_SURGERY', 'selected', replacement);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('shares a boundary line');
+    expect(result.newSource).toBe('');
+  });
+
+  it('keeps standalone inline units and trailing comments editable', () => {
+    const result = spliceUnit(
+      'FORM selected. ENDFORM. " selected comment\nFORM neighbor. ENDFORM.',
+      'ZUNIT_SURGERY',
+      'selected',
+      'FORM selected.\nENDFORM.',
+    );
+    expect(result.success).toBe(true);
+    expect(result.newSource).toBe('FORM selected.\nENDFORM.\nFORM neighbor. ENDFORM.');
+  });
+
   it('replaces one FORM and leaves sibling units unchanged', () => {
     const result = spliceUnit(
       PROGRAM,

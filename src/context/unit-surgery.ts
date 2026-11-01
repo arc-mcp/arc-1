@@ -32,10 +32,15 @@ export interface UnitSpliceResult {
   error?: string;
 }
 
+interface LocatedUnit extends EditableUnitInfo {
+  startColumn: number;
+  endColumn: number;
+}
+
 type AstNode = {
   findAllStructuresRecursive(type: unknown): AstNode[];
-  getFirstStatement(): { concatTokens(): string; getFirstToken(): { getRow(): number } } | undefined;
-  getLastToken(): { getRow(): number };
+  getFirstStatement(): { concatTokens(): string; getFirstToken(): { getRow(): number; getCol(): number } } | undefined;
+  getLastToken(): { getRow(): number; getCol(): number; getStr(): string };
 };
 
 function parseUnitName(tokens: string, kind: EditableUnitKind): string | undefined {
@@ -43,9 +48,9 @@ function parseUnitName(tokens: string, kind: EditableUnitKind): string | undefin
   return match?.[1];
 }
 
-function collectUnits(root: AstNode, kind: EditableUnitKind): EditableUnitInfo[] {
+function collectUnits(root: AstNode, kind: EditableUnitKind): LocatedUnit[] {
   const structureType = kind === 'FORM' ? Structures.Form : Structures.Module;
-  const units: EditableUnitInfo[] = [];
+  const units: LocatedUnit[] = [];
   for (const node of root.findAllStructuresRecursive(structureType)) {
     const first = node.getFirstStatement();
     if (!first) continue;
@@ -56,20 +61,23 @@ function collectUnits(root: AstNode, kind: EditableUnitKind): EditableUnitInfo[]
       kind,
       startLine: first.getFirstToken().getRow(),
       endLine: node.getLastToken().getRow(),
+      startColumn: first.getFirstToken().getCol(),
+      endColumn: node.getLastToken().getCol() + node.getLastToken().getStr().length,
     });
   }
   return units;
 }
 
 /** List the editable FORM and MODULE blocks in a program-style source file. */
-export function listEditableUnits(source: string, objectName: string, abaplintVersion?: Version): EditableUnitInfo[] {
+function locateUnits(source: string, objectName: string, abaplintVersion?: Version): LocatedUnit[] {
+  if (/\r(?!\n)/.test(source)) throw Error('Bare carriage returns are not supported; use LF or CRLF.');
   const normalized = source.replace(/\r\n/g, '\n');
   const config = getDefaultAbaplintConfig(abaplintVersion ?? DEFAULT_VERSION);
   const registry = new Registry(config);
   registry.addFile(new MemoryFile(`${objectName.toLowerCase().replace(/\//g, '#')}.prog.abap`, normalized));
   registry.parse();
 
-  const units: EditableUnitInfo[] = [];
+  const units: LocatedUnit[] = [];
   for (const object of registry.getObjects()) {
     const file = (object as { getMainABAPFile?: () => unknown }).getMainABAPFile?.() as
       | { getStructure(): AstNode | undefined; getStatements(): { get(): unknown }[] }
@@ -88,6 +96,16 @@ export function listEditableUnits(source: string, objectName: string, abaplintVe
     units.push(...collectUnits(structure, 'FORM'), ...modules);
   }
   return units.sort((a, b) => a.startLine - b.startLine);
+}
+
+/** Public unit inventory keeps its existing line-range shape. */
+export function listEditableUnits(source: string, objectName: string, abaplintVersion?: Version): EditableUnitInfo[] {
+  return locateUnits(source, objectName, abaplintVersion).map(({ name, kind, startLine, endLine }) => ({
+    name,
+    kind,
+    startLine,
+    endLine,
+  }));
 }
 
 function replacementError(
@@ -147,9 +165,9 @@ export function spliceUnit(
   const hasCRLF = source.includes('\r\n');
   const normalized = source.replace(/\r\n/g, '\n');
 
-  let units: EditableUnitInfo[];
+  let units: LocatedUnit[];
   try {
-    units = listEditableUnits(normalized, objectName, abaplintVersion);
+    units = locateUnits(normalized, objectName, abaplintVersion);
   } catch (error) {
     return {
       newSource: '',
@@ -184,7 +202,23 @@ export function spliceUnit(
     };
   }
 
-  const unit = matches[0]!;
+  const located = matches[0]!;
+  const { name, kind, startLine, endLine } = located;
+  const unit: EditableUnitInfo = { name, kind, startLine, endLine };
+  const lines = normalized.split('\n');
+  const before = lines[unit.startLine - 1]!.slice(0, located.startColumn - 1);
+  const after = lines[unit.endLine - 1]!.slice(located.endColumn - 1);
+  if (before.trim() || (after.trim() && !after.trimStart().startsWith('"'))) {
+    return {
+      success: false,
+      error:
+        'The selected unit shares a boundary line with another statement. Put its boundaries on separate lines before editing.',
+      newSource: '',
+      oldUnitSource: '',
+      newUnitSource: '',
+      unit,
+    };
+  }
   const invalidReplacement = replacementError(unit, replacement, objectName, abaplintVersion);
   if (invalidReplacement) {
     return {
@@ -197,7 +231,6 @@ export function spliceUnit(
     };
   }
 
-  const lines = normalized.split('\n');
   const oldUnitSource = lines.slice(unit.startLine - 1, unit.endLine).join('\n');
   const newUnitSource = replacement.replace(/\r\n/g, '\n').trim();
   const newLines = [...lines.slice(0, unit.startLine - 1), newUnitSource, ...lines.slice(unit.endLine)];

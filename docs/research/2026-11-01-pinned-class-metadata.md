@@ -159,3 +159,15 @@ Author validation of the review fixes: **432 files / 11,783 tests**, all three T
 projects, build, lint, policy, strict documentation and file/schema budgets passed. The added
 tests run the shared single-target and pinned handlers; the existing qualification simulations
 still exercise their earlier harness, not the new metadata mutation scenarios.
+
+
+## Second independent review
+
+Actual Opus 5.5 max reviewed immutable `cee2a18e17ed2c44a49e150fb5844784ea93d042`:
+[verbatim follow-up report](broader-pinned-pp-writes/claude-class-adapters-followup-review-20261101.md).
+It found three Medium and five Low issues, including formatting-hidden ambiguity and definition/body
+symmetry gaps in the preceding dispositions. All five permitted checks passed and both independent
+snapshot checks were unchanged (4,243 files); the author also reran the verifier unchanged. The reviewer
+used static analysis rather than executing the individual reported triggers. Its report does not review
+subsequent source-adapter changes. [Current fixes, executed regressions and remaining limits](2026-11-01-pinned-source-adapters.md)
+supersede the earlier unreviewed closure claims. PR #1142 remains a draft.

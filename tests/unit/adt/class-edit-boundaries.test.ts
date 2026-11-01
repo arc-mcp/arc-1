@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertClassEditBoundary,
-  assertClassEndInsertionBoundary,
   assertMethodDeclarationBoundary,
   assertMethodDeclarationReplacement,
   assertMethodImplementationBoundary,
   assertSectionHeaderBoundary,
+  classEndInsertionRow,
 } from '../../../src/adt/class-edit-boundaries.js';
 import { insertMethodPair, spliceMethodSignature } from '../../../src/adt/class-structure.js';
 import type { ClassStructure, MethodStructure } from '../../../src/adt/types.js';
@@ -105,7 +105,7 @@ describe('whole-line class surgery boundaries', () => {
     expect(() => assertSectionHeaderBoundary(' PUBLIC SECTION. " comment', 1, 'public')).not.toThrow();
   });
   it('refuses an insertion before ENDCLASS shared with another statement', () => {
-    expect(() => assertClassEndInsertionBoundary('ENDMETHOD. ENDCLASS.', 1)).toThrow('safely isolate');
+    expect(() => classEndInsertionRow('ENDMETHOD. ENDCLASS.', range(1, 1))).toThrow('safely isolate');
     const text = source.replace('  ENDMETHOD.\nENDCLASS.', '  ENDMETHOD. ENDCLASS.');
     expect(() =>
       insertMethodPair(
@@ -125,6 +125,9 @@ it.each([
   'METHODS zif_service~/ns/run. METHODS other.',
   'METHODS zif_service~/ns/run. ENDCLASS.',
   'METHODS zif_service~/ns/run INVALID TAIL.',
+  'METHODS zif_service~/ns/run IMPORTING x TYPE i.',
+  'METHODS zif_service~/ns/run FINAL IMPORTING x TYPE i.',
+  'METHODS selected. " comment\rMETHODS neighbor.',
   'METHODS: zif_service~/ns/run REDEFINITION.',
 ])('does not bypass declaration boundaries for a namespaced method: %s', (text) => {
   expect(() => assertMethodDeclarationReplacement(text, 'ZIF_SERVICE~/NS/RUN')).toThrow('Replacement must contain');

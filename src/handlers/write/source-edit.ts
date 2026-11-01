@@ -8,7 +8,7 @@ import { logger } from '../../server/logger.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import type { ToolResult } from '../shared.js';
 import type { SapWriteContext } from './context.js';
-import { withPinnedClassEdit } from './pinned-class-lifecycle.js';
+import { withPinnedSourceEdit } from './pinned-source-lifecycle.js';
 
 export interface SourceEdit {
   http: AdtHttpClient;
@@ -25,7 +25,7 @@ export async function withSourceEdit(
   const { client, objectUrl, transport, invalidateWrittenObject } = ctx;
   checkOperation(client.safety, OperationType.Update, 'EditSource');
   assertMutationContext(client.safety, ctx.mutationContext);
-  if (ctx.mutationContext.mode === 'pinned-pp') return withPinnedClassEdit(ctx, edit);
+  if (ctx.mutationContext.mode === 'pinned-pp') return withPinnedSourceEdit(ctx, edit);
   return client.http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
     let writeAttempted = false;

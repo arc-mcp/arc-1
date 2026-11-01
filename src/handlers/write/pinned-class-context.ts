@@ -1,39 +1,13 @@
-/** Request-owned state for class actions that enter the shared action handlers. */
+/** Class-specific admission before entering the shared pinned source context. */
 import type { AdtClient } from '../../adt/client.js';
 import { AdtSafetyError } from '../../adt/errors.js';
-import { mutationClient } from '../../adt/mutation-client.js';
 import { assertMutationContext, type PinnedMutationContext } from '../../adt/mutation-context.js';
-import { assertPinnedOwner, type PinnedRecording, pinnedRecording } from '../../adt/pinned-write-policy.js';
+import { assertPinnedOwner } from '../../adt/pinned-write-policy.js';
 import type { ServerConfig } from '../../server/types.js';
-import {
-  type ClassWriteInclude,
-  detectLocalHandlerInclude,
-  normalizeClassWriteInclude,
-  objectUrlForType,
-} from '../object-types.js';
-import { enforceAllowedPackageForObjectUrl } from '../write-helpers.js';
+import { detectLocalHandlerInclude, normalizeClassWriteInclude } from '../object-types.js';
 import { isClassSurgeryAction } from './class-surgery-dispatch.js';
 import type { SapWriteContext } from './context.js';
-
-export interface PinnedClassState {
-  readonly context: PinnedMutationContext;
-  readonly sourceUrl: string;
-  readonly include?: ClassWriteInclude;
-  readonly wholeIncludeReplacement: boolean;
-  includeInitialized?: boolean;
-  phase: string;
-  state: string;
-  pkg?: string;
-  recording?: PinnedRecording;
-  sourceHash?: string;
-  warnings?: string;
-  readVerified: boolean;
-  readHash?: string;
-  unchangedConfirmed?: boolean;
-  writeAttempted: boolean;
-}
-// Transient call state, never indexed by target/user and never reused across requests.
-const states = new WeakMap<SapWriteContext, PinnedClassState>();
+import { createPinnedSourceContext } from './pinned-source-context.js';
 
 export function createPinnedClassContext(
   original: AdtClient,
@@ -78,76 +52,9 @@ export function createPinnedClassContext(
     (typeof args.expectedSourceHash !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedSourceHash))
   )
     throw new AdtSafetyError('Read SAPRead(format="editable") and supply its expectedSourceHash before editing.');
-  const name = args.name as string;
-  const owner = objectUrlForType('CLAS', name.toLowerCase());
-  const client = mutationClient(original, context);
-  const requested = args.transport === undefined ? undefined : String(args.transport).trim().toUpperCase();
-  const state: PinnedClassState = {
-    context,
-    sourceUrl: selectedInclude ? `${owner}/includes/${selectedInclude}` : `${owner}/source/main`,
-    include: selectedInclude,
+  return createPinnedSourceContext(original, args, config, context, {
+    selectedInclude,
     wholeIncludeReplacement,
-    state: 'unchanged',
-    phase: 'validation',
-    readVerified: false,
-    writeAttempted: false,
-  };
-  const ctx: SapWriteContext = Object.freeze({
-    mutationContext: context,
-    client,
-    args: Object.freeze({ ...args, ...(method !== undefined ? { method } : {}) }),
-    config,
-    cachingLayer: undefined,
-    cacheSecurity: { isPerUserClient: true },
-    type: 'CLAS',
-    name,
-    source: typeof args.source === 'string' ? args.source : '',
-    hasSource: typeof args.source === 'string',
-    include,
-    includeProvided: args.include !== undefined,
-    transport: requested,
-    lintOverride: undefined,
-    preflightOverride: undefined,
-    checkOverride: undefined,
-    objectUrl: owner,
-    srcUrl: `${owner}/source/main`,
-    invalidateWrittenObject: () => {}, // Multi-target has no source cache.
-    async enforcePackageForExistingObject() {
-      state.phase = 'package-preflight';
-      const pkg = await enforceAllowedPackageForObjectUrl(
-        client,
-        owner,
-        'Pinned class edit',
-        undefined,
-        context.requestPolicy,
-      );
-      if (!pkg) throw new AdtSafetyError('The owner package could not be verified.');
-      state.pkg = pkg;
-      state.phase = 'recording-preflight';
-      state.recording = await pinnedRecording(
-        client.http,
-        client.safety,
-        owner,
-        pkg,
-        '',
-        requested,
-        context.requestPolicy,
-      );
-      return pkg;
-    },
+    method,
   });
-  states.set(ctx, state);
-  return ctx;
-}
-
-export function pinnedClassState(ctx: SapWriteContext): PinnedClassState {
-  const state = states.get(ctx);
-  if (!state || state.context !== ctx.mutationContext)
-    throw new AdtSafetyError('The pinned class surgery lifecycle requires a registered native adapter.');
-  assertMutationContext(ctx.client.safety, state.context);
-  return state;
-}
-
-export function forgetPinnedClassContext(ctx: SapWriteContext): void {
-  states.delete(ctx);
 }

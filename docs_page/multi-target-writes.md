@@ -127,15 +127,22 @@ only the aggregate compatibility connection cannot write through that connection
 | Action | Requirements |
 |---|---|
 | `SAPWrite.create` | One CLAS or INTF; explicit package and complete source; required allowed request/task for a transportable package |
-| `SAPWrite.update` | CLAS/INTF main source or CLAS `definitions`, `implementations`, `macros`, `testclasses`; exact editable-source hash for existing source |
+| `SAPWrite.update` | CLAS/INTF main source, on-prem standalone PROG/INCL source, or CLAS `definitions`, `implementations`, `macros`, `testclasses`; exact editable-source hash for existing source |
+| `SAPWrite.edit_unit` / `add_unit` | On-prem standalone PROG/INCL; complete named FORM or MODULE block and hash of the complete owner source; add appends at physical EOF |
 | `SAPWrite.edit_method` | Existing CLAS main-source or local-include method; hash of the complete selected editable source |
-| `SAPWrite.edit_class_definition` | CLAS main definition block with complete main-source hash, or whole selected include replacement; main edits preserve the implementation and check method symmetry |
+| `SAPWrite.edit_class_definition` | CLAS main definition block with complete main-source hash, or whole selected include replacement; main edits preserve the implementation and refuse missing/orphan bodies, removed interface declarations and changes to ABSTRACT that need a body change |
 | `SAPWrite.edit_method_signature` | CLAS main source; existing method name, new METHODS clause and main hash; body preserved, intermediate signature changes skip lint |
 | `SAPWrite.add_method` | CLAS main source; METHODS clause, optional visibility/abstract flag and main hash; inserts the declaration and applicable body stub |
 | `SAPWrite.delete_method` / `change_method_visibility` | CLAS main source; existing method name and main hash; visibility moves additionally require the target section |
 | `SAPWrite.delete` | One CLAS/INTF owner; actual package and native recording checks before/under lock, followed by verified owner absence; omit source and source hash |
 | `SAPActivate` | One CLAS/INTF owner; activates all of that owner's existing inactive drafts and includes |
 | `SAPLint.set_formatter_settings` | Partial indentation/style patch of the mapped SAP user's formatter preferences on this target; native read/merge/write/read-back, not a package-owned object |
+
+Program/include creation, deletion, activation and function-group structural includes are still pending
+in this draft. Existing PROG/INCL saves stay inactive. Do not treat this checkpoint as complete
+program-write support. Every procedural edit uses the owner lock, fresh source hash and exact
+read-back. Shared-line neighbors refuse; put FORM/MODULE boundaries on separate lines first.
+
 
 For an existing class include, read `SAPRead(type="CLAS", name=..., include=..., format="editable")`
 and pass that include's hash to `update`, `edit_class_definition` or `edit_method`. Omit `include` for main source. An omitted hash can initialize

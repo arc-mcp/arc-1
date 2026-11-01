@@ -177,7 +177,7 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
   return withClassEdit(ctx, async (edit) => {
     const { structure, main } = await edit.readMainAndStructure();
     // Refuse-policy: compute the method-set diff against the NEW DEFINITION.
-    const diff = diffMethodSets(structure, source);
+    const diff = diffMethodSets(structure, source, main);
     const missingImpls: string[] = [];
     const orphanImpls: string[] = [];
     for (const add of diff.added) {

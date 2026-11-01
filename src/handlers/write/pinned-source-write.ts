@@ -1,4 +1,4 @@
-/** Admission and result boundary for shared class actions with pinned native policy. */
+/** Admission and result boundary for shared source actions with pinned native policy. */
 import type { AdtClient } from '../../adt/client.js';
 import { AdtSafetyError } from '../../adt/errors.js';
 import type { MutationCleanupState } from '../../adt/mutation-context.js';
@@ -8,36 +8,43 @@ import { pinnedOperationContext } from '../pinned-operation.js';
 import { type ToolResult, textResult, toolJson } from '../shared.js';
 import { dispatchClassSurgery } from './class-surgery-dispatch.js';
 import type { SapWriteContext } from './context.js';
-import {
-  createPinnedClassContext,
-  forgetPinnedClassContext,
-  type PinnedClassState,
-  pinnedClassState,
-} from './pinned-class-context.js';
+import { createPinnedClassContext } from './pinned-class-context.js';
 import { isPinnedWriteRejection, pinnedFailure, rejectedPinnedSourceState } from './pinned-result.js';
+import { forgetPinnedSourceContext, type PinnedSourceState, pinnedSourceState } from './pinned-source-context.js';
+import { createPinnedTextSourceContext } from './pinned-source-input.js';
+import { writeActionUnit } from './unit-surgery.js';
 import { writeActionUpdate } from './update-delete.js';
 
-export async function handlePinnedClassSurgery(
+export async function handlePinnedSourceWrite(
   client: AdtClient,
   args: Record<string, unknown>,
   config: ServerConfig,
 ): Promise<ToolResult> {
   const cleanup: MutationCleanupState = { unlockFailed: false };
   let ctx: SapWriteContext | undefined;
-  let state: PinnedClassState | undefined;
+  let state: PinnedSourceState | undefined;
   try {
     checkOperation(client.safety, OperationType.Update, 'PinnedWrite');
     const context = pinnedOperationContext(client, config, { tool: 'SAPWrite', args, timeoutMs: 300_000, cleanup });
-    ctx = createPinnedClassContext(client, args, config, context);
-    state = pinnedClassState(ctx);
-    const result = await (args.action === 'update' ? writeActionUpdate(ctx) : dispatchClassSurgery(ctx));
+    ctx =
+      (args.action === 'update' && args.include === undefined) ||
+      args.action === 'edit_unit' ||
+      args.action === 'add_unit'
+        ? createPinnedTextSourceContext(client, args, config, context)
+        : createPinnedClassContext(client, args, config, context);
+    state = pinnedSourceState(ctx);
+    const result = await (args.action === 'update'
+      ? writeActionUpdate(ctx)
+      : args.action === 'edit_unit' || args.action === 'add_unit'
+        ? writeActionUnit(ctx)
+        : dispatchClassSurgery(ctx));
     if (result.isError) throw new AdtSafetyError(result.content.map((part) => part.text).join('\n'));
     if (cleanup.unlockFailed || cleanup.sessionClosed === false) {
       state.phase = cleanup.unlockFailed ? 'unlock' : 'session-close';
       throw new Error('Owning-session cleanup was not confirmed.');
     }
     if ((state.state !== 'saved-inactive' && !state.unchangedConfirmed) || !state.sourceHash)
-      throw new AdtSafetyError('The class edit did not confirm a source save.');
+      throw new AdtSafetyError('The source edit did not confirm a source save.');
     return textResult(
       toolJson({
         target: config.targetId,
@@ -52,7 +59,9 @@ export async function handlePinnedClassSurgery(
         ...(state.warnings ? { warnings: state.warnings } : {}),
         next: state.unchangedConfirmed
           ? 'The method already has the requested visibility; no source was saved.'
-          : 'Review the inactive source. SAPActivate activates this complete owner, including all existing inactive drafts/includes.',
+          : args.type === 'PROG' || args.type === 'INCL'
+            ? 'Review the inactive source. Program/include activation is not yet available on this pinned route.'
+            : 'Review the inactive source. SAPActivate activates this complete owner, including all existing inactive drafts/includes.',
       }),
     );
   } catch (error) {
@@ -67,6 +76,6 @@ export async function handlePinnedClassSurgery(
       initialized: state?.includeInitialized,
     });
   } finally {
-    if (ctx) forgetPinnedClassContext(ctx);
+    if (ctx) forgetPinnedSourceContext(ctx);
   }
 }

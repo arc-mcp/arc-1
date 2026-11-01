@@ -2,6 +2,7 @@
 import { isMutatingOperationType, isOperationAllowed, OperationType } from '../adt/safety.js';
 import { ACTION_POLICY } from '../authz/policy.js';
 import { normalizeObjectType, stripLlmEmptyValues } from '../handlers/object-types.js';
+import { SAPWRITE_TYPES_BTP } from '../handlers/tool-registry.js';
 import {
   type PinnedCompanionCapability,
   type PinnedMutationCapability,
@@ -37,9 +38,23 @@ export function pinnedUnsupportedRawFields(tool: string, action: unknown, args: 
   return unsupported;
 }
 
+/** The shared type registry narrows platform support; it never admits a new capability. */
+function typeAvailable(tool: string, type: string, config: ServerConfig): boolean {
+  return (
+    config.systemType !== 'btp' ||
+    (tool !== 'SAPWrite' && tool !== 'SAPActivate') ||
+    SAPWRITE_TYPES_BTP.some((candidate) => candidate === type)
+  );
+}
+
 function capabilityEnabled(capability: PinnedMutationCapability, config: ServerConfig): boolean {
   const policy = ACTION_POLICY[`${capability.tool}.${capability.action}`];
-  return !!policy && isMutatingOperationType(policy.opType) && isOperationAllowed(config, policy.opType);
+  return (
+    !!policy &&
+    isMutatingOperationType(policy.opType) &&
+    isOperationAllowed(config, policy.opType) &&
+    (!capability.types || capability.types.some((type) => typeAvailable(capability.tool, type, config)))
+  );
 }
 
 /** Called on normalized arguments before Destination lookup. Schema construction may omit type/name. */
@@ -48,16 +63,21 @@ export function pinnedMutationAllowed(tool: string, args: Record<string, unknown
   const action = args.action ?? (tool === 'SAPActivate' ? 'activate' : undefined);
   const capability = pinnedMutationCapability(tool, action);
   if (!capability || !capabilityEnabled(capability, config)) return false;
-  if (args.type !== undefined && !capability.types?.includes(args.type as string)) return false;
+  if (
+    args.type !== undefined &&
+    (!capability.types?.includes(args.type as string) || !typeAvailable(tool, args.type as string, config))
+  )
+    return false;
   if (Object.entries(args).some(([key, value]) => value !== undefined && !capability.fields.includes(key)))
     return false;
   return capability.accepts(args);
 }
 
 export function pinnedMutationSurface(tool: string, config: ServerConfig) {
-  return pinnedWriteEnabled(config)
+  const surface = pinnedWriteEnabled(config)
     ? pinnedMutationToolSurface(tool, (capability) => capabilityEnabled(capability, config))
     : undefined;
+  return surface ? { ...surface, types: surface.types.filter((type) => typeAvailable(tool, type, config)) } : undefined;
 }
 
 function companionEnabled(capability: PinnedCompanionCapability, config: ServerConfig): boolean {

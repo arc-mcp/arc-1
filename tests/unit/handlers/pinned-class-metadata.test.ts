@@ -11,7 +11,7 @@ const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const quality = await import('../../../src/handlers/write-helpers.js');
 const source = readFileSync(new URL('../../fixtures/class-surgery/pinned.abap', import.meta.url), 'utf8');
 const xml = readFileSync(new URL('../../fixtures/class-surgery/pinned.xml', import.meta.url), 'utf8');
-const owner = '/sap/bc/adt/oo/classes/zcl_proof';
+let owner = '/sap/bc/adt/oo/classes/zcl_proof';
 const config = {
   ...DEFAULT_CONFIG,
   client: '001',
@@ -42,6 +42,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   vi.resetAllMocks();
   requests.length = 0;
+  owner = '/sap/bc/adt/oo/classes/zcl_proof';
   stored = source;
   metadata = xml;
   locked = false;
@@ -412,3 +413,163 @@ it('explains a shared-line declaration refusal on the pinned route', async () =>
   expect(requests.some((r) => r.method === 'PUT')).toBe(false);
   expect(locked).toBe(false);
 });
+
+const interfaceSource = readFileSync(
+  new URL('../../fixtures/class-surgery/pinned-interface.abap', import.meta.url),
+  'utf8',
+);
+const interfaceXml = readFileSync(
+  new URL('../../fixtures/class-surgery/pinned-interface.xml', import.meta.url),
+  'utf8',
+);
+it.each(['add_method', 'delete_method', 'edit_class_definition'])(
+  'preserves direct interface implementations through %s',
+  async (action) => {
+    stored = interfaceSource;
+    metadata = interfaceXml;
+    const definition = interfaceSource.slice(0, interfaceSource.indexOf('CLASS zcl_proof IMPLEMENTATION.'));
+    const { result } = await invoke(action, {
+      expectedSourceHash: sourceHash(stored),
+      ...(action === 'edit_class_definition'
+        ? { source: definition.replace('METHODS selected.', 'METHODS selected IMPORTING value TYPE i.') }
+        : {}),
+    });
+    expect(result.isError, result.content[0].text).toBeUndefined();
+    expect(stored).toContain('INTERFACES lif_x.');
+    expect(stored).toContain('  METHOD lif_x~run.\n  ENDMETHOD.');
+    expect(requests.filter((r) => r.method === 'PUT')).toHaveLength(1);
+  },
+);
+it.each(['removed-interface', 'new-abstract', 'abstract-parameter', 'abstract-name'])(
+  'refuses incomplete definition/body symmetry: %s',
+  async (change) => {
+    if (change === 'removed-interface') {
+      stored = interfaceSource;
+      metadata = interfaceXml;
+    }
+    let definition = stored.slice(0, stored.indexOf('CLASS zcl_proof IMPLEMENTATION.'));
+    definition =
+      change === 'removed-interface'
+        ? definition.replace('    INTERFACES lif_x.\n', '')
+        : change === 'new-abstract'
+          ? definition.replace('METHODS selected.', 'METHODS selected ABSTRACT.')
+          : definition.replace(
+              'METHODS selected.',
+              `METHODS selected.\n    METHODS ${change === 'abstract-name' ? 'abstract.' : 'added IMPORTING abstract TYPE i.'}`,
+            );
+    const { result, body } = await invoke('edit_class_definition', {
+      source: definition,
+      expectedSourceHash: sourceHash(stored),
+    });
+    expect(result.isError).toBe(true);
+    expect(body.state).toBe('unchanged');
+    expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+  },
+);
+it('refuses an interface-only signature edit with a complete-source remedy', async () => {
+  stored = interfaceSource;
+  metadata = interfaceXml;
+  const { result } = await invoke('edit_method_signature', {
+    method: 'LIF_X~RUN',
+    source: 'METHODS lif_x~run REDEFINITION.',
+    expectedSourceHash: sourceHash(stored),
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toMatch(/interface|INTERFACES/);
+  expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+});
+it.each(['spaced', 'split'])('inserts before the complete %s ENDCLASS statement', async (shape) => {
+  stored = source.replace('METHODS selected.', 'METHODS selected .');
+  metadata = xml.replace('start=3,4;end=3,20', 'start=3,4;end=3,21');
+  if (shape === 'spaced') {
+    stored = stored.replace(/ENDCLASS\.\n$/, 'ENDCLASS .\n');
+    metadata = metadata.replace('end=12,8', 'end=12,9');
+  } else {
+    stored = stored.replace(/ENDCLASS\.\n$/, 'ENDCLASS\n.\n');
+    metadata = metadata.replace('end=12,8', 'end=13,0');
+  }
+  const closing = shape === 'spaced' ? 'ENDCLASS .\n' : 'ENDCLASS\n.\n';
+  const { result } = await invoke('add_method', { expectedSourceHash: sourceHash(stored) });
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(stored).toContain(`METHOD added.\n  ENDMETHOD.\n${closing}`);
+});
+it('uses the encoded owning URL for namespaced class surgery', async () => {
+  stored = source.replaceAll('zcl_proof', '/nsp/demo');
+  metadata = xml.replaceAll('ZCL_PROOF', '/NSP/DEMO').replaceAll('zcl_proof', '%2fnsp%2fdemo');
+  owner = '/sap/bc/adt/oo/classes/%2fnsp%2fdemo';
+  const { result } = await invoke('add_method', { name: '/NSP/DEMO', expectedSourceHash: sourceHash(stored) });
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(requests.find((r) => r.method === 'PUT')?.path).toContain(owner);
+});
+
+it('refuses removing ABSTRACT when no implementation body exists', async () => {
+  stored = source
+    .replace('CLASS zcl_proof DEFINITION.', 'CLASS zcl_proof DEFINITION ABSTRACT.')
+    .replace('METHODS selected.', 'METHODS selected ABSTRACT.')
+    .replace('  METHOD selected.\n  ENDMETHOD.\n', '');
+  const selected = xml.match(
+    /<abapsource:objectStructureElement adtcore:type="CLAS\/OM" adtcore:name="SELECTED"[\s\S]*?<\/abapsource:objectStructureElement>/,
+  )![0];
+  const child = selected
+    .replace('adtcore:name="SELECTED"', 'adtcore:name="SELECTED" abstract="true"')
+    .replace(/<atom:link rel="[^\n]*\/implementation[^\n]*\n/g, '')
+    .replace('start=3,4;end=3,20', 'start=3,4;end=3,29');
+  metadata = xml
+    .replace(selected, child)
+    .replace('end=12,8', 'end=10,8')
+    .replace('start=10,2;end=11,11', 'start=8,2;end=9,11');
+  const definition = stored
+    .slice(0, stored.indexOf('CLASS zcl_proof IMPLEMENTATION.'))
+    .replace('METHODS selected ABSTRACT.', 'METHODS selected.');
+  const { result } = await invoke('edit_class_definition', {
+    source: definition,
+    expectedSourceHash: sourceHash(stored),
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toContain('Changing ABSTRACT');
+  expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+});
+it.each(['edit_method_signature', 'delete_method', 'change_method_visibility', 'invalid-signature'])(
+  'keeps the narrow legacy namespaced redefinition contract for %s',
+  async (action) => {
+    const method = 'ZIF_SERVICE~/NS/RUN';
+    stored = source
+      .replace('METHODS selected.', `METHODS ${method.toLowerCase()} REDEFINITION.`)
+      .replace('METHOD selected.', `METHOD ${method.toLowerCase()}.`);
+    metadata = xml
+      .replace('adtcore:name="SELECTED"', `adtcore:name="${method}" redefinition="true"`)
+      .replace('start=3,12;end=3,20', `start=3,12;end=3,${12 + method.length}`)
+      .replace('start=8,9;end=8,17', `start=8,9;end=8,${9 + method.length}`)
+      .replace('start=3,4;end=3,20', `start=3,4;end=3,${12 + method.length + ' REDEFINITION'.length}`);
+    const settings = {
+      ...config,
+      targetId: undefined,
+      multiTargetWrite: undefined,
+      multiTargetEndpoints: false,
+      ppEnabled: false,
+      ppStrict: false,
+    };
+    const extra = {
+      method,
+      expectedSourceHash: sourceHash(stored),
+      source: `METHODS ${method.toLowerCase()} ${action === 'invalid-signature' ? 'IMPORTING x TYPE i' : 'FINAL REDEFINITION'}.`,
+      visibility: 'public',
+    };
+    if (action === 'delete_method' || action === 'change_method_visibility')
+      delete (extra as { source?: string }).source;
+    const { result } = await invoke(action === 'invalid-signature' ? 'edit_method_signature' : action, extra, settings);
+    if (action === 'invalid-signature' || action === 'delete_method') {
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        action === 'invalid-signature' ? 'installed boundary parser' : 'safely isolate',
+      );
+      expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+    } else {
+      expect(result.isError, result.content[0].text).toBeUndefined();
+      expect(requests.filter((r) => r.method === 'PUT')).toHaveLength(action === 'change_method_visibility' ? 0 : 1);
+      if (action === 'edit_method_signature')
+        expect(stored).toContain(`METHODS ${method.toLowerCase()} FINAL REDEFINITION.`);
+      if (action === 'delete_method') expect(stored).not.toContain(method.toLowerCase());
+    }
+  },
+);

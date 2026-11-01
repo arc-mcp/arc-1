@@ -317,7 +317,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     );
     expect(payload(result)).toMatchObject({
       state: 'unchanged',
-      phase: stage === 'preflight' ? 'validation' : 'locked-policy',
+      phase: stage === 'preflight' ? 'package-preflight' : 'locked-policy',
     });
     expect(visited).toEqual(stage === 'preflight' ? ['ZROOT'] : ['ZROOT', 'ZROOT']);
     expect(requests.some((r) => r.path.includes('_action=LOCK'))).toBe(stage === 'under-lock');

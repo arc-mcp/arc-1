@@ -143,7 +143,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
     return {
       ...tool,
       description: write
-        ? 'Create/delete CLAS/INTF, update their main source or replace a CLAS local include on this pinned PP target. edit_method edits an existing method in main source or a selected/inferred class include. Main-source class definition/signature edits, method add/delete and visibility moves use verified native main-source structure. Existing source requires expectedSourceHash from SAPRead(format="editable"); a missing optional include can be initialized under the class lock without a hash. Delete takes no source/hash and verifies native owner absence. Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate activates the complete owner, including existing inactive includes.'
+        ? 'Create/delete CLAS/INTF, update CLAS/INTF/PROG/INCL main source or replace a CLAS local include on this pinned PP target. edit_method edits an existing method in main source or a selected/inferred class include. On-prem edit_unit/add_unit replace/append one FORM or MODULE in a standalone PROG/INCL. Main-source class definition/signature edits, method add/delete and visibility moves use verified native main-source structure. Existing source requires expectedSourceHash from SAPRead(format="editable"); a missing optional include can be initialized under the class lock without a hash. Delete takes no source/hash and verifies native owner absence. Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate currently accepts CLAS/INTF and activates their complete owner, including existing inactive includes. PROG/INCL activation is not yet available on this pinned route.'
         : 'Activate one CLAS/INTF owner on this pinned PP target, including ALL its existing inactive drafts and includes. Additional owners are refused. This is not method-only activation.',
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
       inputSchema: {
@@ -154,12 +154,13 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
             ? {
                 name: {
                   type: 'string',
-                  description: 'Uppercase CLAS/INTF owner name, at most 30 characters; optional registered namespace.',
+                  description:
+                    'Uppercase owner name; CLAS/INTF at most 30 characters, existing PROG/INCL identifiers at most 40; optional registered namespace.',
                 },
                 source: {
                   type: 'string',
                   description:
-                    'Complete CLAS/INTF main source for create/update, or the selected CLAS include for update (source="" with expectedSourceHash clears an existing include); an existing method body or complete METHOD…ENDMETHOD block for edit_method. For edit_class_definition supply the main CLASS DEFINITION block or the whole selected include; for edit_method_signature supply its METHODS clause. Required for create/update/edit_method/edit_class_definition/edit_method_signature; omit for delete/add_method/delete_method/change_method_visibility.',
+                    'Complete CLAS/INTF source for create/update, or complete PROG/INCL source for update; one FORM…ENDFORM or MODULE…ENDMODULE block for edit_unit/add_unit, or the selected CLAS include for update (source="" with expectedSourceHash clears an existing include); an existing method body or complete METHOD…ENDMETHOD block for edit_method. For edit_class_definition supply the main CLASS DEFINITION block or the whole selected include; for edit_method_signature supply its METHODS clause. Required for create/update/edit_method/edit_unit/add_unit/edit_class_definition/edit_method_signature; omit for delete/add_method/delete_method/change_method_visibility.',
                 },
                 package: {
                   type: 'string',
@@ -175,7 +176,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                   type: 'string',
                   pattern: '^[a-f0-9]{64}$',
                   description:
-                    'SHA-256 from SAPRead(format="editable") on the exact main source or selected include; required for existing source updates and every class surgery action. Omit only for create/delete or a new optional include verified absent under lock.',
+                    'SHA-256 from SAPRead(format="editable") on the exact main source or selected include; required for existing source updates and every class/procedural surgery action. Omit only for create/delete or a new optional include verified absent under lock.',
                 },
                 ...(fields.has('include')
                   ? {

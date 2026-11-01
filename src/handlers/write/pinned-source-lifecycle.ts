@@ -1,4 +1,4 @@
-/** Pinned policy around the same class-action callback used by single-target writes. */
+/** Pinned policy around the shared source-edit callback. */
 import { updateSource, withLockedMutation } from '../../adt/crud.js';
 import { AdtSafetyError } from '../../adt/errors.js';
 import { throwIfRequestCancelled } from '../../adt/http-deadline.js';
@@ -6,17 +6,17 @@ import { checkOperation, OperationType } from '../../adt/safety.js';
 import { assertSourceHash, editableSourceEquals, sourceHash } from '../../adt/source-precondition.js';
 import type { ToolResult } from '../shared.js';
 import type { SapWriteContext } from './context.js';
-import { pinnedClassState } from './pinned-class-context.js';
 import { pinnedSourceLockPolicy } from './pinned-lock.js';
+import { pinnedSourceState } from './pinned-source-context.js';
 import type { SourceEdit } from './source-edit.js';
 
-export async function withPinnedClassEdit(
+export async function withPinnedSourceEdit(
   ctx: SapWriteContext,
   edit: (locked: SourceEdit) => Promise<ToolResult>,
 ): Promise<ToolResult> {
-  const state = pinnedClassState(ctx);
+  const state = pinnedSourceState(ctx);
   if (!state.pkg || !state.recording)
-    throw new AdtSafetyError('Class editing requires verified package and recording preflight.');
+    throw new AdtSafetyError('Source editing requires verified package and recording preflight.');
   const { context, recording } = state;
   const policy = pinnedSourceLockPolicy(ctx.client, context, ctx.objectUrl, state.pkg, recording, (phase) => {
     state.phase = phase;

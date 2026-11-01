@@ -1,0 +1,90 @@
+# Shared source updates and procedural edits — draft checkpoint
+
+PR #1142 remains a draft. This checkpoint moves existing main-source updates onto the shared
+`writeActionUpdate` handler and admits standalone on-prem PROG/INCL update, `edit_unit` and
+`add_unit`. It is offline implementation evidence, not live PP qualification or whole-PR acceptance.
+Program/include create/delete/activation, function-group ownership, other types and the remaining
+management families are still pending. The last successful live run remains `77e41fdcd`.
+
+## Shared behavior
+
+`pinned-source-context` and `pinned-source-lifecycle` replace the class-specific names. They provide
+request-owned state, canonical source/owner selection, package/recording preflight and rechecks,
+the owning lock, fresh mandatory source hash, one save, exact read-back and bounded cleanup.
+Main updates now call the existing `writeActionUpdate` through `replaceOwnerSource`; procedural
+callbacks use the same `withSourceEdit` lifecycle. The duplicate pinned main-update branch is gone.
+Legacy update calls still delegate to `safeUpdateSource`, retaining their source preparation,
+cache invalidation and quality timing. Pinned advisory syntax checks occur under the owning lock.
+
+FORM/MODULE edits require complete named blocks and the full source hash; additions append at
+physical EOF without relocating INCLUDE statements. Whole-line replacement refuses a boundary
+shared with another statement. Classic program types are also narrowed by the shared BTP type
+registry in both invocation and advertisement. No group, alternate include/source URI, per-call
+quality override or activation field is admitted. Read-only, aggregate and Basic policies are unchanged.
+
+Existing PROG/INCL identifiers use an uppercase, optional-namespace envelope capped at 40 characters;
+CLAS/INTF retain 30. A read-only A4H/001 GET of the standard `PROGNAME` data element reported
+`CHAR` length `000040`. This is a field-envelope observation, not proof that every 40-character
+name can be created or that an arbitrary name exists. Namespace routing and the envelope have
+authored HTTP-mock tests; live program writing has not been qualified.
+
+## Second Claude review and dispositions
+
+Actual Claude Code **Opus 5.5, effort max** reviewed immutable
+`cee2a18e17ed2c44a49e150fb5844784ea93d042` and returned three Medium and five Low findings:
+[verbatim report](broader-pinned-pp-writes/claude-class-adapters-followup-review-20261101.md).
+The reviewer independently passed the full 432-file/11,783-test suite, three TypeScript projects,
+size/schema checks and 59 existing qualification-harness simulations. First/last snapshot checks
+and the subsequent author check all verified the same 4,243 files unchanged. The reviewer did not
+execute individual reproductions. The changes below need another independent review.
+
+1. **Formatting-hidden ambiguity:** method inventory now walks parsed statements instead of
+   depending on a single-class structure or line-regex fallback. It retains duplicate bodies,
+   reads names from their own statements and scopes signatures to their containing class.
+   Tests execute trailing comments, whitespace before periods, annotated class headers, inline
+   bodies and normal single-class duplicates. Both route profiles refuse ambiguous include edits;
+   qualified edits preserve the neighboring class. The shared-line formatting test now asserts
+   the actual isolation refusal rather than an accidental ambiguity caused by the old name lookup.
+2. **Replacement escaping a method:** replacement boundaries reject class/interface and other
+   repository-unit boundary statements inside a selected method. Parser tests cover body-only
+   and complete-block input; both handler profiles prove no PUT for an escaping include edit.
+   Ordinary body syntax remains the lint/SAP responsibility.
+3. **Definition/body symmetry:** definition edits compare abstract state, preserve declarations
+   for existing interface bodies and distinguish real method declarations from similarly named
+   interfaces/events/aliases. `Expressions.Abstract` identifies the flag, not any token named
+   ABSTRACT. Handler tests execute removed-interface, both abstract transitions, an ABSTRACT
+   method name/parameter, preserved interface bodies, and interface-only signature refusal.
+   Newly introduced interfaces still require SAP's semantic validation.
+4. **Transport on definitive refusal:** unchanged and rejected create/initialization/save results
+   omit the unconfirmed transport. Confirmed prior creation and uncertain outcomes retain their
+   appropriate context. Transportable include refusal tests cover initialization and PUT rejection.
+5. **Namespace exception:** the legacy unknown-declaration exception accepts only one namespaced
+   interface redefinition with a `[FINAL] REDEFINITION` tail. Extra parameters/statements/chains
+   refuse. Handler tests prove signature replacement and public-visibility no-op. Contrary to the
+   review's predicted acceptance, deleting this grammar-unsupported body still refuses in the
+   implementation-boundary check; the test records that limitation and its complete-source remedy.
+   Pinned metadata surgery continues to refuse this unsupported syntax.
+6. **Bare CR:** structural parsers refuse bare carriage returns instead of interpreting different
+   text from what the splice saves. CRLF remains supported; method replacement tests include the
+   comment/CR boundary case. Whole-source updates continue to rely on their exact read-back.
+7. **Parser limitation:** unsupported declaration replacements explicitly name the installed
+   boundary parser and suggest a complete source update. They do not silently widen the grammar.
+8. **Handler coverage:** direct-interface add/delete/definition edits, namespaced owner URLs and
+   classic punctuation now run through the handler. Adding before a split ENDCLASS statement uses
+   the statement's start row, preserving its separate terminating period. Whole-include cancellation
+   tests cover existing source, pre-initialization cancellation and cancellation after creation.
+
+Cancellation tests exposed an additional reporting issue: a known pre-write cancellation used an
+uncertain-write state. Checks now run before those transitions. If initialization succeeded but
+the following PUT was prevented, the result is `created-include-source-not-saved` with
+`initialized: true` and no unverified source hash.
+
+## Evidence limits and next work
+
+New tests exercise actual shared handler/native HTTP boundaries, exact saved source and neighbor
+preservation, stale hashes, malformed input, package/recording drift, no replay, read-back mismatch,
+cleanup errors, parent-request selection, quality warnings and BTP refusal. Public source/XML
+fixtures are authored examples, not exports of SAP implementations. Earlier read-only native
+class receipts and historical PP runs retain their original revision scope. The 59 harness
+simulations do not qualify these new class/procedural operations. Fresh two-writer PP evidence,
+transportable-object coverage and remaining built-in adapters are required before merge readiness.

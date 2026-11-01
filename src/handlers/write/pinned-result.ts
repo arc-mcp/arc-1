@@ -58,7 +58,11 @@ export function pinnedFailure(
       phase,
       ...(error instanceof AdtApiError ? { statusCode: error.statusCode } : {}),
       ...otherDetails,
-      ...(state !== 'unchanged' && transport ? { transport } : {}),
+      ...(!['unchanged', 'creation-rejected', 'include-initialization-rejected', 'source-save-rejected'].includes(
+        state,
+      ) && transport
+        ? { transport }
+        : {}),
       ...(cleanupFailed
         ? {
             cleanupFailed: true,

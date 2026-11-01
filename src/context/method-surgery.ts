@@ -7,11 +7,12 @@
  * 3. spliceMethod   — Surgically replace a single method body, return new full source
  *
  * All functions are pure (no I/O) — they operate on source strings and return results.
- * Uses @abaplint/core AST for accurate parsing with regex fallback for unparseable source.
+ * Uses parsed statement boundaries, including multi-class includes without a complete structure tree.
  */
 
-import { Comment, MemoryFile, Objects, Registry, Statements, Structures, Version } from '@abaplint/core';
+import { Comment, MemoryFile, Objects, Registry, Statements, Version } from '@abaplint/core';
 import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
+import { methodInventory } from './method-inventory.js';
 import { methodNotFoundMessage } from './method-suggestions.js';
 
 const DEFAULT_VERSION = Version.Cloud;
@@ -83,341 +84,14 @@ export interface MethodSpliceResult {
   error?: string;
 }
 
-// ─── AST Node Type ──────────────────────────────────────────────────
-
-type AstNode = {
-  findAllStatements(type: unknown): Array<{ concatTokens(): string; getFirstToken(): { getRow(): number } }>;
-  findAllStatementNodes(): Array<{ concatTokens(): string; get(): { constructor: { name: string } } }>;
-  findDirectStructures(type: unknown): AstNode[];
-  findAllStructuresRecursive(type: unknown): AstNode[];
-  findAllStructures(type: unknown): AstNode[];
-  concatTokens(): string;
-  getFirstStatement(): { concatTokens(): string; getFirstToken(): { getRow(): number } } | undefined;
-  getLastToken(): { getRow(): number };
-};
-
-// ─── List Methods ───────────────────────────────────────────────────
-
-/**
- * List all methods in a class with their signatures, visibility, and line ranges.
- */
+/** List methods without dropping duplicate bodies or formatting variants from the ambiguity check. */
 export function listMethods(source: string, className: string, abaplintVersion?: Version): MethodListResult {
-  const normalized = source.replace(/\r\n/g, '\n');
   try {
-    const result = listMethodsAST(normalized, className, abaplintVersion ?? DEFAULT_VERSION);
-    if (result.success && result.methods.length > 0) return result;
-    // Fallback to regex if AST found nothing
-    const regexResult = listMethodsRegex(normalized, className);
-    return regexResult;
-  } catch (_err: unknown) {
-    // AST parsing failed — use regex fallback
-    const regexResult = listMethodsRegex(normalized, className);
-    return regexResult;
+    if (/\r(?!\n)/.test(source)) throw Error('Bare carriage returns are not supported; use LF or CRLF.');
+    return methodInventory(source.replace(/\r\n/g, '\n'), className, abaplintVersion ?? DEFAULT_VERSION);
+  } catch (error) {
+    return { className, methods: [], success: false, error: error instanceof Error ? error.message : String(error) };
   }
-}
-
-function listMethodsAST(source: string, className: string, ver: Version): MethodListResult {
-  const config = getDefaultAbaplintConfig(ver);
-  const reg = new Registry(config);
-  reg.addFile(new MemoryFile(`${className.toLowerCase().replace(/\//g, '#')}.clas.abap`, source));
-  reg.parse();
-
-  // Collect method signatures from DEFINITION with visibility
-  const signatures = new Map<
-    string,
-    { signature: string; visibility: 'public' | 'protected' | 'private'; isRedefinition: boolean }
-  >();
-
-  // Collect method line ranges from IMPLEMENTATION, tagged with the containing
-  // local-class name. Multiple local classes inside one source can declare the
-  // same bare method name; the upper-case name alone is not unique, so the map
-  // key combines containing-class + method name.
-  const implementations = new Map<
-    string,
-    { startLine: number; endLine: number; containingClass: string; bareName: string }
-  >();
-
-  for (const obj of reg.getObjects()) {
-    const file = (obj as { getMainABAPFile?: () => unknown }).getMainABAPFile?.() as
-      | { getStructure(): AstNode | undefined }
-      | undefined;
-    if (!file) continue;
-
-    const structure = file.getStructure();
-    if (!structure) continue;
-
-    // ── Definition: extract method signatures with visibility ──
-    const classDefs = structure.findAllStructuresRecursive(Structures.ClassDefinition);
-    for (const classDef of classDefs) {
-      extractMethodSignatures(classDef, 'public', Structures.PublicSection, signatures);
-      extractMethodSignatures(classDef, 'protected', Structures.ProtectedSection, signatures);
-      extractMethodSignatures(classDef, 'private', Structures.PrivateSection, signatures);
-    }
-
-    // ── Implementation: extract METHOD ... ENDMETHOD line ranges ──
-    const classImpls = structure.findAllStructuresRecursive(Structures.ClassImplementation);
-    for (const classImpl of classImpls) {
-      // Capture the containing local-class name from "CLASS <name> IMPLEMENTATION."
-      const classFirstStmt = classImpl.getFirstStatement?.();
-      const classTokens = classFirstStmt?.concatTokens() ?? '';
-      const classMatch = classTokens.match(/^CLASS\s+(\S+)\s+IMPLEMENTATION/i);
-      const containingClass = classMatch?.[1] ?? '';
-
-      const methods = classImpl.findAllStructuresRecursive(Structures.Method) as AstNode[];
-      for (const method of methods) {
-        const firstStmt = method.getFirstStatement();
-        if (!firstStmt) continue;
-        const tokens = firstStmt.concatTokens();
-        // Extract method name from "METHOD method_name."
-        const match = tokens.match(/^METHOD\s+(\S+)/i);
-        if (match) {
-          const name = match[1]!.replace(/\.$/, '');
-          const startLine = firstStmt.getFirstToken().getRow();
-          const endLine = method.getLastToken().getRow();
-          // Composite key: containing class + bare method name. Two local
-          // classes can legally declare a method with the same bare name.
-          const mapKey = `${containingClass.toUpperCase()}~${name.toUpperCase()}`;
-          implementations.set(mapKey, { startLine, endLine, containingClass, bareName: name });
-        }
-      }
-    }
-  }
-
-  // Build a set of all definition method names (upper) so we can detect impl-only methods
-  const definedUpper = new Set(signatures.keys());
-
-  // Merge: start from implementations (since those have line ranges) and enrich with definition info
-  const methods: MethodInfo[] = [];
-  const processed = new Set<string>();
-
-  for (const [, impl] of implementations) {
-    // Find original case from source
-    const lines = source.split('\n');
-    const methodLine = lines[impl.startLine - 1] ?? '';
-    const nameMatch = methodLine.match(/METHOD\s+(\S+)\s*\./i);
-    const originalName = nameMatch?.[1] ?? impl.bareName;
-    const upperImplName = impl.bareName.toUpperCase();
-
-    // Try to match to a definition signature
-    // For interface methods like "zif_order~create", the definition has "create" (INTERFACES zif_order)
-    // For regular methods, definition name matches implementation name
-    let sig = signatures.get(upperImplName);
-    if (!sig) {
-      // For interface methods: try matching by the part after ~
-      const parts = upperImplName.split('~');
-      if (parts.length === 2) {
-        sig = signatures.get(parts[1]!);
-      }
-    }
-
-    const visibility = sig?.visibility ?? 'public';
-    const signature = sig?.signature ?? `METHODS ${originalName}.`;
-    const isRedefinition = sig?.isRedefinition ?? false;
-
-    methods.push({
-      name: originalName,
-      visibility,
-      signature,
-      startLine: impl.startLine,
-      endLine: impl.endLine,
-      isRedefinition,
-      isInterfaceMethod: originalName.includes('~'),
-      containingClass: impl.containingClass,
-    });
-
-    processed.add(upperImplName);
-    // Also mark the definition key as processed (may differ for interface methods)
-    if (sig) {
-      // Try exact match first
-      if (definedUpper.has(upperImplName)) {
-        processed.add(upperImplName);
-      } else {
-        // For interface methods: mark the short name as processed
-        const parts = upperImplName.split('~');
-        if (parts.length === 2 && definedUpper.has(parts[1]!)) {
-          processed.add(parts[1]!);
-        }
-      }
-    } else {
-      // No definition found — still mark it processed under its own key
-      // to prevent duplication
-    }
-  }
-
-  // Add methods that are in definition but have no implementation (unusual but possible)
-  for (const [upperName, sig] of signatures) {
-    if (processed.has(upperName)) continue;
-    const originalName = sig.signature.match(/(?:CLASS-)?METHODS\s+(\S+)/i)?.[1] ?? upperName;
-    methods.push({
-      name: originalName,
-      visibility: sig.visibility,
-      signature: sig.signature,
-      startLine: 0,
-      endLine: 0,
-      isRedefinition: sig.isRedefinition,
-      isInterfaceMethod: originalName.includes('~'),
-    });
-  }
-
-  // Sort: public first, then protected, then private, alphabetical within each
-  const order = { public: 0, protected: 1, private: 2 };
-  methods.sort((a, b) => {
-    const vis = order[a.visibility] - order[b.visibility];
-    if (vis !== 0) return vis;
-    return a.name.toUpperCase().localeCompare(b.name.toUpperCase());
-  });
-
-  return { className, methods, success: true };
-}
-
-function extractMethodSignatures(
-  classDef: AstNode,
-  visibility: 'public' | 'protected' | 'private',
-  sectionType: unknown,
-  signatures: Map<
-    string,
-    { signature: string; visibility: 'public' | 'protected' | 'private'; isRedefinition: boolean }
-  >,
-): void {
-  const sections = classDef.findDirectStructures(sectionType);
-  for (const section of sections) {
-    const methodDefs = section.findAllStatements(Statements.MethodDef);
-    for (const methodDef of methodDefs) {
-      const sigText = methodDef.concatTokens();
-      // Extract method name from "METHODS method_name ..." or "CLASS-METHODS ..."
-      const match = sigText.match(/(?:CLASS-)?METHODS\s+(\S+)/i);
-      if (match) {
-        // Strip trailing period (abaplint concatTokens includes it for single-word statements like "METHODS helper.")
-        const name = match[1]!.replace(/\.$/, '');
-        const isRedefinition = /REDEFINITION/i.test(sigText);
-        signatures.set(name.toUpperCase(), { signature: sigText, visibility, isRedefinition });
-      }
-    }
-  }
-}
-
-// ─── Regex Fallback ─────────────────────────────────────────────────
-
-function listMethodsRegex(source: string, className: string): MethodListResult {
-  const lines = source.split('\n');
-  const methods: MethodInfo[] = [];
-  const signatureMap = new Map<
-    string,
-    { signature: string; visibility: 'public' | 'protected' | 'private'; isRedefinition: boolean }
-  >();
-
-  // Phase 1: Scan DEFINITION for method signatures and visibility
-  let inDefinition = false;
-  let currentVisibility: 'public' | 'protected' | 'private' = 'public';
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    const upper = trimmed.toUpperCase();
-
-    if (upper.match(/^CLASS\s+\S+\s+DEFINITION/)) {
-      inDefinition = true;
-      continue;
-    }
-    if (upper === 'ENDCLASS.' && inDefinition) {
-      inDefinition = false;
-      continue;
-    }
-
-    if (inDefinition) {
-      if (upper === 'PUBLIC SECTION.') {
-        currentVisibility = 'public';
-        continue;
-      }
-      if (upper === 'PROTECTED SECTION.') {
-        currentVisibility = 'protected';
-        continue;
-      }
-      if (upper === 'PRIVATE SECTION.') {
-        currentVisibility = 'private';
-        continue;
-      }
-
-      const methodMatch = trimmed.match(/^(?:CLASS-)?METHODS\s+(\S+)/i);
-      if (methodMatch) {
-        const name = methodMatch[1]!;
-        // Collect full method statement (may span multiple lines)
-        let fullSig = trimmed;
-        if (!trimmed.endsWith('.')) {
-          // Multi-line signature — collect until we find a period
-          const startIdx = lines.indexOf(line);
-          for (let i = startIdx + 1; i < lines.length; i++) {
-            fullSig += ` ${lines[i]!.trim()}`;
-            if (lines[i]!.trim().endsWith('.')) break;
-          }
-        }
-        signatureMap.set(name.toUpperCase(), {
-          signature: fullSig,
-          visibility: currentVisibility,
-          isRedefinition: /REDEFINITION/i.test(fullSig),
-        });
-      }
-    }
-  }
-
-  // Phase 2: Scan IMPLEMENTATION for METHOD ... ENDMETHOD line ranges
-  let inImplementation = false;
-  let currentContainingClass = '';
-  let currentMethodName = '';
-  let methodStartLine = 0;
-
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i]!.trim();
-    const upper = trimmed.toUpperCase();
-
-    const implOpen = trimmed.match(/^CLASS\s+(\S+)\s+IMPLEMENTATION\s*\.?$/i);
-    if (implOpen) {
-      inImplementation = true;
-      currentContainingClass = implOpen[1]!;
-      continue;
-    }
-    if (upper === 'ENDCLASS.' && inImplementation) {
-      inImplementation = false;
-      currentContainingClass = '';
-      continue;
-    }
-
-    if (inImplementation) {
-      const methodStart = trimmed.match(/^METHOD\s+(\S+)\s*\./i);
-      if (methodStart) {
-        currentMethodName = methodStart[1]!;
-        methodStartLine = i + 1; // 1-based
-      }
-      if (upper === 'ENDMETHOD.' && currentMethodName) {
-        const endLine = i + 1; // 1-based
-        const sig = signatureMap.get(currentMethodName.toUpperCase());
-
-        methods.push({
-          name: currentMethodName,
-          visibility: sig?.visibility ?? 'public',
-          signature: sig?.signature ?? `METHODS ${currentMethodName}.`,
-          startLine: methodStartLine,
-          endLine,
-          isRedefinition: sig?.isRedefinition ?? false,
-          isInterfaceMethod: currentMethodName.includes('~'),
-          containingClass: currentContainingClass,
-        });
-
-        currentMethodName = '';
-      }
-    }
-  }
-
-  // Sort: public first, then protected, then private
-  const order = { public: 0, protected: 1, private: 2 };
-  methods.sort((a, b) => {
-    const vis = order[a.visibility] - order[b.visibility];
-    if (vis !== 0) return vis;
-    return a.name.toUpperCase().localeCompare(b.name.toUpperCase());
-  });
-
-  // Success if we found methods OR if the source contains a class (even with no methods)
-  const hasClass = /CLASS\s+\S+\s+IMPLEMENTATION/i.test(source);
-  return { className, methods, success: methods.length > 0 || hasClass || source.trim().length === 0 };
 }
 
 // ─── Extract Method ─────────────────────────────────────────────────
@@ -608,6 +282,7 @@ function methodBoundaries(
   source: string,
   version: Version,
 ): { opening: string; closing: string; name: string } | undefined {
+  if (/\r(?!\n)/.test(source)) return undefined;
   const registry = new Registry(getDefaultAbaplintConfig(version));
   registry.addFile(new MemoryFile('zmethod.prog.abap', source));
   registry.parse();
@@ -627,7 +302,14 @@ function methodBoundaries(
   if (
     !(first?.get() instanceof Statements.MethodImplementation) ||
     !(last?.get() instanceof Statements.EndMethod) ||
-    boundaries.length !== 2
+    boundaries.length !== 2 ||
+    statements
+      .slice(1, -1)
+      .some((statement) =>
+        /^(?:CLASS(?:\s|$)|ENDCLASS\b|INTERFACE\s|ENDINTERFACE\b|FORM\s|ENDFORM\b|MODULE\s|ENDMODULE\b|REPORT\s|PROGRAM\s|FUNCTION\s|ENDFUNCTION\b)/i.test(
+          statement.concatTokens(),
+        ),
+      )
   )
     return undefined;
   const lines = source.split('\n');

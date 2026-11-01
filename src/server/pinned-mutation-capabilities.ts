@@ -35,12 +35,22 @@ const rows: PinnedMutationCapability[] = [
     tool: 'SAPWrite',
     action: 'update',
     resource: 'repository-source',
-    types: ['CLAS', 'INTF'],
+    types: ['CLAS', 'INTF', 'PROG', 'INCL'],
     fields: [...sourceFields, 'expectedSourceHash', 'include'],
     accepts: (args) =>
       args.include === undefined ||
       (args.type === 'CLAS' && PINNED_CLASS_INCLUDE_NAMES.some((include) => include === args.include)),
   },
+  ...['edit_unit', 'add_unit'].map(
+    (action): PinnedMutationCapability => ({
+      tool: 'SAPWrite',
+      action,
+      resource: 'repository-source',
+      types: ['PROG', 'INCL'],
+      fields: [...sourceFields, 'unit', 'expectedSourceHash'],
+      accepts: () => true,
+    }),
+  ),
   {
     tool: 'SAPWrite',
     action: 'edit_method',

@@ -80,7 +80,9 @@ describe('method replacement boundaries', () => {
   );
 
   it('matches a fuzzy interface selection against its actual qualified method name', () => {
-    const qualified = source.replace('METHOD value.', 'METHOD zif_example~value.');
+    const qualified = source
+      .replace('METHODS value RETURNING VALUE(result) TYPE i.', 'INTERFACES zif_example.')
+      .replace('METHOD value.', 'METHOD zif_example~value.');
     expect(spliceMethod(qualified, 'zexample', 'value', 'METHOD zif_example~value. ENDMETHOD.').success).toBe(true);
     expect(spliceMethod(qualified, 'zexample', 'value', 'METHOD value. ENDMETHOD.').success).toBe(false);
   });
