@@ -331,7 +331,7 @@ export function renderExtensionDiscovery(result: ExtensionDiscoveryResult): Arra
     text = summary();
   }
   if (Buffer.byteLength(text) > 2048) {
-    result.omissions.output = (result.omissions.output ?? 0) + 1;
+    result.omissions.output = (result.omissions.output ?? 0) + 1 + distinctIssues.length;
     // Even invalid caller identities must fit, including JSON's control-character expansion.
     const field = (value: string) =>
       Buffer.byteLength(JSON.stringify(value)) <= 128 ? value : '[identity field omitted: output cap]';
@@ -339,6 +339,15 @@ export function renderExtensionDiscovery(result: ExtensionDiscoveryResult): Arra
       root: { type: field(result.root.type), name: field(result.root.name), version: field(result.root.version) },
       ...(result.context ? { context: { type: field(result.context.type), name: field(result.context.name) } } : {}),
       scope: 'summary_metadata_output_limit',
+      providerStatuses: result.providers.reduce<Partial<Record<ExtensionProvider['status'], number>>>(
+        (counts, provider) => {
+          counts[provider.status] = (counts[provider.status] ?? 0) + 1;
+          return counts;
+        },
+        {},
+      ),
+      omittedProviders: 0,
+      omittedIssues: distinctIssues.length,
       providers: compactProviders(result.providers).map(({ id, family, status, coverage }) => ({
         id,
         family,
@@ -355,6 +364,7 @@ export function renderExtensionDiscovery(result: ExtensionDiscoveryResult): Arra
     text = serialize();
     while (Buffer.byteLength(text) > 2048 && essential.providers.length) {
       essential.providers.pop();
+      essential.omittedProviders++;
       result.omissions.output++;
       text = serialize();
     }

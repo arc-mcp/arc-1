@@ -1,7 +1,8 @@
 /** Experimental Relation Explorer adapter. No source reads, SQL fallback or shared results. */
 import { XMLValidator } from 'fast-xml-parser';
+import { isActionDenied } from '../server/deny-actions.js';
 import type { AdtClient } from './client.js';
-import { AdtResponseLimitError } from './errors.js';
+import { AdtResponseLimitError, AdtSafetyError } from './errors.js';
 import type { AdtRequestOptions } from './http-deadline.js';
 import { canonicalHostRelativeAdtPath } from './path-safety.js';
 import {
@@ -12,12 +13,18 @@ import {
   relationObjectUri,
   relationReferenceName,
 } from './relation-objects.js';
-import { checkOperation, OperationType } from './safety.js';
+import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { escapeXmlAttr, parseDiscoveryObject, parseXml } from './xml-parser.js';
 
 export const RELATIONS_PATH = '/sap/bc/adt/objectrelations/network';
 export const RELATION_XML_MAX_BYTES = 1024 * 1024;
 export const RELATIONS_MIME = 'application/vnd.sap.adt.objectrelations.request.v1+xml';
+export function nativeRelationActionDenied(safety: SafetyConfig): boolean {
+  return (
+    isActionDenied('SAPNavigate', 'relations', safety.denyActions ?? []) ||
+    isActionDenied('SAP', 'navigate', safety.denyActions ?? [])
+  );
+}
 export { RELATION_NAME, RelationProtocolError, relationObjectUri } from './relation-objects.js';
 export class RelationContextError extends RelationProtocolError {}
 export type RelationDirection = 'incoming' | 'outgoing';
@@ -182,6 +189,11 @@ export class NativeRelationProvider {
     readonly options: AdtRequestOptions,
   ) {}
 
+  private assertActionAllowed(): void {
+    if (nativeRelationActionDenied(this.client.safety))
+      throw new AdtSafetyError('SAPNavigate.relations denied for native relation discovery.');
+  }
+
   async discover(known?: ReadonlyMap<string, string[]>): Promise<ReadonlyMap<string, string[]>> {
     let map = known;
     if (!map) {
@@ -241,6 +253,7 @@ export class NativeRelationProvider {
   }
 
   async validateRoot(type: string, name: string, options: { version?: 'active' } = {}): Promise<RelationObject> {
+    this.assertActionAllowed();
     const { spec, uri } = await this.resolveRootUri(type, name);
     checkOperation(this.client.safety, OperationType.Read, 'ValidateRepositoryRelationRoot');
     const response = await this.client.http.get(
@@ -302,6 +315,7 @@ export class NativeRelationProvider {
     object: RelationObject,
     context: C,
   ): Promise<RelationNetwork<C>> {
+    this.assertActionAllowed();
     // Rebuild at the sink; a returned URI can never select an arbitrary ADT operation.
     const group = object.type === 'FUGR/FF' ? relationFunctionIdentity(safeUri(object.uri)).group : undefined;
     const uri = relationObjectUri(object.type, object.name, group);

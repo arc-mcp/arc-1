@@ -91,3 +91,9 @@ and exact/glob/tool-wide denial in both summary and sources modes. The full suit
 and all eight rendered hook-body hashes match. [Evidence](native-denial-replay.json) includes the
 corrected runtime-file fingerprints. BTP rerun availability and all prior scope limits remain
 unchanged. No SAP source/data mutations occurred. Roadmap rechecked: no roadmap impact.
+
+## Combined BDEF branch qualification
+
+The later [combined runtime report](../2026-11-01-cache-fixture-and-btp-requalification.md)
+records nine fresh BTP cases after the service resumed. The earlier class-only runs
+and build-specific evidence above remain unchanged.

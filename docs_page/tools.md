@@ -106,7 +106,7 @@ the complete inherited API.
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `methodView` | string | No | `"signature"`: return one method declaration owned by the global CLAS MAIN source, including parameter and exception clauses. Requires a bare `method` name; omit for the existing implementation-body read. No `method="*"`, locals, interface-qualified or inherited signatures; only omitted/`main` include and plain text format. Incompatible with grep, ranges, diff and editable reads. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. For FUGR, `grep` implies `expand_includes` and searches each include on its own: matches are grouped under `=== <include> ===` with line numbers counted within that include. For PROG and INCL, `grep` searches the object itself unless `expand_includes=true`; the response then names the includes that the expansion would also search. Falls back to a literal search when the pattern is not valid regex. |
-| `extensions` | string | No | `none`, `summary`, or `sources`. Full TABL, PROG, INCL, FUNC, FUGR, CLAS and INTF source reads default to a bounded summary; partial reads default to none. Sources adds separate labelled extension bodies and a bounded graph. See [Extension discovery](#extension-discovery). |
+| `extensions` | string | No | `none`, `summary`, or `sources`. Full TABL, PROG, INCL, FUNC, FUGR, CLAS, INTF and BDEF source reads default to a bounded summary; partial reads default to none. Sources adds separate labelled extension bodies and a bounded graph. Interface coverage is limited. See [Extension discovery](#extension-discovery). |
 | `enhancementContext` | object | No | Standalone INCL only: `{type: "PROG"\|"FUGR"\|"CLAS", name: "..."}` identifies the owning main object. Required for standalone include plug-in discovery; actual child includes inherit their root context. |
 | `lineStart` | integer | No | First source line (1-based, inclusive); requires `lineEnd`. Supports PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, DDLX and TABL. CLAS `include` selects one source section. Plain text only: do not combine with grep, method, diff, structured/editable output, signature or element extraction. Draft/version notices precede the numbered source. |
 | `lineEnd` | integer | No | Last source line (inclusive); requires `lineStart`. Clamped to the source end; a start beyond the source is an error. |
@@ -137,20 +137,18 @@ CLI `source` and `read --flat` select `extensions="none"` so redirected source e
 their original contents. Use `arc1-cli call SAPRead --json '{"type":"TABL","name":"DSH_MEAL","extensions":"sources"}'`
 for extension context through the CLI.
 
-The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02, 758 SP02, and BTP ABAP
-Environment 920 SP05 with a developer's browser OAuth identity. Source plug-in XML is qualified
-on 750 and 758. Live positive coverage includes PROG on 750 and INCL, FUNC and FUGR on 758;
-other family/release combinations remain unqualified. BDEF public integration
-remains a separate stage and explicit requests currently report `unsupported`.
-Read-only BTP ABAP 920 checks cover FUNC `RFC_SYSTEM_INFO` (provider not advertised) and FUGR
-`SRFC` (empty root identities and bounded source traversal). These establish contract behavior,
-not positive BTP plug-in source coverage. PROG/INCL remain excluded from the BTP public schema;
-other BTP objects, releases and live principal propagation remain unqualified. CDS/DDLX extensions
-and BAdIs are outside this feature.
+The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02, 758 SP02 and BTP 920 SP05. Source
+plug-in XML is qualified on both releases. Live positive coverage includes PROG on 750 and
+INCL, FUNC and FUGR on 758; other family/release combinations remain unqualified.
+BDEF extensions are source-verified on 758 and BTP SAP_BASIS 920; release 750 is explicitly
+unqualified. BTP 920 also qualifies DDIC appends, FUGR/class hooks and native class identities.
+Its PROG/INCL public read types remain excluded by the existing schema; structural class source
+access returned 403, and interfaces reported unsupported context. Other release/family combinations
+remain unqualified. See the [BTP qualification](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-31-extension-test-gaps.md).
+CDS/DDLX extensions and BAdIs are outside this feature.
 
 CLAS combines selected-source hook coverage with a separate native `EXTED_OBJ` graph for the owning
-class. Denying `SAPNavigate.relations` suppresses this native provider while independent hooks
-remain governed by their SAPRead rules. Main and local sections stay distinct. A class can have structural enhancements despite an
+class. Main and local sections stay distinct. A class can have structural enhancements despite an
 empty hook/source response. Native graph edges retain their direction and ENHO types; the type
 alone does not identify enhancement technology. The native provider is qualified on 758 and BTP 920; 750's
 unsupported response remains explicit. Hook wire formats are qualified on both releases.
@@ -165,6 +163,15 @@ Read-only BTP 920 tests through direct service-key/browser OAuth find structural
 return the main hook example's eight bodies and three replacement edges. Structural and selected
 local authored sources return 403 for the tested identity; these stay denied without generated
 fallback. INTF returns unsupported context. BTP principal propagation remains unqualified here.
+
+BDEF uses a native WUL candidate index, then verifies active `extend behavior for` statements
+against entities declared by the base BDEF. Comments, strings, ordinary references and self edges
+are excluded. Summary checks at most two candidates; sources uses the shared remaining allowance
+and labels verified bodies `representation=authored_source`. Candidate omissions stay explicit.
+Even a fully checked or empty index cannot prove global absence. For example,
+`SAPRead(type="BDEF", name="DEMO_RAP_EXTENSIBLE", extensions="sources")` verifies
+DEMO_RAP_EXTEND1 and DEMO_RAP_EVENT_EXT on 758. Generic RAP/CDS availability does not qualify
+behavior extensions on 750. Cold capability discovery also consumes the optional byte/time budget.
 
 Method, grep, line-window and class-include reads default to none. An explicit mode on a partial
 read describes its **owning object/source**, without claiming the extension bodies match the
@@ -186,11 +193,17 @@ base plus qualified partial coverage. Caller cancellation still propagates.
 | Graph/source expansion | 8 rendered identities, no nested reads | 20 nodes, depth 5, 80 edges |
 | Additional output | 2 KiB | 16 KiB |
 
-All hidden reads use the caller's client and SAPRead deny rules. Optional reads disable transient
-retries. Graph, source, request, byte, deadline and output omissions remain visible, and cut source
+All hidden reads use the caller's client and SAPRead deny rules. Native WUL/EXTED_OBJ lookups also
+honor `SAPNavigate.relations`, whole-`SAPNavigate` and hyperfocused `SAP.navigate` denials.
+A disabled native provider preserves the base and independent class hooks. SAP authorization
+failures still stop the optional phase. Optional reads disable transient retries. Graph, source,
+request, byte, deadline and output omissions remain visible, and cut source
 bodies have explicit markers. No source is spliced into editable base text.
 These are simultaneous upper bounds: metadata, fallback and CSRF sends can exhaust the request
 budget before traversal reaches the node limit.
+
+DDIC scans mask comments and literals. Nested comment syntax remains unqualified; nested or
+unfinished scans report incomplete coverage instead of asserting an empty include graph.
 
 Source plug-in summaries use an advertised HOOK_IMPL identity list on a root where available.
 That list covers outer/specific implementations and says nested expansion was not performed.

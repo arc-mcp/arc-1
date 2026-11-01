@@ -1,0 +1,198 @@
+/** Public SAPRead regression: original blocks, selected-scope semantics and optional failures. */
+import { createServer, type Server } from 'node:http';
+import { afterEach, describe, expect, it } from 'vitest';
+import { BDEF_COLLECTION, bdefRelationRoot } from '../../../src/adt/bdef-extension-candidates.js';
+import { AdtClient } from '../../../src/adt/client.js';
+import { RELATIONS_MIME, RELATIONS_PATH } from '../../../src/adt/repository-relations.js';
+import { handleToolCall } from '../../../src/handlers/dispatch.js';
+import { resetCachedFeatures, setCachedDiscovery, setCachedFeatures } from '../../../src/handlers/feature-cache.js';
+import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+import { relationObject, relationXml } from '../../helpers/relation-fixtures.js';
+
+const root = bdefRelationRoot('ZBASE');
+const child = relationObject('ZEXTENSION', 'BDEF/BDO');
+const baseSource = '// Original base: ü\r\ndefine behavior for ENTITY { create; }\r\n';
+const extensionSource = 'extend behavior for ENTITY { }';
+const servers: Server[] = [];
+afterEach(async () => {
+  resetCachedFeatures();
+  await Promise.all(
+    servers.splice(0).map(async (server) => {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }),
+  );
+});
+
+async function setup(
+  opts: {
+    status?: number;
+    wrongContext?: boolean;
+    release?: string;
+    source?: string;
+    candidateSource?: string;
+    deniedUser?: string;
+  } = {},
+) {
+  const paths: string[] = [];
+  const server = createServer((req, res) => {
+    const url = new URL(req.url!, 'http://loopback.invalid');
+    const path = url.pathname.toLowerCase();
+    paths.push(path);
+    if (path.includes('/core/discovery')) {
+      res.setHeader('x-csrf-token', 'TEST');
+      res.end();
+    } else if (path === `${root.uri}/source/main`) res.end(opts.source ?? baseSource);
+    else if (path === '/sap/bc/adt/activation/inactiveobjects') res.end('<inactiveObjects/>');
+    else if (path === RELATIONS_PATH) {
+      if (opts.status) res.writeHead(opts.status).end('synthetic optional failure');
+      else res.end(relationXml(root, [child], opts.wrongContext ? 'ENV' : 'WUL'));
+    } else if (path === `${child.uri}/source/main`) {
+      const deniedAuth = `Basic ${Buffer.from(`${opts.deniedUser}:synthetic`).toString('base64')}`;
+      if (opts.deniedUser && req.headers.authorization === deniedAuth) res.writeHead(403).end('denied');
+      else res.end(opts.candidateSource ?? extensionSource);
+    } else res.writeHead(404).end();
+  });
+  servers.push(server);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Expected listener');
+  const createClient = (username?: string) =>
+    new AdtClient({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      retryUnauthorized: false,
+      ...(username ? { username, password: 'synthetic' } : {}),
+    });
+  const client = createClient();
+  const discovery = new Map([
+    [BDEF_COLLECTION, []],
+    [RELATIONS_PATH, [RELATIONS_MIME]],
+  ]);
+  setCachedFeatures({
+    abapRelease: opts.release ?? '758',
+    rap: { id: 'rap', available: true, mode: 'auto' },
+    discoveryMap: discovery,
+  });
+  setCachedDiscovery(discovery);
+  return {
+    paths,
+    createClient,
+    read: (args: Record<string, unknown> = {}, selectedClient = client) =>
+      handleToolCall(selectedClient, DEFAULT_CONFIG, 'SAPRead', { type: 'BDEF', name: 'ZBASE', ...args }),
+  };
+}
+
+const summary = (result: Awaited<ReturnType<typeof handleToolCall>>) => {
+  const block = result.content.find((entry) => entry.text.startsWith('[extensions] '));
+  return JSON.parse(block!.text.slice('[extensions] '.length));
+};
+
+describe('BDEF extensions in SAPRead', () => {
+  it('none returns the legacy whole result and makes no optional requests', async () => {
+    const s = await setup();
+    expect(await s.read({ extensions: 'none' })).toEqual({ content: [{ type: 'text', text: baseSource }] });
+    expect(s.paths).toEqual([`${root.uri}/source/main`]);
+  });
+
+  it.each(['758', '816', '920'])(
+    'full root reads on %s default to summary and preserve the first block',
+    async (release) => {
+      const s = await setup({ release });
+      const legacy = await s.read({ extensions: 'none' });
+      const result = await s.read();
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]).toEqual(legacy.content[0]);
+      expect(summary(result).identities[0]).toMatchObject({ name: 'ZEXTENSION', type: 'BDEF', version: 'active' });
+      expect(summary(result).providers[0].coverage).toBe('candidate_index');
+      expect(result.content).toHaveLength(2);
+    },
+  );
+
+  it('sources appends a separate labelled active authored source', async () => {
+    const s = await setup();
+    const result = await s.read({ extensions: 'sources' });
+    expect(result.content[0]!.text).toBe(baseSource);
+    expect(
+      result.content.some(
+        (block) => block.text.includes('representation=authored_source') && block.text.endsWith(extensionSource),
+      ),
+    ).toBe(true);
+  });
+
+  it('revalidates active candidate bodies and uses a fresh allowance on the next public call', async () => {
+    const opts = { candidateSource: `${extensionSource}\n// first observation` };
+    const s = await setup(opts);
+    const first = await s.read({ extensions: 'sources' });
+    const firstSends = s.paths.length - 1;
+    opts.candidateSource = `${extensionSource}\n// second observation`;
+    const second = await s.read({ extensions: 'sources' });
+    expect(first.content.find((block) => block.text.startsWith('[extension source '))!.text).toContain(
+      'first observation',
+    );
+    expect(second.content.find((block) => block.text.startsWith('[extension source '))!.text).toContain(
+      'second observation',
+    );
+    expect(summary(first).consumed.sends).toBe(firstSends);
+    expect(summary(second).consumed.sends).toBe(s.paths.length - firstSends - 2);
+    expect(s.paths.filter((path) => path === `${child.uri}/source/main`)).toHaveLength(2);
+    expect(first.content[0]).toEqual(second.content[0]);
+  });
+
+  it('keeps a successful user observation out of another client whose candidate read is denied', async () => {
+    const s = await setup({ deniedUser: 'restricted' });
+    const first = await s.read({ extensions: 'sources' }, s.createClient('authorized'));
+    const second = await s.read({ extensions: 'sources' }, s.createClient('restricted'));
+    expect(summary(first).identities).toHaveLength(1);
+    expect(first.content.some((block) => block.text.startsWith('[extension source '))).toBe(true);
+    expect(second.isError).toBeUndefined();
+    expect(second.content[0]!.text).toBe(baseSource);
+    expect(summary(second).providers[0].status).toBe('denied');
+    expect(summary(second).identities).toEqual([]);
+    expect(second.content.some((block) => block.text.startsWith('[extension source '))).toBe(false);
+    expect(s.paths.filter((path) => path === `${child.uri}/source/main`)).toHaveLength(2);
+  });
+
+  it('partial reads default to none and explicit coverage verifies the whole owning source', async () => {
+    const s = await setup();
+    const partial = await s.read({ lineStart: 1, lineEnd: 1 });
+    expect(partial.content).toHaveLength(1);
+    expect(s.paths).toEqual([`${root.uri}/source/main`]);
+    const explicit = await s.read({ lineStart: 1, lineEnd: 1, extensions: 'summary' });
+    expect(explicit.content[0]).toEqual(partial.content[0]);
+    expect(summary(explicit).scope).toContain('owning');
+    expect(summary(explicit).identities).toHaveLength(1);
+  });
+
+  it.each([401, 403, 429])('keeps the successful base after optional HTTP %s', async (status) => {
+    const s = await setup({ status });
+    const result = await s.read({ extensions: 'sources' });
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]!.text).toBe(baseSource);
+    expect(summary(result).providers[0].status).toBe(status === 429 ? 'incomplete' : 'denied');
+    expect(s.paths).not.toContain(`${child.uri}/source/main`);
+  });
+
+  it('wrong-context native data preserves the base and reports incomplete coverage', async () => {
+    const s = await setup({ wrongContext: true });
+    const result = await s.read();
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]!.text).toBe(baseSource);
+    expect(summary(result).issues).toContain('invalid_provider_response');
+  });
+
+  it('explicit inactive reads never substitute active extension sources', async () => {
+    const s = await setup();
+    const result = await s.read({ version: 'inactive', extensions: 'sources' });
+    expect(result.isError).toBeUndefined();
+    expect(summary(result).root.version).toBe('inactive');
+    expect(summary(result).providers[0].reason).toContain('unsupported_version');
+    expect(s.paths).not.toContain(RELATIONS_PATH);
+  });
+
+  it('does not qualify release 750 from rap.available alone', async () => {
+    const s = await setup({ release: '750' });
+    const result = await s.read();
+    expect(summary(result).providers[0].status).toBe('unsupported');
+    expect(s.paths).not.toContain(RELATIONS_PATH);
+  });
+});

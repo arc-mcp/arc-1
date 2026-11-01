@@ -143,7 +143,7 @@ export async function discoverSourcePlugins(
               });
             }
           });
-          return;
+          break;
         }
         if (resources.elements) {
           const context = unit.type === 'INCL' ? `?context=${encodeURIComponent(mainObjectUri)}` : '';

@@ -8,6 +8,34 @@ type TestClient = Pick<AdtClient, 'getTabl' | 'resolveTablObjectUrl' | 'http' | 
 
 describe('structure hierarchy', () => {
   describe('parseEmbeddedStructures', () => {
+    it('keeps an apostrophe in a legacy line comment from masking later includes', () => {
+      expect(parseEmbeddedStructures("field : abap.char(1); -- don't\n-- include zghost;\ninclude zreal;")).toEqual([
+        { name: 'ZREAL', attribute: null, kind: 'include' },
+      ]);
+    });
+    it('marks unqualified nested or unfinished scans instead of silently claiming complete coverage', () => {
+      for (const source of ['/* see /* note */\ninclude zreal;', "@label: 'unfinished\ninclude zreal;"]) {
+        const issues: string[] = [];
+        expect(parseEmbeddedStructures(source, issues)).toEqual([]);
+        expect(issues.length).toBeGreaterThan(0);
+      }
+    });
+    it('does not turn comments or multiline literals into include evidence', () => {
+      expect(
+        parseEmbeddedStructures(`
+/* include zghost;
+/* nested */ include zghost2;
+*/
+* unmatched comment token /*
+@EndUserText.label: 'literal /*
+include zliteral;
+*/ ''quoted'''
+include /* comment */ zreal with suffix real;
+/* unfinished
+include zunfinished;
+`),
+      ).toEqual([{ name: 'ZREAL', attribute: null, kind: 'include', suffix: 'real' }]);
+    });
     it('parses modern and classic includes but not append syntax from source', () => {
       const refs = parseEmbeddedStructures(`
 @AbapCatalog.enhancement.category: #EXTENSIBLE_CHARACTER_NUMERIC

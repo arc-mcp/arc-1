@@ -16,6 +16,8 @@ reported explicitly. BTP SAP_BASIS 920 is read-only qualified through direct ser
 OAuth: native structural identities and main hooks work; authored structural/local source reads
 return 403 for the tested identity and remain denied without fallback. INTF still returns ENV.
 Positive interface coverage, other releases and BTP principal propagation remain unqualified.
+See the [combined qualification](../research/2026-10-31-extension-test-gaps.md) and
+[current runtime BTP requalification](../research/2026-11-01-cache-fixture-and-btp-requalification.md).
 
 Sources remain separate labelled representations. The active known-subtype ENHO reader may use a
 generated include revision only for a qualified source-unavailable failure: 404/resource-read failure,

@@ -1,5 +1,4 @@
 /** Class-bound identity coverage is distinct from source-code hooks and local class sections. */
-import { isActionDenied } from '../server/deny-actions.js';
 import type { AdtClient } from './client.js';
 import { enhancementIncludeReferences, readEnhancementIncludeRevision } from './enhancement-include.js';
 import { readActiveClassEnhancementSource } from './enhancements.js';
@@ -14,6 +13,7 @@ import {
 } from './extension-discovery.js';
 import {
   NativeRelationProvider,
+  nativeRelationActionDenied,
   RELATION_NAME,
   RelationContextError,
   RelationProtocolError,
@@ -111,8 +111,8 @@ export async function discoverClassIdentities(
       provider.reason = 'unsupported_provider';
       return;
     }
-    if (isActionDenied('SAPNavigate', 'relations', client.safety.denyActions ?? [])) {
-      // The independent hook provider can still run; this policy denies only native relation discovery.
+    // A statically disabled independent provider is not an SAP authorization failure.
+    if (nativeRelationActionDenied(client.safety)) {
       provider.status = 'denied';
       provider.reason = 'native_relation_action_denied';
       return;
