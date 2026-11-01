@@ -646,7 +646,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: CLASS_WRITE_INCLUDES,
             description:
-              'CLAS-ONLY. Do NOT send unless type=CLAS AND action is update / edit_method / edit_class_definition. OMIT it entirely for every other type and for delete / batch_create / add_method / edit_method_signature / delete_method / change_method_visibility (those use /source/main). Targets a class-local include: definitions (CCDEF), implementations (CCIMP), macros, testclasses. edit_method auto-detects it from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses), so you rarely pass it; use include=testclasses to create a new local test class. Whole-include writes auto-create a missing include and produce an inactive draft (read with SAPRead version="inactive" before activation).',
+              'CLAS-ONLY. Do NOT send unless type=CLAS and action=update/edit_method/edit_class_definition. OMIT it entirely otherwise. Select definitions (CCDEF), implementations (CCIMP), macros or testclasses. edit_method auto-detects local includes from lhc_*/lcl_* (implementations) or ltc_* (testclasses). add_method/edit_method_signature/delete_method/change_method_visibility use /source/main. Whole-include update initializes missing includes and leaves an inactive draft; read SAPRead version="inactive" before activation. source="" plus expectedSourceHash clears an existing include; whitespace-only source is refused.',
           },
           ...(btp
             ? { textPart: { type: 'string', enum: ['symbols'] } }

@@ -74,6 +74,35 @@ function runtime(identity = auth(), mode: 'pinned' | 'aggregate' = 'pinned') {
 }
 
 describe('pinned write policy composition', () => {
+  it.each([{ source: '', expectedSourceHash: 'a'.repeat(64) }, { source: '* New include\n' }])(
+    'prepares a valid include update through the pinned route and catalog: %j',
+    async (input) => {
+      const r = registry();
+      const identity = auth();
+      const rawArgs = { action: 'update', type: 'CLAS', name: 'ZARC1_INCLUDE', include: 'definitions', ...input };
+      const result = await prepareMultiTargetCall({
+        options: {
+          mode: 'pinned',
+          registry: r,
+          target: r.targets[0],
+          instanceConfig: base,
+          authorization: projectMultiTargetRequest(r, identity),
+        },
+        toolName: 'SAPWrite',
+        rawArgs,
+        requestId: 'include-valid',
+        authInfo: identity,
+      });
+      expect(result.handled).toBe(false);
+      if (result.handled) throw new Error('Valid include request was refused');
+      expect(result.args).toMatchObject(rawArgs);
+      const write = multiTargetToolDefinitions(getToolDefinitions(runtime()), runtime()).find(
+        (t) => t.name === 'SAPWrite',
+      )!;
+      const validate = new Ajv2020({ strictTypes: false, allowUnionTypes: true }).compile(write.inputSchema);
+      expect(validate(rawArgs), JSON.stringify(validate.errors)).toBe(true);
+    },
+  );
   it.each(['CLAS', 'INTF'])('prepares %s deletion without source or hash', async (type) => {
     const r = registry();
     const identity = auth();

@@ -1,6 +1,7 @@
 import { qualify as deletion } from './deletion-qualification.mjs';
 import { durable } from './durable-journal.mjs';
 import { qualify as formatter } from './formatter-qualification.mjs';
+import { qualifyIncludes } from './include-qualification.mjs';
 import { configuration } from './qualification-config.mjs';
 import { HarnessError, privateJson } from './safe-io.mjs';
 
@@ -50,6 +51,7 @@ export async function qualify(context) {
   }
   return deletion({
     ...context,
+    includeQualifier: qualifyIncludes,
     formatterQualifier: async ({ sessions, sentinels }) =>
       formatter({ ...context, sessions, sentinels, action: { plan: 'formatter-two-user-v2' } }),
   });

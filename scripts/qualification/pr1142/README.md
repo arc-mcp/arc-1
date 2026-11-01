@@ -129,3 +129,25 @@ frozen creator token and strict-PP route, not independently observed for DELETE.
 code covers multiple gates, so it does not identify which gate fired. Actual read-grant values are
 recorded, including wildcard grants. RPC receipts include initialization, catalogs and malformed
 bodies before protocol validation; known access tokens and JWT-shaped strings are redacted.
+
+## Class-include extension (live evidence pending)
+
+The live combined command also runs `include-qualification.mjs` for each writer's temporary
+class before its first whole-owner activation and independent ownership receipt. It exercises
+all four include kinds, missing/stale hashes, existing saves, hash-guarded empty replacement,
+final restoration and denied-route calls. The native observer binds the receipt to all active
+and editable include hashes, then rechecks those hashes before and under any cleanup lock.
+It never replaces the first ownership receipt. A failure before a complete receipt, or any
+later foreign draft visible to the primary native reader, preserves the fixture for investigation.
+It does not establish visibility of other users' private inactive drafts.
+
+The local suite adds seven composed include scenarios: success, ignored clear, accepted stale
+hash, wrong native include proof, a foreign include draft, a failed preliminary read and absent initialization coverage. Native
+reader/cleanup unit tests separately exercise active/editable hash mismatches and a foreign
+draft discovered under the actual shared lock callback. These are offline tests, not live proof.
+The first missing-include read may fail; that is not absence evidence. Only the writer's fresh,
+typed native 404 under the class lock permits initialization. Clearing requires an existing hash.
+
+A stale-hash probe uses the actual first-save hash after a second save. A run that initializes no
+include for either writer fails that coverage assertion while continuing verified fixture cleanup;
+only the recorded `initializedKinds` are evidence for initialization.

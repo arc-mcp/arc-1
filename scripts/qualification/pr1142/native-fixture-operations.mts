@@ -4,6 +4,7 @@ import { AdtApiError, classifySapDomainError, extractExceptionType } from '../..
 import { pinnedRecording, validatePinnedLock } from '../../../src/adt/pinned-write-policy.js';
 import { parseXml } from '../../../src/adt/xml-parser.js';
 import { digest, ownerOf } from './fixture-contract.mjs';
+import { includeKinds } from './include-qualification.mjs';
 
 const headers = { 'Cache-Control': 'no-cache' };
 
@@ -26,12 +27,12 @@ export async function nativeAbsent(fixture: any, http: any, options: any, observ
 }
 
 /** Capture actual native fields before assertions so a failed identity check remains diagnosable. */
-export async function nativeIdentity({ fixture, actor, marker, http, options, observe }: any) {
+export async function nativeIdentity({ fixture, actor, marker, http, options, observe, expectedIncludes }: any) {
   const owner = ownerOf(fixture);
   const metadata = parseXml((await http.get(owner, headers, options)).body)[
     fixture.type === 'CLAS' ? 'abapClass' : 'abapInterface'
   ] as Record<string, any> | undefined;
-  const identity = {
+  const identity: any = {
     name: metadata?.['@_name'] ?? null,
     type: fixture.type,
     package: metadata?.packageRef?.['@_name'] ?? null,
@@ -61,6 +62,25 @@ export async function nativeIdentity({ fixture, actor, marker, http, options, ob
   assert.ok(current.includes(marker), 'Current source marker missing');
   assert.ok(activated.includes(marker), 'Active source marker missing');
   assert.equal(identity.sourceSha256, identity.activeSourceSha256, 'Unexpected inactive draft; preserve it');
+  if (expectedIncludes !== undefined) {
+    assert.equal(fixture.type, 'CLAS');
+    assert.equal(expectedIncludes.complete, true, 'Include qualification is incomplete');
+    assert.deepEqual(Object.keys(expectedIncludes.kinds).sort(), [...includeKinds].sort());
+    identity.includes = {};
+    for (const include of includeKinds) {
+      const expected = expectedIncludes.kinds[include];
+      assert.equal(expected.complete, true);
+      assert.match(expected.sourceHash, /^[a-f0-9]{64}$/);
+      const path = `${owner}/includes/${include}`;
+      const current = (await http.get(path, { ...headers, Accept: 'text/plain' }, options)).body;
+      const active = (await http.get(`${path}?version=active`, { ...headers, Accept: 'text/plain' }, options)).body;
+      const hashes = { sourceSha256: digest(current), activeSourceSha256: digest(active) };
+      identity.includes[include] = hashes;
+      await observe(structuredClone(identity));
+      assert.equal(hashes.sourceSha256, expected.sourceHash, 'Native include differs from PP read-back');
+      assert.equal(hashes.activeSourceSha256, expected.sourceHash, 'Inactive or changed include; preserve it');
+    }
+  }
   return identity;
 }
 

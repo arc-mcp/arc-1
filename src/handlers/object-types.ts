@@ -295,12 +295,14 @@ export function normalizeTypeArgsForValidation(
       if (action === 'edit_text_symbols' && typeof args.source === 'string') cleaned.source = args.source;
       // SAPWrite preserves TABL/DT and TABL/DS so the create path can route by subtype.
       const normType = cleaned.type === undefined ? undefined : normalizeWriteObjectType(String(cleaned.type ?? ''));
-      // A complete class-local include replacement can explicitly clear its source.
+      // Only an exact empty string plus a hash is an intentional include clear.
+      // Optional-field pollution and whitespace-only source retain their refusal behaviour.
       if (
         action === 'update' &&
         normType === 'CLAS' &&
         normalizeClassWriteInclude(cleaned.include) &&
-        typeof args.source === 'string'
+        args.source === '' &&
+        typeof cleaned.expectedSourceHash === 'string'
       )
         cleaned.source = args.source;
       // Drop an inapplicable `include`: it is only meaningful for a CLAS local-include

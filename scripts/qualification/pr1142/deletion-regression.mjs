@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { qualify } from './deletion-qualification.mjs';
+import { qualifyIncludes, includeKinds } from './include-qualification.mjs';
 import { durable } from './durable-journal.mjs';
 import { digest, sourceFor, validateFixtures } from './fixture-contract.mjs';
 
@@ -14,6 +15,13 @@ const actors = [
 ];
 const baseUrl = new URL('https://mcp-sap-docs.cfapps.us10-001.hana.ondemand.com');
 const scenarios = [
+  'includes-success',
+  'includes-bad-clear',
+  'includes-stale-write',
+  'includes-wrong-native',
+  'includes-foreign-draft',
+  'includes-read-loss',
+  'includes-no-initialization',
   'success-replay',
   'frozen-sessions',
   'wrong-identity',
@@ -33,6 +41,7 @@ const scenarios = [
   'abort-before-delete',
 ];
 for (const scenario of scenarios) {
+  const includesEnabled = scenario.startsWith('includes-');
   const root = await mkdtemp(join(tmpdir(), 'arc1-deletion-harness-test-'));
   const manifest = {
     target: 'PR1142/001',
@@ -84,6 +93,7 @@ for (const scenario of scenarios) {
       output,
       requests = 0,
       mutations = 0,
+      includeMutations = 0,
       injected = false,
       formatterCalled = false;
     const abort = new AbortController();
@@ -123,7 +133,10 @@ for (const scenario of scenarios) {
                         scenario === 'invalid-delete-catalog'
                           ? ['action', 'type', 'name', 'source']
                           : ['action', 'type', 'name'],
-                      properties: { action: { enum: ['create', 'update', 'edit_method', 'delete'] } },
+                      properties: {
+                        action: { enum: ['create', 'update', 'edit_method', 'delete'] },
+                        ...(includesEnabled ? { include: { enum: includeKinds } } : {}),
+                      },
                     },
                   },
                   { name: 'SAPActivate' },
@@ -142,10 +155,15 @@ for (const scenario of scenarios) {
           result = failure(scenario === 'wrong-refusal' ? 'WRONG_CODE' : 'MULTI_TARGET_OPERATION_FORBIDDEN');
         else if (name === 'SAPRead') {
           assert.ok(entry);
-          body = { source: entry.source, sourceHash: digest(entry.source) };
+          if (args.include) {
+            if (scenario === 'includes-read-loss') return new Response('unavailable', { status: 500 });
+            if (!Object.hasOwn(entry.includes, args.include)) result = failure('NATIVE_READ_UNAVAILABLE');
+            else body = { source: entry.includes[args.include], sourceHash: digest(entry.includes[args.include]) };
+          } else body = { source: entry.source, sourceHash: digest(entry.source) };
         } else if (name === 'SAPActivate') {
           assert.ok(entry);
           entry.active = true;
+          if (entry.includes) entry.activeIncludes = structuredClone(entry.includes);
           body = { success: true };
         } else if (args.action === 'create') {
           assert.equal(objects.has(args.name), false);
@@ -153,12 +171,45 @@ for (const scenario of scenarios) {
           objects.set(args.name, {
             source: args.source,
             active: false,
+            ...(includesEnabled
+              ? {
+                  includes:
+                    scenario === 'includes-no-initialization'
+                      ? Object.fromEntries(includeKinds.map((kind) => [kind, `default ${kind}\n`]))
+                      : { definitions: 'default definitions\n', macros: 'default macros\n' },
+                }
+              : {}),
             createdBy: scenario === 'wrong-native-author' ? 'ALIEN' : actors.find((a) => a.label === actor).sapUser,
           });
           if (scenario === 'frozen-sessions')
             sessions.set('writerB', { token: { access_token: token('wrong-session') } });
           if (scenario === 'create-uncertain') throw new Error('simulated response loss after create');
           body = { state: 'saved-inactive', target: 'PR1142/001' };
+        } else if (args.action === 'update' && args.include) {
+          assert.ok(entry);
+          assert.ok(includeKinds.includes(args.include));
+          const initialized = !Object.hasOwn(entry.includes, args.include);
+          const stale = !initialized && args.expectedSourceHash !== digest(entry.includes[args.include]);
+          if (stale && !(scenario === 'includes-stale-write' && phase.endsWith('-stale-hash'))) {
+            result = {
+              isError: true,
+              content: [{ type: 'text', text: JSON.stringify({ error: 'PINNED_WRITE_REFUSED', state: 'unchanged' }) }],
+            };
+          } else {
+            mutations++;
+            includeMutations++;
+            if (!(scenario === 'includes-bad-clear' && args.source === '')) entry.includes[args.include] = args.source;
+            body = {
+              ok: true,
+              state: 'saved-inactive',
+              target: 'PR1142/001',
+              type: 'CLAS',
+              name: fixture.name,
+              include: args.include,
+              initialized,
+              sourceHash: digest(entry.includes[args.include]),
+            };
+          }
         } else if (['update', 'edit_method'].includes(args.action)) {
           assert.ok(entry);
           if (args.expectedSourceHash !== digest(entry.source) && scenario !== 'stale-write-accepted')
@@ -222,6 +273,15 @@ for (const scenario of scenarios) {
           sourceSha256: digest(entry.source),
           activeSourceSha256: digest(entry.source),
         };
+        if (includesEnabled && f.type === 'CLAS') {
+          identity.includes = Object.fromEntries(
+            includeKinds.map((kind) => [
+              kind,
+              { sourceSha256: digest(entry.includes[kind]), activeSourceSha256: digest(entry.activeIncludes[kind]) },
+            ]),
+          );
+          if (scenario === 'includes-wrong-native') identity.includes.macros.activeSourceSha256 = '0'.repeat(64);
+        }
         if (entry.createdBy === actors.find((a) => a.label === f.actor).sapUser)
           receipts.set(name, structuredClone(identity));
         proof.fixtures = [{ name, type: f.type, identity }];
@@ -230,7 +290,24 @@ for (const scenario of scenarios) {
           entry.source += 'foreign edit';
           injected = true;
         }
+        if (scenario === 'includes-foreign-draft' && f.type === 'CLAS' && !injected) {
+          entry.includes.macros += 'foreign edit';
+          injected = true;
+        }
         assert.equal(digest(entry.source), receipts.get(name)?.sourceSha256, 'Foreign edit preserved');
+        if (includesEnabled && f.type === 'CLAS')
+          for (const kind of includeKinds) {
+            assert.equal(
+              digest(entry.includes[kind]),
+              receipts.get(name)?.includes[kind].sourceSha256,
+              'Foreign include preserved',
+            );
+            assert.equal(
+              digest(entry.activeIncludes[kind]),
+              receipts.get(name)?.includes[kind].activeSourceSha256,
+              'Active include differs',
+            );
+          }
         proof.fixtures = [{ name, unchanged: true, identity: receipts.get(name) }];
       } else if (mode === 'absence') {
         if (scenario === 'unknown-absence') throw new Error('simulated generic service 404');
@@ -244,6 +321,19 @@ for (const scenario of scenarios) {
         if (entry) {
           assert.ok(receipts.has(name), 'No ownership receipt: preserve the object');
           assert.equal(digest(entry.source), receipts.get(name).sourceSha256, 'Foreign edit preserved');
+          if (includesEnabled && f.type === 'CLAS')
+            for (const kind of includeKinds) {
+              assert.equal(
+                digest(entry.includes[kind]),
+                receipts.get(name)?.includes[kind].sourceSha256,
+                'Foreign include preserved',
+              );
+              assert.equal(
+                digest(entry.activeIncludes[kind]),
+                receipts.get(name)?.includes[kind].activeSourceSha256,
+                'Active include differs',
+              );
+            }
           objects.delete(name);
         }
         proof.fixtures = [{ name, absent: true }];
@@ -278,16 +368,18 @@ for (const scenario of scenarios) {
         nativeOverride,
         configurationOverride: { root, target: 'PR1142/001', actors },
         formatterQualifier,
+        ...(includesEnabled ? { includeQualifier: qualifyIncludes } : {}),
         journalOverride,
         signal: abort.signal,
       });
     await invoke();
     assert.ok(output);
-    if (['success-replay', 'frozen-sessions'].includes(scenario)) {
+    if (['success-replay', 'frozen-sessions', 'includes-success'].includes(scenario)) {
       assert.equal(output.failed, 0, JSON.stringify(output.failures));
       assert.equal(output.allAbsent, true);
       assert.equal(objects.size, 0);
       assert.equal(formatterCalled, true);
+      if (includesEnabled) assert.equal(includeMutations, 32);
       if (scenario === 'success-replay') {
         const bytes = await readFile(`${root}/deletion-qualification.json`, 'utf8'),
           beforeRequests = requests;
@@ -308,6 +400,11 @@ for (const scenario of scenarios) {
       if (scenario === 'formatter-failure') assert.equal(formatterCalled, true);
       if (
         [
+          'includes-bad-clear',
+          'includes-stale-write',
+          'includes-wrong-native',
+          'includes-foreign-draft',
+          'includes-read-loss',
           'create-uncertain',
           'stale-write-accepted',
           'wrong-native-author',
@@ -323,7 +420,22 @@ for (const scenario of scenarios) {
         assert.equal(output.allAbsent, true);
       }
     }
-    console.log(JSON.stringify({ scenario, passed: true, requests, mutations, remainingObjects: objects.size }));
+    if (scenario === 'includes-read-loss') assert.equal(includeMutations, 0);
+    if (scenario === 'includes-no-initialization') {
+      assert.equal(output.failed, 2);
+      assert.ok(
+        output.failures.every(
+          (f) => f.test.endsWith('.include_initialization_exercised') && f.initializedKinds.length === 0,
+        ),
+      );
+      assert.equal(formatterCalled, true);
+      assert.equal(objects.size, 0);
+    }
+    if (scenario === 'includes-foreign-draft')
+      assert.ok(objects.get(manifest.fixtures[0].name).includes.macros.endsWith('foreign edit'));
+    console.log(
+      JSON.stringify({ scenario, passed: true, requests, mutations, includeMutations, remainingObjects: objects.size }),
+    );
   } finally {
     globalThis.fetch = oldFetch;
     await rm(root, { recursive: true, force: true });

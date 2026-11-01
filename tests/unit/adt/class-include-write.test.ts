@@ -345,7 +345,7 @@ describe('shared include adapter with explicit pinned policy', () => {
     expect(unlocks()).toHaveLength(1);
   });
 
-  it('allows an explicit empty replacement only after checking the existing include hash', async () => {
+  it('checks the existing include hash before an explicit empty replacement', async () => {
     const { client, pinned } = fixture();
     const result = await safeUpdateClassInclude(
       client.http,

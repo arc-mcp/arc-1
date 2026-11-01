@@ -136,7 +136,8 @@ only the aggregate compatibility connection cannot write through that connection
 For an existing class include, read `SAPRead(type="CLAS", name=..., include=..., format="editable")`
 and pass that include's hash to update. Omit `include` for main source. An omitted hash can initialize
 a new optional include only after native absence is verified under the class lock; it cannot replace
-an existing include. Explicit empty include source clears its contents. Results retain a partial
+an existing include. To clear an existing include, send exactly `source=""` with its current `expectedSourceHash`.
+Empty source without a hash and whitespace-only source are refused. Results retain a partial
 initialization if the following save fails. Activation still affects the complete class and its drafts.
 This draft's include addition has offline tests; its [native/PP qualification is pending](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-includes.md).
 

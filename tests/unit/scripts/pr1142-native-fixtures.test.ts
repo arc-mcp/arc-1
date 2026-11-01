@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { digest } from '../../../scripts/qualification/pr1142/fixture-contract.mjs';
+import { includeKinds } from '../../../scripts/qualification/pr1142/include-qualification.mjs';
 import {
   cleanupNativeFixture,
   nativeAbsent,
@@ -83,6 +85,66 @@ describe('PR1142 actual native identity and cleanup branches', () => {
     expect(evidence).toEqual([{ statusCode: 404, exceptionType: null, classifiedServiceError: false }]);
   });
 
+  function includeIdentity() {
+    const observed: any[] = [];
+    let foreign: 'current' | 'active' | undefined;
+    const expectedIncludes = {
+      complete: true,
+      kinds: Object.fromEntries(includeKinds.map((kind) => [kind, { complete: true, sourceHash: digest(kind) }])),
+    };
+    const get = vi.fn(async (path: string) => {
+      if (path.endsWith(fixture.name.toLowerCase())) return { body: metadata() };
+      if (path.includes('/source/main')) return { body: 'MARKER main' };
+      const kind = path.split('/includes/')[1]?.split('?')[0];
+      expect(includeKinds).toContain(kind);
+      const changed = kind === 'macros' && foreign && path.includes('?version=active') === (foreign === 'active');
+      return { body: changed ? `${kind} foreign draft` : kind };
+    });
+    const identity = () =>
+      nativeIdentity({
+        fixture,
+        actor: { sapUser: 'FIRST' },
+        marker: 'MARKER',
+        http: { get },
+        options: {},
+        expectedIncludes,
+        observe: async (value: any) => observed.push(value),
+      });
+    return {
+      identity,
+      get,
+      observed,
+      expectedIncludes,
+      change: (value: 'current' | 'active') => {
+        foreign = value;
+      },
+    };
+  }
+
+  it('requires every active and editable include to match its PP hash', async () => {
+    const test = includeIdentity();
+    const identity = await test.identity();
+    expect(Object.keys(identity.includes)).toEqual(includeKinds);
+    for (const kind of includeKinds)
+      expect(identity.includes[kind]).toEqual({ sourceSha256: digest(kind), activeSourceSha256: digest(kind) });
+    expect(test.get).toHaveBeenCalledTimes(11);
+  });
+
+  it.each(['current', 'active'] as const)('records and refuses a changed %s include', async (version) => {
+    const test = includeIdentity();
+    test.change(version);
+    await expect(test.identity()).rejects.toThrow(/include/);
+    const last = test.observed.at(-1);
+    expect(last.includes.macros.sourceSha256).not.toBe(last.includes.macros.activeSourceSha256);
+    expect(last.sourceSha256).toBe(digest('MARKER main'));
+  });
+
+  it('refuses a partial include qualification before accepting an ownership receipt', async () => {
+    const test = includeIdentity();
+    test.expectedIncludes.complete = false;
+    await expect(test.identity()).rejects.toThrow('Include qualification is incomplete');
+  });
+
   function cleanup() {
     const owned = { createdBy: 'FIRST', sourceSha256: 'owned' };
     const receipt: any = {
@@ -135,5 +197,21 @@ describe('PR1142 actual native identity and cleanup branches', () => {
       '/sap/bc/adt/oo/classes/zarc1_dpp_ac_1234abcd',
       'LOCK',
     );
+  });
+
+  it('preserves a foreign include draft discovered by the actual native reader under the class lock', async () => {
+    const native = includeIdentity();
+    const test = cleanup();
+    test.receipt.fixtures[0].identity = await native.identity();
+    test.identity.mockImplementation(() => native.identity());
+    vi.mocked(withLockedMutation).mockImplementation(async (...args) => {
+      native.change('current');
+      const lock: any = { lockHandle: 'LOCK' };
+      await args[4].validateLock(args[0], lock);
+      return args[5](args[0], lock);
+    });
+    await expect(cleanupNativeFixture(test)).rejects.toThrow('Native include differs');
+    expect(deleteObject).not.toHaveBeenCalled();
+    expect(test.identity).toHaveBeenCalledTimes(2);
   });
 });

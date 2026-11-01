@@ -14,7 +14,7 @@ import { assertSafeDiagnosticEnvironment, privateJson } from './safe-io.mjs';
 retainNativeWorkerOnInterrupt();
 assertSafeDiagnosticEnvironment();
 validateConfiguration(configuration);
-await verifyRunManifest(configuration.root);
+const run = await verifyRunManifest(configuration.root);
 
 assert.equal(process.env.TEST_SAP_URL, 'https://a4h.marianzeis.de');
 assert.equal(process.env.TEST_SAP_CLIENT, '001');
@@ -25,6 +25,13 @@ else assert.equal(attempt, undefined);
 assert.ok(['preflight', 'identity', 'unchanged', 'absence', 'cleanup'].includes(mode));
 const manifest = await privateJson(`${root}/fixture-manifest.json`);
 const manifestSha256 = validateFixtures(manifest);
+const qualification = mode === 'preflight' ? undefined : await privateJson(`${root}/deletion-qualification.json`);
+if (qualification) {
+  assert.equal(qualification.plan, 'delete-two-user-v1');
+  assert.equal(qualification.target, target);
+  assert.equal(qualification.manifestSha256, manifestSha256);
+  for (const key of ['runId', 'sourceRevision', 'harnessSha256']) assert.equal(qualification[key], run[key]);
+}
 const selected = mode === 'preflight' ? manifest.fixtures : manifest.fixtures.filter((f: any) => f.name === name);
 assert.equal(selected.length, mode === 'preflight' ? 4 : 1);
 const original = getTestClient();
@@ -45,6 +52,7 @@ const identity = (fixture: any, active = http) =>
     marker: manifest.marker,
     http: active,
     options,
+    expectedIncludes: qualification?.fixtures.find((f: any) => f.name === fixture.name)?.includes,
     observe: async (observed: any) => {
       report.observedIdentities.push({ fixture: fixture.name, at: new Date().toISOString(), identity: observed });
       await durable(path, report);
@@ -58,6 +66,9 @@ const report: any = {
   client: '001',
   nativeReader: actors[0].sapUser,
   manifestSha256,
+  runId: run.runId,
+  sourceRevision: run.sourceRevision,
+  harnessSha256: run.harnessSha256,
   fixtures: [],
   observedIdentities: [],
 };

@@ -33,6 +33,8 @@ let initFailure: number;
 let putFailure: number;
 let readbackMismatch: boolean;
 let packageChange: boolean;
+let recordingChange: boolean;
+let unlockFailure: boolean;
 let transportable: boolean;
 let locked: boolean;
 const requests: Array<{ path: string; method: string; body: string }> = [];
@@ -46,6 +48,8 @@ beforeEach(() => {
   putFailure = 0;
   readbackMismatch = false;
   packageChange = false;
+  recordingChange = false;
+  unlockFailure = false;
   transportable = false;
   locked = false;
   requests.length = 0;
@@ -58,7 +62,7 @@ beforeEach(() => {
     if (parsed.pathname.includes('transportchecks'))
       return mockResponse(
         200,
-        `<DATA><DEVCLASS>${pkg}</DEVCLASS><DLVUNIT>${transportable ? 'HOME' : 'LOCAL'}</DLVUNIT><OPERATION></OPERATION><RESULT>S</RESULT><RECORDING>${transportable ? 'X' : ''}</RECORDING></DATA>`,
+        `<DATA><DEVCLASS>${pkg}</DEVCLASS><DLVUNIT>${transportable ? 'HOME' : 'LOCAL'}</DLVUNIT><OPERATION></OPERATION><RESULT>S</RESULT><RECORDING>${transportable || (recordingChange && locked) ? 'X' : ''}</RECORDING></DATA>`,
       );
     if (parsed.pathname.includes('transportrequests'))
       return mockResponse(
@@ -70,9 +74,10 @@ beforeEach(() => {
       return mockResponse(
         200,
         `<DATA><LOCK_HANDLE>class-lock</LOCK_HANDLE><CORRNR>${transportable ? 'A4HK900002' : ''}</CORRNR><IS_LOCAL>${transportable ? '' : 'X'}</IS_LOCAL></DATA>`,
+        unlockFailure ? { 'set-cookie': 'sap-contextid=owned; Path=/' } : {},
       );
     }
-    if (parsed.searchParams.get('_action') === 'UNLOCK') return mockResponse(200, '');
+    if (parsed.searchParams.get('_action') === 'UNLOCK') return mockResponse(unlockFailure ? 503 : 200, '');
     if (parsed.pathname.toLowerCase() === owner && method === 'GET')
       return mockResponse(
         200,
@@ -154,6 +159,37 @@ describe('pinned class include handler and native lock policy', () => {
     expect(includeWrites()).toHaveLength(1);
   });
 
+  it.each([
+    { source: '', expectedSourceHash: undefined },
+    { source: ' \r\n\t', expectedSourceHash: undefined },
+    { source: ' \r\n\t', expectedSourceHash: sourceHash(original) },
+  ])('refuses ambiguous blank source without a single-target PUT: %j', async (input) => {
+    const legacy = {
+      ...config,
+      targetId: undefined,
+      multiTargetEndpoints: false,
+      multiTargetWrite: undefined,
+      ppEnabled: false,
+      ppStrict: false,
+    };
+    const client = new AdtClient({ baseUrl: 'http://sap:8000', safety: { ...defaultSafetyConfig(), ...legacy } });
+    const result = await handleToolCall(client, legacy, 'SAPWrite', args(input));
+    expect(result.isError).toBe(true);
+    expect(includeWrites()).toHaveLength(0);
+    expect(stored).toBe(original);
+  });
+
+  it.each(['', ' \r\n\t'])(
+    'never initializes an absent pinned include from blank source without a hash: %j',
+    async (source) => {
+      stored = undefined;
+      const { result } = await invoke({ source, expectedSourceHash: undefined });
+      expect(result.isError).toBe(true);
+      expect(includeWrites()).toHaveLength(0);
+      expect(stored).toBeUndefined();
+    },
+  );
+
   it.each([undefined, 'a'.repeat(64)])('refuses missing or stale include hashes: %s', async (expectedSourceHash) => {
     const { body } = await invoke({ expectedSourceHash });
     expect(body).toMatchObject({ state: 'unchanged', phase: 'include-read' });
@@ -198,6 +234,33 @@ describe('pinned class include handler and native lock policy', () => {
     expect(body).toMatchObject({ state: 'unchanged', phase: 'locked-policy' });
     expect(requests.some((r) => r.path.includes('/includes/'))).toBe(false);
     expect(requests.filter((r) => r.path.includes('_action=UNLOCK'))).toHaveLength(1);
+  });
+
+  it('refuses recording drift under the lock before reading or writing an include', async () => {
+    recordingChange = true;
+    const { result } = await invoke();
+    expect(result.isError).toBe(true);
+    expect(requests.some((r) => r.path.includes('/includes/'))).toBe(false);
+    expect(requests.filter((r) => r.path.includes('_action=UNLOCK'))).toHaveLength(1);
+  });
+
+  it.each([false, true])('retains saved include evidence when unlock fails (initialized=%s)', async (initialized) => {
+    if (initialized) stored = undefined;
+    unlockFailure = true;
+    const { result, body } = await invoke(initialized ? { expectedSourceHash: undefined } : {});
+    expect(result.isError).toBe(true);
+    expect(body).toMatchObject({
+      error: 'PINNED_WRITE_INCOMPLETE',
+      state: 'saved-inactive',
+      include: 'definitions',
+      initialized,
+      sourceHash: sourceHash(replacement),
+      cleanupFailed: true,
+      sessionClosed: true,
+    });
+    expect(includeWrites().map((r) => r.method)).toEqual(initialized ? ['POST', 'PUT'] : ['PUT']);
+    expect(requests.filter((r) => r.path.includes('_action=UNLOCK'))).toHaveLength(1);
+    expect(requests.some((r) => r.method === 'DELETE')).toBe(false);
   });
 
   it.each([400, 503])('retains the partial initialization if the source save fails with %s', async (status) => {

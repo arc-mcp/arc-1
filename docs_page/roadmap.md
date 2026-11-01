@@ -212,7 +212,10 @@ and request-scoped package hierarchy checks. Follow-up infrastructure binds nati
 mutation budget and verifies CTS parent/task scopes. The follow-up Claude review loop is accepted,
 with fresh hierarchy early-exit and complete nested-schema drift tests; these do not enable
 additional operations. The explicit capability table and mixed-tool admission/projection infrastructure are implemented.
-Broader type/action adapters and their PP qualification remain outstanding.
+Broader type/action adapters and their PP qualification remain outstanding. The class-include adapter and
+its two-writer qualification harness are implemented in the draft; the first Opus include review
+identified an ambiguous blank-source case, now restricted to hash-guarded clearing. Live include
+qualification and the follow-up review remain open.
 The formatter and local CLAS/INTF deletion adapters now have a
 [combined two-writer PP qualification](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
 at `1b234d3a4`: native authorship/source binding, typed absence, v5 optional-preference preservation

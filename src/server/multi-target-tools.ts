@@ -159,7 +159,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                 source: {
                   type: 'string',
                   description:
-                    'Complete CLAS/INTF main source for create/update, or the selected CLAS include for update (an explicit empty include clears it); an existing main method body or complete METHOD…ENDMETHOD block for edit_method. Required for create/update/edit_method; omit for delete.',
+                    'Complete CLAS/INTF main source for create/update, or the selected CLAS include for update (source="" with expectedSourceHash clears an existing include); an existing main method body or complete METHOD…ENDMETHOD block for edit_method. Required for create/update/edit_method; omit for delete.',
                 },
                 package: {
                   type: 'string',

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { durable } from './durable-journal.mjs';
 import { actors, root, target, validateFixtures } from './fixture-contract.mjs';
+import { includeKinds } from './include-qualification.mjs';
 import { McpSession } from './mcp-checks.mjs';
 import { nativeCheck } from './native-check.mjs';
 import { configuration, validateConfiguration } from './qualification-config.mjs';
@@ -22,6 +23,7 @@ export async function qualify({
   nativeOverride,
   configurationOverride,
   formatterQualifier,
+  includeQualifier,
   journalOverride,
   signal,
 }) {
@@ -201,6 +203,24 @@ export async function qualify({
           `${actor.label}.delete_schema`,
           schema({ action: 'delete', type: 'CLAS', name: manifest.fixtures[0].name }),
         );
+        if (includeQualifier) {
+          ensure(
+            `${actor.label}.include_enum`,
+            sameSet(write.inputSchema.properties.include?.enum ?? [], includeKinds),
+          );
+          for (const include of includeKinds)
+            ensure(
+              `${actor.label}.${include}.clear_schema`,
+              schema({
+                action: 'update',
+                type: 'CLAS',
+                name: manifest.fixtures[0].name,
+                include,
+                source: '',
+                expectedSourceHash: 'a'.repeat(64),
+              }),
+            );
+        }
       }
       ensure(`${actor.label}.excluded_tools`, !tools.some((t) => t.name === 'SAPGit' || t.name.startsWith('Custom_')));
     }
@@ -269,6 +289,9 @@ export async function qualify({
       ensure(`${phase}.saved`, (await call(client, 'SAPWrite', changed)).body?.state === 'saved-inactive');
       const third = await editable(fixture);
       ensure(`${phase}.changed`, third.sourceHash !== second.sourceHash);
+      if (includeQualifier && fixture.type === 'CLAS') {
+        await includeQualifier({ fixture, marker: manifest.marker, entry, client, target, call, ensure, step, save });
+      }
       step(`activate-${fixture.name}`);
       entry.activationAttempted = true;
       await save();
@@ -282,6 +305,18 @@ export async function qualify({
           receipt.fixtures[0].identity?.createdBy === actors.find((a) => a.label === fixture.actor).sapUser,
       );
       const observed = receipt.fixtures[0].identity;
+      if (includeQualifier && fixture.type === 'CLAS') {
+        ensure(
+          `${phase}.native_includes`,
+          entry.includes?.complete === true &&
+            sameSet(Object.keys(entry.includes.kinds), includeKinds) &&
+            Object.entries(entry.includes.kinds).every(
+              ([kind, value]) =>
+                observed.includes?.[kind]?.sourceSha256 === value.sourceHash &&
+                observed.includes?.[kind]?.activeSourceSha256 === value.sourceHash,
+            ),
+        );
+      }
       ensure(
         `${phase}.native_source`,
         observed.name === fixture.name &&
@@ -292,6 +327,12 @@ export async function qualify({
       entry.sourceHash = third.sourceHash;
       entry.nativeIdentity = observed;
       await save();
+      if (includeQualifier && fixture.type === 'CLAS') {
+        // Missing coverage fails qualification without interrupting activation/cleanup evidence.
+        record(`${fixture.name}.include_initialization_exercised`, entry.includes.initializedKinds.length > 0, {
+          initializedKinds: entry.includes.initializedKinds,
+        });
+      }
     }
     if (formatterQualifier) {
       step('formatter-qualification');
@@ -327,6 +368,32 @@ export async function qualify({
           { ...extra, action: 'delete', type: fixture.type, name: fixture.name },
           'MULTI_TARGET_OPERATION_FORBIDDEN',
         );
+        if (includeQualifier && fixture.type === 'CLAS') {
+          const hash = journal.fixtures.find((f) => f.name === fixture.name).includes.kinds.macros.sourceHash;
+          await call(
+            denied,
+            'SAPWrite',
+            {
+              ...extra,
+              action: 'update',
+              type: 'CLAS',
+              name: fixture.name,
+              include: 'macros',
+              source: 'forbidden',
+              expectedSourceHash: hash,
+            },
+            'MULTI_TARGET_OPERATION_FORBIDDEN',
+          );
+          const current = (
+            await call(clients[fixture.actor], 'SAPRead', {
+              type: 'CLAS',
+              name: fixture.name,
+              include: 'macros',
+              format: 'editable',
+            })
+          ).body;
+          ensure(`${label}.${fixture.name}.include_unchanged`, current?.sourceHash === hash);
+        }
         ensure(
           `${label}.${fixture.name}.unchanged`,
           (await editable(fixture)).sourceHash === journal.fixtures.find((f) => f.name === fixture.name).sourceHash,

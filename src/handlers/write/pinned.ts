@@ -62,9 +62,14 @@ export async function handlePinnedWrite(
     include = normalizeClassWriteInclude(args.include);
     if (args.include !== undefined && (action !== 'update' || type !== 'CLAS' || !include))
       throw new AdtSafetyError('Only CLAS update supports definitions, implementations, macros or testclasses.');
-    if (typeof args.source !== 'string' || (!include && !args.source.trim()))
+    if (
+      typeof args.source !== 'string' ||
+      (!args.source.trim() && (!include || args.source !== '' || typeof args.expectedSourceHash !== 'string'))
+    )
       throw new AdtSafetyError(
-        include ? 'Include source is required; an explicit empty string clears it.' : 'A non-empty source is required.',
+        include
+          ? 'Include source is required; source="" with an existing include hash clears it.'
+          : 'A non-empty source is required.',
       );
     if (
       action !== 'create' &&
