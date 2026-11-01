@@ -129,6 +129,10 @@ SAP documents formatter preferences as user-specific for the selected system con
 system settings. The [native adapter evidence](../research/2026-11-01-broader-pinned-pp-writes-formatter.md)
 corrects that earlier assumption and records the separate two-user PP qualification. Claude
 acceptance remains pending; the formatter result does not accept this broader ADR.
+The [CLAS/INTF deletion integration](../research/2026-11-01-broader-pinned-pp-writes-deletion.md)
+reuses native DELETE and the shared owning-session lifecycle with fresh recording/package checks
+and a native absence readback. Its direct-native evidence is local; PP qualification and final
+review remain pending. It does not qualify other object families' deletion prechecks.
 Quickfix application returns deltas; source persistence still goes through guarded SAPWrite.
 
 ## Upgrade and acceptance

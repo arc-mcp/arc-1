@@ -129,6 +129,7 @@ only the aggregate compatibility connection cannot write through that connection
 | `SAPWrite.create` | One CLAS or INTF; explicit package and complete source; required allowed request/task for a transportable package |
 | `SAPWrite.update` | CLAS/INTF main source; `expectedSourceHash` from `SAPRead(format="editable")` |
 | `SAPWrite.edit_method` | Existing CLAS main-source method; hash of the complete editable main source |
+| `SAPWrite.delete` | One CLAS/INTF owner; actual package and native recording checks before/under lock, followed by verified owner absence; omit source and source hash |
 | `SAPActivate` | One CLAS/INTF owner; activates all of that owner's existing inactive drafts and includes |
 | `SAPLint.set_formatter_settings` | Partial indentation/style patch of the mapped SAP user's formatter preferences on this target; native read/merge/write/read-back, not a package-owned object |
 
@@ -143,12 +144,18 @@ ETags are used when available; otherwise the result reports `native-unconditiona
 updates to the same user's preferences can overwrite each other. An uncertain outcome is not a
 rollback; read the settings before deciding whether another update is appropriate. The
 [formatter qualification record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-formatter.md)
-distinguishes implementation, direct native evidence and pending PP acceptance in draft PR #1142.
+records direct native and two-user PP evidence; final Claude acceptance remains pending in draft PR #1142.
+
+Deletion removes the current complete owner. It does not require or protect a previous source read.
+If SAP accepts DELETE but absence cannot be verified, the result remains unconfirmed; inspect the
+object before deciding whether to try again. A verified deletion with failed cleanup is reported
+as deleted with a cleanup failure. The [deletion record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-deletion.md)
+currently contains direct native evidence; its two-user PP qualification is still pending.
 
 Creates and edits save inactive source. Review it before activation. **Activation is whole-owner**,
 including drafts created previously or by another session; it is not method-only activation.
 Use `SAP_DENY_ACTIONS=SAPActivate` if your team must activate separately in ADT. Hidden actions,
-other types, deletes, include editing, batches, RAP/DDIC, publication, transport management and Git
+other types, include editing, batches, RAP/DDIC, publication, transport management and Git
 are refused even if a client sends the call directly. Per-call lint-disable options are unavailable.
 ABAP Unit can execute newly authored code under the SAP user; deny `SAPDiagnose.unittest` unless
 that execution is intended. Global lint configuration applies; `SAP_CHECK_BEFORE_WRITE` remains advisory. SAP authorization is

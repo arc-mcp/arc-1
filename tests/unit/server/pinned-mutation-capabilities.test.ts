@@ -26,6 +26,7 @@ const admitted = [
   'SAPWrite.update',
   'SAPWrite.edit_method',
   'SAPActivate.activate',
+  'SAPWrite.delete',
   'SAPLint.set_formatter_settings',
 ];
 const validArguments = (tool: string, action?: string) =>
@@ -61,6 +62,13 @@ describe('pinned mutation capability matrix', () => {
         resource: 'whole-owner',
         types: ['CLAS', 'INTF'],
         fields: ['action', 'type', 'name'],
+      },
+      {
+        tool: 'SAPWrite',
+        action: 'delete',
+        resource: 'whole-owner',
+        types: ['CLAS', 'INTF'],
+        fields: ['action', 'type', 'name', 'transport'],
       },
       {
         tool: 'SAPLint',

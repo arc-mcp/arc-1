@@ -139,7 +139,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
     return {
       ...tool,
       description: write
-        ? 'Create CLAS/INTF or update their main source on this pinned PP target. edit_method supports existing CLAS main methods. Updates require expectedSourceHash from SAPRead(format="editable"). Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate activates the complete owner, including existing inactive includes.'
+        ? 'Create/delete CLAS/INTF or update their main source on this pinned PP target. edit_method supports existing CLAS main methods. Updates require expectedSourceHash from SAPRead(format="editable"); delete takes no source/hash and verifies native owner absence. Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate activates the complete owner, including existing inactive includes.'
         : 'Activate one CLAS/INTF owner on this pinned PP target, including ALL its existing inactive drafts and includes. Additional owners are refused. This is not method-only activation.',
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
       inputSchema: {
@@ -160,7 +160,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                 package: {
                   type: 'string',
                   description:
-                    'Required explicit package for create. Must match both server and destination policies. Omit for updates.',
+                    'Required explicit package for create. Must match both server and destination policies. Omit for update/delete.',
                 },
                 transport: {
                   type: 'string',
@@ -171,7 +171,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                   type: 'string',
                   pattern: '^[a-f0-9]{64}$',
                   description:
-                    'Required for update/edit_method: SHA-256 from SAPRead(format="editable") on this owner main source. Omit for create.',
+                    'Required for update/edit_method: SHA-256 from SAPRead(format="editable") on this owner main source. Omit for create/delete.',
                 },
                 method: {
                   type: 'string',

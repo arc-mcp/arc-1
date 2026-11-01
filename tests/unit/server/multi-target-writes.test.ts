@@ -73,6 +73,68 @@ function runtime(identity = auth(), mode: 'pinned' | 'aggregate' = 'pinned') {
 }
 
 describe('pinned write policy composition', () => {
+  it.each(['CLAS', 'INTF'])('prepares %s deletion without source or hash', async (type) => {
+    const r = registry();
+    const identity = auth();
+    const result = await prepareMultiTargetCall({
+      options: {
+        mode: 'pinned',
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: base,
+        authorization: projectMultiTargetRequest(r, identity),
+      },
+      toolName: 'SAPWrite',
+      rawArgs: { action: 'delete', type, name: 'ZARC1_DELETE' },
+      requestId: 'delete-valid',
+      authInfo: identity,
+    });
+    expect(result.handled).toBe(false);
+    const write = multiTargetToolDefinitions(getToolDefinitions(runtime()), runtime()).find(
+      (t) => t.name === 'SAPWrite',
+    )!;
+    expect((write.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).toContain('delete');
+    const denied = filterToolsByAuthScope([write], ['read', 'write'], ['SAPWrite.delete'])[0];
+    expect((denied.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).not.toContain('delete');
+  });
+  it.each(['reader', 'no-write-grant', 'destination-readonly', 'global-readonly', 'aggregate', 'basic'] as const)(
+    'keeps deletion out of %s catalogs and direct calls',
+    async (kind) => {
+      const instance = { ...base, allowWrites: kind !== 'global-readonly', multiTargetAllowBasicAuth: true };
+      const r = registry(
+        kind === 'destination-readonly' || kind === 'basic' ? { 'arc1.allow_writes': 'false' } : {},
+        instance,
+        kind === 'basic' ? 'BasicAuthentication' : 'PrincipalPropagation',
+      );
+      const identity = kind === 'reader' ? auth(['A4H/001'], ['read']) : kind === 'no-write-grant' ? auth([]) : auth();
+      const options = {
+        mode: kind === 'aggregate' ? ('aggregate' as const) : ('pinned' as const),
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: instance,
+        authorization: projectMultiTargetRequest(r, identity),
+      };
+      const config = buildMultiTargetConfig(instance, r.targets[0], options);
+      expect(multiTargetToolDefinitions(getToolDefinitions(config), config).some((t) => t.name === 'SAPWrite')).toBe(
+        false,
+      );
+      const result = await prepareMultiTargetCall({
+        options,
+        toolName: 'SAPWrite',
+        rawArgs: {
+          action: 'delete',
+          type: 'CLAS',
+          name: 'ZARC1_DELETE',
+          ...(kind === 'aggregate' ? { target: 'A4H/001' } : {}),
+        },
+        requestId: 'delete-denied',
+        authInfo: identity,
+      });
+      expect(result.handled).toBe(true);
+      if (!result.handled) throw new Error('Deletion escaped route refusal');
+      expect(JSON.stringify(result.result)).toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
+    },
+  );
   it('adds only the explicit formatter companions and setting action to a writable pinned catalog', () => {
     expect(PINNED_READ_COMPANIONS.map(({ tool, action, fields }) => ({ tool, action, fields }))).toEqual([
       { tool: 'SAPLint', action: 'get_formatter_settings', fields: ['action'] },
@@ -224,7 +286,7 @@ describe('pinned write policy composition', () => {
       expect(instructions.length).toBeLessThan(2048);
       if (kind === 'writer') {
         expect(instructions).toContain('scoped read/write');
-        expect(instructions).toContain('CLAS/INTF main-source writes require both package policies');
+        expect(instructions).toContain('CLAS/INTF main-source writes and owner deletion require both package policies');
         expect(instructions).toContain('Activation affects the whole owner');
         expect(instructions).not.toContain('Writes, activation, transport/Git mutations');
       } else {

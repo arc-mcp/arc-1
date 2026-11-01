@@ -5,16 +5,16 @@ import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
 import { throwIfRequestCancelled } from '../../adt/http-deadline.js';
 import { mutationClient } from '../../adt/mutation-client.js';
-import { type MutationCleanupState, pinnedMutationContext } from '../../adt/mutation-context.js';
+import type { MutationCleanupState } from '../../adt/mutation-context.js';
+import { deletePinnedOwner } from '../../adt/pinned-delete.js';
 import { assertPinnedOwner, pinnedRecording, validatePinnedLock } from '../../adt/pinned-write-policy.js';
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
 import { assertSourceHash, sourceHash } from '../../adt/source-precondition.js';
 import { spliceMethod } from '../../context/method-surgery.js';
-import { getCurrentContext } from '../../server/context.js';
-import { pinnedMutationAllowed } from '../../server/multi-target-write-surface.js';
 import type { ServerConfig } from '../../server/types.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import { objectUrlForType } from '../object-types.js';
+import { pinnedOperationContext, pinnedOperationResult } from '../pinned-operation.js';
 import { type ToolResult, textResult, toolJson } from '../shared.js';
 import {
   buildCreateXml,
@@ -38,12 +38,19 @@ export async function handlePinnedWrite(
   try {
     // The HTTP gate validates all raw fields before Zod strips unknown fields. Recheck capability here.
     checkOperation(client.safety, OperationType.Update, 'PinnedWrite');
-    if (!client.safety.multiTargetWrite?.enabled || !pinnedMutationAllowed('SAPWrite', args, config))
-      throw new AdtSafetyError('Pinned write inputs or policy are not allowed.');
+    const context = pinnedOperationContext(client, config, { tool: 'SAPWrite', args, timeoutMs: 300_000, cleanup });
     const { type, name } = args;
     assertPinnedOwner(type, name);
     const objectName = name as string;
     const action = String(args.action);
+    if (action === 'delete') {
+      const result = await deletePinnedOwner(client, context, {
+        type,
+        name: objectName,
+        transport: args.transport as string | undefined,
+      });
+      return pinnedOperationResult(result, config, { action, type, name: objectName });
+    }
     if (typeof args.source !== 'string' || !args.source.trim())
       throw new AdtSafetyError('A non-empty source is required.');
     if (
@@ -55,14 +62,6 @@ export async function handlePinnedWrite(
       throw new AdtSafetyError('edit_method requires a method name.');
     const owner = objectUrlForType(type, objectName.toLowerCase());
     const sourceUrl = `${owner}/source/main`;
-    const context = pinnedMutationContext(
-      client.safety,
-      {
-        deadline: Date.now() + 300_000,
-        signal: getCurrentContext()?.signal,
-      },
-      cleanup,
-    );
     client = mutationClient(client, context);
     const options = context.requestPolicy;
     const scopedHttp = client.http;

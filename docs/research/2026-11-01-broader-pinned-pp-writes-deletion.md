@@ -1,8 +1,8 @@
 # Pinned owner deletion candidate — 1 November 2026
 
-This checkpoint adds an unadvertised native adapter for CLAS/INTF deletion in PR #1142.
-It reuses the existing native DELETE and shared owning-session lock/cleanup lifecycle. It does
-not yet admit `SAPWrite.delete` to pinned routes or change the single-target deletion handler.
+This record began with an unadvertised native adapter for CLAS/INTF deletion in PR #1142.
+It reuses the existing native DELETE and shared owning-session lock/cleanup lifecycle. At that
+checkpoint it did not admit `SAPWrite.delete` or change the single-target deletion handler.
 Other object types retain their native prechecks; in particular, PROG/FUGR text-pool checks and
 ENHO technology validation must not be bypassed when the supported types expand.
 
@@ -37,3 +37,24 @@ CTS restrictions, lock locality and invalid/legacy contexts. The complete unit s
 This is direct native evidence, not two-user PP qualification. The live fixtures were local;
 transportable deletion and negative cases currently have unit evidence. Handler/catalog
 admission, live PP qualification and actual Claude Code Opus 5.5 max review remain outstanding.
+
+## Handler and catalog integration
+
+The following delta admits only CLAS/INTF owner deletion, with `action`, `type`, `name` and optional
+`transport`. Source, source hash, include, batch and caller-supplied package fields remain refused.
+The adapter runs through ordinary dispatch and an explicit capability row, so read-only callers,
+missing exact write grants, read-only destinations/apps, aggregate and shared Basic routes remain
+mutation-free. Per-action deny rules remove deletion from the catalog and refuse direct calls.
+
+A shared pinned context/result boundary now serves source writes, deletion and formatter actions.
+It verifies the selected target against both policies, preserves per-operation finite budgets,
+uses request cancellation and reports the selected target/request correlation. Any pinned marker
+in SAPWrite selects the guarded path; incomplete state cannot silently select legacy writes.
+Source-save/activation behavior remains separate. Native deletion evidence above still qualifies
+the same low-level adapter; the new integration needs its own PP run and Claude acceptance.
+
+Integration adds 23 handler tests and eight route/catalog cases, including exact write-grant,
+destination, raw scope, global, aggregate and Basic refusals, deny rules, context mismatch,
+cancellation propagation and result correlation. The full suite passed **391 files / 10,819 tests**,
+with typecheck, build, lint, file/schema budgets and strict documentation build. The source budget
+and non-replay tests, existing source lifecycle and formatter tests remain green after consolidation.

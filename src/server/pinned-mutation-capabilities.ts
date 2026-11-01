@@ -48,6 +48,14 @@ const rows: PinnedMutationCapability[] = [
     accepts: () => true,
   },
   {
+    tool: 'SAPWrite',
+    action: 'delete',
+    resource: 'whole-owner',
+    types: ['CLAS', 'INTF'],
+    fields: [...ownerFields, 'transport'],
+    accepts: () => true,
+  },
+  {
     tool: 'SAPLint',
     action: 'set_formatter_settings',
     resource: 'settings',

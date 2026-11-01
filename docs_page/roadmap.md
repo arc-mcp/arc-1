@@ -220,8 +220,8 @@ now has pinned handler/companion integration, unit, restored direct-native and t
 (241 assertions). Its Claude acceptance remains outstanding; this does not close the broader write scope.
 A [CLAS/INTF deletion candidate](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-deletion.md)
 reuses native DELETE and the shared lock/session lifecycle, with fresh policy checks and verified
-absence. Unit and restored direct-native checks pass; admission, PP qualification and Claude review
-remain outstanding.
+absence. Handler/catalog admission is implemented, with unit and restored direct-native checks;
+PP qualification and Claude review remain outstanding.
 
 **Resume when.** The PR 1 acceptance and owner request prerequisites are met. Continue the guarded
 adapters and native qualification against the reviewed PR 2 plan. Preserve the shared foundation's

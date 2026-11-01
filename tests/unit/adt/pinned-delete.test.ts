@@ -104,7 +104,7 @@ beforeEach(() => {
   });
 });
 
-describe('bounded pinned deletion candidate (not yet admitted)', () => {
+describe('bounded pinned owner deletion', () => {
   it.each([
     ['CLAS', 'ZCL_TEST'],
     ['INTF', 'ZIF_TEST'],
