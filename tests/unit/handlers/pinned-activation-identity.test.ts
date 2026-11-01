@@ -3,6 +3,17 @@ import { nativeInactiveReferences } from '../../../src/adt/native-activation-evi
 import { validatePinnedActivationReferences } from '../../../src/handlers/write/pinned-activation.js';
 
 const owner = '/sap/bc/adt/oo/classes/zcl_test';
+it('records that exact include URI/type currently permits an arbitrary name pending native qualification', () => {
+  expect(() =>
+    validatePinnedActivationReferences(owner, 'CLAS', [
+      {
+        uri: `${owner}/includes/definitions`,
+        type: 'CLAS/I',
+        name: 'ZFOREIGN',
+      },
+    ]),
+  ).not.toThrow();
+});
 it.each(['definitions', 'implementations', 'macros', 'testclasses'])(
   'binds typed %s includes by their exact owner-relative URI',
   (include) => {

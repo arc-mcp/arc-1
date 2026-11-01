@@ -217,7 +217,15 @@ it.each([{ expectedSourceHash: '0'.repeat(64) }, { source: 'METHOD other. ENDMET
   'preserves the locked source on stale or mismatched input %j',
   async (changes) => {
     const state = backend();
-    expect((await call(changes)).isError).toBe(true);
+    const result = await call(changes);
+    expect(result.isError).toBe(true);
+    expect(payload(result)).toMatchObject({
+      state: 'unchanged',
+      phase: changes.expectedSourceHash ? 'source-read' : 'edit-preparation',
+    });
+    expect(payload(result).message).toMatch(
+      changes.expectedSourceHash ? /expectedSourceHash/ : /only the selected METHOD/,
+    );
     expect(state.puts).toBe(0);
     expect(state.source).toBe(initial);
     expect(state.unlocks).toBe(1);

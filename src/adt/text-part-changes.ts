@@ -48,7 +48,7 @@ function comparableEntries(part: TextElementPart, body: string): Map<string, Tex
     // Native selection keys are padded; case is canonicalized by SAP. Preserve leading value spaces.
     const key = line.slice(0, equals).trim().toUpperCase(),
       value = line.slice(equals + 1).trimEnd();
-    if (!key || result.has(key)) return undefined;
+    if (!key || key.startsWith('@') || result.has(key)) return undefined;
     result.set(key, {
       value,
       ddic,
@@ -59,6 +59,11 @@ function comparableEntries(part: TextElementPart, body: string): Map<string, Tex
     maxLength = undefined;
   }
   return ddic || maxLength !== undefined ? undefined : result;
+}
+
+/** Reject inputs whose outcome cannot be verified before leaving a native inactive draft. */
+export function textPartIsVerifiable(part: TextElementPart, body: string): boolean {
+  return comparableEntries(part, body) !== undefined;
 }
 
 /** Verify whole-part semantics before activation. DDIC labels may resolve differently, but keys and reference markers must survive. */

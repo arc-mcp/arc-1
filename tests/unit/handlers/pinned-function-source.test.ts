@@ -141,7 +141,7 @@ async function update(type: keyof typeof sources, extra: Record<string, unknown>
     forgetPinnedSourceContext(ctx);
   }
 }
-it.each(['FUGR', 'FUNC', 'INCL'] as const)(
+it.each(['FUNC', 'INCL'] as const)(
   'updates %s through the shared handler and exact native resource lock',
   async (type) => {
     const { result, state, cleanup } = await update(type);
@@ -153,6 +153,10 @@ it.each(['FUGR', 'FUNC', 'INCL'] as const)(
     expect(cleanup).toMatchObject({ unlockFailed: false, sessionClosed: true });
   },
 );
+it('refuses unqualified FUGR main-source replacement before SAP', async () => {
+  await expect(update('FUGR')).rejects.toThrow('Function-group main source is maintained by SAP');
+  expect(requests).toHaveLength(0);
+});
 it('preserves the function body when replacing its structured signature under the lock', async () => {
   const { result } = await update('FUNC', {
     source: undefined,
@@ -177,7 +181,15 @@ it.each(['package', 'container', 'hash', 'lock-cts'])(
   async (selected) => {
     fault = selected;
     transported = selected === 'lock-cts';
-    await expect(update('FUNC')).rejects.toThrow();
+    await expect(update('FUNC')).rejects.toThrow(
+      selected === 'hash'
+        ? /expectedSourceHash/
+        : selected === 'container'
+          ? /verified parent group/
+          : selected === 'package'
+            ? /package/i
+            : /transport|recording/i,
+    );
     expect(requests.filter((r) => r.method === 'PUT')).toEqual([]);
     expect(requests.some((r) => r.path.includes('_action=UNLOCK'))).toBe(true);
   },

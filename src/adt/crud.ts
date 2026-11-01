@@ -11,7 +11,13 @@
  */
 
 import { postCreate } from './create-request.js';
-import { AdtApiError, AdtSafetyError, classifySapDomainError, extractExceptionType } from './errors.js';
+import {
+  AdtApiError,
+  AdtNetworkError,
+  AdtSafetyError,
+  classifySapDomainError,
+  extractExceptionType,
+} from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import { throwIfRequestCancelled } from './http-deadline.js';
 import {
@@ -158,6 +164,13 @@ export async function withLockedMutation<T>(
 ): Promise<T> {
   assertMutationContext(safety, context);
   checkOperation(safety, OperationType.Update, 'MutationSession');
+  if (
+    context.mode === 'pinned-pp' &&
+    (context.cleanup.unlockFailed || context.cleanup.sessionClosed === false || context.cleanup.unknownLocks?.length)
+  )
+    throw new AdtSafetyError(
+      'A prior mutation session has unresolved cleanup. Inspect SAP before starting another native mutation step.',
+    );
   let owningSessionClosed: boolean | undefined;
   const removedLocks: NonNullable<MutationCleanupState['unlockFailures']> = [];
   const recordUnlockFailure = (failure: NonNullable<MutationCleanupState['unlockFailures']>[number]) => {
@@ -167,6 +180,22 @@ export async function withLockedMutation<T>(
   };
   const run = async (owningSession: AdtHttpClient) => {
     const session = mutationHttp(owningSession, safety, context);
+    const acquire = async (url: string) => {
+      try {
+        return await lockObject(session, safety, url, 'MODIFY', abapRelease, undefined, context.requestPolicy);
+      } catch (error) {
+        if (
+          context.mode === 'pinned-pp' &&
+          (error instanceof AdtNetworkError ||
+            (error instanceof AdtApiError && (error.isServerError || error.statusCode === 429)))
+        )
+          (context.cleanup.unknownLocks ??= []).push({
+            uri: url,
+            ...(error instanceof AdtApiError ? { statusCode: error.statusCode } : {}),
+          });
+        throw error;
+      }
+    };
     const held = new Set([objectUrl]);
     const release = async (url: string, handle: string, lockPolicy: MutationLockPolicy) => {
       if (context.mode !== 'pinned-pp' || !handle) return;
@@ -193,14 +222,14 @@ export async function withLockedMutation<T>(
       }
     };
     policy.beforeLock();
-    const lock = await lockObject(session, safety, objectUrl, 'MODIFY', abapRelease, undefined, context.requestPolicy);
+    const lock = await acquire(objectUrl);
     if (context.mode === 'pinned-pp')
       additionalLocks.set(session, async (url, extraPolicy, fn) => {
         if (held.has(url)) throw new AdtSafetyError('The resource is already locked by this mutation.');
         held.add(url);
         try {
           extraPolicy.beforeLock();
-          const extra = await lockObject(session, safety, url, 'MODIFY', abapRelease, undefined, context.requestPolicy);
+          const extra = await acquire(url);
           try {
             await extraPolicy.validateLock(session, extra);
             return await fn(extra);
@@ -248,7 +277,7 @@ export async function withLockedMutation<T>(
             ...pinnedSessionCleanup(context),
             onClose: (closed) => {
               owningSessionClosed = closed;
-              context.cleanup.sessionClosed = closed;
+              pinnedSessionCleanup(context).onClose?.(closed);
             },
           }
         : undefined,

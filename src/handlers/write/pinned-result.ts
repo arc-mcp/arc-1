@@ -1,7 +1,8 @@
 /** Existing pinned result serialization, shared by source writes and activation. */
 
+import { ActivationEvidenceError } from '../../adt/activation-evidence-error.js';
 import type { ActivationResult } from '../../adt/devtools.js';
-import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
+import { AdtApiError, AdtError, AdtSafetyError } from '../../adt/errors.js';
 import type { MutationCleanupState } from '../../adt/mutation-context.js';
 import type { PinnedProgramOwnerEvidence } from '../../adt/pinned-program-owner.js';
 import { getCurrentContext } from '../../server/context.js';
@@ -42,6 +43,7 @@ export function pinnedFailure(
     sourceHash?: string;
     sessionClosed?: boolean;
     unlockFailures?: MutationCleanupState['unlockFailures'];
+    unknownLocks?: MutationCleanupState['unknownLocks'];
     include?: string;
     initialized?: boolean;
     warnings?: string;
@@ -49,13 +51,17 @@ export function pinnedFailure(
     textPart?: string;
     activePartVerified?: boolean;
     nativeActivation?: ActivationResult;
+    minimalErrors?: boolean;
+    verificationFailures?: Array<'pool-state' | 'active-part'>;
     includeUsage?: PinnedProgramOwnerEvidence['includeUsage'];
     textPoolState?: 'active' | 'inactive' | 'unknown';
     next?: string;
   } = {},
 ): ToolResult {
   const context = getCurrentContext();
-  const { transport, ...otherDetails } = details;
+  const { transport, minimalErrors, nativeActivation, ...otherDetails } = details;
+  const activation =
+    nativeActivation ?? (error instanceof ActivationEvidenceError ? error.nativeActivation : undefined);
   return errorResult(
     toolJson({
       error: refusedStates.has(state) ? 'PINNED_WRITE_REFUSED' : 'PINNED_WRITE_INCOMPLETE',
@@ -74,6 +80,22 @@ export function pinnedFailure(
       phase,
       ...(error instanceof AdtApiError ? { statusCode: error.statusCode } : {}),
       ...otherDetails,
+      ...(details.unknownLocks?.length
+        ? {
+            lockOutcome: 'unknown',
+            cleanupUnconfirmed: true,
+            lockRecovery:
+              'SAP may hold a lock whose response was lost. Inspect the selected resource in ADT or SM12 before continuing.',
+          }
+        : {}),
+      ...(activation ? { nativeActivation: minimalErrors ? { success: activation.success } : activation } : {}),
+      ...(error instanceof AdtError && error.activationOutcome === 'unknown'
+        ? {
+            activationOutcome: 'unknown',
+            activationRecovery:
+              'SAP may still finish this activation. Pool and source reads are observations, not proof that processing has finished. Inspect in ADT before another activation.',
+          }
+        : {}),
       ...(!refusedStates.has(state) && transport ? { transport } : {}),
       ...(cleanupFailed || details.sessionClosed === false
         ? {

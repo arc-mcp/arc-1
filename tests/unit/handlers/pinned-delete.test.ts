@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { assertMutationContext } from '../../../src/adt/mutation-context.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
 const native = await import('../../../src/adt/pinned-delete.js');
@@ -10,6 +11,7 @@ const { handleSAPWrite } = await import('../../../src/handlers/write.js');
 const legacy = await import('../../../src/handlers/write/update-delete.js');
 const { requestContext, getCurrentContext } = await import('../../../src/server/context.js');
 const args = { action: 'delete', type: 'CLAS', name: 'ZCL_TEST' };
+const unexpected: string[] = [];
 
 function fixture() {
   const policy = {
@@ -39,12 +41,15 @@ function fixture() {
 }
 
 beforeEach(() => {
+  unexpected.length = 0;
   vi.restoreAllMocks();
   mockFetch.mockReset();
-  mockFetch.mockImplementation(() => {
-    throw new Error('Unexpected SAP request outside the native adapter');
+  mockFetch.mockImplementation((url) => {
+    unexpected.push(String(url));
+    return Promise.resolve(mockResponse(599, 'Unexpected SAP request outside the native adapter'));
   });
 });
+afterEach(() => expect(unexpected).toEqual([]));
 
 describe('pinned owner deletion admission through shared dispatch', () => {
   it('retains single-target writes on an instance that also serves multi-target endpoints', async () => {
@@ -71,6 +76,9 @@ describe('pinned owner deletion admission through shared dispatch', () => {
     { ...args, include: 'testclasses' },
     { ...args, processingType: 'normal' },
     { ...args, updateTaskKind: 'immediate' },
+    { ...args, group: 'ZFOREIGN' },
+    { ...args, action: 'update', source: 'class source', expectedSourceHash: 'a'.repeat(64), group: 'ZFOREIGN' },
+    { ...args, action: 'edit_text_symbols', source: '001=text', group: 'ZFOREIGN' },
     { ...args, action: 'create', source: 'class source', package: '$TMP', include: 'definitions' },
     { ...args, action: 'create', source: 'class source', package: '$TMP', processingType: 'normal' },
     {

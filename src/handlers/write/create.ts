@@ -22,6 +22,7 @@ import { badiContainerXml, hasBadiImplementations } from '../../adt/enhancement-
 import { AdtApiError, type AdtError, AdtSafetyError } from '../../adt/errors.js';
 import { type FmParameter, findFmHeader, spliceFmSignature } from '../../adt/fm-signature.js';
 import { mutationResponsible } from '../../adt/mutation-client.js';
+import { pinnedFunctionSelection, readPinnedFunctionOwner } from '../../adt/pinned-function-owner.js';
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
 import { isServerDrivenObjectType } from '../../adt/server-driven.js';
 import { getTransport } from '../../adt/transport.js';
@@ -78,8 +79,14 @@ import {
 } from './batch-results.js';
 import type { SapWriteContext } from './context.js';
 import { resolveCreateTransport } from './create-transport.js';
-import { createRepositoryObject, prepareCreationRecording, saveCreatedSource } from './creation.js';
+import {
+  createRepositoryObject,
+  prepareCreationRecording,
+  saveCreatedSource,
+  verifyCreatedSource,
+} from './creation.js';
 import { persistFunctionModuleProcessingMetadata } from './function-create-metadata.js';
+import { pinnedSourceState } from './pinned-source-context.js';
 import { postCreateError } from './post-create-error.js';
 
 function normalizePackageOverride(rawPackage: unknown, fallback: string): string {
@@ -157,12 +164,16 @@ function functionModuleCreateError(
 }
 
 async function resolveFunctionGroupCreatePackage(
-  client: SapWriteContext['client'],
+  ctx: SapWriteContext,
   group: string,
   requestedPackage: unknown,
   childType: 'FUNC' | 'INCL' = 'FUNC',
 ): Promise<string> {
-  const actualPackage = await client.resolveObjectPackage(functionGroupObjectUrl(group));
+  if (ctx.mutationContext.mode === 'pinned-pp') pinnedSourceState(ctx).phase = 'package-preflight';
+  const actualPackage =
+    ctx.mutationContext.mode === 'pinned-pp'
+      ? (await readPinnedFunctionOwner(ctx.client, pinnedFunctionSelection('FUGR', group).objectUrl))?.packageName
+      : await ctx.client.resolveObjectPackage(functionGroupObjectUrl(group));
   if (!actualPackage) {
     throw new Error(
       `${childType} create blocked: ARC-1 could not determine the parent function group "${group}" package from ADT metadata.`,
@@ -446,7 +457,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   const groupArg = String(args.group ?? '').trim();
   const inheritsGroupPackage = type === 'FUNC' || (type === 'INCL' && groupArg !== '');
   const pkg = inheritsGroupPackage
-    ? await resolveFunctionGroupCreatePackage(client, groupArg, args.package, type === 'INCL' ? 'INCL' : 'FUNC')
+    ? await resolveFunctionGroupCreatePackage(ctx, groupArg, args.package, type === 'INCL' ? 'INCL' : 'FUNC')
     : String(args.package ?? '$TMP');
   await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
   const description = String(args.description ?? name);
@@ -793,6 +804,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     return warnings ? textResult(`${msg}\n\n${warnings}`) : textResult(msg);
   }
 
+  await verifyCreatedSource(ctx);
   return textResult(`Created ${type} ${name} in package ${pkg}.\n${result}`);
 }
 
@@ -932,7 +944,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
   for (const plan of batchPlan) {
     try {
       if (plan.type === 'FUNC') {
-        plan.packageName = await resolveFunctionGroupCreatePackage(client, plan.group!, plan.obj.package);
+        plan.packageName = await resolveFunctionGroupCreatePackage(ctx, plan.group!, plan.obj.package);
         plan.result.packageName = plan.packageName;
       }
       await checkPackage(client.safety, plan.packageName, client.getPackageHierarchyResolver());

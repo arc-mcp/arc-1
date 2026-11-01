@@ -6,6 +6,8 @@ import type { MultiTargetWritePolicy, SafetyConfig } from './safety.js';
 export interface MutationCleanupState {
   unlockFailed: boolean;
   sessionClosed?: boolean;
+  /** The LOCK request may have reached SAP without returning its handle/context. */
+  unknownLocks?: { uri: string; statusCode?: number }[];
   unlockFailures?: { uri: string; statusCode?: number; absentAfterDelete?: true }[];
   /** Typed UNLOCK 404 after verified DELETE/absence, resolved only by confirmed owning-session closure. */
   removedLocksAfterDelete?: { uri: string; statusCode: 404; absentAfterDelete: true }[];
@@ -89,7 +91,7 @@ export function pinnedSessionCleanup(
     timeoutMs: 30_000,
     noReplay: true,
     onClose: (closed) => {
-      context.cleanup.sessionClosed = closed;
+      if (context.cleanup.sessionClosed !== false) context.cleanup.sessionClosed = closed;
     },
   };
 }

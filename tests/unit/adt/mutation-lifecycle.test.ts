@@ -375,6 +375,24 @@ describe('request policy reaches the real ADT transport', () => {
 });
 
 describe('shared lock lifecycle', () => {
+  it('refuses another native lock lifecycle after its prior owning session failed to close', async () => {
+    const { scoped, safety, context, cleanup } = fixture();
+    const fallback = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url: string, options) =>
+      url.includes('/http/sessions') ? mockResponse(503, 'close unavailable') : fallback(url, options),
+    );
+    const policy = { beforeLock: () => {}, validateLock: async () => {} };
+    await withLockedMutation(scoped, safety, context, owner, policy, async () => undefined);
+    expect(cleanup.sessionClosed).toBe(false);
+    const count = mockFetch.mock.calls.length;
+    const next = vi.fn();
+    await expect(withLockedMutation(scoped, safety, context, owner, policy, next)).rejects.toThrow(
+      'prior mutation session has unresolved cleanup',
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalledTimes(count);
+    expect(cleanup.sessionClosed).toBe(false);
+  });
   it('reports only the owning close when an independent nested session fails to close', async () => {
     const { scoped, safety, context, cleanup } = fixture();
     const fallback = mockFetch.getMockImplementation()!;

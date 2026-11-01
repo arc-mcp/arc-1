@@ -3,13 +3,16 @@ import type { AdtClient } from '../../adt/client.js';
 import { safeUpdateObject, updateObject, withLockedMutation } from '../../adt/crud.js';
 import { AdtSafetyError } from '../../adt/errors.js';
 import { mutationClient } from '../../adt/mutation-client.js';
+import { assertMutationContext } from '../../adt/mutation-context.js';
 import { nativeXmlRoot } from '../../adt/native-xml-evidence.js';
 import { pinnedFunctionSelection } from '../../adt/pinned-function-owner.js';
+import { checkOperation, OperationType } from '../../adt/safety.js';
 import { escapeXmlAttr, parseFunctionModuleProperties } from '../../adt/xml-parser.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import type { FunctionProcessingType, FunctionUpdateTaskKind } from '../function-processing.js';
 import { vendorContentTypeForType } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
+import { assertCreationStepCleanup } from './creation.js';
 import { pinnedSourceLockPolicy } from './pinned-lock.js';
 import { pinnedSourceState } from './pinned-source-context.js';
 
@@ -39,6 +42,7 @@ export async function persistFunctionModuleProcessingMetadata(
   updateTaskKind: FunctionUpdateTaskKind | undefined,
   transport: string | undefined,
 ): Promise<void> {
+  assertMutationContext(ctx.client.safety, ctx.mutationContext);
   const state = ctx.mutationContext.mode === 'pinned-pp' ? pinnedSourceState(ctx) : undefined;
   function nativeProperties(xml: string) {
     const root = nativeXmlRoot(xml, 'abapFunctionModule', ns);
@@ -60,7 +64,12 @@ export async function persistFunctionModuleProcessingMetadata(
   }
   async function roundTrip(active: AdtClient, save: (body: string, contentType: string) => Promise<void>) {
     const inactiveUrl = `${objectUrl}?version=inactive`;
-    const current = await active.getObjectMetadata(inactiveUrl);
+    const readMetadata = () => {
+      if (!state) return active.getObjectMetadata(inactiveUrl);
+      checkOperation(active.safety, OperationType.Read, 'GetObjectMetadata');
+      return active.http.get(inactiveUrl, { 'Cache-Control': 'no-cache' });
+    };
+    const current = await readMetadata();
     if (state) nativeProperties(current.body);
     const body = rewrite(current.body, processingType, updateTaskKind);
     const responseType = Object.entries(current.headers).find(([name]) => name.toLowerCase() === 'content-type')?.[1];
@@ -71,7 +80,7 @@ export async function persistFunctionModuleProcessingMetadata(
         ?.split(';')[0]
         ?.trim() ?? vendorContentTypeForType('FUNC');
     await save(body, contentType);
-    const persisted = await active.getObjectMetadata(inactiveUrl);
+    const persisted = await readMetadata();
     const actual = state ? nativeProperties(persisted.body) : parseFunctionModuleProperties(persisted.body);
     if (actual.processingType !== processingType || actual.updateTaskKind !== updateTaskKind)
       throw new Error(
@@ -121,4 +130,5 @@ export async function persistFunctionModuleProcessingMetadata(
       state.state = 'created-source-not-confirmed';
     },
   );
+  assertCreationStepCleanup(ctx);
 }

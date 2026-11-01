@@ -4,8 +4,8 @@ Status: implementation in progress. Formatter, CLAS/INTF deletion, class-include
 Main source replacement and CLAS/INTF creation/deletion now enter through the shared write actions
 with explicit legacy/pinned native adapters. This later convergence is offline-tested only.
 The [sixth review follow-up](../research/2026-11-01-pinned-text-review-followup.md) fixes requested-text
-verification and activation/reporting issues; a new independent review remains required. Native
-FUGR/FUNC/group-INCL ownership and shared update/delete/text profiles are private candidates with
+verification and activation/reporting issues. The [seventh review and fixes](../research/2026-11-02-pinned-activation-review-followup.md) address minimal-error redaction, recovery failures, input preflight and uncertain locks; these new fixes need independent review. Native
+FUGR/FUNC/group-INCL ownership, creation and shared child-update/delete/text profiles are private candidates with
 offline tests and read-only metadata evidence. They are not yet advertised or qualified.
 The fresh local run at `77e41fdcd` qualifies include replacement and the refactored main method path;
 the later include-method and class metadata adapters, refactored transportable paths and remaining families still need qualification.

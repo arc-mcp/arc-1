@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { pinnedMutationContext } from '../../../src/adt/mutation-context.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
-import type { TextElementPart } from '../../../src/adt/text-elements.js';
+import { type TextElementPart, writeTextElementPartWithPolicy } from '../../../src/adt/text-elements.js';
 import { requestContext } from '../../../src/server/context.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
@@ -96,6 +96,7 @@ beforeEach(() => {
         );
       locked = true;
       if (fault === 'lock-lost') throw new Error('Injected lost LOCK response');
+      if (fault === 'lock-server') return mockResponse(503, 'Unconfirmed native lock');
       return mockResponse(
         200,
         `<DATA><LOCK_HANDLE>pool-lock</LOCK_HANDLE><IS_LOCAL>${fault === 'locality' || transportable ? '' : 'X'}</IS_LOCAL><CORRNR>${fault === 'lock-transport' ? 'A4HK900099' : transportable ? 'A4HK900002' : ''}</CORRNR></DATA>`,
@@ -105,6 +106,7 @@ beforeEach(() => {
     }
     if (path === pool && uri.searchParams.get('_action') === 'UNLOCK') {
       locked = false;
+      if (fault === 'cancel-noop') cancel?.abort();
       return mockResponse(fault === 'unlock' ? 503 : 200, '');
     }
     if (path.includes('/http/sessions')) return mockResponse(fault === 'close' ? 503 : 200, '');
@@ -139,6 +141,8 @@ beforeEach(() => {
         '<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900001" tm:type="K" tm:status="D"><tm:task tm:number="A4HK900002" tm:status="D"/></tm:request></tm:root>',
       );
     if (path === pool && method === 'GET') {
+      if (activations && ['activation-503-recovery-pool', 'activation-503-recovery-both'].includes(fault))
+        return mockResponse(500, 'Recovery pool read failed');
       if (new Headers(init.headers).get('Accept') !== 'application/vnd.sap.adt.textelements.v1+xml')
         return mockResponse(406, 'Native pool metadata Accept required');
       let body = poolXml();
@@ -169,6 +173,12 @@ beforeEach(() => {
       }
       if (method === 'GET') {
         const version = uri.searchParams.get('version');
+        if (
+          activations &&
+          version === 'active' &&
+          ['activation-503-recovery-part', 'activation-503-recovery-both'].includes(fault)
+        )
+          return mockResponse(500, 'Recovery source read failed');
         if ((fault === 'cancel-read' && !writes) || (fault === 'cancel-readback' && writes)) cancel!.abort();
         if (fault === 'readback' && writes) return mockResponse(503, 'readback unavailable');
         if (fault === 'readback-oversized' && writes) return mockResponse(200, 'ü'.repeat(524_289));
@@ -183,7 +193,12 @@ beforeEach(() => {
     }
     if (path === '/sap/bc/adt/activation' && method === 'POST') {
       activations++;
-      if (fault === 'activation-503') return mockResponse(503, 'activation uncertain');
+      if (fault.startsWith('activation-503')) return mockResponse(503, 'activation uncertain');
+      if (fault === 'activation-warning-unconfirmed')
+        return mockResponse(
+          200,
+          '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><chkl:msg type="W" shortText="SENTINEL_NATIVE_DIAGNOSTIC" uri="/sap/bc/adt/oo/classes/sentinel_private_uri"/><chkl:properties activationExecuted="false"/></chkl:messages>',
+        );
       if (fault === 'activation-native-error')
         return mockResponse(
           200,
@@ -198,9 +213,11 @@ beforeEach(() => {
       inactive.clear();
       return mockResponse(
         200,
-        fault === 'activation-empty'
-          ? ''
-          : '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><chkl:properties activationExecuted="true"/></chkl:messages>',
+        fault === 'activation-html'
+          ? '<html><body>Login required</body></html>'
+          : fault === 'activation-empty'
+            ? ''
+            : '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><chkl:properties activationExecuted="true"/></chkl:messages>',
       );
     }
     unexpected.push(`${method} ${path}${uri.search}`);
@@ -475,8 +492,9 @@ describe('pinned native text-part lifecycle', () => {
     ['save-uncertain', 'text-save-unknown', 'text-save'],
     ['readback', 'text-saved-unverified', 'text-readback'],
     ['readback-oversized', 'text-saved-unverified', 'text-readback'],
-    ['activation-503', 'text-activation-not-confirmed', 'text-pool-verification'],
+    ['activation-503', 'text-activation-unknown', 'text-pool-verification'],
     ['activation-empty', 'text-activation-not-confirmed', 'text-pool-verification'],
+    ['activation-html', 'text-activation-not-confirmed', 'text-pool-verification'],
     ['activation-expand', 'text-activation-not-confirmed', 'text-pool-verification'],
     ['active-mismatch', 'text-activation-not-confirmed', 'text-pool-verification'],
     ['still-inactive', 'text-activation-not-confirmed', 'text-pool-verification'],
@@ -518,15 +536,93 @@ describe('pinned native text-part lifecycle', () => {
       activePartVerified: false,
       nativeActivation: { success: false, messages: ['Text element is not allowed here'] },
     });
-    expect(payload.message).toContain('Text element is not allowed here');
+    expect(payload.message).not.toContain('Text element is not allowed here');
     expect(activations).toBe(1);
   });
 
-  it.each(['missing-transport', 'lock-transport', 'lock-lost'])(
+  it.each([true, false])(
+    'respects minimalErrors=%s for retained native activation diagnostics',
+    async (minimalErrors) => {
+      for (const failure of ['activation-native-error', 'activation-warning-unconfirmed']) {
+        fault = failure;
+        const { result, payload } = await write('PROG', 'symbols', replacement, {}, { ...config, minimalErrors });
+        const sentinel =
+          failure === 'activation-native-error' ? 'Text element is not allowed here' : 'SENTINEL_NATIVE_DIAGNOSTIC';
+        expect(result.isError).toBe(true);
+        expect(payload.message).not.toContain(sentinel);
+        if (minimalErrors) {
+          expect(payload.nativeActivation).toEqual({ success: false });
+          expect(result.content[0].text).not.toContain(sentinel);
+          expect(result.content[0].text).not.toContain('sentinel_private_uri');
+        } else expect(payload.nativeActivation.messages).toContain(sentinel);
+      }
+    },
+  );
+
+  it.each(['001=first\n001=second', '001=text\n@MaxLength:20', '@Unknown:x\n001=text', '=== symbols ===\n001=text'])(
+    'refuses unverifiable text before lock or save: %s',
+    async (source) => {
+      const { result, payload } = await write('PROG', 'symbols', source);
+      expect(result.isError).toBe(true);
+      expect(payload).toMatchObject({ state: 'unchanged', phase: 'validation' });
+      expect(payload.message).toMatch(/cannot verify|unverifiable/i);
+      expect(calls).toHaveLength(0);
+    },
+  );
+
+  it.each(['pool', 'part', 'both'])(
+    'preserves unknown activation and its 503 when recovery %s fails',
+    async (failure) => {
+      fault = `activation-503-recovery-${failure}`;
+      const { result, payload } = await write();
+      expect(result.isError).toBe(true);
+      expect(payload).toMatchObject({
+        state: 'text-activation-unknown',
+        phase: 'text-pool-verification',
+        statusCode: 503,
+        activationOutcome: 'unknown',
+      });
+      expect(payload.activationRecovery).toContain('SAP may still finish');
+      expect(payload.verificationFailures).toEqual(
+        failure === 'both' ? ['pool-state', 'active-part'] : [failure === 'pool' ? 'pool-state' : 'active-part'],
+      );
+      expect(payload.textPoolState).toBe(failure === 'part' ? 'inactive' : 'unknown');
+      expect(payload.activePartVerified).toBe(failure === 'pool' ? false : undefined);
+      expect(activations).toBe(1);
+      expect(count('PUT')).toHaveLength(1);
+    },
+  );
+
+  it.each(['afterUnlock', 'afterUnlockNeeded', 'confirmedResourceDeletion'])(
+    'rejects a supplied %s text profile before HTTP',
+    async (field) => {
+      const client = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        client: '001',
+        safety: { ...defaultSafetyConfig(), ...config },
+      });
+      const context = pinnedMutationContext(client.safety, { deadline: Date.now() + 30_000 }, { unlockFailed: false });
+      await expect(
+        writeTextElementPartWithPolicy(client.http, client.safety, 'PROG', 'ZTEXT', 'symbols', replacement, undefined, {
+          mode: 'pinned-pp',
+          ownerType: 'PROG',
+          ownerName: 'ZTEXT',
+          ownerPackage: '$TMP',
+          context,
+          lockPolicy: { beforeLock: () => {}, validateLock: async () => {}, [field]: () => false },
+          validateActivationOwner: async () => {},
+          onPhase: () => {},
+        }),
+      ).rejects.toThrow('Select the dedicated admitted text-pool ownership profile.');
+      expect(calls).toHaveLength(0);
+    },
+  );
+
+  it.each(['missing-transport', 'lock-transport', 'lock-lost', 'lock-server'])(
     'refuses %s before any text save or activation',
     async (failure) => {
       fault = failure;
-      transportable = failure !== 'lock-lost';
+      transportable = ['missing-transport', 'lock-transport'].includes(failure);
       const { result, payload } = await write(
         'PROG',
         'symbols',
@@ -545,6 +641,12 @@ describe('pinned native text-part lifecycle', () => {
               : 'lock',
       });
       expect(count('PUT')).toHaveLength(0);
+      if (failure === 'lock-lost' || failure === 'lock-server') {
+        expect(payload).toMatchObject({ lockOutcome: 'unknown', cleanupUnconfirmed: true });
+        expect(payload.lockRecovery).toContain('SM12');
+        expect(payload.unknownLocks).toHaveLength(1);
+        expect(payload.unknownLocks[0].uri).toBe('/sap/bc/adt/textelements/programs/ZTEXT');
+      }
       expect(activations).toBe(0);
       expect(calls.filter((call) => call.query.get('_action') === 'LOCK')).toHaveLength(
         failure === 'missing-transport' ? 0 : 1,
@@ -618,6 +720,22 @@ describe('pinned native text-part lifecycle', () => {
     expect(payload.state).toBe(failure === 'cancel-read' ? 'unchanged' : 'text-saved-inactive');
     expect(payload.phase).toBe(failure === 'cancel-read' ? 'text-pool-read' : 'unlock');
     expect(count('PUT')).toHaveLength(failure === 'cancel-read' ? 0 : 1);
+    expect(activations).toBe(0);
+    expect(calls.filter((call) => call.query.get('_action') === 'UNLOCK')).toHaveLength(1);
+    expect(calls.filter((call) => call.path.includes('/http/sessions'))).toHaveLength(1);
+  });
+
+  it('retains a verified no-op when cancellation arrives during cleanup', async () => {
+    active.set('symbols', '');
+    fault = 'cancel-noop';
+    cancel = new AbortController();
+    const { result, payload } = await requestContext.run({ requestId: 'noop-cancel', signal: cancel.signal }, () =>
+      write('CLAS', 'symbols', ''),
+    );
+    expect(cancel.signal.aborted).toBe(true);
+    expect(result.isError).not.toBe(true);
+    expect(payload).toMatchObject({ state: 'unchanged', activePartVerified: true });
+    expect(count('PUT')).toHaveLength(0);
     expect(activations).toBe(0);
     expect(calls.filter((call) => call.query.get('_action') === 'UNLOCK')).toHaveLength(1);
     expect(calls.filter((call) => call.path.includes('/http/sessions'))).toHaveLength(1);

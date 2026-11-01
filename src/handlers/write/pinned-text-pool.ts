@@ -3,6 +3,7 @@ import type { AdtClient } from '../../adt/client.js';
 import { AdtSafetyError } from '../../adt/errors.js';
 import type { PinnedMutationContext } from '../../adt/mutation-context.js';
 import { TEXT_ELEMENT_PARTS, type TextElementPart, writeTextElementPartWithPolicy } from '../../adt/text-elements.js';
+import { textPartIsVerifiable } from '../../adt/text-part-changes.js';
 import type { ServerConfig } from '../../server/types.js';
 import { textResult, toolJson } from '../shared.js';
 import type { SapWriteContext } from './context.js';
@@ -30,6 +31,10 @@ export function createPinnedTextPoolContext(
     );
   if (Buffer.byteLength(args.source, 'utf8') > 1024 * 1024)
     throw new AdtSafetyError('Text-element source exceeds the 1 MiB verification bound.');
+  if (!textPartIsVerifiable(part as TextElementPart, args.source))
+    throw new AdtSafetyError(
+      'ARC-1 cannot verify this text-part format. Use unique keys and supported complete annotations. No text was saved.',
+    );
   const ctx = createPinnedSourceContext(client, args, config, context, { wholeIncludeReplacement: false });
   pinnedSourceState(ctx).textPool = { part: part as TextElementPart };
   return ctx;

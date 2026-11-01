@@ -196,6 +196,16 @@ export async function deletePinnedOwner(
     ...outcome,
     phase: cleanupFailed && !failed ? cleanupPhase : phase,
     retryable: false,
+    ...(context?.mode === 'pinned-pp' && context.cleanup.unknownLocks?.length
+      ? {
+          lockOutcome: 'unknown',
+          cleanupUnconfirmed: true,
+          unknownLocks: context.cleanup.unknownLocks,
+          sessionClosed: context.cleanup.sessionClosed,
+          lockRecovery:
+            'SAP may hold a lock whose response was lost. Inspect the selected resource in ADT or SM12 before continuing.',
+        }
+      : {}),
     ...(context?.mode === 'pinned-pp' && context.cleanup?.removedLocksAfterDelete
       ? { removedLocksAfterDelete: context.cleanup.removedLocksAfterDelete }
       : {}),

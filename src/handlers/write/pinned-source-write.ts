@@ -89,6 +89,7 @@ export async function handlePinnedSourceWrite(
       sourceHash: state?.sourceHash,
       sessionClosed: cleanup.sessionClosed,
       unlockFailures: cleanup.unlockFailures,
+      unknownLocks: cleanup.unknownLocks,
       warnings: state?.warnings,
       transport: state?.recording?.request,
       include: state?.include,
@@ -96,6 +97,8 @@ export async function handlePinnedSourceWrite(
       textPart: state?.textPool?.part,
       activePartVerified: state?.textPool?.result?.activePartVerified,
       nativeActivation: state?.textPool?.result?.nativeActivation,
+      minimalErrors: config.minimalErrors,
+      verificationFailures: state?.textPool?.result?.verificationFailures,
       textPoolState: state?.textPool?.result?.state,
       next: state?.textPool
         ? 'Read the selected text part with SAPRead and inspect the pool state in ADT before another write or activation.'

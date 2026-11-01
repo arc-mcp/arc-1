@@ -211,10 +211,17 @@ it.each(['no-execution', 'network'])('does not infer success or retry after %s',
 it('cancels between preaudit and confirmation without replay', async () => {
   fault = 'cancel';
   cancel = new AbortController();
-  const { result } = await requestContext.run({ requestId: 'program-activation', signal: cancel.signal }, () =>
+  const { result, payload } = await requestContext.run({ requestId: 'program-activation', signal: cancel.signal }, () =>
     activate('PROG', (uri) => [uri]),
   );
   expect(result.isError).toBe(true);
+  expect(payload).toMatchObject({
+    error: 'PINNED_WRITE_INCOMPLETE',
+    state: 'activation-not-confirmed',
+    phase: 'activation',
+    retryable: false,
+  });
+  expect(payload.statusCode).toBeUndefined();
   expect(posts).toBe(1);
 });
 

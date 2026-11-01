@@ -30,6 +30,7 @@ export interface PinnedSourceState {
   unchangedConfirmed?: boolean;
   writeAttempted: boolean;
   textPool?: { part: TextElementPart; result?: TextElementWriteResult };
+  functionGroup?: { name: string; sourceHash: string; includeReferenced: true };
 }
 // Transient call state, never indexed by target/user and never reused across requests.
 const states = new WeakMap<SapWriteContext, PinnedSourceState>();

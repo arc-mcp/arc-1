@@ -11,6 +11,7 @@
 import { XMLValidator } from 'fast-xml-parser';
 import { getCurrentContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
+import { ActivationEvidenceError } from './activation-evidence-error.js';
 import { type AunitRunResult, parseAunitRunResult, withAunitCoverage } from './aunit.js';
 import { AdtApiError, AdtNetworkError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
@@ -1048,16 +1049,7 @@ export function parseActivationOutcome(xml: string, requireExecutionEvidence = f
     } catch (error) {
       if (!(error instanceof AdtSafetyError)) throw error;
     }
-    if (!confirmed)
-      throw new AdtSafetyError(
-        'SAP did not affirm activation execution. Inspect the active and inactive owner before continuing.' +
-          (messages.length
-            ? ` SAP: ${messages
-                .slice(0, 5)
-                .map((text) => text.slice(0, 500))
-                .join('; ')}`
-            : ''),
-      );
+    if (!confirmed) throw new ActivationEvidenceError(messages, details);
   }
   return { kind: 'success', messages, details };
 }

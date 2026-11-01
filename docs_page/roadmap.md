@@ -215,13 +215,12 @@ finding dispositions are linked from the evidence; this is not whole-PR acceptan
 
 Main updates now share the existing update handler; standalone on-prem PROG/INCL update and unit-edit
 adapters have offline tests and native standalone-owner metadata checks; the latest independent
-review follow-up now addresses namespace-bound native identity, activation references and typed removed-resource cleanup; those changes require another review. Their create/delete/activation paths now also have offline tests, including the program text-pool guard and owning-session cleanup; fresh PP qualification remains pending. Function-group ownership and shared update/delete/text profiles now have private offline candidates and GET-only metadata evidence; public admission, creation/activation completion and PP qualification remain pending.
+review follow-up now addresses namespace-bound native identity, activation references and typed removed-resource cleanup; those changes require another review. Their create/delete/activation paths now also have offline tests, including the program text-pool guard and owning-session cleanup; fresh PP qualification remains pending. Function-group ownership and shared update/delete/text profiles now have private offline candidates and GET-only metadata evidence; private creation/processing profiles now have offline checks; activation completion, native FUNC signature normalization, public admission and PP qualification remain pending. FUGR main-source replacement is refused until native evidence supports it.
 CLAS/INTF creation and deletion also enter through the shared actions with explicit native profiles.
 A shared text-part replacement adapter now has offline tests for CLAS symbols and on-prem PROG
 parts, exact-pool activation and explicit active-content proof; its fresh two-writer PP qualification
 is pending. The sixth actual Opus review found three Medium issues in text verification and activation;
-they were reproduced and fixed with offline tests, with another independent review required before
-live freezing. Read-only native evidence and review dispositions are linked from the source-adapter
+they were reproduced and fixed with offline tests. The seventh actual Opus review confirmed those closures and found one Medium in diagnostic redaction plus eight Low findings. Redaction, recovery, input preflight, uncertain-lock reporting and the listed test gaps now have follow-up fixes; independent re-review remains required before live freezing. Read-only native evidence and review dispositions are linked from the source-adapter
 research. Remaining work includes the additional object-specific mutation adapters,
 all refactored transportable-object paths, other object types and qualification of class/procedural surgery,
 DDIC/RAP, batches, package/API/publication, CTS, runtime tracing and classic FLP, each with its

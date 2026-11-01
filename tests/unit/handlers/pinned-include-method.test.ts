@@ -203,6 +203,8 @@ it.each([{ expectedSourceHash: '0'.repeat(64) }, { method: 'run' }, { source: 'M
     const { result, body } = await invoke({ include: 'implementations', ...changes });
     expect(result.isError).toBe(true);
     expect(body.state).toBe('unchanged');
+    expect(body.phase).toBe(changes.expectedSourceHash ? 'source-read' : 'edit-preparation');
+    expect(body.message).toMatch(changes.expectedSourceHash ? /expectedSourceHash/ : /method|qualified|ambiguous/i);
     expect(state.requests.filter((r) => r.method === 'PUT')).toHaveLength(0);
     expect(state.stored).toEqual(state.originals);
     expect(state.requests.filter((r) => r.path.includes('_action=UNLOCK'))).toHaveLength(1);
@@ -223,6 +225,9 @@ it.each(['missing', 'packageDrift', 'recordingDrift'] as const)(
     const { result, body } = await invoke();
     expect(result.isError).toBe(true);
     expect(body.state).toBe('unchanged');
+    expect(body.phase).toBe(fault === 'missing' ? 'source-read' : 'locked-policy');
+    if (fault === 'missing') expect(body.message).toMatch(/Include.*does not exist/);
+    else expect(body.message).toMatch(fault === 'packageDrift' ? /package/i : /transport|recording|local/i);
     expect(
       state.requests.filter((r) => r.method === 'PUT' || (r.path.includes('/includes/') && r.method !== 'GET')),
     ).toHaveLength(0);

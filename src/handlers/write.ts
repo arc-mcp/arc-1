@@ -21,6 +21,7 @@ import {
   isTablesEndpointAvailable,
   isTableTypesEndpointAvailable,
 } from './feature-cache.js';
+import { functionGroupIncludePrefix } from './function-group-names.js';
 import {
   canonicalTablType,
   functionGroupIncludeObjectUrl,
@@ -167,8 +168,7 @@ export async function handleSAPWrite(
     if (action === 'create' || action === 'delete') {
       // SAP names includes [namespace/]L<GROUP>…: a different prefix earns an
       // opaque 500 "Attributes for program X have not been saved". Reject it with a usable message.
-      const match = group.toUpperCase().match(/^(\/[^/]+\/)(.+)$/);
-      const expectedPrefix = match ? `${match[1]}L${match[2]}` : `L${group.toUpperCase()}`;
+      const expectedPrefix = functionGroupIncludePrefix(group);
       if (!name.toUpperCase().startsWith(expectedPrefix)) {
         return errorResult(
           `FUGR structural include names must start with ${expectedPrefix} — got "${name}". ` +

@@ -30,10 +30,10 @@ import {
 import { getMutationContext } from './mutation-http.js';
 import { nativeXmlRoot } from './native-xml-evidence.js';
 import { pinnedFunctionSelection } from './pinned-function-owner.js';
-import { pinnedTextPoolActivationOptions } from './pinned-text-pool-activation.js';
+import { completePinnedTextPoolWrite } from './pinned-text-pool-completion.js';
 import { assertPinnedSourceOwner } from './pinned-write-policy.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
-import { textPartChanges, textPartMatchesRequest } from './text-part-changes.js';
+import { textPartChanges, textPartIsVerifiable, textPartMatchesRequest } from './text-part-changes.js';
 import { TEXT_ELEMENT_COLLECTIONS, type TextElementObjectType, textElementsObject } from './text-pool-identity.js';
 import { parseXml } from './xml-parser.js';
 
@@ -57,6 +57,7 @@ export interface TextElementWriteResult {
   unchanged: boolean;
   activePartVerified?: boolean;
   nativeActivation?: ActivationResult;
+  verificationFailures?: Array<'pool-state' | 'active-part'>;
 }
 
 export const TEXT_ELEMENT_PARTS = Object.keys(TEXT_ELEMENT_CT) as TextElementPart[];
@@ -224,6 +225,10 @@ export async function writeTextElementPartWithPolicy(
     throw new AdtSafetyError('Text-element source exceeds the 1 MiB verification bound.');
   checkOperation(safety, OperationType.Update, 'WriteTextElements');
   assertPart(objectType, part);
+  if (pinned && !textPartIsVerifiable(part, source))
+    throw new AdtSafetyError(
+      'ARC-1 cannot verify this text-part format. Use unique keys and supported complete annotations. No text was saved.',
+    );
   if (objectType === 'CLAS' && part !== 'symbols') {
     throw new AdtApiError(
       `Only symbols can be written for CLAS; ${part} is read-only in ARC-1.`,
@@ -254,64 +259,7 @@ export async function writeTextElementPartWithPolicy(
           if (result.unchanged) return;
           activationStarted = true;
           if (pinned) {
-            if (objectType !== 'CLAS' && objectType !== 'PROG' && objectType !== 'FUGR')
-              throw new AdtSafetyError('Missing native text-pool owner adapter.');
-            pinned.onPhase('text-activation-preflight');
-            let submitted = false;
-            const options = pinnedTextPoolActivationOptions(
-              session,
-              safety,
-              objectType,
-              name,
-              async () => {
-                await pinned.validateActivationOwner(session);
-                await readOwnedTextPoolState(session, objectType, name, pinned.ownerPackage);
-              },
-              () => {
-                submitted = true;
-                pinned.onPhase('text-activation', 'text-activation-unknown');
-              },
-            );
-            let activationError: unknown;
-            try {
-              const activation = await activate(session, safety, obj, options);
-              result.nativeActivation = {
-                ...activation,
-                messages: activation.messages.slice(0, 5).map((message) => message.slice(0, 500)),
-                ...(activation.details
-                  ? {
-                      details: activation.details
-                        .slice(0, 5)
-                        .map((detail) => ({ ...detail, text: detail.text.slice(0, 500) })),
-                    }
-                  : {}),
-              };
-            } catch (error) {
-              if (!submitted) throw error; // A known preflight refusal must not continue into verification.
-              activationError = error;
-            }
-            pinned.onPhase('text-pool-verification', 'text-activation-not-confirmed');
-            result.state = await readOwnedTextPoolState(session, objectType, name, pinned.ownerPackage);
-            const active = await readTextElementPart(session, safety, objectType, name, part, { version: 'active' });
-            result.activePartVerified = readback !== undefined && active === readback;
-            // Native failures remain failures, but the read-only observations are retained for recovery.
-            if (activationError) throw activationError;
-            if (!result.nativeActivation?.success)
-              throw new AdtSafetyError(
-                'SAP did not affirm text-pool activation execution.' +
-                  (result.nativeActivation?.messages.length
-                    ? ` SAP: ${result.nativeActivation.messages.join('; ')}`
-                    : ' Inspect the pool in ADT before continuing.'),
-              );
-            if (result.state !== 'active')
-              throw new AdtSafetyError(
-                `SAP still reports the text pool inactive.${objectType === 'PROG' ? ' A never-activated program requires an explicit first owner activation.' : ''}`,
-              );
-            if (!result.activePartVerified)
-              throw new AdtSafetyError(
-                'Active text-element content does not match the saved readback. Inspect before continuing.',
-              );
-            pinned.onPhase('complete', 'text-saved-active');
+            await completePinnedTextPoolWrite(session, safety, pinned, part, readback, result);
           } else {
             await activateTextPool(
               session,

@@ -331,3 +331,5 @@ The [sixth review and follow-up](2026-11-01-pinned-text-review-followup.md) reco
 Medium findings, the fixes and remaining native qualification requirements. Its verbatim report is
 preserved separately. Native function ownership now has a private, unadvertised candidate backed by
 [GET-only metadata evidence](2026-11-01-pinned-function-resources.md); the family is not yet admitted.
+
+The [seventh independent review and follow-up](2026-11-02-pinned-activation-review-followup.md) records current diagnostic/cleanup fixes, private creation checks and remaining native-function blockers. It does not qualify these bytes live.

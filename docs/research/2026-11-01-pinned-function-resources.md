@@ -30,7 +30,7 @@ in encoded namespace separators is equivalent; queries, source paths, other perc
 foreign containers refuse. The 40-character input bound is an internal limit, not a newly verified
 SAP naming contract.
 
-The private source factory selects existing shared update/signature and structural-include surgery
+The private source factory selects existing shared FUNC update/signature and structural-include surgery
 handlers with hashes, no replay, native CTS checks and owning-session cleanup. Invalid action/hash/
 source inputs refuse before optional function-group resolution. FUGR text replacement uses the shared
 native pool engine. Candidate FUGR deletion holds its owner and pool locks, refuses an inactive pool
@@ -42,9 +42,7 @@ source/signature preservation, structural FORM neighbors, native group pool part
 resources and removed-lock receipts. Renamed resources in mutation fixtures are authored variants;
 they do not imply that these standard SAP objects were changed.
 
-Creation, processing metadata, structural-include insertion, activation identities, transportable
-cases and two distinct propagated SAP writers still need the remaining implementation and/or
-qualification. The extracted function-processing metadata helper preserves existing single-target
+Private creation and processing metadata now have offline tests, including observed structural-include membership and cleanup failures. FUGR main-source replacement is refused; native FUNC signature normalization remains unresolved. Activation identities, transportable cases and two distinct propagated SAP writers still need implementation and/or qualification. See the [seventh-review follow-up](2026-11-02-pinned-activation-review-followup.md). The extracted function-processing metadata helper preserves existing single-target
 behavior and has a strict private candidate branch; that branch is not reachable through public
 function creation yet. DDIC/RAP, batches, other types, management, CTS, traces and FLP remain separate
 required parts of the accepted PR #1142 scope. Git and custom extensions/plugins remain excluded.
