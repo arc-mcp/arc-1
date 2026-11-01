@@ -93,6 +93,7 @@ function isBtpMode(config: ServerConfig): boolean {
 
 const SAPREAD_DESC_ONPREM =
   'Read SAP ABAP source/metadata. DDIC metadata: omit format. ' +
+  'SHLP: active partial interface metadata; missing headers/assignments/appends are explicit. No drafts or source formats. ' +
   'For specs, reviews or pre-change context, prefer SAPContext first. ' +
   'TABLE_QUERY: data preview required; CDS needs SAP_BASIS 752+. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
   'SYNTAX: read-only check (objectType+name, optional source). Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers.';
@@ -106,13 +107,14 @@ const SAPREAD_DESC_BTP =
 // ─── SAPContext Types ───────────────────────────────────────────────
 
 const SAPCONTEXT_DESC_ONPREM =
+  'SHLP: default/deps returns active partial interface metadata, as SAPRead; no KTD or dependency traversal. ' +
   'Primary tool for understanding ABAP/CDS objects. KTD when available, then dependency contracts. Use SAPRead after SAPContext for exact source/methods/grep/drafts.\n\n' +
   "Decision rule — pick the action from the user's question:\n" +
   '- "What breaks if I change <CDS>?" / "Who consumes <I_*>?" / "Blast radius" → action="impact" (DDLS only).\n' +
   '- "Which includes/appends extend <TABL>?" → action="structure", type="TABL".\n' +
   '- "What does <object> do?" / "Explain" / "deps before editing" → action="deps" (default); type+name required.\n' +
   '- "Find all callers of <object>" → action="usages" (live SAP where-used lookup).\n\n' +
-  'impact (CDS blast-radius): upstream AST deps + downstream where-used, classified into RAP buckets (projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls, metadataExtensions, abapConsumers, documentation, tables, other) + sibling-consistency hints. Use this instead of text-scanning DDDDLSRC/ACMDCLSRC with SAPQuery (it filters the noise). Optional includeIndirect, siblingCheck, siblingMaxCandidates.\n' +
+  'impact: upstream CDS dependencies, downstream where-used in RAP buckets, and sibling-consistency hints. Prefer it to SQL source scans. See action/options below.\n' +
   'deps: target KTD when available + selected dependency contracts, derived from source (not SAP-native relationships or a complete inventory). Counts distinguish root candidates from recursive attempts. Standard helper names are filtered. For CDS, includes dependency DDL/field catalogs for cl_cds_test_environment.\n' +
   'structure (TABL only): the DDIC include/append tree.';
 

@@ -228,6 +228,16 @@ export class AdtHttpClient {
     return this.discoveryMap.size > 0;
   }
 
+  /** Exact collection presence; no Accept entries still means present. Undefined means discovery is unknown. */
+  hasDiscoveryCollection(path: string): boolean | undefined {
+    return this.hasDiscoveryData() ? this.discoveryMap.has(path) : undefined;
+  }
+
+  /** Requested SAP language; the response may still contain fallback translations. */
+  get language(): string | undefined {
+    return this.config.language;
+  }
+
   /** The Accept media type ADT discovery advertises for a collection path, or undefined. Used for capability gating. */
   discoveryAcceptFor(path: string): string | undefined {
     return resolveAcceptType(this.discoveryMap, path);

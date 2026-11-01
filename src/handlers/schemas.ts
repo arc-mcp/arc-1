@@ -37,6 +37,7 @@ import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './functio
 import { CLASS_WRITE_INCLUDES, KNOWN_BASE_TYPES } from './object-types.js';
 import { SAPQuerySchema, SAPQuerySchemaBtp } from './query-input.js';
 import { LiveRelationsInput, relationNumber } from './relation-input.js';
+import { searchHelpInputIssue } from './search-help-input.js';
 import {
   ATC_BATCH_TYPES_BTP,
   SAPCONTEXT_TYPES_BTP,
@@ -100,6 +101,11 @@ function validateSapReadInput(
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
+  if (input.type === 'SHLP') {
+    const issue = searchHelpInputIssue(input);
+    if (issue) ctx.addIssue({ code: 'custom', path: [issue.key], message: issue.message });
+    return;
+  }
   validateExtensionReadInput(input as Record<string, unknown>, ctx);
   if (input.packageScope !== undefined) {
     const allowed = new Set(['type', 'name', 'packageScope', 'objectType', 'maxResults', 'format']);
@@ -1435,7 +1441,12 @@ export const SAPContextSchema = z
     siblingMaxCandidates: siblingMaxCandidatesSchema,
     includeKtd: looseOptionalBoolean,
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.type !== 'SHLP') return;
+    const issue = searchHelpInputIssue(input, true);
+    if (issue) ctx.addIssue({ code: 'custom', path: [issue.key], message: issue.message });
+  });
 
 export const SAPContextSchemaBtp = z
   .object({
