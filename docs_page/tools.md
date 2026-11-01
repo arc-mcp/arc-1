@@ -493,21 +493,22 @@ navigation links). A failed source read returns an error, not successful partial
 
 ARC-1 resolves a different enhancement subtype through repository search only after
 an unsupported BAdI read. This needs search permission as well as read permission.
-When the generic `enhoxh` route fails inside SAP — on SAP_BASIS 750 for every source-code
-plug-in, on 750 and 758 for class enhancements — ARC-1 reads the active revision of the
-implementation's enhancement include (the name padded with `=` to 30 characters plus `E`) and
-returns it as `source` together with `enhancementInclude` (include name, revision id, author,
-timestamp, transport) and a `note`; technology, description, package, enhanced object and hook
-positions remain unavailable there. `SAPRead(type="INCL")` on such an include, whose direct read
-fails on 750 and 758, falls back the same way and prefixes the source with a provenance note. Both
-need read permission only; an explicit `version="inactive"` include read is not served from
-revisions.
+When the generic `enhoxh` route fails for a source-code plug-in or class enhancement
+(observed on 750/758), ARC-1 reads the active revision of the implementation's enhancement
+include (the name padded with `=` to 30 characters plus `E`). It returns `source`,
+`enhancementInclude` provenance and a `note`; technology, description, package, enhanced object
+and hook positions remain unavailable. `SAPRead(type="INCL")` can use the same fallback after a
+direct include read fails, with a provenance note. ENHO needs read and search permission;
+INCL needs read permission. An explicit inactive include read never falls back to active source.
+Automatic source-plugin discovery still needs its direct resources; optional discovery failures
+are reported separately from the source read.
 Some other enhancement implementations still fail inside SAP; use SE80/SE19 or Eclipse's SAP GUI
 integration when the error identifies an unavailable ADT route. Only BAdI implementations
 are writable ([BAdI implementation writes](#badi-implementation-writes-enho)); ENHO source filtering
 (`grep`, method or line selection) is not supported.
 
-ENHO preserves SAP's unversioned developer view: omit `version` or use `auto`.
+Native ENHO reads use SAP's unversioned developer view: omit `version` or use `auto`.
+The revision fallback is active-only and does not check for pending ENHO drafts.
 Explicit `active`/`inactive` selection is refused because its behavior is not verified
 for these resources. Metadata and source are separate reads, not an atomic snapshot.
 
