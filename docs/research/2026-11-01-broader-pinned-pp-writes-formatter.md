@@ -1,10 +1,11 @@
-# Pinned PP formatter adapter candidate — 1 November 2026
+# Pinned PP formatter adapter and qualification — 1 November 2026
 
 This record began as the native-adapter checkpoint at `70ab1f7b4` for draft PR #1142. The subsequent
 integration admits `SAPLint.set_formatter_settings`, `format` and `get_formatter_settings` only on
 writable pinned PP connections. The normal single-target implementation is unchanged apart from
-correcting its scope description. The integration is still awaiting Claude review and live PP
-qualification; it is not a completed release acceptance.
+correcting its scope description. The integrated build at `69b28b22e509517b268981ce0538220aea49db3c`
+passed the two-user PP qualification below. Claude review is still pending; this is not a completed
+release acceptance.
 
 ## Scope correction
 
@@ -14,9 +15,9 @@ with that user's ABAP Workbench settings. The former "global/system-wide formatt
 in current tool descriptions and operator documentation was incorrect and is corrected here. Older
 research/planning records retain the assumption they originally made; this evidence supersedes it.
 
-This documentation establishes the intended native scope. It does not independently prove that two
-different PP users retain separate preferences on the configured route; that remains a live admission
-check. Repository package/transport allowlists are not ownership evidence for formatter preferences.
+This documentation establishes the intended native scope. The separate two-user test below checks
+that scope on the configured PP route. Repository package/transport allowlists are not ownership
+evidence for formatter preferences.
 
 ## Candidate protocol
 
@@ -58,7 +59,7 @@ contains the timing, outcomes and hashes, without credentials. The live run prec
 extra outgoing-document equality check for unrelated attributes; the subsequent unit run includes
 that check. No additional native request was needed to establish a different endpoint contract.
 
-## Verification and remaining admission work
+## Native-candidate verification
 
 The focused suite has 42 tests, including raw field/type rejection, strict XML preservation,
 registered context ownership, write gates, deadline/cancellation propagation, native status handling,
@@ -70,10 +71,9 @@ and strict documentation build. Its first run identified the decoder's explicit 
 the new raw-XML boundary was added without permitting general output double-decoding, then the full
 suite passed. Seven public tool snapshots changed only the corrected formatter scope description.
 
-Before admission, integrate the partial-patch handler without using the legacy parser's fallback
-defaults; add only the reviewed formatter companions to writable pinned catalogs; retain all existing
-reader/aggregate/Basic surfaces; qualify the two-user PP behavior; and complete the requested actual
-Claude Code Opus 5.5 max review. This checkpoint is not parity or merge acceptance.
+At this native-candidate checkpoint, handler integration, companion projection, two-user PP behavior
+and actual Claude Code Opus 5.5 max review were still outstanding. The following sections record the
+subsequent work without treating the earlier direct-authentication test as PP evidence.
 
 ### Handler and companion integration
 
@@ -92,5 +92,61 @@ and Basic route tests keep their original formatter action lists and refuse dire
 
 This integration adds 32 tests across route preparation and the real dispatch/native-HTTP boundary.
 The full suite passed **389 files / 10,758 tests**, plus typecheck, build, lint and file/schema budgets.
-The native candidate evidence above remains valid for its protocol, but does not substitute for the
-new handler's upcoming two-identity PP qualification or the pending Claude review.
+The native candidate evidence above remains valid for its protocol; the following live run covers
+the new handler. Claude review remains pending.
+
+## Two-user pinned PP qualification
+
+The exact `69b28b22e` build was staged and selected on the existing isolated CF test app. Package
+staging and droplet selection preserved its route. The temporary destination `PR1142/001` and the
+existing read-only `A4H/001` both resolved to A4H/client 001. Both test identities received exact
+write grants for **both** target IDs. The original A4H destination's omitted `arc1.allow_writes`
+remained false, so its refusal isolates the destination ceiling rather than a missing target grant.
+
+All three tokens stayed in the local harness process. Before any SAP request the harness verified
+signature/audience/expiry, expected email and IdP origin, read/write scope, exact write grants, read
+grants and remaining lifetime. The two writers used the identities previously mapped to `MARIAN`
+and `ARC1_WG_RO`; the third token belonged to the primary identity with only the read scope.
+
+An initial browser sign-in reused the secondary identity and was refused before backend calls.
+After explicit sign-in, the first qualification reached SAP but the secondary user's original
+display-only role could not read preferences. The run stopped before any mutation. Its failed
+preflight is retained separately. The previously configured `Z_ARC1_PR2_TEST` role was temporarily
+assigned through WebGUI, with validity limited to 1 November, and its generated profile verified.
+This was not a minimum-permission experiment; the role also permits the earlier class test work.
+
+The fresh qualification completed **241 assertions, zero failures**:
+
+1. Both users began with indentation `true` and style `keywordUpper`, verified by repeated reads.
+2. Primary indentation changed to `false` using the string input `"false"`; its style stayed intact.
+   The secondary user's settings remained unchanged.
+3. Secondary style changed to `none`; its indentation stayed intact. The primary settings retained
+   their distinct expected value.
+4. Both identities formatted source without creating or saving a repository object.
+5. A read-only token, the read-only destination with a valid write grant, `/multi/mcp` and
+   `/authorize` hid all three formatter actions and refused each direct invocation with the exact
+   `MULTI_TARGET_OPERATION_FORBIDDEN` code. Both settings were read back unchanged after each group.
+6. Secondary then primary preferences were restored and read back. A separate direct-authenticated
+   native GET as MARIAN returned **byte-identical original XML**.
+
+Every response was checked for private/no-store caching. The harness saved an exclusive attempt
+record before each mutation, refused blind replay, and restored only the original or its own
+expected state. Six simulated scenarios additionally checked replay protection, shared preferences,
+a response lost after a secondary update, an unrelated concurrent change, a cleanup-read failure
+and incorrect login identity. These simulations are harness checks, not native SAP evidence.
+
+Cleanup restored and independently compared the original SAP role, validity and profile; the
+temporary role definition remains unassigned. The original app droplet, full user environment,
+route and XSUAA descriptor were restored. Temporary IAM role/collection and destination were
+deleted and absence verified; `/health` returned 200. Tokens were discarded and test tabs closed.
+The [PP evidence record](broader-pinned-pp-writes/formatter-pp-2026-11-01.json) contains the source
+revision, source/harness hashes, assertions and restoration facts without credentials.
+
+### Limits
+
+This qualifies two users on one backend/client, not different SAP systems or all backend releases.
+The preference endpoint does not return a native username; the secondary SAP mapping is supported
+by the earlier independent class-author qualification, not a new WHOAMI response. Same-user
+concurrent updates still have the documented native-unconditional risk when no strong ETag exists.
+Basic/global-readonly/deny-rule boundaries have unit coverage but were not new live fixtures here.
+This formatter result does not qualify CTS, traces, FLP, broad CRUD or whole PR #1142 for merging.

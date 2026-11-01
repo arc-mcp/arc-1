@@ -434,8 +434,8 @@ circumvent that choice.
 ### Formatter and quickfix
 
 The [1 November formatter checkpoint](../research/2026-11-01-broader-pinned-pp-writes-formatter.md)
-records SAP's user-specific scope documentation, a guarded native adapter candidate and a restored
-direct-authentication round trip. It does not close handler integration or PP qualification.
+records SAP's user-specific scope documentation, native adapter and handler integration, a restored
+direct-authentication round trip and two-user PP qualification. Its Claude acceptance remains pending.
 
 Verify the native scope of formatter settings through PP. The current parser maps unknown styles
 to `keywordUpper` and the writer emits only two fields; do not describe that as preserving native

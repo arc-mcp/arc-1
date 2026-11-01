@@ -216,8 +216,8 @@ combinations and preserves the current catalogs. Mixed-tool admission/projection
 implemented with synthetic-capability tests; its Claude review is pending. Broader type/action
 adapters, companion-read projection and their PP qualification remain outstanding.
 The [formatter adapter](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-formatter.md)
-now has pinned handler/companion integration, unit and restored direct-native evidence; its Claude
-review and two-identity PP qualification remain outstanding.
+now has pinned handler/companion integration, unit, restored direct-native and two-identity PP evidence
+(241 assertions). Its Claude acceptance remains outstanding; this does not close the broader write scope.
 
 **Resume when.** The PR 1 acceptance and owner request prerequisites are met. Continue the guarded
 adapters and native qualification against the reviewed PR 2 plan. Preserve the shared foundation's

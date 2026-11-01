@@ -127,7 +127,8 @@ preserve existing state fields. Restore prior trace state in tests, including ot
 filters. Formatter patches preserve unrelated native XML/style data and reject unknown shapes.
 SAP documents formatter preferences as user-specific for the selected system connection, not global
 system settings. The [native adapter evidence](../research/2026-11-01-broader-pinned-pp-writes-formatter.md)
-corrects that earlier assumption; separate PP user-scope qualification is still required.
+corrects that earlier assumption and records the separate two-user PP qualification. Claude
+acceptance remains pending; the formatter result does not accept this broader ADR.
 Quickfix application returns deltas; source persistence still goes through guarded SAPWrite.
 
 ## Upgrade and acceptance
@@ -146,7 +147,7 @@ from this ADR. Keep FEAT-93 open until the expanded scope is implemented and ver
 
 Residual risks include shared process availability, cross-client repository changes, authored-code
 effects, activation of preexisting drafts, irreversible releases/deletes, trace load and captured
-data, shared FLP/settings effects, asynchronous audit delivery, retained token grants and admitted
+data, shared FLP and same-user preference effects, asynchronous audit delivery, retained token grants and admitted
 calls completing after policy changes. These extend R23; broader acceptance remains pending the
 implementation evidence and review. Separate instances remain available for stronger isolation.
 
