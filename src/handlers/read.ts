@@ -8,12 +8,18 @@ import { resolveBspNameAndPath } from '../adt/bsp-path.js';
 import type { AdtClient, SourceReadResult, TextElementPart } from '../adt/client.js';
 import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import { decodeKtdText, formatKtdNodeIndex, formatKtdShortTexts, KTD_META_MARKER } from '../adt/ddic-xml.js';
-import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '../adt/errors.js';
+import {
+  describeEnhancementIncludeRevision,
+  isEnhancementIncludeName,
+  readEnhancementIncludeRevision,
+} from '../adt/enhancement-include.js';
+import { AdtApiError, extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
 import { internalOperationDenial, internalOperationWarning } from '../adt/internal-data-operations.js';
 import { getLockObject } from '../adt/lock-object.js';
 import { describePackageListing } from '../adt/package-contents.js';
+import { RevisionHistoryError } from '../adt/revision-feed.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
 import {
   ensureServerDrivenSupport,
@@ -695,9 +701,33 @@ async function handleSAPReadBase(
       if (args.expand_includes === true) {
         return readExpandedSource(client, 'INCL', name, grepArg, expandedVersions, versionWarning);
       }
-      const { source, cacheHit, revalidated } = await cachedGet('INCL', name, effectiveVersion, (ifNoneMatch) =>
-        client.getInclude(name, { ifNoneMatch, version: effectiveVersion }),
-      );
+      let read: Awaited<ReturnType<typeof cachedGet>>;
+      try {
+        read = await cachedGet('INCL', name, effectiveVersion, (ifNoneMatch) =>
+          client.getInclude(name, { ifNoneMatch, version: effectiveVersion }),
+        );
+      } catch (error) {
+        // Enhancement includes (`<implementation>=…=E`) are not served by /source/main on SAP_BASIS 750;
+        // their revision feed still lists the active version. Drafts cannot be read from there.
+        if (
+          effectiveVersion === 'inactive' ||
+          !isEnhancementIncludeName(name) ||
+          !(error instanceof AdtApiError) ||
+          ![400, 404, 500].includes(error.statusCode)
+        )
+          throw error;
+        const fallback = await readEnhancementIncludeRevision(client, name).catch((inner: unknown) => {
+          if (inner instanceof RevisionHistoryError) return undefined;
+          if (inner instanceof AdtApiError && [400, 404, 500].includes(inner.statusCode)) return undefined;
+          throw inner;
+        });
+        if (!fallback) throw error;
+        extensionBase.source = fallback.source;
+        const note = [versionWarning, describeEnhancementIncludeRevision(fallback)].filter(Boolean).join('\n\n');
+        if (args.grep) return grepText(fallback.source, note);
+        return cachedTextResult(fallback.source, false, false, note);
+      }
+      const { source, cacheHit, revalidated } = read;
       if (args.grep) return grepText(source, includeSearchHint(name, source));
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }

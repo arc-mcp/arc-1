@@ -1,7 +1,9 @@
-/** ENHO read routing: XHB BAdIs, XHH source plug-ins, and the legacy/generic XH route. */
+/** ENHO read routing: XHB BAdIs, XHH source plug-ins, the legacy/generic XH route, and the include fallback. */
 import type { AdtClient } from './client.js';
+import { enhancementIncludeName, readEnhancementIncludeRevision } from './enhancement-include.js';
 import { withFilterConditions } from './enho-filter.js';
 import { AdtApiError, AdtError } from './errors.js';
+import { RevisionHistoryError } from './revision-feed.js';
 import { checkOperation, OperationType } from './safety.js';
 import type { EnhancementImplementationInfo } from './types.js';
 import { getNestedArray, parseEnhancementImplementation, parseXml } from './xml-parser.js';
@@ -12,6 +14,48 @@ const ROUTES = {
   'ENHO/XH': ['enhoxh', 'application/vnd.sap.adt.enh.enho.v1+xml'],
 } as const;
 type Subtype = keyof typeof ROUTES;
+/** SAP's own failure statuses at an ENHO route; auth, throttling and network errors never reroute. */
+const REROUTE_STATUSES = [400, 404, 500];
+
+/**
+ * Releases whose ADT serves only the generic `enhoxh` route (SAP_BASIS 750) fail inside SAP for
+ * source-code plug-ins; their include's `/source/main` fails as well, but its revision feed still
+ * lists the active version. Returns `undefined` when that route fails too, so the caller keeps the
+ * original SAP error.
+ */
+async function readSourcePlugInFromInclude(
+  client: Pick<AdtClient, 'getRevisions' | 'getRevisionSource'>,
+  name: string,
+  attempted: string[],
+): Promise<EnhancementImplementationInfo | undefined> {
+  const include = enhancementIncludeName(name);
+  attempted.push(`programs/includes/${include}/source/main/versions`);
+  let read: Awaited<ReturnType<typeof readEnhancementIncludeRevision>>;
+  try {
+    read = await readEnhancementIncludeRevision(client, include);
+  } catch (error) {
+    if (error instanceof RevisionHistoryError) return undefined;
+    if (error instanceof AdtApiError && REROUTE_STATUSES.includes(error.statusCode)) return undefined;
+    throw error;
+  }
+  if (!read) return undefined;
+  return {
+    name,
+    description: '',
+    package: '',
+    // Source-code plug-ins and class enhancements both store `ENHANCEMENT n` blocks here; the include
+    // does not identify the technology, so it is left empty rather than guessed.
+    technology: '',
+    badiImplementations: [],
+    source: read.source,
+    enhancementInclude: { name: read.include, revision: read.revision },
+    note:
+      'The direct ADT enhancement read failed; source is the active ' +
+      'revision of its enhancement include. Technology (source-code plug-in or class enhancement), ' +
+      'description, package, enhanced object, hook positions and switch state are not available here — ' +
+      'use SE19/SE80 or Eclipse for them.',
+  };
+}
 
 /** Preserve the existing BAdI payload; source plug-ins additionally expose their hook locations. */
 export function parseEnhancementMetadata(xml: string): EnhancementImplementationInfo {
@@ -56,7 +100,7 @@ export function parseEnhancementMetadata(xml: string): EnhancementImplementation
 }
 
 export async function readEnhancementImplementation(
-  client: Pick<AdtClient, 'http' | 'safety' | 'searchObject'>,
+  client: Pick<AdtClient, 'http' | 'safety' | 'searchObject' | 'getRevisions' | 'getRevisionSource'>,
   name: string,
 ): Promise<EnhancementImplementationInfo> {
   checkOperation(client.safety, OperationType.Read, 'GetEnhancementImplementation');
@@ -77,7 +121,7 @@ export async function readEnhancementImplementation(
       return await read('ENHO/XHB');
     } catch (initial) {
       // These statuses include SAP's wrong-subtype transformation errors. Do not reroute auth or network failures.
-      if (!(initial instanceof AdtApiError) || ![400, 404, 500].includes(initial.statusCode)) throw initial;
+      if (!(initial instanceof AdtApiError) || !REROUTE_STATUSES.includes(initial.statusCode)) throw initial;
       const matches = await client.searchObject(name, 100, 'ENHO');
       const subtypes = new Set(
         matches
@@ -92,10 +136,24 @@ export async function readEnhancementImplementation(
       );
       const subtype = subtypes.size === 1 ? [...subtypes][0] : undefined;
       if (!subtype || subtype === 'ENHO/XHB' || !Object.hasOwn(ROUTES, subtype)) throw initial;
-      return await read(subtype as Subtype);
+      try {
+        return await read(subtype as Subtype);
+      } catch (generic) {
+        // Only the generic route has no source resource of its own; SAP fails there for source-code
+        // plug-ins on releases that advertise nothing else (750). Keep every other failure as it is.
+        if (
+          subtype !== 'ENHO/XH' ||
+          !(generic instanceof AdtApiError) ||
+          !REROUTE_STATUSES.includes(generic.statusCode)
+        )
+          throw generic;
+        const fallback = await readSourcePlugInFromInclude(client, name, attempted);
+        if (fallback) return fallback;
+        throw generic;
+      }
     }
   } catch (error) {
-    if (error instanceof AdtApiError && [400, 404, 500].includes(error.statusCode)) {
+    if (error instanceof AdtApiError && REROUTE_STATUSES.includes(error.statusCode)) {
       error.extraHint = `ENHO read attempted ${attempted.join(', ')}. If this enhancement cannot be exposed by ADT, inspect it in SAP GUI (SE80/SE19) or Eclipse's SAP GUI integration.`;
     }
     throw error;

@@ -1166,6 +1166,13 @@ export interface FeatureToggleInfo {
 /** Enhancement metadata; hook implementations also include locations and ABAP source. */
 export interface EnhancementImplementationInfo {
   source?: string;
+  /** Set when `source` came from the enhancement include's revision feed instead of an ADT ENHO route. */
+  enhancementInclude?: {
+    name: string;
+    revision: { id: string; author: string; timestamp: string; transport?: string; versionTitle?: string };
+  };
+  /** Human-readable limitation of a fallback read, e.g. which metadata could not be obtained. */
+  note?: string;
   enhancedObject?: { name: string; type: string; uri: string };
   hookImplementations?: Array<{
     id: string;
@@ -1181,7 +1188,7 @@ export interface EnhancementImplementationInfo {
   description: string;
   package: string;
   technology: string;
-  switchSupported: boolean;
+  switchSupported?: boolean;
   badiImplementations: Array<{
     name: string;
     shortText: string;
