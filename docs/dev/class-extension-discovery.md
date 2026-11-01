@@ -2,7 +2,9 @@
 
 CLAS combines two independent providers in the request-local extension session. The source plug-in
 adapter checks the selected class main/local source; native Relation Explorer EXTED_OBJ checks
-identities bound to the owning class. Empty hooks do not imply an empty native result. In particular,
+identities bound to the owning class. Denying `SAPNavigate.relations` suppresses all native
+class/interface relation reads and reports that provider as denied; independent source hooks can
+still run under their own SAPRead permissions. Empty hooks do not imply an empty native result. In particular,
 CL_OO_ADT_ENHANCED_CLASS has a structural enhancement despite empty authored/hook source.
 
 The native provider requires exact activeContext, active root identity and parent/child references
@@ -14,7 +16,8 @@ reported explicitly. BTP SAP_BASIS 920 is read-only qualified through direct ser
 OAuth: native structural identities and main hooks work; authored structural/local source reads
 return 403 for the tested identity and remain denied without fallback. INTF still returns ENV.
 Positive interface coverage, other releases and BTP principal propagation remain unqualified.
-See the [combined qualification](../research/2026-10-31-extension-test-gaps.md).
+See the [combined qualification](../research/2026-10-31-extension-test-gaps.md) and
+[current runtime BTP requalification](../research/2026-11-01-cache-fixture-and-btp-requalification.md).
 
 Sources remain separate labelled representations. The active known-subtype ENHO reader may use a
 generated include revision only for a qualified source-unavailable failure: 404/resource-read failure,

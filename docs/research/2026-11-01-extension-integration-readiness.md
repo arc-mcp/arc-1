@@ -1,5 +1,7 @@
 # Final combined extension integration and review
 
+**Current branch status:** [Integration after class PR #1146 merged](2026-11-01-bdef-post-class-merge.md) records the resolved main ancestry, new guard tests and current validation. Earlier results below remain historical.
+
 **Follow-up:** [Current cache-fixture repair and BTP requalification](2026-11-01-cache-fixture-and-btp-requalification.md) records the completed CI result and nine fresh BTP cases on this unchanged runtime. Earlier results below are retained as historical evidence.
 
 The original CI result and subsequent live-test assertion repair are recorded in

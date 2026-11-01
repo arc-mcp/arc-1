@@ -1,5 +1,7 @@
 # Cache fixture repair and current BTP qualification
 
+**Current branch status:** [Integration after class PR #1146 merged](2026-11-01-bdef-post-class-merge.md) records the resolved main ancestry, new guard tests and current validation. Earlier results below remain historical.
+
 The complete [repair CI run on `234c2b26d`](https://github.com/arc-mcp/arc-1/actions/runs/41302288215)
 passed both on-prem BDEF integration cases, all three BDEF MCP cases, both Node
 unit jobs, and the other build/static/security checks. E2E finished with **160

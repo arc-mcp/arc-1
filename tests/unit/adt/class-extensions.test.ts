@@ -167,6 +167,15 @@ describe('class-bound enhancements', () => {
     expect(s.session.stopped).toBe(true);
     expect(s.getRevisions).not.toHaveBeenCalled();
   });
+  it.each(['CLAS', 'INTF'])('denies native %s relations before any hidden request', async (rootType) => {
+    const s = setup({ deny: ['SAPNavigate.relations'], rootType });
+    const result = await s.run();
+    expect(result.providers[0]).toMatchObject({ status: 'denied', reason: 'native_relation_action_denied' });
+    expect(s.get).not.toHaveBeenCalled();
+    expect(s.post).not.toHaveBeenCalled();
+    expect(s.getRevisions).not.toHaveBeenCalled();
+    expect(s.session.stopped).toBe(false);
+  });
   it.each(['SAPRead.ENHO', 'SAPRead.CLAS', 'SAPRead.INCL'])('obeys hidden-read denial %s', async (deny) => {
     const s = setup({ deny: [deny] });
     const r = await s.run();
