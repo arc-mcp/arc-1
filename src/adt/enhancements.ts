@@ -187,6 +187,7 @@ export function parseEnhancementMetadata(xml: string): EnhancementImplementation
 export async function readEnhancementImplementation(
   client: Pick<AdtClient, 'http' | 'safety' | 'searchObject' | 'getRevisions' | 'getRevisionSource'>,
   name: string,
+  release?: string,
 ): Promise<EnhancementImplementationInfo> {
   checkOperation(client.safety, OperationType.Read, 'GetEnhancementImplementation');
   const attempted: string[] = [];
@@ -226,7 +227,7 @@ export async function readEnhancementImplementation(
       } catch (generic) {
         // Only the generic route has no source resource of its own; SAP fails there for source-code
         // plug-ins on releases that advertise nothing else (750). Keep every other failure as it is.
-        if (subtype !== 'ENHO/XH' || !enhancementSourceUnavailable(generic)) throw generic;
+        if (subtype !== 'ENHO/XH' || !enhancementSourceUnavailable(generic, release)) throw generic;
         const fallback = await readSourcePlugInFromInclude(client, name, attempted);
         if (fallback) return fallback;
         throw generic;

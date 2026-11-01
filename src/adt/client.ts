@@ -963,8 +963,8 @@ export class AdtClient {
   }
 
   /** Get enhancement metadata and, for source-code plug-ins, hook locations and ABAP source. */
-  async getEnhancementImplementation(name: string): Promise<EnhancementImplementationInfo> {
-    return readEnhancementImplementation(this, name);
+  async getEnhancementImplementation(name: string, release?: string): Promise<EnhancementImplementationInfo> {
+    return readEnhancementImplementation(this, name, release);
   }
 
   /** Get transaction code metadata (description, package) */

@@ -134,6 +134,17 @@ describe('class-bound enhancements', () => {
     await s.run();
     expect(s.getRevisions).toHaveBeenCalledTimes(1);
   });
+  it('counts an actual EIMP reference as unqualified without fetching it', async () => {
+    const s = setup({
+      source: `* INCLUDE ${parent}M002.\nINCLUDE ${parent}IMP.\nINCLUDE ZOTHER.\nINCLUDE OTHER=========================EM001.`,
+    });
+    const result = await s.run();
+    expect(result.sources).toHaveLength(1);
+    expect(result.omissions.sources).toBe(3);
+    expect(result.providers.at(-1)).toMatchObject({ status: 'incomplete' });
+    expect(result.providers.at(-1)?.reason).toContain('unqualified_generated_include_references');
+    expect(s.getRevisions).toHaveBeenCalledTimes(1);
+  });
   it.each([
     ['ENV', fixture('class-exted.xml').replaceAll('EXTED_OBJ', 'ENV')],
     ['WUL', fixture('class-exted.xml').replaceAll('EXTED_OBJ', 'WUL')],
@@ -294,5 +305,56 @@ describe('class-bound enhancements', () => {
     await discoverClassSources(s.client, s.session, nodes, '750');
     expect(s.session.result.omissions.sources).toBe(2);
     expect(s.get.mock.calls.filter(([path]) => path.includes('/enhancements/'))).toHaveLength(1);
+  });
+  it('reports an unsupported native subtype without attempting an authored or generated source', async () => {
+    const s = setup();
+    const nodes = await discoverClassIdentities(s.client, s.session, s.request);
+    await discoverClassSources(s.client, s.session, [{ ...nodes[0]!, type: 'ENHO/XHB' }]);
+    expect(s.session.result.providers.at(-1)).toMatchObject({
+      status: 'unsupported',
+      reason: 'unsupported_source_provider',
+    });
+    expect(s.session.result.omissions.sources).toBe(1);
+    expect(s.get).toHaveBeenCalledTimes(1);
+    expect(s.getRevisions).not.toHaveBeenCalled();
+  });
+  it('reports valid native metadata with no source as unavailable rather than absence', async () => {
+    const s = setup();
+    const nodes = await discoverClassIdentities(s.client, s.session, s.request);
+    s.get.mockResolvedValue({
+      body: `<enhancement name="${enhancement}"><contentSpecific><hookTechnology><enhancedObject name="${name}" type="CLAS/OC" uri="${rootUri}"/></hookTechnology></contentSpecific></enhancement>`,
+    });
+    await discoverClassSources(s.client, s.session, nodes);
+    expect(s.session.result.providers.at(-1)).toMatchObject({ status: 'unsupported', reason: 'source_unavailable' });
+    expect(s.session.result.omissions.sources).toBe(1);
+    expect(s.session.result.nodes).toHaveLength(1);
+    expect(s.getRevisions).not.toHaveBeenCalled();
+  });
+  it('refuses sources at an exhausted native depth before making source requests', async () => {
+    const s = setup();
+    const nodes = await discoverClassIdentities(s.client, s.session, s.request);
+    s.session.result.edges.length = 0;
+    for (let depth = 0; depth < 5; depth++)
+      s.session.result.edges.push({
+        from: depth === 0 ? `ENHO/XH:${enhancement}:active` : `ENHO/XHH:ZPARENT${depth}:active`,
+        to: `ENHO/XHH:ZPARENT${depth + 1}:active`,
+        kind: 'extends',
+      });
+    s.session.result.edges.push({ from: 'ENHO/XHH:ZPARENT5:active', to: `CLAS:${name}:active`, kind: 'extends' });
+    await discoverClassSources(s.client, s.session, nodes);
+    expect(s.session.result.providers.at(-1)).toMatchObject({ reason: 'source_depth_limit' });
+    expect(s.session.result.omissions).toMatchObject({ depth: 1, sources: 1 });
+    expect(s.get).toHaveBeenCalledTimes(1);
+    expect(s.getRevisions).not.toHaveBeenCalled();
+  });
+  it('omits a generated body when its representation cannot fit the shared node cap', async () => {
+    const s = setup();
+    const nodes = await discoverClassIdentities(s.client, s.session, s.request);
+    for (let index = 1; index < s.session.limits.nodes; index++)
+      s.session.addNode({ ...nodes[0]!, name: `ZFILL${index}` });
+    await discoverClassSources(s.client, s.session, nodes, '750');
+    expect(s.session.result.sources).toEqual([]);
+    expect(s.session.result.omissions).toMatchObject({ nodes: 1, sources: 1 });
+    expect(s.getRevisions).toHaveBeenCalledTimes(1);
   });
 });

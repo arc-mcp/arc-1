@@ -2,6 +2,7 @@
 
 import { createHash } from 'node:crypto';
 import type { AdtClient } from './client.js';
+import { enhancementIncludeReferences, isEnhancementIncludeName } from './enhancement-include.js';
 import { AdtApiError } from './errors.js';
 import {
   type ExtensionDiscoverySession,
@@ -163,6 +164,15 @@ export async function discoverSourcePlugins(
           session.omit('sources');
           unavailable = true;
           session.result.issues.push(`source_scan_byte_limit:${unit.type}:${unit.name}`);
+          continue;
+        }
+        if (unit.type === 'INCL' && isEnhancementIncludeName(unit.name)) {
+          const references = enhancementIncludeReferences(source);
+          if (references.length) {
+            session.omit('sources', references.length);
+            unavailable = true;
+            session.result.issues.push('generated_include_references_unqualified');
+          }
           continue;
         }
         for (const include of findIncludeStatements(source)) {

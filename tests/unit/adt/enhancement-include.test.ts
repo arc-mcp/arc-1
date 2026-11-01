@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DataResponseBudget } from '../../../src/adt/data-result-context.js';
 import {
   enhancementIncludeName,
+  enhancementIncludeReferences,
   enhancementMethodIncludes,
   readEnhancementIncludeRevision,
 } from '../../../src/adt/enhancement-include.js';
@@ -21,6 +22,12 @@ function client(overrides = {}) {
   };
 }
 describe('qualified generated include revisions', () => {
+  it('bounds scanning of long nonmatching words while retaining namespaced padded references', () => {
+    const foreign = '/NS/OTHER=====================EM001';
+    expect(
+      enhancementIncludeReferences(`* ${'A'.repeat(150_000)}\nINCLUDE ${foreign}.\nINCLUDE ${include}M001.`),
+    ).toEqual([foreign, `${include}M001`]);
+  });
   it.each(['INCL', 'VERSIONS', 'VERSION_SOURCE'])(
     'obeys the hidden SAPRead.%s denial before any feed/content read',
     async (type) => {

@@ -698,7 +698,11 @@ async function handleSAPReadBase(
       } catch (error) {
         // Enhancement includes (`<implementation>=…=E`) are not served by /source/main on SAP_BASIS 750;
         // their revision feed still lists the active version. Drafts cannot be read from there.
-        if (effectiveVersion === 'inactive' || !isEnhancementIncludeName(name) || !enhancementSourceUnavailable(error))
+        if (
+          effectiveVersion === 'inactive' ||
+          !isEnhancementIncludeName(name) ||
+          !enhancementSourceUnavailable(error, getCachedFeatures()?.abapRelease)
+        )
           throw error;
         const fallback = await readEnhancementIncludeRevision(client, name).catch((inner: unknown) => {
           if (inner instanceof RevisionHistoryError) return undefined;
@@ -706,7 +710,8 @@ async function handleSAPReadBase(
           throw inner;
         });
         if (!fallback) throw error;
-        const note = describeEnhancementIncludeRevision(fallback);
+        extensionBase.source = fallback.source;
+        const note = [versionWarning, describeEnhancementIncludeRevision(fallback)].filter(Boolean).join('\n');
         if (args.grep) return grepText(fallback.source, note);
         return cachedTextResult(fallback.source, false, false, note);
       }
@@ -879,7 +884,7 @@ async function handleSAPReadBase(
           'ENHO does not support explicit version selection. Omit version or use "auto" for SAP\'s developer view.',
         );
       }
-      const enhancement = await client.getEnhancementImplementation(name);
+      const enhancement = await client.getEnhancementImplementation(name, getCachedFeatures()?.abapRelease);
       return textResult(toolJson(enhancement));
     }
     case 'VERSIONS': {

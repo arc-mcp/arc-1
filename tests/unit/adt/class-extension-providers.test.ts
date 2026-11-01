@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { discoverClassExtensions } from '../../../src/adt/class-extensions.js';
 import type { AdtClient } from '../../../src/adt/client.js';
+import { AdtApiError } from '../../../src/adt/errors.js';
 import { ExtensionDiscoverySession } from '../../../src/adt/extension-discovery.js';
 import type { AdtRequestOptions } from '../../../src/adt/http-deadline.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
@@ -12,7 +13,12 @@ const fixture = (name: string) =>
 const name = 'CL_SEEF_ADT_TEST_AUNIT_1';
 const root = relationObject(name);
 const request = { root: { type: 'CLAS', name, version: 'active' }, scope: 'class source' };
-function setup(mode: 'summary' | 'sources', section: 'main' | 'definitions' = 'main', nativeGraph = false) {
+function setup(
+  mode: 'summary' | 'sources',
+  section: 'main' | 'definitions' = 'main',
+  nativeGraph = false,
+  context = 'EXTED_OBJ',
+) {
   const safety = defaultSafetyConfig();
   const session = new ExtensionDiscoverySession(mode, request, safety);
   const get = vi.fn(async (path: string, _headers: unknown, options: AdtRequestOptions) => {
@@ -30,7 +36,7 @@ function setup(mode: 'summary' | 'sources', section: 'main' | 'definitions' = 'm
     return {
       body: nativeGraph
         ? readFileSync(new URL('../../fixtures/class-extensions/class-hook-native.xml', import.meta.url), 'utf8')
-        : relationXml(root, [], 'EXTED_OBJ'),
+        : relationXml(root, [], context),
     };
   });
   const client = { safety, http: { get, post } } as unknown as AdtClient;
@@ -44,7 +50,7 @@ function setup(mode: 'summary' | 'sources', section: 'main' | 'definitions' = 'm
     );
     return session.finish();
   };
-  return { run, get, session };
+  return { run, get, post, session };
 }
 describe('combined class providers', () => {
   it('keeps cheap HOOK_IMPL coverage at two outer identities', async () => {
@@ -62,6 +68,40 @@ describe('combined class providers', () => {
     expect(result.edges.filter((edge) => edge.kind === 'replacement')).toHaveLength(3);
     expect(result.sources).toHaveLength(8);
     expect(result.sources.every((source) => source.representation === 'rendered_plugin_source')).toBe(true);
+  });
+  it('retains hook sources when native relations silently fall back to ENV', async () => {
+    const result = await setup('sources', 'main', false, 'ENV').run();
+    expect(result.providers[0]).toMatchObject({ status: 'unsupported', reason: 'unsupported_context' });
+    expect(result.providers[1]?.status).toBe('returned');
+    expect(result.nodes).toHaveLength(7);
+    expect(result.sources).toHaveLength(8);
+    expect(result.edges.filter((edge) => edge.kind === 'replacement')).toHaveLength(3);
+    expect(result.edges.some((edge) => edge.kind === 'extends')).toBe(false);
+  });
+  it.each([404, 405, 406, 501])('retains hook sources after unsupported native HTTP %s', async (status) => {
+    const s = setup('sources');
+    s.post.mockRejectedValueOnce(new AdtApiError('unsupported provider', status, '/sap/bc/adt/oo/objectexplorer'));
+    const result = await s.run();
+    expect(result.providers[0]).toMatchObject({ status: 'unsupported', reason: 'unsupported_provider' });
+    expect(result.providers[1]?.status).toBe('returned');
+    expect(result.sources).toHaveLength(8);
+    expect(result.nodes.find((node) => node.name === 'SEEF_ADT_TEST_ENHO_CLASS_1')?.switch).toBe(
+      'SEEF_ADT_TEST_SWITCH_01:off',
+    );
+  });
+  it('counts native source omissions when hook authorization stops the combined phase', async () => {
+    const s = setup('sources', 'main', true);
+    const get = s.get.getMockImplementation()!;
+    s.get.mockImplementation(async (path, headers, options) => {
+      if (path.endsWith('/enhancements/elements')) throw new AdtApiError('denied', 403, path);
+      return get(path, headers, options);
+    });
+    const result = await s.run();
+    expect(result.nodes).toHaveLength(7);
+    expect(result.sources).toEqual([]);
+    expect(result.omissions.sources).toBe(8); // One unread hook unit plus seven known native sources.
+    expect(result.providers.at(-1)).toMatchObject({ id: 'class_exted_obj_source', reason: 'optional_phase_stopped' });
+    expect(s.get.mock.calls.some(([path]) => path.includes('/enhox'))).toBe(false);
   });
   it('keeps a local definitions selection separate from main hook scope', async () => {
     const s = setup('sources', 'definitions');
@@ -84,6 +124,18 @@ describe('combined class providers', () => {
     );
     expect(result.edges.filter((edge) => edge.kind === 'replacement')).toHaveLength(3);
     expect(result.sources).toHaveLength(8);
+    expect(result.nodes.find((node) => node.name === 'SEEF_ADT_TEST_ENHO_CLASS_1')?.switch).toBe(
+      'SEEF_ADT_TEST_SWITCH_01:off',
+    );
+  });
+  it('keeps distinct active/current summary observations and qualifies the hook switch state', async () => {
+    const result = await setup('summary', 'main', true).run();
+    const observations = result.nodes.filter((node) => node.name === 'SEEF_ADT_TEST_ENHO_CLASS_1');
+    expect(observations.map((node) => node.version).sort()).toEqual(['active', 'provider_current']);
+    expect(observations.find((node) => node.version === 'provider_current')?.switch).toBe(
+      'SEEF_ADT_TEST_SWITCH_01:off',
+    );
+    expect(result.omissions.nodes).toBe(1);
   });
   it('reports unqualified source coverage for a hypothetical exact interface context', async () => {
     const iface = relationObject('IF_FUTURE', 'INTF/OI');

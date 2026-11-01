@@ -10,10 +10,11 @@ connected to that root through validated ENHO ownership. Native nested edges ret
 hook replacement semantics come from the separate source element response. It retains enhancement-to-base edges and native ENHO types. An ENHO/XH identity
 is not proof of its enhancement technology or runtime switch applicability. ENV/WUL consumers retain
 their original behavior. INTF ENV fallback is unsupported_context; 750's unsupported provider is
-reported explicitly. Positive interface coverage and other SAP releases remain unqualified.
-The [BTP 920 follow-up](../research/2026-10-31-extension-test-gaps.md) verifies native
-class identities and rendered hooks. Its structural class source returned 403, so generated
-structural-class source access on BTP remains unqualified.
+reported explicitly. BTP SAP_BASIS 920 is read-only qualified through direct service-key/browser
+OAuth: native structural identities and main hooks work; authored structural/local source reads
+return 403 for the tested identity and remain denied without fallback. INTF still returns ENV.
+Positive interface coverage, other releases and BTP principal propagation remain unqualified.
+See the [combined qualification](../research/2026-10-31-extension-test-gaps.md).
 
 Sources remain separate labelled representations. The active known-subtype ENHO reader may use a
 generated include revision only for a qualified source-unavailable failure: 404/resource-read failure,
@@ -40,7 +41,10 @@ Tests: class-extensions, class-extension-budgets, enhancement-include, source-pl
 repository-relations. The real HTTP oracle covers direct and Connectivity sends, streamed bytes,
 deadlines and terminal failures. Sanitized fixtures live in tests/fixtures/class-extensions and
 source hook fixtures in tests/fixtures/extensions/source. Live qualification is recorded in
-../research/2026-10-29-class-extension-live.json, with public-flow checks recorded separately.
+../research/2026-10-29-class-extension-live.json (early helper runs) and
+../research/2026-10-29-class-extension-discovery/README.md (final public-flow evidence).
+The 2026-10-31 test-gap audit and BTP results are in that directory's `test-gap-audit.md` and
+`btp-public.json`; the latter contains hashes and provider observations, never source bodies.
 
 Integration dependencies: shared contract commit 67e570344 and the source plug-in adapter/parser
 from stage 2. PR #1124 was open at ab5d58b48 when inspected; its original patch is retained as a

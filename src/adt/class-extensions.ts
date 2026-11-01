@@ -1,6 +1,6 @@
 /** Class-bound identity coverage is distinct from source-code hooks and local class sections. */
 import type { AdtClient } from './client.js';
-import { enhancementMethodIncludes, readEnhancementIncludeRevision } from './enhancement-include.js';
+import { enhancementIncludeReferences, readEnhancementIncludeRevision } from './enhancement-include.js';
 import { readActiveClassEnhancementSource } from './enhancements.js';
 import { AdtApiError } from './errors.js';
 import {
@@ -323,7 +323,16 @@ export async function discoverClassSources(
       pendingSources = 0;
       if (!generated) return;
       provider.reason = `generated_include=${generated.name}; active_revision=00000; generated_method_includes_only; implementation names may be absent`;
-      const children = enhancementMethodIncludes(source.source, generated.name);
+      const references = enhancementIncludeReferences(source.source);
+      const children = references.filter(
+        (name) => name.startsWith(generated.name.toUpperCase()) && /^M\d{3}$/.test(name.slice(generated.name.length)),
+      );
+      const unqualified = references.length - children.length;
+      if (unqualified) {
+        provider.status = 'incomplete';
+        provider.reason += '; unqualified_generated_include_references';
+        session.omit('sources', unqualified);
+      }
       pendingSources = children.length;
       for (const child of children) {
         if (session.stopped) break;
