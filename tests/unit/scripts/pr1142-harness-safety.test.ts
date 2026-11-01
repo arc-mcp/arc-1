@@ -74,6 +74,42 @@ describe('PR1142 real harness safety boundaries', () => {
     await recordFormatterRecovery('/private', { ...result, journalOwned: false }, load, write);
     expect(write).not.toHaveBeenCalled();
   });
+  it('records recovery after a mid-formatter crash without inventing qualification completion', async () => {
+    const binding = { runId: 'run', sourceRevision: 'revision', harnessSha256: 'hash', target: 'PR1142/001' };
+    const parent = {
+      ...binding,
+      plan: 'delete-two-user-v1',
+      formatterAttempted: true,
+      assertions: [{ test: 'source.active', pass: true }],
+    };
+    const load = async (path: string) =>
+      structuredClone(
+        path.endsWith('deletion-qualification.json') ? parent : { ...binding, plan: 'formatter-two-user-v2' },
+      );
+    const write = vi.fn();
+    const result = {
+      ...binding,
+      journalOwned: true,
+      failed: 0,
+      restored: { writerA: true, writerB: true },
+      restorationStatus: { writerA: 'verified', writerB: 'verified' },
+      nativeSeedRestored: true,
+    };
+    await recordFormatterRecovery('/private', result, load, write);
+    const saved = write.mock.calls[0][1];
+    expect(saved).toMatchObject({ ...parent, formatterRecovery: result });
+    for (const field of ['formatter', 'finishedAt', 'passed', 'failed', 'allAbsent'])
+      expect(saved).not.toHaveProperty(field);
+
+    write.mockClear();
+    const unrelatedLoad = async (path: string) =>
+      path.endsWith('deletion-qualification.json') ? { ...binding, plan: 'delete-two-user-v1' } : load(path);
+    await expect(recordFormatterRecovery('/private', result, unrelatedLoad, write)).rejects.toThrow(
+      'RECOVERY_PARENT_FORMATTER_MISSING',
+    );
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it('rejects an ignored snapshot inside another Git worktree', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pr1142-git-root-'));
     try {

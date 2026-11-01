@@ -1,7 +1,9 @@
 # PR 1142 live qualification harness
 
-This is the reviewable harness for the next CLAS/INTF deletion and formatter run. It has not yet
-produced live qualification evidence. The native formatter reader requires the complete v5
+This harness produced [revision-bound live evidence](../../../docs/research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
+at `1b234d3a4`: 482 deletion/write assertions and 262 formatter assertions passed. Later recovery
+journal corrections are covered offline; they do not relabel that run as a newer revision.
+The native formatter reader requires the complete v5
 representation; historical v2 checks cannot establish preservation of newer preferences.
 The historical class and formatter records use earlier
 harnesses and revisions; this source does not retroactively attest them.
@@ -15,6 +17,9 @@ during both users' differing patches and after restoration. Native setup first s
 complete v5 XML, then sets all five optional preferences to nondefault sentinel values. The before
 check requires all five; an empty-field comparison cannot pass. After the two-field PP restoration,
 a separate guarded native step restores and verifies the complete pre-seed XML. Upper/lower keyword behavior is tested.
+The primary's baseline and patch both use `keywordUpper`, so its independent native proof covers an
+indentation change, preservation and restoration. The style change to `keywordLower` uses the secondary's
+MCP session, without a separate native preference reader for that user.
 Read-token, destination, aggregate and compatibility-route refusals precede positive owner deletion.
 Native absence and guarded fixture cleanup finish the run.
 
@@ -56,8 +61,13 @@ create/change/display/delete/activate (`S_DEVELOP` activities 01/02/03/06/07), s
 access (`S_ABPLNGVS` 01/02/03/07), and the required ADT paths (`S_ADT_RES`). The secondary's original
 display-only role is insufficient. Preserve the before-state and restore temporary assignments afterward.
 
-On SIGINT/SIGTERM, forward qualification stops at a safe request boundary and existing restoration
-and cleanup continue with the frozen tokens. `stopping` is not completion. Wait for `stopped` with
+Run in a detached OS session with stdout/stderr redirected to regular private files. Stop only with
+`kill -TERM <harness-pid>`, targeting that PID rather than its process group. Do not use terminal
+Ctrl-C, pipe output through `tee`, or close an attached terminal: group signals can kill native workers,
+stdout errors can terminate the harness, and SIGHUP is not handled. These are operating constraints,
+not tested crash recovery guarantees. With PID-only SIGTERM, forward qualification stops at the next
+cooperative boundary and existing restoration/cleanup continue with the frozen tokens.
+`stopping` is not completion. Wait for `stopped` with
 zero active operations, inspect cleanup results, and only then begin cloud/SAP-access rollback.
 Completion events include their plan: the formatter event can occur while repository fixtures remain.
 
@@ -68,9 +78,20 @@ Visible foreign changes are preserved. Native unconditional PUTs still cannot pr
 same-user edit; the recorded concurrency mode makes that limitation explicit. Secondary formatter
 restoration is checked through MCP for the two exposed fields; only the primary has native XML
 byte-level evidence. Recovery also restores the saved pre-seed document. The deletion journal's
-current restoration fields are updated without erasing the original failed qualification. Separate
+current restoration fields are updated without erasing the original failed qualification. If a crash
+left only `formatterAttempted`, `formatterRecovery` records the outcome without manufacturing a
+completed formatter or deletion result. Separate
 `restorationStatus` values distinguish not-required, verified and incomplete work. No claim of
 repository absence is made for the formatter's source-only probe.
+
+If a lossy native PUT drops a sentinel field, automatic recovery preserves that apparent foreign
+state and refuses to overwrite it. Keep the saved `originalXml` in `native-formatter-seed.json`.
+The operator must inspect a fresh v5 GET, establish whether another session changed the preferences,
+and coordinate a restoration with that SAP user. After resolving any foreign edits, restore the
+saved full v5 document through the primary user's native session, capture the PUT outcome and a
+fresh GET, and verify byte equality. Keep this manual receipt and the original failed qualification;
+do not edit journals to make the run pass or replay the whole qualification. This intervention was
+not needed in the recorded successful run.
 
 Deletion cleanup requires a successful native ownership receipt and identical source/metadata before
 and under lock. Missing receipts, foreign edits and unknown/service 404s fail closed and remain

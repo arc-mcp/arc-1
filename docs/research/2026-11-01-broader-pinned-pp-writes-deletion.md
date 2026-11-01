@@ -1,5 +1,10 @@
 # Pinned owner deletion candidate — 1 November 2026
 
+The latest [combined qualification](2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
+at `1b234d3a4` passed 482 write/deletion assertions for two users' local CLAS/INTF owners, with native
+authorship/source receipts, typed absence and final cleanup. Transportable deletion remains pending.
+The earlier checkpoints below are historical evidence; they do not qualify the whole broader PR.
+
 This record began with an unadvertised native adapter for CLAS/INTF deletion in PR #1142.
 It reuses the existing native DELETE and shared owning-session lock/cleanup lifecycle. At that
 checkpoint it did not admit `SAPWrite.delete` or change the single-target deletion handler.
@@ -15,7 +20,8 @@ concern the current owner, as specified in the accepted plan.
 
 A successful DELETE response alone is insufficient. The adapter requires a subsequent uncached
 native owner read returning typed object-not-found evidence. The historical live adapter accepted
-any 404; the current typed-absence correction has unit evidence only until its new live run. A surviving owner, denied read, network failure or server failure
+any 404; the typed-absence correction subsequently passed the combined run linked above.
+A surviving owner, denied read, network failure or server failure
 remains unconfirmed. Definitive DELETE rejections are separate from uncertain outcomes. An
 independently confirmed deletion and a failed unlock are also reported separately; callers must
 not retry a mutation merely because its cleanup failed.

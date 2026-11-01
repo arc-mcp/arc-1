@@ -139,25 +139,30 @@ destinations, aggregate routes and Basic targets. `format` returns formatted sou
 Use `SAP_DENY_ACTIONS=SAPLint.set_formatter_settings` to prohibit preference changes while retaining
 the supporting reads on otherwise writable pinned connections.
 
-Formatter settings reads and patches require SAP's preferred representation to be native v5. Patches preserve untouched native fields
-and refuse older representations or unrecognized metadata before writing. Older versions omit
+Formatter settings reads and patches require SAP's preferred representation to be native v5. Patches preserve untouched attributes visible in that XML,
+and refuse older representations or unrecognized metadata before writing. This does not establish
+preservation of hidden native storage, such as a dormant case mode under style `none`.
+The current adapter also refuses native `toUpper` and `toLower` styles before a write; its supported
+styles are `keywordUpper`, `keywordLower`, `keywordAuto` and `none`. Older versions omit
 preferences that SAP's PUT can reset; there is no fallback. Strong native
 ETags are used when available; otherwise the result reports `native-unconditional`, so concurrent
 updates to the same user's preferences can overwrite each other. An uncertain outcome is not a
 rollback; read the settings before deciding whether another update is appropriate. The
 [formatter qualification record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-formatter.md)
-records historical v2 direct-native checks and a two-identity MCP-visible result. No live v5 write
-has yet been qualified. Historical v2 comparisons do not establish preservation of newer preferences.
-Claude identified missing
-in-run actor/backend proof; a strengthened current-revision run remains required in draft PR #1142.
+records the historical v2 limits and a later v5 run at `1b234d3a4`, with in-run native author/source
+receipts, primary-user native preference changes, all five optional v5 fields seeded and preserved,
+and verified restoration. The secondary's preference evidence is MCP-visible only; same-user
+concurrency and hidden native fields remain outside that proof. Historical v2 comparisons do not
+establish preservation of newer preferences. Broader PR #1142 remains a draft.
 
 Deletion removes the current complete owner. It does not require or protect a previous source read.
 Use `SAP_DENY_ACTIONS=SAPWrite.delete` to disable deletion while retaining other admitted writes.
 If SAP accepts DELETE but absence cannot be verified, the result remains unconfirmed; inspect the
 object before deciding whether to try again. A verified deletion with failed cleanup is reported
 as deleted with a cleanup failure. The [deletion record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-deletion.md)
-contains historical direct-native evidence for the earlier any-404 adapter. Typed absence has unit
-evidence only so far; current-revision two-user PP qualification remains pending.
+contains historical direct-native evidence for the earlier any-404 adapter and the later two-user
+PP run at `1b234d3a4`. The latter confirms typed absence for four local CLAS/INTF owners and final
+cleanup. Transportable deletion remains unqualified.
 
 Creates and edits save inactive source. Review it before activation. **Activation is whole-owner**,
 including drafts created previously or by another session; it is not method-only activation.

@@ -1,11 +1,16 @@
 # Pinned PP formatter adapter and qualification — 1 November 2026
 
+The latest [combined qualification](2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
+at `1b234d3a4` passed all 262 formatter assertions, including nondefault v5 preference preservation
+and full primary-user pre-seed restoration. Its limits and the actual Claude review are recorded
+there. The earlier checkpoints below remain historical evidence, not current readiness claims.
+
 This record began as the native-adapter checkpoint at `70ab1f7b4` for draft PR #1142. The subsequent
 integration admits `SAPLint.set_formatter_settings`, `format` and `get_formatter_settings` only on
 writable pinned PP connections. The normal single-target implementation is unchanged apart from
 correcting its scope description. The integrated build at `69b28b22e509517b268981ce0538220aea49db3c`
 produced the 241-assertion MCP-visible result below. Claude reviewed it and did not accept
-in-run SAP actor/backend proof; a strengthened current-revision qualification remains required.
+in-run SAP actor/backend proof; that finding led to the stronger run linked above.
 
 ## Scope correction
 
@@ -66,10 +71,9 @@ The historical v2 restoration checks below establish only the fields visible in 
 of the hidden newer fields. The legacy single-target adapter remains separate and still uses v2;
 its version/preservation fix needs separate compatibility review as required by the plan.
 
-Source inspection also confirms that the formatter POST uses Workbench settings. Its case-mode
-helper infers case from submitted source only for automatic mode; explicit keyword-upper/lower
-settings should therefore produce distinct keyword case. This supports the new behavioral oracle
-but does not replace executing it through PP.
+Source inspection confirms that the formatter POST uses Workbench settings and does not save source.
+The case-mode helper itself was not supplied to the reviewer, so its behavior was an expectation,
+not an inspected contract. The later PP run directly tested distinct upper/lower keyword output.
 
 The [read-only contract record](broader-pinned-pp-writes/formatter-v5-contract-2026-11-01.json)
 contains endpoint results and source hashes; SAP implementation bodies remain outside the repository.

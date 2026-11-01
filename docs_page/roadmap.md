@@ -202,8 +202,8 @@ for behavior-preserving shared mutation infrastructure, merged in [#1138](https:
 for the capability expansion. Existing opted-in writers may gain the documented capabilities;
 read-only applications/destinations must remain mutation-free.
 Author review and two Claude Code Opus 5.5 max reviews are recorded with findings and dispositions
-in the research record. The remaining implementation is PR 2's capability expansion; its live
-qualification remains outstanding. A [two-writer PP run](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-pp-qualification.md)
+in the research record. The remaining implementation is PR 2's capability expansion; its remaining families still need live
+qualification. A [two-writer PP run](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-pp-qualification.md)
 verified the existing CLAS lifecycle and native authorship, with temporary access and configuration
 restored; it does not qualify the broader capabilities. Implementation started with
 [ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-broader-pinned-pp-mutations.md), an explicit
@@ -213,20 +213,16 @@ mutation budget and verifies CTS parent/task scopes. The follow-up Claude review
 with fresh hierarchy early-exit and complete nested-schema drift tests; these do not enable
 additional operations. The explicit capability table and mixed-tool admission/projection infrastructure are implemented.
 Broader type/action adapters and their PP qualification remain outstanding.
-The [formatter adapter](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-formatter.md)
-has pinned handler/companion integration and restored direct-native checks. Its 241-assertion
-two-identity run establishes MCP-visible state on the configured route; Claude identified missing
-in-run actor/backend proof. A stronger current-revision PP run remains required.
-Read-only native source inspection also found that v2 omits preferences replaced by PUT. The pinned
-adapter now requires v5 and needs fresh review/live evidence; older-version compatibility and the
-separate legacy single-target preservation fix remain deferred.
-A [CLAS/INTF deletion candidate](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-deletion.md)
-reuses native DELETE and the shared lock/session lifecycle, with fresh policy checks and verified
-absence. Handler/catalog admission is implemented. Historical direct-native checks used the earlier
-any-404 adapter; typed absence currently has unit evidence only. Claude accepted the corrected
-production delta at source level; evidence wording is corrected. The new harness and v5 formatter
-reviews require shutdown/source-binding corrections and nondefault native preference fixtures.
-Follow-up review and stronger current-revision PP qualification remain outstanding.
+The formatter and local CLAS/INTF deletion adapters now have a
+[combined two-writer PP qualification](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
+at `1b234d3a4`: native authorship/source binding, typed absence, v5 optional-preference preservation
+for the primary user, MCP-visible secondary isolation and verified cleanup. Actual Claude Code
+Opus 5.5 max accepted that controlled run with documented operating constraints. This closes the
+previous local deletion/v5 run gap, not broader PR readiness. Remaining work includes transportable
+deletion, other types/includes/surgery, DDIC/RAP, batches, package/API/publication, CTS, tracing and
+classic FLP, with their operation-specific adapters and PP qualification. Secondary native preference
+proof, unsupported native formatter styles/releases and the separate legacy v2 preservation issue
+remain explicit limits. Aggregate, Basic and read-only connections stay mutation-free.
 
 **Resume when.** The PR 1 acceptance and owner request prerequisites are met. Continue the guarded
 adapters and native qualification against the reviewed PR 2 plan. Preserve the shared foundation's

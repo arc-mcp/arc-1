@@ -22,16 +22,20 @@ export async function recordFormatterRecovery(root, result, load = privateJson, 
     )
   )
     throw new HarnessError('RECOVERY_PARENT_BINDING_MISMATCH');
-  if (!parent.formatter) throw new HarnessError('RECOVERY_PARENT_FORMATTER_MISSING');
+  if (!parent.formatter && parent.formatterAttempted !== true)
+    throw new HarnessError('RECOVERY_PARENT_FORMATTER_MISSING');
   (parent.formatterRestorationHistory ??= []).push({
     at: new Date().toISOString(),
-    restored: parent.formatter.restored,
-    restorationStatus: parent.formatter.restorationStatus,
+    restored: parent.formatter?.restored,
+    restorationStatus: parent.formatter?.restorationStatus,
   });
   // Keep the original qualification failures; recovery success does not qualify the test run.
-  parent.formatter.restored = result.restored;
-  parent.formatter.restorationStatus = result.restorationStatus;
-  parent.formatter.nativeSeedRestored = result.nativeSeedRestored;
+  // A crash can leave only formatterAttempted; never manufacture a completed formatter result.
+  if (parent.formatter) {
+    parent.formatter.restored = result.restored;
+    parent.formatter.restorationStatus = result.restorationStatus;
+    parent.formatter.nativeSeedRestored = result.nativeSeedRestored;
+  }
   parent.formatterRecovery = { ...result, at: new Date().toISOString() };
   await write(`${root}/deletion-qualification.json`, parent);
 }

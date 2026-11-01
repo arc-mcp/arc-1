@@ -1,0 +1,356 @@
+{
+  "date": "2026-11-01",
+  "status": "passed-with-stated-limits",
+  "sourceRevision": "1b234d3a41097e0ae8f17a796ea3ed27faec173b",
+  "runId": "4c814c72-3a15-4378-8801-ecbc7c19223b",
+  "harnessSha256": "7fbc44d660388a018fe8e4cfff1e7e6fdf150e3e5025d0d571caffdbf3d8f775",
+  "authModulesSha256": "3b2aaf435a67388d7f8040373b1c1ff0e006906bd5cee8ceb36ff2a7bdb8ae42",
+  "packageLockSha256": "08ab605eb3ee5ee053838119c9e065a7d87f7433f31cfe0021a54db1947cddd2",
+  "target": {
+    "system": "A4H",
+    "client": "001",
+    "routeTarget": "PR1142/001",
+    "strictPrincipalPropagation": true,
+    "certificateValidation": true,
+    "package": "$TMP"
+  },
+  "deployment": {
+    "packageGuid": "7627bf15-6841-4f09-a610-0011a4169650",
+    "dropletGuid": "b69f2404-7ec0-4025-a6ae-c2493453bf4a",
+    "dropletChecksum": {
+      "type": "sha256",
+      "value": "9515ba05f127899832c45b8abf657b3d69be4a8ecfd3f9928261adf024a8f980"
+    },
+    "artifactFileCount": 1127,
+    "artifactManifestSha256": "1f7a07ef723dfa9dd0229829bb33a4fe5997be30c0266530fd237a74a91afd48",
+    "operatorVerifiedPackageDropletRelationship": true,
+    "operatorVerifiedRunningDroplet": true,
+    "routeUnchanged": true
+  },
+  "identityChecks": [
+    {
+      "label": "writerB",
+      "passed": 13,
+      "failed": 0,
+      "scopes": [
+        "read",
+        "write"
+      ],
+      "verifiedBy": "@sap/xssec",
+      "expectedEmailAndOriginMatched": true
+    },
+    {
+      "label": "writerA",
+      "passed": 13,
+      "failed": 0,
+      "scopes": [
+        "read",
+        "write"
+      ],
+      "verifiedBy": "@sap/xssec",
+      "expectedEmailAndOriginMatched": true
+    },
+    {
+      "label": "readerA",
+      "passed": 13,
+      "failed": 0,
+      "scopes": [
+        "read"
+      ],
+      "verifiedBy": "@sap/xssec",
+      "expectedEmailAndOriginMatched": true
+    }
+  ],
+  "deletion": {
+    "startedAt": "2026-11-01T04:04:29.207Z",
+    "finishedAt": "2026-11-01T04:06:38.634Z",
+    "passed": 482,
+    "failed": 0,
+    "allAbsent": true,
+    "fixtures": [
+      {
+        "actor": "writerA",
+        "type": "CLAS",
+        "name": "ZARC1_DPP_AC_E1CCC703",
+        "nativeIdentity": {
+          "name": "ZARC1_DPP_AC_E1CCC703",
+          "type": "CLAS",
+          "package": "$TMP",
+          "version": "active",
+          "masterSystem": "A4H",
+          "createdBy": "MARIAN",
+          "createdAt": "2026-11-01T00:00:00Z",
+          "changedBy": "MARIAN",
+          "changedAt": "2026-11-01T04:04:48Z",
+          "description": "Temporary PR1142 PP deletion fixture",
+          "sourceSha256": "8813ccbf3facfcfdca7703ee2bfa007671eed443b38bf86df07a78de8b43b059",
+          "activeSourceSha256": "8813ccbf3facfcfdca7703ee2bfa007671eed443b38bf86df07a78de8b43b059"
+        },
+        "deletion": {
+          "ok": true,
+          "state": "deleted",
+          "phase": "absence-readback",
+          "retryable": false,
+          "action": "delete",
+          "type": "CLAS",
+          "name": "ZARC1_DPP_AC_E1CCC703",
+          "target": "PR1142/001",
+          "requestId": "REQ-304"
+        },
+        "independentAbsence": true,
+        "finalAbsenceVerified": true
+      },
+      {
+        "actor": "writerA",
+        "type": "INTF",
+        "name": "ZARC1_DPP_AI_4E4BD584",
+        "nativeIdentity": {
+          "name": "ZARC1_DPP_AI_4E4BD584",
+          "type": "INTF",
+          "package": "$TMP",
+          "version": "active",
+          "masterSystem": "A4H",
+          "createdBy": "MARIAN",
+          "createdAt": "2026-11-01T00:00:00Z",
+          "changedBy": "MARIAN",
+          "changedAt": "2026-11-01T04:05:04Z",
+          "description": "Temporary PR1142 PP deletion fixture",
+          "sourceSha256": "20b6eea486900942cb9b50da16d40fd93e817d5ea24093861e1e4523d1244f0a",
+          "activeSourceSha256": "20b6eea486900942cb9b50da16d40fd93e817d5ea24093861e1e4523d1244f0a"
+        },
+        "deletion": {
+          "ok": true,
+          "state": "deleted",
+          "phase": "absence-readback",
+          "retryable": false,
+          "action": "delete",
+          "type": "INTF",
+          "name": "ZARC1_DPP_AI_4E4BD584",
+          "target": "PR1142/001",
+          "requestId": "REQ-306"
+        },
+        "independentAbsence": true,
+        "finalAbsenceVerified": true
+      },
+      {
+        "actor": "writerB",
+        "type": "CLAS",
+        "name": "ZARC1_DPP_BC_637146AE",
+        "nativeIdentity": {
+          "name": "ZARC1_DPP_BC_637146AE",
+          "type": "CLAS",
+          "package": "$TMP",
+          "version": "active",
+          "masterSystem": "A4H",
+          "createdBy": "ARC1_WG_RO",
+          "createdAt": "2026-11-01T00:00:00Z",
+          "changedBy": "ARC1_WG_RO",
+          "changedAt": "2026-11-01T04:05:19Z",
+          "description": "Temporary PR1142 PP deletion fixture",
+          "sourceSha256": "06dff71cbd5c1056ab5102545f576272f675d44dd2e9d9988ceab649336a85ec",
+          "activeSourceSha256": "06dff71cbd5c1056ab5102545f576272f675d44dd2e9d9988ceab649336a85ec"
+        },
+        "deletion": {
+          "ok": true,
+          "state": "deleted",
+          "phase": "absence-readback",
+          "retryable": false,
+          "action": "delete",
+          "type": "CLAS",
+          "name": "ZARC1_DPP_BC_637146AE",
+          "target": "PR1142/001",
+          "requestId": "REQ-308"
+        },
+        "independentAbsence": true,
+        "finalAbsenceVerified": true
+      },
+      {
+        "actor": "writerB",
+        "type": "INTF",
+        "name": "ZARC1_DPP_BI_85E0D279",
+        "nativeIdentity": {
+          "name": "ZARC1_DPP_BI_85E0D279",
+          "type": "INTF",
+          "package": "$TMP",
+          "version": "active",
+          "masterSystem": "A4H",
+          "createdBy": "ARC1_WG_RO",
+          "createdAt": "2026-11-01T00:00:00Z",
+          "changedBy": "ARC1_WG_RO",
+          "changedAt": "2026-11-01T04:05:33Z",
+          "description": "Temporary PR1142 PP deletion fixture",
+          "sourceSha256": "bb9ab2fe1370fc43d5e663b53d962ce36bb5fcc8d6e88f53e07287130fc69adb",
+          "activeSourceSha256": "bb9ab2fe1370fc43d5e663b53d962ce36bb5fcc8d6e88f53e07287130fc69adb"
+        },
+        "deletion": {
+          "ok": true,
+          "state": "deleted",
+          "phase": "absence-readback",
+          "retryable": false,
+          "action": "delete",
+          "type": "INTF",
+          "name": "ZARC1_DPP_BI_85E0D279",
+          "target": "PR1142/001",
+          "requestId": "REQ-310"
+        },
+        "independentAbsence": true,
+        "finalAbsenceVerified": true
+      }
+    ]
+  },
+  "formatter": {
+    "startedAt": "2026-11-01T04:05:34.906Z",
+    "finishedAt": "2026-11-01T04:06:02.258Z",
+    "passed": 262,
+    "failed": 0,
+    "baseline": {
+      "writerA": {
+        "indentation": true,
+        "style": "keywordUpper"
+      },
+      "writerB": {
+        "indentation": true,
+        "style": "keywordUpper"
+      }
+    },
+    "expected": {
+      "writerA": {
+        "indentation": false,
+        "style": "keywordUpper"
+      },
+      "writerB": {
+        "indentation": true,
+        "style": "keywordLower"
+      }
+    },
+    "concurrency": {
+      "writerA": "native-unconditional",
+      "writerB": "native-unconditional",
+      "restore-writerB": "native-unconditional",
+      "restore-writerA": "native-unconditional"
+    },
+    "restored": {
+      "writerB": true,
+      "writerA": true
+    },
+    "restorationStatus": {
+      "writerB": "verified",
+      "writerA": "verified"
+    },
+    "nativeSeedRestored": true,
+    "nativeBeforeAfterReference": "seeded v5 baseline; restore-seed separately verifies pre-seed XML",
+    "originalPreSeedXmlSha256": "fc0445edf7ccc2ea8abb4df4370abce8dce096198d8b03a9c869900f6015dcbe",
+    "seededOptionalPreferences": {
+      "keepIdentifier": "true",
+      "formatMethodCalls": "true",
+      "condenseMethodCalls": "true",
+      "formatValue": "true",
+      "defaultAutoStyle": "keywordLower"
+    },
+    "nativeEvidence": [
+      {
+        "mode": "after",
+        "at": "2026-11-01T04:06:01.464Z",
+        "nativeReader": "MARIAN",
+        "settings": {
+          "indentation": true,
+          "style": "keywordUpper"
+        },
+        "sha256": "4e721321d6cc0596dbfb0e5ee670a52404c905bc03ec240aedb75da413927eb7",
+        "originalBytesRestored": true,
+        "status": "complete"
+      },
+      {
+        "mode": "before",
+        "at": "2026-11-01T04:05:41.354Z",
+        "nativeReader": "MARIAN",
+        "settings": {
+          "indentation": true,
+          "style": "keywordUpper"
+        },
+        "sha256": "4e721321d6cc0596dbfb0e5ee670a52404c905bc03ec240aedb75da413927eb7",
+        "status": "complete"
+      },
+      {
+        "mode": "during-primary",
+        "at": "2026-11-01T04:05:43.867Z",
+        "nativeReader": "MARIAN",
+        "settings": {
+          "indentation": false,
+          "style": "keywordUpper"
+        },
+        "sha256": "2102fd11b2737c4056039a0041b77b18aeaac9dc2768fca26d9727727f12aa2d",
+        "unrelatedPreserved": true,
+        "status": "complete"
+      },
+      {
+        "mode": "during-secondary",
+        "at": "2026-11-01T04:05:46.865Z",
+        "nativeReader": "MARIAN",
+        "settings": {
+          "indentation": false,
+          "style": "keywordUpper"
+        },
+        "sha256": "2102fd11b2737c4056039a0041b77b18aeaac9dc2768fca26d9727727f12aa2d",
+        "unrelatedPreserved": true,
+        "status": "complete"
+      },
+      {
+        "mode": "restore-seed",
+        "at": "2026-11-01T04:06:02.241Z",
+        "nativeReader": "MARIAN",
+        "status": "complete",
+        "originalBytesRestored": true
+      },
+      {
+        "mode": "seed",
+        "at": "2026-11-01T04:05:40.810Z",
+        "nativeReader": "MARIAN",
+        "status": "complete",
+        "seeded": true,
+        "sentinelFields": [
+          "keepIdentifier",
+          "formatMethodCalls",
+          "condenseMethodCalls",
+          "formatValue",
+          "defaultAutoStyle"
+        ]
+      }
+    ]
+  },
+  "refusals": {
+    "live": [
+      "read-scoped primary token",
+      "write-scoped primary on read-only destination",
+      "aggregate route",
+      "compatibility route"
+    ],
+    "otherGuards": "Unit coverage; no claim that every configuration gate was independently varied live."
+  },
+  "cleanup": {
+    "appRestored": true,
+    "iamRestored": true,
+    "xsuaaRestored": true,
+    "destinationRemoved": true,
+    "temporarySapRoleRemoved": true,
+    "sapRolesAndProfilesRestored": true,
+    "nativeFixturesAbsent": true,
+    "formatterRestored": true,
+    "harnessStopped": true
+  },
+  "privateReceiptCount": 189,
+  "privateReceiptManifestSha256": "6931e415bf67b82e65364a761f297c0ffad276f8a420d3f9883f89a6c626c727",
+  "limits": [
+    "Only local CLAS/INTF owners and formatter operations are qualified; transportable deletion, other object families, CTS, tracing and FLP remain pending.",
+    "Deleting actor is inferred from the frozen independently verified creator session and strict-PP route; DELETE itself has no independently observed actor receipt.",
+    "Direct native preference reads use MARIAN only; the secondary has MCP state/behavior/restoration evidence, not a separate native preference reader.",
+    "Primary style was keywordUpper before and during the patch; direct native evidence proves an indentation change and preservation of all five seeded optional v5 preferences. The secondary changes style to keywordLower.",
+    "Preservation covers the v5 XML representation, not hidden native storage such as a dormant case mode under style none. Historical v2 preference losses cannot be reconstructed.",
+    "All live preference writes reported native-unconditional; concurrent edits by the same SAP user are not protected.",
+    "The native source and preferred v5 contract are A4H release-bound; other releases, future preferred formats, toUpper/toLower styles and conditional ETag enforcement are not qualified.",
+    "Native draft visibility is limited to the primary reader; another user may have hidden drafts. Fixture ownership uses native metadata/source, not TADIR.",
+    "The operator verified deployment provenance separately; the harness does not attest deployed bytes or all installed third-party dependencies.",
+    "Harness ran in a detached OS session with regular-file logs and stopped by SIGTERM to its PID only. Terminal/process-group signals and broken output pipes remain excluded.",
+    "The temporary SAP role definition existed before the run and remains unchanged; its assignment/profile were restored. The unused candidate CF package/droplet remain as build artifacts."
+  ]
+}
