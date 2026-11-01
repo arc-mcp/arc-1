@@ -226,3 +226,39 @@ describe('CI action inputs and adapters', () => {
     expect(diagnose.mock.calls[0]?.[2]).toMatchObject({ signal, deadline: expect.any(Number) });
   });
 });
+
+it('uses configured onprem before feature discovery and sends no SAP requests', async () => {
+  resetCachedFeatures();
+  const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, systemType: 'onprem' }, 'SAPDiagnose', {
+    action: 'atc_ci',
+    packages: ['ZPKG'],
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toContain('No run was started');
+  expect(mockFetch).not.toHaveBeenCalled();
+});
+
+it.each([undefined, 'onprem'] as const)(
+  'forwards configured BTP or probed type %s before ATC polling',
+  async (probed) => {
+    resetCachedFeatures();
+    if (probed) setCachedFeatures({ systemType: probed });
+    const ci = await import('../../../src/adt/ci-quality.js');
+    const run = vi.spyOn(ci, 'runAtcCiCheck').mockRejectedValue(new Error('captured options'));
+    try {
+      await handleToolCall(createClient(), { ...DEFAULT_CONFIG, systemType: 'btp' }, 'SAPDiagnose', {
+        action: 'atc_ci',
+        packages: ['ZPKG'],
+      });
+      expect(run).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ systemType: probed ?? 'btp' }),
+      );
+      expect(mockFetch).not.toHaveBeenCalled();
+    } finally {
+      run.mockRestore();
+      resetCachedFeatures();
+    }
+  },
+);
