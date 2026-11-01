@@ -44,7 +44,7 @@ const BUDGETS = {
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
   // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
   'src/handlers/tools.ts': 1785, // Combined SHLP/extension guidance and own-method signature selector.
-  'src/handlers/schemas.ts': 1593, // Combined SHLP/extension refinements and method-option validation.
+  'src/handlers/schemas.ts': 1559, // Data preview refinements extracted; retain SHLP/extension/method validation.
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.

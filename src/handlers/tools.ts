@@ -95,7 +95,7 @@ const SAPREAD_DESC_ONPREM =
   'Read SAP ABAP source/metadata. DDIC metadata: omit format. ' +
   'SHLP: active partial interface metadata; missing headers/assignments/appends are explicit. No drafts or source formats. ' +
   'For specs, reviews or pre-change context, prefer SAPContext first. ' +
-  'TABLE_QUERY: data preview required; CDS needs SAP_BASIS 752+. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
+  'TABLE_QUERY: filter with where, data preview required; CDS needs SAP_BASIS 752+. TABLE_CONTENTS: unfiltered preview. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
   'SYNTAX: read-only check (objectType+name, optional source). Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers.';
 
 const SAPREAD_DESC_BTP =
