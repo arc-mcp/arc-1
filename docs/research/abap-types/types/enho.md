@@ -65,8 +65,9 @@ The original BAdI GET remains first, preserving its one-request success path and
 JSON shape. Only HTTP 400/404/500 triggers one bounded repository search. ARC-1
 requires a unique recognized subtype for the exact name. SAP 750 decorates search
 names with a display label, so an exact relative URI matching the constructed,
-known object path also qualifies. ARC-1 never follows a returned URI, probes all
-collections, or retries with another identity. Unknown or ambiguous results keep
+known object path also qualifies. Subtype reads construct known endpoints; revision fallback
+follows only a validated same-include active content link. ARC-1 does not probe all
+collections or retry with another identity. Unknown or ambiguous results keep
 the original failure; denied searches and source errors propagate.
 
 When the generic XH read has a qualified source-unavailable failure, ARC-1 reads the enhancement include's

@@ -92,7 +92,6 @@ export async function readActiveClassEnhancementSource(
       description: '',
       package: '',
       technology: '',
-      switchSupported: false,
       badiImplementations: [],
       source: read.source,
       enhancementInclude: { name: read.include, revision: read.revision },
@@ -130,12 +129,11 @@ async function readSourcePlugInFromInclude(
     // Source-code plug-ins and class enhancements both store `ENHANCEMENT n` blocks here; the include
     // does not identify the technology, so it is left empty rather than guessed.
     technology: '',
-    switchSupported: false,
     badiImplementations: [],
     source: read.source,
     enhancementInclude: { name: read.include, revision: read.revision },
     note:
-      'ADT does not serve this enhancement implementation on this SAP release; source is the active ' +
+      'The direct ADT enhancement read failed; source is the active ' +
       'revision of its enhancement include. Technology (source-code plug-in or class enhancement), ' +
       'description, package, enhanced object, hook positions and switch state are not available here — ' +
       'use SE19/SE80 or Eclipse for them.',

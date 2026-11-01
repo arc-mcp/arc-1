@@ -71,6 +71,19 @@ function setup(
   return { run, client, request, session, get, post, getRevisions, getRevisionSource, received };
 }
 describe('class-bound enhancements', () => {
+  it('omits unknown switch support from generated source-only metadata', async () => {
+    const s = setup();
+    const result = await readActiveClassEnhancementSource(
+      s.client,
+      { name: enhancement, type: 'ENHO/XH' },
+      s.session.options,
+      [{ name, type: 'CLAS/OC', uri: rootUri }],
+      '750',
+    );
+    expect(result.enhancementInclude).toMatchObject({ name: parent });
+    expect(result).not.toHaveProperty('switchSupported');
+  });
+
   it('accepts the observed nested-owner source representation without following the parent URI', async () => {
     const s = setup();
     s.get
@@ -91,6 +104,7 @@ describe('class-bound enhancements', () => {
       '758',
     );
     expect(source.source).toBe('exact active child source');
+    expect(typeof source.switchSupported).toBe('boolean');
     expect(s.get.mock.calls[1]?.[0]).toBe(
       `/sap/bc/adt/enhancements/enhoxhh/${name.toLowerCase()}/source/main?version=active`,
     );
