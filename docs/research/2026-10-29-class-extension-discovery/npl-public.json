@@ -1,0 +1,500 @@
+{
+  "checkedAt": "2026-10-29T18:43:08.538Z",
+  "target": "npl",
+  "results": [
+    {
+      "args": {
+        "type": "CLAS",
+        "name": "CL_OO_ADT_ENHANCED_CLASS",
+        "extensions": "none"
+      },
+      "baseBytes": 212,
+      "baseSha256": "bda78a64018444906cc08a63933b108ba89b2038050d1c081b3432f0a0bfcf81",
+      "extraBytes": 0,
+      "extraBlocks": []
+    },
+    {
+      "args": {
+        "type": "CLAS",
+        "name": "CL_OO_ADT_ENHANCED_CLASS"
+      },
+      "baseBytes": 212,
+      "baseSha256": "bda78a64018444906cc08a63933b108ba89b2038050d1c081b3432f0a0bfcf81",
+      "extraBytes": 803,
+      "summary": {
+        "root": {
+          "type": "CLAS",
+          "name": "CL_OO_ADT_ENHANCED_CLASS",
+          "version": "active"
+        },
+        "scope": "CLAS CL_OO_ADT_ENHANCED_CLASS full root source",
+        "providers": [
+          {
+            "id": "class_exted_obj",
+            "family": "class_bound_enhancement",
+            "status": "unsupported",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "unsupported_provider",
+            "observations": 1,
+            "scopes": []
+          },
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "selected_source",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "class_section=main; selected_source_only; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 6,
+          "responseBytes": 15209,
+          "elapsedMs": 732
+        }
+      },
+      "extraBlocks": []
+    },
+    {
+      "args": {
+        "type": "CLAS",
+        "name": "CL_OO_ADT_ENHANCED_CLASS",
+        "extensions": "sources"
+      },
+      "baseBytes": 212,
+      "baseSha256": "bda78a64018444906cc08a63933b108ba89b2038050d1c081b3432f0a0bfcf81",
+      "extraBytes": 842,
+      "summary": {
+        "root": {
+          "type": "CLAS",
+          "name": "CL_OO_ADT_ENHANCED_CLASS",
+          "version": "active"
+        },
+        "scope": "CLAS CL_OO_ADT_ENHANCED_CLASS full root source",
+        "providers": [
+          {
+            "id": "class_exted_obj",
+            "family": "class_bound_enhancement",
+            "status": "unsupported",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "unsupported_provider",
+            "observations": 1,
+            "scopes": []
+          },
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "class_section=main; bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 4,
+          "responseBytes": 15077,
+          "elapsedMs": 665
+        }
+      },
+      "extraBlocks": []
+    },
+    {
+      "args": {
+        "type": "CLAS",
+        "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+        "extensions": "none"
+      },
+      "baseBytes": 674,
+      "baseSha256": "6cd5113b4c7d4497b83d4d482556179e27c9db29cf00ad480ef71c3083676879",
+      "extraBytes": 0,
+      "extraBlocks": []
+    },
+    {
+      "args": {
+        "type": "CLAS",
+        "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+        "extensions": "summary"
+      },
+      "baseBytes": 674,
+      "baseSha256": "6cd5113b4c7d4497b83d4d482556179e27c9db29cf00ad480ef71c3083676879",
+      "extraBytes": 1706,
+      "summary": {
+        "root": {
+          "type": "CLAS",
+          "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+          "version": "active"
+        },
+        "scope": "CLAS CL_SEEF_ADT_TEST_AUNIT_1 full root source",
+        "providers": [
+          {
+            "id": "class_exted_obj",
+            "family": "class_bound_enhancement",
+            "status": "unsupported",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "unsupported_provider",
+            "observations": 1,
+            "scopes": []
+          },
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "selected_source",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "class_section=main; selected_source_only; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XH",
+            "name": "SEEF_ADT_TEST_ENHO_CLASS_1",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "SEEF_ADT_TEST_ENHO_CLASS_11",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "SEEF_ADT_TEST_ENHO_CLASS_111",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "SEEF_ADT_TEST_ENHO_CLASS_111_R",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "SEEF_ADT_TEST_ENHO_CLASS_1A",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_R",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_RR",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          }
+        ],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 4,
+          "responseBytes": 26162,
+          "elapsedMs": 717
+        }
+      },
+      "extraBlocks": []
+    },
+    {
+      "args": {
+        "type": "CLAS",
+        "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+        "extensions": "sources"
+      },
+      "baseBytes": 674,
+      "baseSha256": "6cd5113b4c7d4497b83d4d482556179e27c9db29cf00ad480ef71c3083676879",
+      "extraBytes": 8613,
+      "summary": {
+        "root": {
+          "type": "CLAS",
+          "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+          "version": "active"
+        },
+        "scope": "CLAS CL_SEEF_ADT_TEST_AUNIT_1 full root source",
+        "providers": [
+          {
+            "id": "class_exted_obj",
+            "family": "class_bound_enhancement",
+            "status": "unsupported",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "unsupported_provider",
+            "observations": 1,
+            "scopes": []
+          },
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "class_section=main; bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XH",
+            "name": "SEEF_ADT_TEST_ENHO_CLASS_1",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "SEEF_ADT_TEST_ENHO_CLASS_11",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "SEEF_ADT_TEST_ENHO_CLASS_111",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "SEEF_ADT_TEST_ENHO_CLASS_111_R",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "SEEF_ADT_TEST_ENHO_CLASS_1A",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_R",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_RR",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          }
+        ],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 4,
+          "responseBytes": 26162,
+          "elapsedMs": 628
+        }
+      },
+      "extraBlocks": [
+        {
+          "bytes": 3952,
+          "sha256": "6c489ca0ad84d516fae45e0e52ab1920e9b8d4b8011d499a168a26eeff66cd54",
+          "label": "[extension graph] [{\"from\":\"CLAS:CL_SEEF_ADT_TEST_AUNIT_1:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1:active\",\"kind\":\"attachment\",\"attribute\":\"2\",\"location\":\"\\\\TY:CL_SEEF_ADT_TEST_AUNIT_1\\\\ME:CONSTRUCTOR\\\\SE:BEGIN\\\\EI /sap/bc/adt/oo/classes/cl_seef_adt_test_aunit_1/source/main#start=25,0\",\"suffix\":\"any\"},{\"from\":\"CLAS:CL_SEEF_ADT_TEST_AUNIT_1:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1:active\",\"kind\":\"attachment\",\"attribute\":\"1\",\"location\":\"\\\\TY:CL_SEEF_ADT_TEST_AUNIT_1\\\\ME:CONSTRUCTOR\\\\SE:END\\\\EI /sap/bc/adt/oo/classes/cl_seef_adt_test_aunit_1/source/main#start=29,0\",\"suffix\":\"any\"},{\"from\":\"CLAS:CL_SEEF_ADT_TEST_AUNIT_1:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_11:active\",\"kind\":\"attachment\",\"attribute\":\"1\",\"location\":\"\\\\TY:CL_SEEF_ADT_TEST_AUNIT_1\\\\ME:CONSTRUCTOR\\\\SE:BEGIN\\\\EN:SEEF_ADT_TEST_ENHO_CLASS_1\\\\EX:EP1_CONSTR\\\\EI /sap/bc/adt/enhancements/implementations/seef_adt_test_enho_class_1/elements/sourcecodeplugins/%5cTY%3aCL_SEEF_ADT_TEST_AUNIT_1%5cME%3aCONSTRUCTOR%5cSE%3aBEGIN%5cEI#start=23,0\",\"suffix\":\"dynamic\"},{\"from\":\"CLAS:CL_SEEF_ADT_TEST_AUNIT_1:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_111:active\",\"kind\":\"attachment\",\"attribute\":\"1\",\"location\":\"\\\\EN:SEEF_ADT_TEST_ENHO_CLASS_1\\\\EX:EP1_CONSTR\\\\EN:SEEF_ADT_TEST_ENHO_CLASS_11\\\\SE:END\\\\EI /sap/bc/adt/enhancements/implementations/seef_adt_test_enho_class_11/elements/sourcecodeplugins/%5cTY%3aCL_SEEF_ADT_TEST_AUNIT_1%5cME%3aCONSTRUCTOR%5cSE%3aBEGIN%5cEN%3aSEEF_ADT_TEST_ENHO_CLASS_1%5cEX%3aEP1_CONSTR%5cEI#start=8,0\",\"suffix\":\"any\"},{\"from\":\"CLAS:CL_SEEF_ADT_TEST_AUNIT_1:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_111_R:active\",\"kind\":\"attachment\",\"attribute\":\"1\",\"location\":\"\\\\EN:SEEF_ADT_TEST_ENHO_CLASS_1\\\\EX:EP1_CONSTR\\\\EN:SEEF_ADT_TEST_ENHO_CLASS_11\\\\SE:END\\\\EI \",\"suffix\":\"any\"},{\"from\":\"CLAS:CL_SEEF_ADT_TEST_AUNIT_1:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1A:active\",\"kind\":\"attachment\",\"attribute\":\"1\",\"location\":\"\\\\TY:CL_SEEF_ADT_TEST_AUNIT_1\\\\ME:METHOD2\\\\SE:END\\\\EI /sap/bc/adt/oo/classes/cl_seef_adt_test_aunit_1/source/main#start=44,0\",\"suffix\":\"any\"},{\"from\":\"CLAS:CL_SEEF_ADT_TEST_AUNIT_1:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1A_R:active\",\"kind\":\"attachment\",\"attribute\":\"1\",\"location\":\"\\\\TY:CL_SEEF_ADT_TEST_AUNIT_1\\\\ME:METHOD2\\\\SE:END\\\\EI \",\"suffix\":\"any\"},{\"from\":\"CLAS:CL_SEEF_ADT_TEST_AUNIT_1:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1A_RR:active\",\"kind\":\"attachment\",\"attribute\":\"1\",\"location\":\"\\\\TY:CL_SEEF_ADT_TEST_AUNIT_1\\\\ME:METHOD2\\\\SE:END\\\\EI \",\"suffix\":\"any\"},{\"from\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1:active\",\"to\":\"CL_SEEF_ADT_TEST_AUNIT_1\",\"kind\":\"parent\"},{\"from\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_11:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1:active\",\"kind\":\"parent\"},{\"from\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_111:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_11:active\",\"kind\":\"parent\"},{\"from\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_111_R:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_111:active\",\"kind\":\"parent\"},{\"from\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_111_R:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_111:active\",\"kind\":\"replacement\",\"location\":\"\\\\EN:SEEF_ADT_TEST_ENHO_CLASS_1\\\\EX:EP1_CONSTR\\\\EN:SEEF_ADT_TEST_ENHO_CLASS_11\\\\SE:END\\\\EI\"},{\"from\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1A:active\",\"to\":\"CL_SEEF_ADT_TEST_AUNIT_1\",\"kind\":\"parent\"},{\"from\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1A_R:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1A:active\",\"kind\":\"parent\"},{\"from\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1A_R:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1A:active\",\"kind\":\"replacement\",\"location\":\"\\\\TY:CL_SEEF_ADT_TEST_AUNIT_1\\\\ME:METHOD2\\\\SE:END\\\\EI\"},{\"from\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1A_RR:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1A_R:active\",\"kind\":\"parent\"},{\"from\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1A_RR:active\",\"to\":\"ENHO/XH:SEEF_ADT_TEST_ENHO_CLASS_1A_R:active\",\"kind\":\"replacement\",\"location\":\"\\\\TY:CL_SEEF_ADT_TEST_AUNIT_1\\\\ME:METHOD2\\\\SE:END\\\\EI\"}]"
+        },
+        {
+          "bytes": 900,
+          "sha256": "e03a61747ea73e5507a4d011cd4fb6f912a7dfdb5cf04c4a07b9311b644a3fa9",
+          "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1 version=active representation=rendered_plugin_source provider=source_plugins]"
+        },
+        {
+          "bytes": 291,
+          "sha256": "5a1a59a4d7bd9767dd121e6838fa2c579624120e1e0fea4d30e830728ccf4777",
+          "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1 version=active representation=rendered_plugin_source provider=source_plugins]"
+        },
+        {
+          "bytes": 319,
+          "sha256": "0b6138d939cd068ccea218017b52eff6240053dd726719c2e30f37769b90eb17",
+          "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_11 version=active representation=rendered_plugin_source provider=source_plugins]"
+        },
+        {
+          "bytes": 356,
+          "sha256": "5d1c87e1b48c591b1893b00c5b25e344bbed2647fa0008903fe5087494406f68",
+          "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_111 version=active representation=rendered_plugin_source provider=source_plugins]"
+        },
+        {
+          "bytes": 198,
+          "sha256": "7a6e9e1ef468d8c75f65afb4da49fee51bcedb8b12fd3e6816b6230261d2a478",
+          "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_111_R version=active representation=rendered_plugin_source provider=source_plugins]"
+        },
+        {
+          "bytes": 283,
+          "sha256": "fcb4fbd7edcfd7ca3824a91efe455ef49f563604ec012faba22ec5cbd8b6441a",
+          "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1A version=active representation=rendered_plugin_source provider=source_plugins]"
+        },
+        {
+          "bytes": 275,
+          "sha256": "678c8a593afd7bf905853afba737d291ac7236d41c9a2c376bbf60834ad6b3f3",
+          "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1A_R version=active representation=rendered_plugin_source provider=source_plugins]"
+        },
+        {
+          "bytes": 294,
+          "sha256": "d8b71e01010d9efa42ce5e86fc3661923b79d7c8a252de55de4209faa785b1e5",
+          "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1A_RR version=active representation=rendered_plugin_source provider=source_plugins]"
+        }
+      ]
+    },
+    {
+      "args": {
+        "type": "CLAS",
+        "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+        "include": "definitions",
+        "extensions": "sources"
+      },
+      "baseBytes": 185,
+      "baseSha256": "9cbab667ba150bab35ee3f33724dbdfe3f6fae74c4b5b9bf6e589a23cdadec0f",
+      "extraBytes": 890,
+      "summary": {
+        "root": {
+          "type": "CLAS",
+          "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+          "version": "active"
+        },
+        "scope": "CLAS CL_SEEF_ADT_TEST_AUNIT_1 owning object/source (base filtered; section=definitions)",
+        "providers": [
+          {
+            "id": "class_exted_obj",
+            "family": "class_bound_enhancement",
+            "status": "unsupported",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "unsupported_provider",
+            "observations": 1,
+            "scopes": []
+          },
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "class_section=definitions; bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 4,
+          "responseBytes": 15123,
+          "elapsedMs": 450
+        }
+      },
+      "extraBlocks": []
+    },
+    {
+      "args": {
+        "type": "INTF",
+        "name": "IF_DSH_ENHANCED_OPTIONS",
+        "extensions": "summary"
+      },
+      "baseBytes": 452,
+      "baseSha256": "6cb8af19d24925124544eec814e432dc3500e94a0d9967b55b5587d30469f1da",
+      "extraBytes": 516,
+      "summary": {
+        "root": {
+          "type": "INTF",
+          "name": "IF_DSH_ENHANCED_OPTIONS",
+          "version": "active"
+        },
+        "scope": "INTF IF_DSH_ENHANCED_OPTIONS full root source",
+        "providers": [
+          {
+            "id": "interface_exted_obj",
+            "family": "interface_extension",
+            "status": "unsupported",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "unsupported_provider",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {},
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 2899,
+          "elapsedMs": 172
+        }
+      },
+      "extraBlocks": []
+    }
+  ],
+  "implementationCommit": "6994d2f447a18780871ae27bded04e026cda95e5",
+  "sourceSha256": {
+    "src/adt/class-extensions.ts": "1f7876b2276b5cb27c5e03948eb9cbcca03de4db4b2127dc54ec5ab9f371d518",
+    "src/adt/enhancement-include.ts": "bf3168c80e014c4758ce00fccf7e5ae34b05ec67061964e8593d28e77e53d1c5",
+    "src/adt/enhancements.ts": "bda3d908b0085844f53f15979f8d79f3cc056ddd7caa6135c49b3dd8fa968292",
+    "src/adt/repository-relations.ts": "833f36db3814b7f912f0d2328ec879b471aa0eb66b17b0276418911fcf28f392",
+    "src/adt/source-plugin-discovery.ts": "454862c467ae87b95bd2c8bc04206af42942d6f18560b1bd65d0c5b08aa95941",
+    "src/handlers/extension-read.ts": "376d8d76d5a3d2b6f300795449bb8b252913f3479903157c22e4eaa38dbec24f",
+    "src/handlers/read.ts": "bf6f739f3b9f22398428fd8c51e98f23a93c9e86b04733c5ccd29985c72c5d47"
+  }
+}

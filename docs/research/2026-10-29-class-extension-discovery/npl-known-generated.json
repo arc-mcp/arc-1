@@ -1,0 +1,32 @@
+{
+  "implementationCommit": "6994d2f447a18780871ae27bded04e026cda95e5",
+  "note": "Explicit known-source oracle only. It proves active generated-source retrieval on 750, not automatic native identity or class-binding coverage. EM001 was discovered in returned parent source.",
+  "parent": {
+    "include": "CL_OO_ADT_ENHANCED_CLASS1=====E",
+    "revision": {
+      "id": "00000",
+      "timestamp": "2015-09-10T15:35:58Z",
+      "uri": "/sap/bc/adt/programs/includes/CL_OO_ADT_ENHANCED_CLASS1%3D%3D%3D%3D%3DE/source/main/versions/19700101091123/00000/content"
+    },
+    "representation": "generated_include_revision",
+    "bytes": 342,
+    "sha256": "950cb7f1e0e7db26f7a064eabed1b7657f161370cea751820a7228b334ba2327"
+  },
+  "children": [
+    {
+      "include": "CL_OO_ADT_ENHANCED_CLASS1=====EM001",
+      "revision": {
+        "id": "00000",
+        "timestamp": "2012-10-22T14:04:31Z",
+        "uri": "/sap/bc/adt/programs/includes/CL_OO_ADT_ENHANCED_CLASS1%3D%3D%3D%3D%3DEM001/source/main/versions/19700101091123/00000/content"
+      },
+      "representation": "generated_include_revision",
+      "bytes": 31,
+      "sha256": "79e491c979707ef68e6b4cc182f23a11c61d69a3d01d6876379f21300dd55344"
+    }
+  ],
+  "consumed": {
+    "sends": 5,
+    "bytes": 1953
+  }
+}

@@ -33,9 +33,10 @@ describe('extension read inputs', () => {
       expect(SAPReadSchema.safeParse({ ...args, extensions: 'summary' }).success).toBe(false);
   });
   it('defaults only qualified full DDIC/source-plugin reads to summary', () => {
-    for (const type of ['TABL', 'PROG', 'INCL', 'FUNC', 'FUGR']) expect(extensionReadMode({ type })).toBe('summary');
+    for (const type of ['TABL', 'PROG', 'INCL', 'FUNC', 'FUGR', 'CLAS', 'INTF'])
+      expect(extensionReadMode({ type })).toBe('summary');
     for (const args of [
-      { type: 'CLAS' },
+      { type: 'CLAS', format: 'structured' },
       { type: 'TABL', grep: 'field' },
       { type: 'TABL', lineStart: 1 },
       { type: 'CLAS', method: 'READ' },
