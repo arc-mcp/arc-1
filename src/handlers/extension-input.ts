@@ -14,7 +14,7 @@ export const extensionReadProperties = {
     type: 'string',
     enum: ['none', 'summary', 'sources'],
     description:
-      'TABL/PROG/INCL/FUNC/FUGR: full=summary, partial=none; sources adds bounded labelled bodies. Inactive: unsupported.',
+      'Full reads: summary; partial: none. sources adds labelled bodies. CLAS: hooks/native; BDEF: verified index. INTF/inactive limited.',
   },
   enhancementContext: {
     type: 'object',

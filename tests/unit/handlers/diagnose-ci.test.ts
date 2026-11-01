@@ -8,6 +8,7 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 
 function payload(outcome = 'passed', tests = 1) {
   return textResult(
@@ -137,6 +138,21 @@ describe('CI action inputs and adapters', () => {
     expect(result.content[0].text).toContain('API is not available');
     expect(result.content[0].text).not.toContain('Object ""');
   });
+  it('refuses ATC CI on an on-premise system without any SAP request', async () => {
+    setCachedFeatures({ systemType: 'onprem' });
+    try {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'atc_ci',
+        packageTrees: ['ZPKG'],
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('supported only for BTP ABAP Environment');
+      expect(result.content[0].text).toContain('type="DEVC"');
+      expect(mockFetch).not.toHaveBeenCalled();
+    } finally {
+      resetCachedFeatures();
+    }
+  });
   it('includes only explicitly requested bounded XML', async () => {
     const result = await handleCiQuality(
       createClient(),
@@ -210,3 +226,39 @@ describe('CI action inputs and adapters', () => {
     expect(diagnose.mock.calls[0]?.[2]).toMatchObject({ signal, deadline: expect.any(Number) });
   });
 });
+
+it('uses configured onprem before feature discovery and sends no SAP requests', async () => {
+  resetCachedFeatures();
+  const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, systemType: 'onprem' }, 'SAPDiagnose', {
+    action: 'atc_ci',
+    packages: ['ZPKG'],
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toContain('No run was started');
+  expect(mockFetch).not.toHaveBeenCalled();
+});
+
+it.each([undefined, 'onprem'] as const)(
+  'forwards configured BTP or probed type %s before ATC polling',
+  async (probed) => {
+    resetCachedFeatures();
+    if (probed) setCachedFeatures({ systemType: probed });
+    const ci = await import('../../../src/adt/ci-quality.js');
+    const run = vi.spyOn(ci, 'runAtcCiCheck').mockRejectedValue(new Error('captured options'));
+    try {
+      await handleToolCall(createClient(), { ...DEFAULT_CONFIG, systemType: 'btp' }, 'SAPDiagnose', {
+        action: 'atc_ci',
+        packages: ['ZPKG'],
+      });
+      expect(run).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ systemType: probed ?? 'btp' }),
+      );
+      expect(mockFetch).not.toHaveBeenCalled();
+    } finally {
+      run.mockRestore();
+      resetCachedFeatures();
+    }
+  },
+);

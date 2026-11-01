@@ -16,6 +16,7 @@ import { AdtApiError, AdtNetworkError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions, AdtResponse } from './http.js';
 import { assertCanonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
+import type { SystemType } from './types.js';
 import { findDeepNodes, parseSearchResults, parseXml } from './xml-parser.js';
 
 export const ATC_CI_RUNS_PATH = '/sap/bc/adt/api/atc/runs';
@@ -23,6 +24,13 @@ export const ATC_CI_CONTENT_TYPE_RUN = 'application/vnd.sap.atc.run.parameters.v
 export const ATC_CI_ACCEPT_CHECKSTYLE = 'application/vnd.sap.atc.checkstyle.v1+xml';
 export const CI_REPORT_XML_LIMIT = 256 * 1024;
 export const CI_FINDINGS_LIMIT = 200;
+/**
+ * Initial waiting limit when the system type is unknown. Known BTP queues and runs that have
+ * already progressed keep the caller's overall deadline.
+ */
+export const ATC_CI_NOT_STARTED_LIMIT_MS = 60_000;
+const ATC_CI_PACKAGE_ALTERNATIVE =
+  'Check packages with SAPDiagnose action="atc", type="DEVC", name=<package> instead; it includes subpackages.';
 
 export interface CiQualityClock {
   now(): number;
@@ -37,6 +45,8 @@ export interface RunAtcCiOptions {
   signal?: AbortSignal;
   clock?: CiQualityClock;
   includeReportXml?: boolean;
+  /** Probed or configured system type; `onprem` refuses before any request. */
+  systemType?: SystemType;
 }
 
 /** Verify all named packages before starting any run; ATC additionally needs a nonempty selection. */
@@ -107,6 +117,10 @@ export async function probeAtcCi(
 
 export async function runAtcCiCheck(http: AdtHttpClient, safety: SafetyConfig, options: RunAtcCiOptions) {
   checkOperation(safety, OperationType.Read, 'RunAtcCiCheck');
+  if (options.systemType === 'onprem')
+    throw new Error(
+      `ATC CI is supported only for BTP ABAP Environment. No run was started. ${ATC_CI_PACKAGE_ALTERNATIVE}`,
+    );
   const clock = options.clock ?? {
     now: Date.now,
     sleep: (ms: number, signal?: AbortSignal) => sleep(ms, undefined, { signal }),
@@ -141,10 +155,21 @@ export async function runAtcCiCheck(http: AdtHttpClient, safety: SafetyConfig, o
       created.headers.location ?? created.headers.Location ?? '',
       `${ATC_CI_RUNS_PATH}/`,
     );
+    let notStartedSince: number | undefined;
+    let hasProgressed = false;
     while (clock.now() < deadline) {
       options.signal?.throwIfAborted();
       const response = await http.get(runPath, { Accept: ATC_RUN_STATUS_MEDIA_TYPE }, requestOptions);
       state = parseAtcCiRunStatus(response.body);
+      const notYetStarted = /^not yet started$/i.test(state.status);
+      if (!notYetStarted) hasProgressed = true;
+      if (options.systemType === undefined && !hasProgressed && notYetStarted) {
+        notStartedSince ??= clock.now();
+        if (clock.now() - notStartedSince >= ATC_CI_NOT_STARTED_LIMIT_MS)
+          return incomplete(
+            `The ATC CI run stayed "Not Yet Started" for ${ATC_CI_NOT_STARTED_LIMIT_MS / 1000} s. Inspect the existing SAP run before starting another. ${ATC_CI_PACKAGE_ALTERNATIVE}`,
+          );
+      }
       if (/^completed$/i.test(state.status)) {
         if (!state.resultHref) return incomplete('Completed run has no unambiguous Checkstyle result link.');
         const resultPath = assertCanonicalHostRelativeAdtPath(state.resultHref, '/sap/bc/adt/api/atc/results/');

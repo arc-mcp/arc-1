@@ -1,0 +1,169 @@
+{
+  "target": "npl",
+  "release": "750",
+  "checkedAt": "2026-10-31T21:02:51.842Z",
+  "rows": [
+    {
+      "mode": "none",
+      "basePreserved": true,
+      "baseSha256": "07f51b1b4805a53b66db9eb781344bb2b1e516fb0ac72a3e667f17aace7eba53",
+      "sourceBlocks": []
+    },
+    {
+      "mode": "summary",
+      "basePreserved": true,
+      "baseSha256": "07f51b1b4805a53b66db9eb781344bb2b1e516fb0ac72a3e667f17aace7eba53",
+      "summary": {
+        "root": {
+          "type": "PROG",
+          "name": "ENH_NESTED_DEMO",
+          "version": "active"
+        },
+        "scope": "PROG ENH_NESTED_DEMO full root source",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "selected_source",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "selected_source_only; runtime applicability unknown; qualified 750 unadvertised source provider",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XH",
+            "name": "ENH_NESTED_DEMO_LEVEL_3",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "ENH_NESTED_DEMO_LEVEL_2",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "ENH_NESTED_DEMO_LEVEL_1",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "ENH_NESTED_DEMO_LEVEL_0",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          }
+        ],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 7985,
+          "elapsedMs": 292
+        }
+      },
+      "sourceBlocks": []
+    },
+    {
+      "mode": "sources",
+      "basePreserved": true,
+      "baseSha256": "07f51b1b4805a53b66db9eb781344bb2b1e516fb0ac72a3e667f17aace7eba53",
+      "summary": {
+        "root": {
+          "type": "PROG",
+          "name": "ENH_NESTED_DEMO",
+          "version": "active"
+        },
+        "scope": "PROG ENH_NESTED_DEMO full root source",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown; qualified 750 unadvertised source provider",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XH",
+            "name": "ENH_NESTED_DEMO_LEVEL_3",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "ENH_NESTED_DEMO_LEVEL_2",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "ENH_NESTED_DEMO_LEVEL_1",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "ENH_NESTED_DEMO_LEVEL_0",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          }
+        ],
+        "applicability": "unknown",
+        "issues": [],
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 7985,
+          "elapsedMs": 219
+        }
+      },
+      "sourceBlocks": [
+        {
+          "label": "[extension source ENHO/XH ENH_NESTED_DEMO_LEVEL_3 version=active representation=rendered_plugin_source provider=source_plugins]",
+          "sha256": "c255ff1b035a31d5d54689059865dc398688903738a2780628fcae538af6c510"
+        },
+        {
+          "label": "[extension source ENHO/XH ENH_NESTED_DEMO_LEVEL_2 version=active representation=rendered_plugin_source provider=source_plugins]",
+          "sha256": "cd7416e2947296cc89cc57a8f216d0d50f6bf4165a5aa5793b4bbd99c9338a9c"
+        },
+        {
+          "label": "[extension source ENHO/XH ENH_NESTED_DEMO_LEVEL_1 version=active representation=rendered_plugin_source provider=source_plugins]",
+          "sha256": "ac0c19ba66094539f22b492c24b335d6521afe18dbdc13c6dfae78efe6662588"
+        },
+        {
+          "label": "[extension source ENHO/XH ENH_NESTED_DEMO_LEVEL_0 version=active representation=rendered_plugin_source provider=source_plugins]",
+          "sha256": "583d55e8a970c1adb35670fa8df6171750ec22c10a8caf658dc877b76b9de031"
+        }
+      ]
+    }
+  ],
+  "testedCommit": "863f5dbf72c0d5cbc34f1d5cc3d2633c171fc436",
+  "trackedSourceSha256": "9c7f26d4963290e08b5845dc6f46f2b1771bf333f88a96cd511311a4c8d2b901",
+  "sourceHashFormat": "git ls-files -z src order; UTF-8 path + NUL + raw file bytes + NUL"
+}

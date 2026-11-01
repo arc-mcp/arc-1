@@ -95,7 +95,7 @@ const SAPREAD_DESC_ONPREM =
   'Read SAP ABAP source/metadata. DDIC metadata: omit format. ' +
   'SHLP: active partial interface metadata; missing headers/assignments/appends are explicit. No drafts or source formats. ' +
   'For specs, reviews or pre-change context, prefer SAPContext first. ' +
-  'TABLE_QUERY: data preview required; CDS needs SAP_BASIS 752+. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
+  'TABLE_QUERY: filter with where, data preview required; CDS needs SAP_BASIS 752+. TABLE_CONTENTS: unfiltered preview. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
   'SYNTAX: read-only check (objectType+name, optional source). Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers.';
 
 const SAPREAD_DESC_BTP =
@@ -548,8 +548,7 @@ export function getToolDefinitions(
           columns: {
             type: 'array',
             items: { type: 'string' },
-            description:
-              'For TABLE_QUERY: columns to SELECT (default: all). Example: ["MATNR","BWART","BUDAT","MENGE"].',
+            description: 'TABLE_QUERY only: columns to select (default all), e.g. ["MATNR","BWART"].',
           },
           where: {
             type: 'array',
@@ -1138,8 +1137,8 @@ export function getToolDefinitions(
         '- "syntax": check objects[] (CLAS/INTF/PROG/DDLS; version active/inactive). Single: prefer SAPRead SYNTAX.\n' +
         '- "unittest": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n' +
         '- "unittest_ci": harmless package tests with source reconciliation; empty/incomplete runs fail.\n' +
-        '- "atc": ATC (name+type or objects [{type,name}], max 20). Omit variant for system default; unknown variant errors. "atc_variants": read variants/default, optional variant name filter.\n' +
-        '- "atc_ci": package ATC CI; requires available API and verified selection.\n' +
+        '- "atc": ATC (name+type/DEVC tree or objects [{type,name}], max 20). Omit variant for system default; unknown variant errors. "atc_variants": read variants/default, optional variant name filter.\n' +
+        '- "atc_ci": BTP-only package ATC CI; on-prem: atc type DEVC.\n' +
         '- "cds_testcases": read suggested CDS Unit tests (name; SAP_BASIS 8.16+).\n' +
         '- "object_state": active/inactive ETags/hashes/divergence (name+type; CLAS includes). No server-driven types.\n' +
         '- "quickfix": proposals: name+type+source+line; optional column/sourceUri.\n' +

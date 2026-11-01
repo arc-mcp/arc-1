@@ -1,0 +1,68 @@
+{
+  "originalCi": {
+    "runId": 41280502545,
+    "head": "92ca5bb413430b0009bcd11f28631e561a18ca24",
+    "integration": {
+      "passed": 278,
+      "failed": 2,
+      "skipped": 116,
+      "bdefFailure": {
+        "providerStatus": "incomplete",
+        "omissions": {
+          "deadline": 1
+        },
+        "identities": 0,
+        "sends": 3,
+        "responseBytes": 1344,
+        "elapsedMs": 2007
+      },
+      "otherFailure": "where-used-details.integration.test.ts, matches issue #1057, raw SAP response omits consumer; cause unconfirmed"
+    },
+    "e2e": {
+      "passed": 159,
+      "failed": 0,
+      "skipped": 11,
+      "bothBdefCasesPassed": true
+    }
+  },
+  "runtimeSourceSha256": "5f8058ccc1b685e0875113e5a9f820d99f47cb234d4f8f822a5475ab661cf664",
+  "runtimeSourceUnchanged": true,
+  "reviewTarget": {
+    "base": "92ca5bb413430b0009bcd11f28631e561a18ca24",
+    "tree": "06cd71bd7613423f9eb4065810fdc5261ac37494",
+    "patchSha256": "a70acb322dbe43a647773303286f4aedb1320d0efcc6868357fc5c17a0fdb913"
+  },
+  "local": {
+    "unitFiles": 419,
+    "unitPassed": 11321,
+    "workers": 4,
+    "initialDefaultWorkers": "One unchanged DDIC 30ms exact-send assertion failed; focused59 and final full run passed without modification",
+    "gates": ["typecheck", "lint", "validate:policy", "build", "check:sizes"],
+    "a4h758IntegrationPassed": 2,
+    "btpIntegrationSkipped": 2,
+    "a4h758McpPassed": 3,
+    "newAssertionRegressionsPassed": 24,
+    "btpReadinessHttpStatus": 503
+  },
+  "whereUsedTestModified": false,
+  "productionLimitsModified": false,
+  "checkedAt": "2026-11-01T11:31:47.353119+00:00",
+  "reviews": {
+    "initial": {
+      "model": "claude-opus-5-5",
+      "version": "2.1.308",
+      "readSearchCalls": 24,
+      "durationMs": 128437,
+      "finding": "P3 missing explicit regressions for summary source leakage and unsupported status rejection",
+      "disposition": "Added completed/incomplete source-leak cases and denied/not_advertised/unsupported cases retaining positive identities"
+    },
+    "confirmation": {
+      "model": "claude-opus-5-5",
+      "version": "2.1.308",
+      "readSearchCalls": 17,
+      "durationMs": 91869,
+      "verdict": "No actionable findings"
+    }
+  },
+  "nextCi": "Full workflow will run on the repair commit; see PR #1145 for the result."
+}

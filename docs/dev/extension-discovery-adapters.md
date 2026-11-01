@@ -39,7 +39,15 @@ Discovery's `DataResponseBudget(..., true)` opts into aggregate error/control re
 CSRF fallback bodies keep that allowance; other data consumers retain success-only accounting.
 `extension_discovery` audit events carry provider statuses/counts/consumption only, without sources.
 The compact renderer groups repeated provider observations and caps identities independently from
-source/graph expansion. No other family is enabled automatically by the DDIC stage.
+source/graph expansion. The handler routes source plug-ins, CLAS/INTF provider coverage and
+BDEF verification through the same session. Family adapters must use `addEdge` to retain
+occurrences within the shared edge cap and report omitted edges.
+
+BDEF's `discoverBdefExtensions(client, session, request, baseSource, capabilities)` consumes the
+already-read unfiltered base and optional cached capability hints. It checks at most two candidates
+in summary, never treats descriptions as evidence, and records `candidates` omissions independently
+from wire, source and rendered-output limits. No secondary session, SQL or alternate candidate fallback is used.
+The renderer keeps aggregate provider statuses if the full provider list cannot fit the output cap.
 
 Graph edges use `extensionKey` of the exact discovered owner identity, including for nested
 append traversal. `observationVersion` qualifies the edge's separate metadata/source observation:

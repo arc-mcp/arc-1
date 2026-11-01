@@ -106,7 +106,7 @@ the complete inherited API.
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `methodView` | string | No | `"signature"`: return one method declaration owned by the global CLAS MAIN source, including parameter and exception clauses. Requires a bare `method` name; omit for the existing implementation-body read. No `method="*"`, locals, interface-qualified or inherited signatures; only omitted/`main` include and plain text format. Incompatible with grep, ranges, diff and editable reads. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. For FUGR, `grep` implies `expand_includes` and searches each include on its own: matches are grouped under `=== <include> ===` with line numbers counted within that include. For PROG and INCL, `grep` searches the object itself unless `expand_includes=true`; the response then names the includes that the expansion would also search. Falls back to a literal search when the pattern is not valid regex. |
-| `extensions` | string | No | `none`, `summary`, or `sources`. Full TABL, PROG, INCL, FUNC and FUGR reads default to a bounded summary; partial reads default to none. Sources adds separate labelled extension bodies and a bounded graph. See [Extension discovery](#extension-discovery). |
+| `extensions` | string | No | `none`, `summary`, or `sources`. Full TABL, PROG, INCL, FUNC, FUGR, CLAS, INTF and BDEF source reads default to a bounded summary; partial reads default to none. Sources adds separate labelled extension bodies and a bounded graph. Interface coverage is limited. See [Extension discovery](#extension-discovery). |
 | `enhancementContext` | object | No | Standalone INCL only: `{type: "PROG"\|"FUGR"\|"CLAS", name: "..."}` identifies the owning main object. Required for standalone include plug-in discovery; actual child includes inherit their root context. |
 | `lineStart` | integer | No | First source line (1-based, inclusive); requires `lineEnd`. Supports PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, DDLX and TABL. CLAS `include` selects one source section. Plain text only: do not combine with grep, method, diff, structured/editable output, signature or element extraction. Draft/version notices precede the numbered source. |
 | `lineEnd` | integer | No | Last source line (inclusive); requires `lineStart`. Clamped to the source end; a start beyond the source is an error. |
@@ -116,9 +116,9 @@ the complete inherited API.
 | `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY: requested row cap (default 100, clamped to 10,000). Wide results can hit the server's cumulative byte ceiling at fewer rows. ARC-1 caps returned rows even when SAP includes a lookahead row. |
 | `maxResults` | number | No | DEVC result cap (default 200, clamped to 1–1000). Indexed search sends it to SAP; direct mode applies it locally without reducing SAP's response. |
 | `packageScope` | string | No | DEVC: `"direct"` uses bounded native package browsing without recursion or descriptions. Omit for indexed search. `objectType` optionally selects an advertised folder such as `CLAS/OC`. |
-| `sqlFilter` | string | No | Legacy TABLE_CONTENTS condition. Do not rely on it for portable automation: the 758 endpoint expects a different SELECT-shaped payload, so condition-only filters are unusable there. Prefer TABLE_QUERY `where`. |
-| `columns` | array | No | For TABLE_QUERY: fields to project; omit for all columns. Example: `["MANDT","MATNR"]`. |
-| `where` | array | No | For TABLE_QUERY: ANDed `{field,op,value?}` conditions. Operators: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE`, `NOT LIKE`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`, `STARTS_WITH` (literal prefix; `%` and `_` are not wildcards). IN values are bare comma-separated values; ARC-1 quotes/escapes them. On 758 use `<>`, because accepted `!=` is sent unchanged and SAP rejects it. |
+| `sqlFilter` | string | No | Legacy TABLE_CONTENTS condition. Do not rely on it for portable automation: the 758 endpoint expects a different SELECT-shaped payload, so condition-only filters are unusable there (816 behaves the same). Prefer TABLE_QUERY `where`. A non-empty `sqlFilter` on any other type, TABLE_QUERY included, is rejected before SAP is called. |
+| `columns` | array | No | For TABLE_QUERY: fields to project; omit for all columns. Example: `["MANDT","MATNR"]`. Rejected on other types when non-empty. |
+| `where` | array | No | For TABLE_QUERY: ANDed `{field,op,value?}` conditions; rejected on other types when non-empty. Operators: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE`, `NOT LIKE`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`, `STARTS_WITH` (literal prefix; `%` and `_` are not wildcards). IN values are bare comma-separated values; ARC-1 quotes/escapes them. On 758 use `<>`, because accepted `!=` is sent unchanged and SAP rejects it. |
 | `source` | string | No | SYNTAX only: proposed source to check without saving. |
 | `objectType` | string | No | Required for SYNTAX: repository type (e.g. CLAS, PROG, DDLS). For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, FUNC, etc.) — auto-detected from name if omitted; FUNC also uses `group` |
 | `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except SMBC and [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view (TABL/DTI explicitly prefers pending source) and explicit `active`/`inactive` must be confirmed by metadata. [TABL/DTT settings](#technical-table-settings) also prefer pending state and verify explicit versions. ENHO uses the developer view and refuses explicit version selection. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
@@ -137,16 +137,41 @@ CLI `source` and `read --flat` select `extensions="none"` so redirected source e
 their original contents. Use `arc1-cli call SAPRead --json '{"type":"TABL","name":"DSH_MEAL","extensions":"sources"}'`
 for extension context through the CLI.
 
-The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02, 758 SP02, and BTP ABAP
-Environment 920 SP05 with a developer's browser OAuth identity. Source plug-in XML is qualified
-on 750 and 758. Live positive coverage includes PROG on 750 and INCL, FUNC and FUGR on 758;
-other family/release combinations remain unqualified. CLAS, INTF and BDEF public integration
-remains in later stages and explicit requests currently report `unsupported`.
-Read-only BTP ABAP 920 checks cover FUNC `RFC_SYSTEM_INFO` (provider not advertised) and FUGR
-`SRFC` (empty root identities and bounded source traversal). These establish contract behavior,
-not positive BTP plug-in source coverage. PROG/INCL remain excluded from the BTP public schema;
-other BTP objects, releases and live principal propagation remain unqualified. CDS/DDLX extensions
-and BAdIs are outside this feature.
+The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02, 758 SP02 and BTP 920 SP05. Source
+plug-in XML is qualified on both releases. Live positive coverage includes PROG on 750 and
+INCL, FUNC and FUGR on 758; other family/release combinations remain unqualified.
+BDEF extensions are source-verified on 758 and BTP SAP_BASIS 920; release 750 is explicitly
+unqualified. BTP 920 also qualifies DDIC appends, FUGR/class hooks and native class identities.
+Its PROG/INCL public read types remain excluded by the existing schema; structural class source
+access returned 403, and interfaces reported unsupported context. Other release/family combinations
+remain unqualified. See the [BTP qualification](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-31-extension-test-gaps.md).
+CDS/DDLX extensions and BAdIs are outside this feature.
+
+CLAS combines selected-source hook coverage with a separate native `EXTED_OBJ` graph for the owning
+class. Main and local sections stay distinct. A class can have structural enhancements despite an
+empty hook/source response. Native graph edges retain their direction and ENHO types; the type
+alone does not identify enhancement technology. The native provider is qualified on 758 and BTP 920; 750's
+unsupported response remains explicit. Hook wire formats are qualified on both releases.
+
+Class sources retain rendered plug-ins or authored ENHO bodies as separate blocks. A qualified
+active-source failure may use a generated include's exact active revision (`00000`, matching REPS
+owner and content URI). Generated source may omit implementation names; only a method include
+actually named by that returned source is followed. It remains a labelled representation, not an
+inferred edit target. INTF's tested 758 ENV fallback is `unsupported_context`; 750 is an unsupported
+provider. Neither is evidence of absent interface extensions. Positive interface coverage is unqualified.
+Read-only BTP 920 tests through direct service-key/browser OAuth find structural identities and
+return the main hook example's eight bodies and three replacement edges. Structural and selected
+local authored sources return 403 for the tested identity; these stay denied without generated
+fallback. INTF returns unsupported context. BTP principal propagation remains unqualified here.
+
+BDEF uses a native WUL candidate index, then verifies active `extend behavior for` statements
+against entities declared by the base BDEF. Comments, strings, ordinary references and self edges
+are excluded. Summary checks at most two candidates; sources uses the shared remaining allowance
+and labels verified bodies `representation=authored_source`. Candidate omissions stay explicit.
+Even a fully checked or empty index cannot prove global absence. For example,
+`SAPRead(type="BDEF", name="DEMO_RAP_EXTENSIBLE", extensions="sources")` verifies
+DEMO_RAP_EXTEND1 and DEMO_RAP_EVENT_EXT on 758. Generic RAP/CDS availability does not qualify
+behavior extensions on 750. Cold capability discovery also consumes the optional byte/time budget.
 
 Method, grep, line-window and class-include reads default to none. An explicit mode on a partial
 read describes its **owning object/source**, without claiming the extension bodies match the
@@ -168,11 +193,17 @@ base plus qualified partial coverage. Caller cancellation still propagates.
 | Graph/source expansion | 8 rendered identities, no nested reads | 20 nodes, depth 5, 80 edges |
 | Additional output | 2 KiB | 16 KiB |
 
-All hidden reads use the caller's client and SAPRead deny rules. Optional reads disable transient
-retries. Graph, source, request, byte, deadline and output omissions remain visible, and cut source
+All hidden reads use the caller's client and SAPRead deny rules. Native WUL/EXTED_OBJ lookups also
+honor `SAPNavigate.relations`, whole-`SAPNavigate` and hyperfocused `SAP.navigate` denials.
+A disabled native provider preserves the base and independent class hooks. SAP authorization
+failures still stop the optional phase. Optional reads disable transient retries. Graph, source,
+request, byte, deadline and output omissions remain visible, and cut source
 bodies have explicit markers. No source is spliced into editable base text.
 These are simultaneous upper bounds: metadata, fallback and CSRF sends can exhaust the request
 budget before traversal reaches the node limit.
+
+DDIC scans mask comments and literals. Nested comment syntax remains unqualified; nested or
+unfinished scans report incomplete coverage instead of asserting an empty include graph.
 
 Source plug-in summaries use an advertised HOOK_IMPL identity list on a root where available.
 That list covers outer/specific implementations and says nested expansion was not performed.
@@ -493,12 +524,24 @@ navigation links). A failed source read returns an error, not successful partial
 
 ARC-1 resolves a different enhancement subtype through repository search only after
 an unsupported BAdI read. This needs search permission as well as read permission.
+A qualified source-unavailable failure can use the implementation's generated enhancement include
+(the name padded with `=` to 30 characters plus `E`). The fallback is qualified on 750/758; ordinary
+server errors, authorization, throttling and network failures do not authorize it. ARC-1 requires
+one exact active revision (`00000`) with matching REPS/include identity and canonical content URI;
+missing active entries never select a historical or inactive version. The source is returned with
+`enhancementInclude` provenance and a `note`; technology, description, package, enhanced object and
+hook positions remain unavailable. The fallback omits `switchSupported`.
+`SAPRead(type="INCL")` applies the same checks when a generated
+include's direct read is unavailable, prefixes source with provenance and preserves draft warnings.
+An explicit inactive include read is not served from revisions. Both routes obey the INCL,
+VERSIONS and VERSION_SOURCE deny rules in addition to the requested read action.
 Some other enhancement implementations still fail inside SAP; use SE80/SE19 or Eclipse's SAP GUI
 integration when the error identifies an unavailable ADT route. Only BAdI implementations
 are writable ([BAdI implementation writes](#badi-implementation-writes-enho)); ENHO source filtering
 (`grep`, method or line selection) is not supported.
 
-ENHO preserves SAP's unversioned developer view: omit `version` or use `auto`.
+Native ENHO reads use SAP's unversioned developer view: omit `version` or use `auto`.
+The revision fallback is active-only and does not check for pending ENHO drafts.
 Explicit `active`/`inactive` selection is refused because its behavior is not verified
 for these resources. Metadata and source are separate reads, not an atomic snapshot.
 
@@ -1848,7 +1891,7 @@ SAPQuery(sql="SELECT * FROM mara WHERE matnr LIKE 'Z%'", maxRows=50)
 
 ## SAPTransport
 
-Manage CTS transport requests (SE09/SE10 equivalent): list, get details, **diff (review what a transport changed)**, create, release, delete, reassign owner, recursive release, check transport requirements, and inspect an object's current lock/assignment status. The legacy action name for that status lookup is `history`, but it is not complete transport history. `create` uses the ADT `CreateCorrectionRequest` endpoint, which works on both NetWeaver 7.50+ and S/4HANA.
+Manage CTS transport requests (SE09/SE10 equivalent): list, get details, **diff (review what a transport changed)**, create, release, delete, reassign owner, recursive release, check transport requirements, and inspect an object's current lock/assignment status. The legacy action name for that status lookup is `history`, but it is not complete transport history. An include without `group` needs an exact repository identity; a search miss does not prove it is standalone. If the fallback cannot verify its package or CTS holders, `history` returns `lockStatusUnknown: true` and asks for a CTS check. `check` refuses ambiguous/task-only holders. These results do not establish that an object is free to edit. `create` uses the ADT `CreateCorrectionRequest` endpoint, which works on both NetWeaver 7.50+ and S/4HANA.
 
 In multi-target v1, `list`, `get`, `diff`, `check`, and `history` are available under the
 selected target's identity and read policy. Transport mutations remain unavailable.
@@ -2498,7 +2541,7 @@ administrators can disable them with `SAP_DENY_ACTIONS`.
 - **`unittest_ci`** — Single-target CI adapter for explicit packages/package trees. Runs the existing harmless-only native AUnit API plus legacy and active-source reconciliation for each package under one deadline. Empty, all-skipped, omitted-test or otherwise incomplete evidence sets `fail:true` and `status:"incomplete"`; failures also set `fail:true`. Returns totals and per-package outcomes. No risky test or failure-bypass controls. Requires API availability and normal ADT source access. Uses the configured SAP identity; BTP API authorization may require `SAP_COM_0735`.
 
 - **`atc`** — Run ATC (ABAP Test Cockpit) checks. Returns findings with priority, check title, message, URI, line number, plus quickfix metadata (`quickfixInfo`, `hasQuickfix`). Optional `variant` parameter for custom check variants. **Omit it and ARC-1 binds the system's configured check variant** (`systemCheckVariant` from ATC customizing) — SAP itself maps an empty `checkVariant` to the Code Inspector variant literally named `DEFAULT`, which is usually not what the system is configured for. An unknown `variant` name is **rejected** rather than silently substituted (SAP would run `DEFAULT` and still return HTTP 200). `resultFormat="structured"` reports the variant actually bound plus `variantSource` (`requested` \| `systemDefault` \| `sapFallback`, the last meaning `/atc/customizing` was unavailable). On systems that expose asynchronous ATC runs, ARC-1 follows SAP's run-status resource to `Completed` before retrieving the worklist; unrecognized non-failure statuses keep polling rather than being mistaken for terminal failures. Older synchronous systems fall back to a ten-second quiet interval over the complete worklist response, excluding SAP's volatile root timestamp, so successful fallback settlement adds roughly ten seconds. Unsafe or missing asynchronous status locations are never followed; ARC-1 instead preserves any settled worklist findings but keeps the result incomplete. Failure and deadline paths make one best-effort final worklist read for the same reason. Structured results identify successful lifecycle evidence as `completionEvidence` (`asyncRunCompleted` \| `legacyWorklistSettled`) and expose `runStatus`. A synchronous `<worklistRun>` body can supply named informational `findingStatistics` (`errors`, `warnings`, `infos`, `total`) plus `runInfos`; modern asynchronous HTTP 201 responses have an empty body, so those fields are `null` and `[]`. The deprecated `expectedFindingCount` field remains an alias of `findingStatistics.total` for response compatibility, but does not drive `truncated` or `complete`. `truncated` is retained for compatibility and is `false` until SAP exposes a separate reliable truncation signal. `variantSource` may also be `"requestedUnverified"`, meaning you named a variant but the variant listing was unreachable, so ARC-1 could not confirm SAP honoured it. The default (non-`structured`) payload carries `findings`, `variant` and `variantSource`; incomplete default results are errors whose JSON body still contains any recovered findings. Use `resultFormat="structured"` when automation must distinguish a complete run from a missing/false object-set completeness marker, a zero-object result, malformed object/finding evidence, a cancelled/timed-out run, or a legacy worklist that has not settled.
-- **`atc_ci`** — Single-target ATC CI API (`/sap/bc/adt/api/atc/runs`). Probes availability and verifies every selected package plus a nonempty selection before starting. Default variant `ABAP_CLOUD_DEVELOPMENT_DEFAULT`; set a variant available on the target. Evaluates all Checkstyle findings at `failOnSeverity` (default error), returns at most 200 findings with `truncated`. Empty valid Checkstyle passes only after selection verification. Local deadlines return incomplete evidence with run path and last status/progress; inspect the existing run before retrying. A reachable API does not prove the background job can start. BTP authorization may require `SAP_COM_0901`.
+- **`atc_ci`** — Single-target ATC CI API (`/sap/bc/adt/api/atc/runs`). Probes availability and verifies every selected package plus a nonempty selection before starting. Default variant `ABAP_CLOUD_DEVELOPMENT_DEFAULT`; set a variant available on the target. Evaluates all Checkstyle findings at `failOnSeverity` (default error), returns at most 200 findings with `truncated`. Empty valid Checkstyle passes only after selection verification. Local deadlines return incomplete evidence with run path and last status/progress; inspect the existing run before retrying. A reachable API does not prove the background job can start. BTP authorization may require `SAP_COM_0901`. ARC-1 supports this CI service on BTP ABAP Environment; a known on-premise target is refused before any SAP request. The tested 816 deployment never scheduled its requested run; 758 also stayed `Not Yet Started` in a short check. Check packages there with `atc`, `type="DEVC"`, which includes subpackages. If the system type is unknown and a run initially stays `Not Yet Started` for 60 seconds, ARC-1 returns `incomplete` with that hint. Known BTP targets and runs that have progressed keep the full timeout. Inspect the retained run before starting another; ARC-1 does not cancel it. `SAP_SYSTEM_TYPE=btp` explicitly selects BTP behavior when detection is unavailable.
 
 Both CI actions are excluded from multi-target mode. Software-component selection is deferred until its scope and completeness can be verified. `includeReportXml=true` includes XML only within a combined 256 KiB cap (default false): `atc_ci.reportXml` or `unittest_ci.results[].reportXml`; larger reports are explicitly omitted, with result paths retained. These actions use normal ARC-1 authentication/discovery/CSRF, and do not provide a communication-user bypass. BTP communication-arrangement completion has not been verified for this implementation.
 

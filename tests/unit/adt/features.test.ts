@@ -283,8 +283,8 @@ describe('Feature Detection', () => {
       expect(detectSystemType(components)).toBe('onprem');
     });
 
-    it('detects on-premise when components list is empty', () => {
-      expect(detectSystemType([])).toBe('onprem');
+    it('does not classify an empty component list as on-premise', () => {
+      expect(detectSystemType([])).toBeUndefined();
     });
 
     it('detects on-premise for typical S/4HANA components', () => {

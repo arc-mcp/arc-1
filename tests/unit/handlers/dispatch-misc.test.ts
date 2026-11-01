@@ -1283,6 +1283,19 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       expect(result.content[0]?.text).toContain('Unknown action');
     });
 
+    it('refuses SAP(read) TABLE_QUERY with a sqlFilter before any request is sent', async () => {
+      mockFetch.mockReset();
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, toolMode: 'hyperfocused' }, 'SAP', {
+        action: 'read',
+        type: 'TABLE_QUERY',
+        name: 'T000',
+        params: { sqlFilter: "MANDT = '000'", maxRows: 5 },
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('TABLE_QUERY does not accept sqlFilter');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('routes SAP(search) with params', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAP', {
         action: 'search',
