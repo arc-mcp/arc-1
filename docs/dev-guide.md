@@ -487,3 +487,29 @@ encoding vary. A matching entry with a modern detail link is read through that c
 The fallback stops at four pages or 4 MiB. Incomplete pages, stalled paging and unreadable summaries
 must not become "dump absent"; byte-limit and authorization errors propagate.
 Tests: `tests/unit/{adt,handlers}/dump-feed-detail.test.ts`.
+
+The 24-hour window was verified on 7.50; other releases of the older handler may share it. The correction
+instructions of SAP Notes 2780910, 3253331 and 3781408 name the handler class per release; the
+newer router `CL_RABAX_ADT_RES_APP` registers the detail resource next to the feed:
+
+| SAP_BASIS | `/runtime/dumps` handler | Window read in the source |
+|---|---|---|
+| 7.31, 7.40, 7.51, 7.52 | `CL_SABP_RABAX_ADT_RES_DUMPS` | not read; same class as 7.50 |
+| 7.50 | `CL_SABP_RABAX_ADT_RES_DUMPS` | 24 hours (SP02, SP23) |
+| 7.53–7.57, 8.16 | `CL_RABAX_ADT_RES_DUMPS` | not read |
+| 7.58 | `CL_RABAX_ADT_RES_DUMPS` | 2000 days (SP04) |
+
+The feed shows no sign of the cut: its `self` link carries the request or the newest dump's time,
+and `atom:updated` is SAP's clock. `dump-list-window.ts` therefore adds a second text block to a
+list from a release below 7.53 when the request has no `from`, or one before `atom:updated`
+minus 24 hours; the JSON array stays unchanged. The release is the probed one, else
+single-target `SAP_ABAP_RELEASE`, else `detectAbapRelease` once as the caller: a startup probe under a restricted
+technical user can miss it (seen on 7.50 and 7.58 behind principal propagation), and the read release
+is cached like other lazily learned facts. If SAP reports none, there is no block. Both handler
+generations answer a missing ST22 authorization with an empty feed (HTTP 200: 7.50
+`assert_authority_dumpanalysis` raises `CX_RUNTIME_ERROR_EXC_AUTH`, which `get_feed` catches; 7.58
+returns early). Every empty legacy list gets the authorization caveat, even inside the window.
+Newer empty lists do not yet carry that caveat. Release reads retain caller cancellation/deadlines;
+failed reads leave the successful dump list intact.
+Tests: `tests/unit/{adt,handlers}/dump-list-window.test.ts`, `detectAbapRelease` in
+`tests/unit/adt/features.test.ts`.
