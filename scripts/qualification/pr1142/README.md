@@ -142,17 +142,35 @@ It never replaces the first ownership receipt. A failure before a complete recei
 later foreign draft visible to the primary native reader, preserves the fixture for investigation.
 It does not establish visibility of other users' private inactive drafts.
 
-The local suite includes eighteen composed include scenarios: success, ignored clear, accepted stale
+The local suite includes twenty-two composed include scenarios: success, ignored clear, accepted stale
 hash, wrong native include proof, a foreign include draft, failed HTTP/tool-level preliminary reads,
 absent initialization coverage, denied-route writes, cancellation, uncertain save, second-writer-only
-failure, wrong include authorship/version, a switched writing session and three blank-refusal faults. Tests also execute the actual combined wrapper and consume
-real handler save results; each mutation attempt is read from disk before the mock accepts it.
+failure, wrong include authorship/version, a switched writing session, three blank-refusal faults,
+refused-but-mutating stale writes, wrong refusal state, contradictory save evidence and a rejected
+read after a successful save. Tests also execute the actual combined wrapper and consume
+real handler save results; each include-save attempt is read from disk before the mock accepts it.
 Both writers’ partial journals and denied-route call counts are asserted.
+The rejected-read scenario checks the durable successful-save receipt at the failing request,
+then verifies that no later mutation occurs and the fixture is preserved. The mock starts with
+three native-style includes and normalizes saved terminal newlines; `testclasses` needs initialization.
 Native reader/cleanup tests exercise active/editable hash and author/version mismatches, missing or
 duplicate include metadata, and a foreign draft under the actual shared lock callback.
 These are offline tests, not live proof.
 The first missing-include read may fail; that is not absence evidence. Only the writer's fresh,
 typed native 404 under the class lock permits initialization. Clearing requires an existing hash.
+
+Rejected fetches and response reads have sanitized RPC receipts before cleanup: recognized error
+name/cause code, tool/method, configured timeout, start time, wall elapsed time and monotonic elapsed
+time. Unknown names/codes are not reflected; raw messages, URLs, headers and arguments are omitted.
+Save and follow-up read have separate phase labels. A repeated failure at the same include step
+requires recovery and diagnosis before another live attempt, not an automatic retry.
+
+If an incomplete fixture lacks its normal ownership receipt, prepare a separate recovery bound to
+that run's preflight absence, manifest, original actor and exact saved source receipts. Archive and
+hash the recovery script before use. Persist the observed metadata/source comparisons and their
+success before locking and again under the owning lock, before DELETE. Refuse any mismatch or
+unobservable draft; verify typed absence and record cleanup. Earlier recovery records without these
+comparison observations must remain explicitly limited; do not reconstruct them after deletion.
 
 A stale-hash probe uses the actual first-save hash after a second save. A run that initializes no
 include for either writer fails that coverage assertion while continuing verified fixture cleanup;

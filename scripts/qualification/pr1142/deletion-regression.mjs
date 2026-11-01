@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +15,7 @@ const actors = [
   { label: 'readerA', email: 'first@example.test', sapUser: 'FIRST', letter: 'A', write: false },
 ];
 const baseUrl = new URL('https://mcp-sap-docs.cfapps.us10-001.hana.ondemand.com');
+const storedInclude = (source) => source.replace(/\r\n/g, '\n').replace(/\n+$/, '');
 const scenarios = [
   'includes-success',
   'includes-bad-clear',
@@ -34,6 +35,10 @@ const scenarios = [
   'includes-blank-mutates-existing',
   'includes-blank-initializes',
   'includes-blank-wrong-state',
+  'includes-post-save-read-rejection',
+  'includes-hash-refusal-mutates',
+  'includes-hash-refusal-wrong-state',
+  'includes-save-wrong-field',
   'success-replay',
   'frozen-sessions',
   'wrong-identity',
@@ -109,6 +114,8 @@ export async function runDeletionScenario(scenario, options = {}) {
       deniedIncludeCalls = 0,
       injected = false,
       formatterCalled = false;
+    let mutationsAtReadRejection,
+      failedReceiptVerified = false;
     const abort = new AbortController();
     const emit = (event, value) => {
       if (
@@ -187,6 +194,23 @@ export async function runDeletionScenario(scenario, options = {}) {
         else if (name === 'SAPRead') {
           assert.ok(entry);
           if (args.include) {
+            if (scenario === 'includes-post-save-read-rejection' && phase.endsWith('-existing-save-readback')) {
+              const disk = JSON.parse(await readFile(`${root}/deletion-qualification.json`, 'utf8'));
+              const progress = disk.fixtures.find((f) => f.name === fixture.name).includes.kinds[args.include];
+              assert.equal(progress.attempt, 'existing-save');
+              assert.equal(
+                progress.lastWrite.sourceHash,
+                digest(entry.includes[args.include]),
+                'Save receipt must precede its read-back',
+              );
+              assert.equal(
+                progress.sourceHash,
+                digest(storedInclude(`" ${manifest.marker} ${fixture.name} ${args.include} version 1\n`)),
+              );
+              assert.notEqual(progress.sourceHash, progress.lastWrite.sourceHash);
+              mutationsAtReadRejection = mutations;
+              throw new TypeError('simulated private connection details', { cause: { code: 'ECONNRESET' } });
+            }
             if (scenario === 'includes-read-loss') return new Response('unavailable', { status: 500 });
             if (scenario === 'includes-tool-read-error' || !Object.hasOwn(entry.includes, args.include))
               result = failure('NATIVE_READ_UNAVAILABLE');
@@ -208,7 +232,11 @@ export async function runDeletionScenario(scenario, options = {}) {
                   includes:
                     scenario === 'includes-no-initialization'
                       ? Object.fromEntries(includeKinds.map((kind) => [kind, `default ${kind}\n`]))
-                      : { definitions: 'default definitions\n', macros: 'default macros\n' },
+                      : {
+                          definitions: 'default definitions\n',
+                          implementations: 'default implementations\n',
+                          macros: 'default macros\n',
+                        },
                   includeAuthors: {},
                 }
               : {}),
@@ -237,9 +265,10 @@ export async function runDeletionScenario(scenario, options = {}) {
           }
           if (invalidBlank || (stale && !(scenario === 'includes-stale-write' && phase.endsWith('-stale-hash')))) {
             if (
-              invalidBlank &&
-              ((scenario === 'includes-blank-mutates-existing' && !initialized) ||
-                (scenario === 'includes-blank-initializes' && initialized))
+              (stale && scenario === 'includes-hash-refusal-mutates' && phase.endsWith('-stale-hash')) ||
+              (invalidBlank &&
+                ((scenario === 'includes-blank-mutates-existing' && !initialized) ||
+                  (scenario === 'includes-blank-initializes' && initialized)))
             ) {
               mutations++;
               includeMutations++;
@@ -253,7 +282,11 @@ export async function runDeletionScenario(scenario, options = {}) {
                   type: 'text',
                   text: JSON.stringify({
                     error: 'PINNED_WRITE_REFUSED',
-                    state: invalidBlank && scenario === 'includes-blank-wrong-state' ? 'incomplete' : 'unchanged',
+                    state:
+                      (invalidBlank && scenario === 'includes-blank-wrong-state') ||
+                      (stale && scenario === 'includes-hash-refusal-wrong-state' && phase.endsWith('-stale-hash'))
+                        ? 'incomplete'
+                        : 'unchanged',
                   }),
                 },
               ],
@@ -268,14 +301,14 @@ export async function runDeletionScenario(scenario, options = {}) {
                 args.source === ''
               )
             ) {
-              entry.includes[args.include] = args.source;
+              entry.includes[args.include] = storedInclude(args.source);
               entry.includeAuthors[args.include] = actors.find((a) => a.label === actor).sapUser;
             }
             if (scenario === 'includes-uncertain') throw new Error('simulated response loss after include save');
             body = {
               action: 'update',
               state: 'saved-inactive',
-              target: 'PR1142/001',
+              target: scenario === 'includes-save-wrong-field' ? 'OTHER/001' : 'PR1142/001',
               type: 'CLAS',
               name: fixture.name,
               include: args.include,
@@ -395,6 +428,22 @@ export async function runDeletionScenario(scenario, options = {}) {
         proof.fixtures = [{ name, absent: !entry }];
       } else {
         assert.equal(mode, 'cleanup');
+        if (scenario === 'includes-post-save-read-rejection' && name === manifest.fixtures[0].name) {
+          const records = await Promise.all(
+            (await readdir(root))
+              .filter((file) => file.startsWith('deletion-rpc-'))
+              .map(async (file) => JSON.parse(await readFile(`${root}/${file}`, 'utf8'))),
+          );
+          const failures = records.filter((record) => record.failure);
+          assert.equal(failures.length, 1, 'The failed read receipt must precede cleanup');
+          assert.equal(failures[0].failure.code, 'HTTP_REQUEST_FAILED');
+          assert.equal(failures[0].failure.rpcTool, 'SAPRead');
+          assert.equal(failures[0].failure.causeCode, 'ECONNRESET');
+          assert.equal(failures[0].status, undefined);
+          assert.ok(failures[0].phase.endsWith('-existing-save-readback'));
+          assert.ok(!JSON.stringify(failures).includes('private connection details'));
+          failedReceiptVerified = true;
+        }
         cleanup.push(name);
         if (scenario === 'cleanup-read-failure' && name === manifest.fixtures[0].name)
           throw new Error('native cleanup read unavailable');
@@ -516,6 +565,10 @@ export async function runDeletionScenario(scenario, options = {}) {
           'includes-blank-mutates-existing',
           'includes-blank-initializes',
           'includes-blank-wrong-state',
+          'includes-post-save-read-rejection',
+          'includes-hash-refusal-mutates',
+          'includes-hash-refusal-wrong-state',
+          'includes-save-wrong-field',
           'create-uncertain',
           'stale-write-accepted',
           'wrong-native-author',
@@ -546,6 +599,20 @@ export async function runDeletionScenario(scenario, options = {}) {
     }
     if (scenario === 'includes-uncertain')
       assert.equal(includeMutations, 1, 'An uncertain include save is never replayed');
+    if (scenario === 'includes-post-save-read-rejection') {
+      assert.equal(failedReceiptVerified, true);
+      assert.equal(includeMutations, 2);
+      assert.equal(mutations, mutationsAtReadRejection, 'No mutation follows the rejected read');
+      assert.ok(
+        output.failures.some(
+          (f) =>
+            f.code === 'HTTP_REQUEST_FAILED' &&
+            f.rpcTool === 'SAPRead' &&
+            f.causeCode === 'ECONNRESET' &&
+            f.phase.endsWith('-existing-save-readback'),
+        ),
+      );
+    }
     if (scenario === 'includes-writer-b-failure') assert.deepEqual([...objects.keys()], [manifest.fixtures[2].name]);
     const expectedFailure = {
       'includes-blank-mutates-existing': '.empty-without-hash.unchanged_source',
@@ -553,6 +620,9 @@ export async function runDeletionScenario(scenario, options = {}) {
       'includes-blank-wrong-state': '.empty-without-hash.unchanged_result',
       'includes-wrong-session': '.native_includes',
       'includes-wrong-include-version': '.native_includes',
+      'includes-hash-refusal-mutates': '.stale-hash.unchanged_source',
+      'includes-hash-refusal-wrong-state': '.stale-hash.unchanged_result',
+      'includes-save-wrong-field': '.first-save.saved',
     }[scenario];
     if (expectedFailure)
       assert.ok(
@@ -586,7 +656,7 @@ export async function runDeletionScenario(scenario, options = {}) {
       }
       if (['includes-success', 'includes-writer-b-failure'].includes(scenario)) {
         assert.equal(first.complete, true);
-        assert.deepEqual(first.initializedKinds, ['implementations', 'testclasses']);
+        assert.deepEqual(first.initializedKinds, ['testclasses']);
         for (const kind of includeKinds) {
           assert.equal(first.kinds[kind].complete, true);
           assert.deepEqual(first.kinds[kind].blankRefusals, ['empty-without-hash', 'whitespace']);
@@ -594,7 +664,7 @@ export async function runDeletionScenario(scenario, options = {}) {
             first.kinds[kind].sourceHash,
             digest(
               objects.get(manifest.fixtures[0].name)?.includes[kind] ??
-                `" ${manifest.marker} ${manifest.fixtures[0].name} ${kind} version 3\n`,
+                storedInclude(`" ${manifest.marker} ${manifest.fixtures[0].name} ${kind} version 3\n`),
             ),
           );
         }

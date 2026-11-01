@@ -221,7 +221,7 @@ qualification remains open. Opus accepted the corrected harness after a direct n
 check, which passed. A primary-writer PP attempt passed 386 assertions before a follow-up HTTP read
 failed; the second writer and owner activation were not reached. The preserved partial fixture was
 independently verified and removed. Further negative controls and diagnostic coverage address the
-review's remaining Low findings; follow-up review and a complete fresh PP run remain required.
+review's diagnostic and test findings; follow-up review and a complete fresh PP run remain required.
 No additional family is qualified by this incomplete attempt.
 The formatter and local CLAS/INTF deletion adapters now have a
 [combined two-writer PP qualification](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)

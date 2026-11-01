@@ -29,15 +29,26 @@ export class McpSession {
     if (this.token != null) headers.Authorization = `Bearer ${this.token}`;
     if (this.sessionId) headers['Mcp-Session-Id'] = this.sessionId;
     if (this.protocolVersion) headers['MCP-Protocol-Version'] = this.protocolVersion;
-    const response = await boundedFetch(
-      this.url,
-      {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ jsonrpc: '2.0', ...(notification ? {} : { id: requestId }), method, params }),
-      },
-      { rpcResponseId: requestId, timeoutMs: 330_000 },
-    );
+    let response;
+    try {
+      response = await boundedFetch(
+        this.url,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ jsonrpc: '2.0', ...(notification ? {} : { id: requestId }), method, params }),
+        },
+        {
+          rpcResponseId: requestId,
+          timeoutMs: 330_000,
+          rpcMethod: method,
+          rpcTool: method === 'tools/call' ? params.name : undefined,
+        },
+      );
+    } catch (error) {
+      await this.responseObserver?.(method, { failure: safeFailure(error) });
+      throw error;
+    }
     await this.responseObserver?.(method, response);
     if (this.privateResponses) {
       const directives = (response.headers.get('cache-control') ?? '')

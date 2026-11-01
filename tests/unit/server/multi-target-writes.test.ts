@@ -103,7 +103,11 @@ describe('pinned write policy composition', () => {
     );
     const result = await handleToolCall(client, prepared.activeConfig, 'SAPWrite', prepared.args);
     expect(result.isError).toBe(true);
-    expect(JSON.parse(result.content[0].text)).toMatchObject({ error: 'PINNED_WRITE_REFUSED', state: 'unchanged' });
+    expect(JSON.parse(result.content[0].text)).toMatchObject({
+      error: 'PINNED_WRITE_REFUSED',
+      state: 'unchanged',
+      message: 'Include source is required; source="" with an existing include hash clears it.',
+    });
     for (const request of requests) expect(request).not.toHaveBeenCalled();
   });
   it.each([{ source: '', expectedSourceHash: 'a'.repeat(64) }, { source: '* New include\n' }])(

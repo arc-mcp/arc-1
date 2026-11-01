@@ -135,7 +135,7 @@ accepted a controlled qualification after checking same-session initialization d
 check passed: a missing `testclasses` include was initialized and read back in its owning session,
 an unhashed repeat was refused, and whole-owner activation produced an active descriptor with the
 expected last changer. The fixture was deleted with verified native absence. The first probe's
-rejected main-source comment placement left a shell, which was separately inspected and deleted;
+main-source save received a generic HTTP 400 and left a shell, which was separately inspected and deleted;
 both attempts remain in the private operator record. Direct identity evidence does not establish PP.
 
 The [source-bound PP attempt](broader-pinned-pp-writes/include-qualification-attempt-20261101.json)
@@ -150,15 +150,18 @@ ownership receipt. Operator recovery compared the main source with its saved edi
 all four includes with their successful save hashes and exact test content, checked native package
 and actors, then repeated these checks under the owning class lock before deletion. All four fixture
 names were independently confirmed absent. The harness stopped with zero active operations.
+The archived recovery script enforces those comparisons, but its contemporaneous report did not
+persist the individual before-lock/under-lock observations or a script hash. Its hash was captured
+retrospectively; this is a code audit plus recorded outcome, not independent runtime proof of each comparison.
 The original application/environment, temporary destination and SAP role/profile are restored;
 temporary IAM entries and XSUAA restoration await operator BTP session renewal.
 
 The follow-up closes the review's offline coverage gaps: persisted attempts are checked when the
 mock receives each include mutation, including the second writer; contradictory or missing save
-fields are rejected; blank requests traverse route preparation and the real handler; and refusal
+fields are rejected; blank requests traverse route preparation and the real handler; and blank-refusal
 side effects, wrong writing sessions and inactive include metadata have negative controls. Native
 diagnostics record descriptor counts/types before refusal. Missing last changer/version are tested
-separately from the optional creator. The native worker's cleanup reporter is exercised on a failing
+separately from the optional creator. The cleanup reporter function is exercised on an injected failing
 operation with failed unlock and successful session closure. The combined wrapper has an explicit
 30-second test budget. These changes still require follow-up review and a fresh complete live run.
 
@@ -166,3 +169,34 @@ Author validation for this follow-up passed 398 files / 10,976 tests, all three 
 55 offline qualification simulations, lint, strict documentation and file/schema budgets. The
 switched-session simulation was refined afterward to replace the Authorization header at the mock
 transport boundary; all 35 deletion/include simulations passed again. Production files are unchanged.
+
+## Transport diagnostics and integration follow-up
+
+The next [actual Opus 5.5 max review](broader-pinned-pp-writes/claude-include-evidence-review-20261101.md)
+retained `c6d7fc371` and closed the prior findings within their stated scope. It requested transport
+diagnostics and an offline reproduction of the saved-source/read-failure sequence before a fresh run.
+It passed 474 focused tests, 55 simulations and all typecheck projects; 2,469 snapshot files were unchanged.
+
+The available failed-run timestamps leave **954,253 ms** between the last successful RPC receipt
+and cleanup's first phase, then **3,539 ms** through the final journal. The first cleanup worker
+started 894 ms after that phase. This is an unobserved interval, not a measured fetch duration:
+the configured timeout was 330,000 ms, and the records cannot explain the excess wall time or
+establish a network/backend cause. The failed request rejected without a recorded status or body.
+
+The follow-up adds bounded error classifications and both elapsed clocks to failed RPC receipts,
+separate save/read-back phase labels, and a negative control that checks the successful save is
+durable before its read rejects. Additional controls exercise stale refusals with side effects,
+wrong refusal state and contradictory save evidence. A resolved lifecycle with failed unlock now
+must fail native cleanup while preserving the cleanup flags. The blank route test pins the actual
+source-validation message. The mock matches the observed three initial includes and stripped
+terminal newlines. These are offline checks; the complete include PP run remains pending.
+
+Current `main` was integrated at `c8a0c9c27`, retaining both instructions in the sole textual conflict.
+That exact tree passed 422 files / 11,474 tests, 55 simulations, typechecks, build, lint, strict docs and
+size/schema budgets before this diagnostic follow-up. FEAT-93 remains open; neither checkpoint is
+whole-PR acceptance. Temporary BTP IAM/XSUAA rollback remains pending reauthentication.
+
+Author validation of the diagnostic follow-up passed **422 files / 11,478 tests**, all three
+typecheck projects, **59 offline simulations** (20 formatter and 39 deletion, including 22 include
+scenarios), lint, strict documentation and file/schema budgets. No production `src/` changes were
+made after the `main` integration. Follow-up Opus review and the next live qualification remain pending.

@@ -106,6 +106,7 @@ export async function qualifyIncludes({ fixture, marker, entry, client, target, 
           initialized: expectedSourceHash === undefined,
         }),
       );
+      step(`${prefix}-${label}-readback`);
       const current = await read();
       ensure(
         `${prefix}.${label}.readback`,

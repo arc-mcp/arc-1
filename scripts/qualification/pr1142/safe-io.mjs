@@ -12,9 +12,74 @@ export class HarnessError extends Error {
   }
 }
 
+const transportDiagnostics = new WeakMap();
+const errorNames = new Set(['Error', 'TypeError', 'AbortError', 'TimeoutError', 'FetchError']);
+const causeCodes = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ETIMEDOUT',
+  'EPIPE',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT',
+  'UND_ERR_SOCKET',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+  'CERT_HAS_EXPIRED',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+]);
+const rpcMethods = new Set(['initialize', 'notifications/initialized', 'tools/list', 'tools/call']);
+const rpcTools = new Set([
+  'SAPRead',
+  'SAPSearch',
+  'SAPWrite',
+  'SAPActivate',
+  'SAPNavigate',
+  'SAPQuery',
+  'SAPTransport',
+  'SAPGit',
+  'SAPContext',
+  'SAPLint',
+  'SAPDiagnose',
+  'SAPManage',
+  'SAPTargets',
+]);
+
+function transportFailure(code, error, started, timeoutMs, rpc, status) {
+  const failure = new HarnessError(code, status);
+  // Whitelists, not arbitrary strings: even an error name/code can contain credentials.
+  transportDiagnostics.set(
+    failure,
+    Object.freeze({
+      errorName: errorNames.has(error?.name) ? error.name : 'UnknownError',
+      causeCode: causeCodes.has(error?.cause?.code) ? error.cause.code : null,
+      failureKind:
+        error?.name === 'TimeoutError'
+          ? 'timeout'
+          : error?.cause?.message === 'unexpected redirect'
+            ? 'redirect-refused'
+            : 'unclassified',
+      startedAt: new Date(started.wall).toISOString(),
+      elapsedMs: Math.max(0, Date.now() - started.wall),
+      monotonicElapsedMs: Math.max(0, Math.round(performance.now() - started.monotonic)),
+      timeoutMs: Number.isSafeInteger(timeoutMs) && timeoutMs >= 0 ? timeoutMs : null,
+      ...(rpcMethods.has(rpc.method) ? { rpcMethod: rpc.method } : {}),
+      ...(rpcTools.has(rpc.tool) ? { rpcTool: rpc.tool } : {}),
+    }),
+  );
+  return failure;
+}
+
 export function safeFailure(error) {
   return error instanceof HarnessError
-    ? { code: error.code, ...(Number.isInteger(error.status) ? { httpStatus: error.status } : {}) }
+    ? {
+        code: error.code,
+        ...(Number.isInteger(error.status) ? { httpStatus: error.status } : {}),
+        ...transportDiagnostics.get(error),
+      }
     : { code: 'UNEXPECTED_FAILURE' };
 }
 
@@ -99,13 +164,17 @@ function parseSseEvent(event, responseId) {
   }
 }
 
-export async function boundedFetch(url, init = {}, { timeoutMs = 60_000, rpcResponseId } = {}) {
+/** @param {{ timeoutMs?: number, rpcResponseId?: number, rpcMethod?: string, rpcTool?: string }} [options] */
+export async function boundedFetch(url, init = {}, options = {}) {
+  const { timeoutMs = 60_000, rpcResponseId, rpcMethod, rpcTool } = options;
   assertSafeDiagnosticEnvironment();
+  const started = { wall: Date.now(), monotonic: performance.now() };
+  const rpc = { method: rpcMethod, tool: rpcTool };
   let response;
   try {
     response = await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) });
-  } catch {
-    throw new HarnessError('HTTP_REQUEST_FAILED');
+  } catch (error) {
+    throw transportFailure('HTTP_REQUEST_FAILED', error, started, timeoutMs, rpc);
   }
   let text = '';
   let json;
@@ -145,7 +214,7 @@ export async function boundedFetch(url, init = {}, { timeoutMs = 60_000, rpcResp
       text = Buffer.concat(chunks).toString('utf8');
     } catch (error) {
       if (error instanceof HarnessError) throw error;
-      throw new HarnessError('HTTP_RESPONSE_FAILED', response.status);
+      throw transportFailure('HTTP_RESPONSE_FAILED', error, started, timeoutMs, rpc, response.status);
     } finally {
       reader.releaseLock();
     }
@@ -178,6 +247,7 @@ export function readToolBody(response) {
 
 /** Owner-only evidence, including malformed bodies, without reflecting known bearer tokens to disk. */
 export function responseReceipt(response, tokens) {
+  if (response.failure) return { failure: response.failure };
   const scrub = (value) => {
     for (const token of tokens)
       if (typeof token === 'string' && token) value = value.replaceAll(token, '[REDACTED_TOKEN]');

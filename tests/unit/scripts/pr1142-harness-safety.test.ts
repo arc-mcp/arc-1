@@ -1,5 +1,7 @@
 import { execFile, execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,10 +16,100 @@ import {
   assertSafeDiagnosticEnvironment,
   boundedFetch,
   responseReceipt,
+  safeFailure,
 } from '../../../scripts/qualification/pr1142/safe-io.mjs';
 import { checkForwardWork, QualificationShutdown } from '../../../scripts/qualification/pr1142/shutdown.mjs';
 
 describe('PR1142 real harness safety boundaries', () => {
+  it.each(['timeout', 'redirect'] as const)('records safe diagnostics for an actual fetch %s', async (mode) => {
+    const secret = 'do-not-record-this-token';
+    const server = createServer((_request, response) => {
+      if (mode === 'redirect') {
+        response.writeHead(302, { Location: `https://example.invalid/${secret}` });
+        response.end();
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const timeoutMs = mode === 'timeout' ? 25 : 2000;
+      const failure = await boundedFetch(
+        new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/${secret}`),
+        {},
+        { timeoutMs, rpcMethod: 'tools/call', rpcTool: 'SAPRead' },
+      ).then(() => {
+        throw new Error('Expected fetch refusal');
+      }, safeFailure);
+      expect(failure).toMatchObject({
+        code: 'HTTP_REQUEST_FAILED',
+        errorName: mode === 'timeout' ? 'TimeoutError' : 'TypeError',
+        failureKind: mode === 'timeout' ? 'timeout' : 'redirect-refused',
+        causeCode: null,
+        rpcMethod: 'tools/call',
+        rpcTool: 'SAPRead',
+        timeoutMs,
+        startedAt: expect.any(String),
+        elapsedMs: expect.any(Number),
+        monotonicElapsedMs: expect.any(Number),
+      });
+      expect(failure.elapsedMs).toBeGreaterThanOrEqual(0);
+      expect(failure.monotonicElapsedMs).toBeGreaterThanOrEqual(0);
+      expect(JSON.stringify(failure)).not.toMatch(/do-not-record|127\.0\.0\.1|example\.invalid/);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('captures failed RPC receipts with tool and timing but without error messages or arbitrary names', async () => {
+    const secret = 'do-not-record-this-secret';
+    const error = Object.assign(new Error(secret), {
+      name: secret,
+      cause: { code: 'ECONNRESET', message: `https://example.invalid/${secret}` },
+    });
+    const observed: any[] = [];
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(error));
+    try {
+      const session = new McpSession(
+        new URL('https://example.invalid'),
+        secret,
+        () => {},
+        'fixture',
+        true,
+        async (method: string, response: any) => observed.push({ method, ...responseReceipt(response, [secret]) }),
+      );
+      await expect(session.request('tools/call', { name: 'SAPRead', arguments: { name: secret } })).rejects.toThrow(
+        'HTTP_REQUEST_FAILED',
+      );
+      expect(observed).toEqual([
+        {
+          method: 'tools/call',
+          failure: {
+            code: 'HTTP_REQUEST_FAILED',
+            errorName: 'UnknownError',
+            causeCode: 'ECONNRESET',
+            failureKind: 'unclassified',
+            rpcMethod: 'tools/call',
+            rpcTool: 'SAPRead',
+            timeoutMs: 330000,
+            startedAt: expect.any(String),
+            elapsedMs: expect.any(Number),
+            monotonicElapsedMs: expect.any(Number),
+          },
+        },
+      ]);
+      expect(JSON.stringify(observed)).not.toContain(secret);
+      error.cause.code = secret;
+      const diagnostic = await boundedFetch(new URL('https://example.invalid'), {}, { rpcTool: secret }).catch(
+        safeFailure,
+      );
+      expect(diagnostic).toMatchObject({ causeCode: null });
+      expect(diagnostic).not.toHaveProperty('rpcTool');
+      expect(JSON.stringify(diagnostic)).not.toContain(secret);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each(['broken-output', 'native-interrupt'])('lets an in-flight worker finish after %s', async (boundary) => {
     const root = await mkdtemp(join(tmpdir(), 'pr1142-process-boundary-'));
     const marker = join(root, 'completed');

@@ -297,6 +297,30 @@ describe('PR1142 actual native identity and cleanup branches', () => {
     ]);
   });
 
+  it('rejects and persists an unlock failure reported by a resolved native lifecycle', async () => {
+    const test = cleanup();
+    const report: Record<string, unknown> = {};
+    const persisted: unknown[] = [];
+    vi.mocked(withLockedMutation).mockImplementation(async () => {
+      Object.assign(test.context.cleanup, { unlockFailed: true, sessionClosed: false });
+    });
+    await expect(
+      withNativeCleanupReport({
+        context: test.context,
+        report,
+        operation: () => cleanupNativeFixture(test),
+        persist: async () => persisted.push(structuredClone(report)),
+      }),
+    ).rejects.toThrow('Cleanup unlock failed');
+    expect(persisted).toEqual([
+      {
+        cleanupState: { unlockFailed: true, sessionClosed: false },
+        finishedAt: expect.any(String),
+      },
+    ]);
+    expect(test.absent).toHaveBeenCalledOnce();
+  });
+
   it('preserves a foreign include draft discovered by the actual native reader under the class lock', async () => {
     const native = includeIdentity();
     const test = cleanup();

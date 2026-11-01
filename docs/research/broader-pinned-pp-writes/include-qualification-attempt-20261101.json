@@ -68,7 +68,7 @@
         "sessionClosed": true
       }
     },
-    "initialProbeAttempt": "The first direct probe created a class shell but SAP rejected its source comment placement; independently inspected and deleted before the successful probe."
+    "initialProbeAttempt": "The first direct probe created a class shell but its source save received a generic HTTP 400. The shell was independently inspected and deleted before the successful probe; a comment-placement cause is not established by the saved record."
   },
   "ppAttempt": {
     "startedAt": "2026-11-01T06:56:26.917Z",
@@ -104,7 +104,18 @@
     "secondWriterReached": false,
     "activationReached": false,
     "formatterReached": false,
-    "httpFailureCause": "Not established; no response was received for the follow-up read. No mutation was replayed."
+    "httpFailureCause": "Not established; the follow-up read request rejected and no status or body was recorded. No mutation was replayed.",
+    "timingEvidence": {
+      "lastSuccessfulRpcReceiptAt": "2026-11-01T06:57:49.222Z",
+      "firstCleanupPhaseAt": "2026-11-01T07:13:43.475Z",
+      "firstCleanupWorkerAt": "2026-11-01T07:13:44.369Z",
+      "finishedAt": "2026-11-01T07:13:47.014Z",
+      "unobservedBeforeCleanupMs": 954253,
+      "cleanupToFinishedMs": 3539,
+      "cleanupPhaseToWorkerMs": 894,
+      "configuredFetchTimeoutMs": 330000,
+      "limit": "The failed fetch start, rejection time, cause and actual elapsed time were not captured. The unobserved interval includes the request and surrounding runtime activity; it cannot be attributed to network, backend, suspension or timer delay from these records."
+    }
   },
   "manualRecovery": {
     "inspection": "Main source exactly matched the saved editable MCP receipt; every include matched its last successful save hash and expected test content. Package and native actors were verified before and under the owning class lock. Metadata and all source bytes were unchanged between both checks.",
@@ -140,7 +151,9 @@
       "unlockFailed": false,
       "sessionClosed": true
     },
-    "finishedAt": "2026-11-01T11:09:13.146Z"
+    "finishedAt": "2026-11-01T11:09:13.146Z",
+    "scriptSha256CapturedRetrospectively": "5dc0f8a7943e51686c52a4a7fa1d6810ad46aa1e52392760925d77d9141ac1a6",
+    "comparisonEvidenceLimit": "Archived operator code requires equality before and under the lock. The contemporaneous report recorded the outcome and absence, but not individual comparison observations or the script hash. The source hash was captured retrospectively; no missing runtime observations were reconstructed."
   },
   "restoration": {
     "harnessStopped": true,
