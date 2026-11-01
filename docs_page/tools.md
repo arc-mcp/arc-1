@@ -497,7 +497,7 @@ When the generic `enhoxh` route fails for a source-code plug-in or class enhance
 (observed on 750/758), ARC-1 reads the active revision of the implementation's enhancement
 include (the name padded with `=` to 30 characters plus `E`). It returns `source`,
 `enhancementInclude` provenance and a `note`; technology, description, package, enhanced object
-and hook positions remain unavailable. `SAPRead(type="INCL")` can use the same fallback after a
+and hook positions remain unavailable. `SAPRead(type="INCL")` on such an include can use the same fallback after a
 direct include read fails, with a provenance note. ENHO needs read and search permission;
 INCL needs read permission. An explicit inactive include read never falls back to active source.
 Automatic source-plugin discovery still needs its direct resources; optional discovery failures
