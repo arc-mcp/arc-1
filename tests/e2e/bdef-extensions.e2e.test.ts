@@ -21,10 +21,16 @@ describe('BDEF extensions through MCP', () => {
     requireOrSkip(ctx, supported, SkipReason.BACKEND_UNSUPPORTED);
     const args = { type: 'BDEF', name: 'DEMO_RAP_EXTENSIBLE', version: 'active', force_refresh: true };
     const base = await callTool(client, 'SAPRead', { ...args, extensions: 'none' });
-    for (const mode of [undefined, 'summary', 'sources', 'summary'] as const) {
+    for (const mode of [undefined, 'summary', 'summary'] as const) {
       const result = await callTool(client, 'SAPRead', { ...args, ...(mode ? { extensions: mode } : {}) });
       assertBdefExtensions(base, result, mode ?? 'summary');
     }
+  });
+  it('verifies separate authored bodies independently of summary completion', async (ctx) => {
+    requireOrSkip(ctx, supported, SkipReason.BACKEND_UNSUPPORTED);
+    const args = { type: 'BDEF', name: 'DEMO_RAP_EXTENSIBLE', version: 'active', force_refresh: true };
+    const base = await callTool(client, 'SAPRead', { ...args, extensions: 'none' });
+    assertBdefExtensions(base, await callTool(client, 'SAPRead', { ...args, extensions: 'sources' }), 'sources');
   });
   it('keeps source windows unchanged and defaults them to none', async (ctx) => {
     requireOrSkip(ctx, supported, SkipReason.BACKEND_UNSUPPORTED);

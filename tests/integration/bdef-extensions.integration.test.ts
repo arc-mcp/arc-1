@@ -52,18 +52,24 @@ for (const target of ['onprem', 'btp'] as const) {
       supported = true;
     }, 180_000);
     afterAll(() => resetCachedFeatures());
-    it('preserves the base and verifies separate authored sources with fresh per-call limits', async (ctx) => {
+    const read = (extensions: 'none' | 'summary' | 'sources') =>
+      handleToolCall(client, { ...DEFAULT_CONFIG, systemType: target }, 'SAPRead', {
+        type: 'BDEF',
+        name: 'DEMO_RAP_EXTENSIBLE',
+        version: 'active',
+        force_refresh: true,
+        extensions,
+      });
+    it('preserves the base across repeated summaries with fresh per-call limits', async (ctx) => {
       requireOrSkip(ctx, supported, SkipReason.BACKEND_UNSUPPORTED);
-      const read = (extensions: 'none' | 'summary' | 'sources') =>
-        handleToolCall(client, { ...DEFAULT_CONFIG, systemType: target }, 'SAPRead', {
-          type: 'BDEF',
-          name: 'DEMO_RAP_EXTENSIBLE',
-          version: 'active',
-          force_refresh: true,
-          extensions,
-        });
       const base = await read('none');
-      for (const mode of ['summary', 'sources', 'summary'] as const) assertBdefExtensions(base, await read(mode), mode);
-    }, 60_000);
+      for (let observation = 0; observation < 2; observation++)
+        assertBdefExtensions(base, await read('summary'), 'summary');
+    }, 30_000);
+    it('verifies separate authored sources independently of summary completion', async (ctx) => {
+      requireOrSkip(ctx, supported, SkipReason.BACKEND_UNSUPPORTED);
+      const base = await read('none');
+      assertBdefExtensions(base, await read('sources'), 'sources');
+    }, 30_000);
   });
 }

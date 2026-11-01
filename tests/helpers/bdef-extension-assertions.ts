@@ -19,7 +19,8 @@ export function assertBdefExtensions(base: Result, result: Result, mode: 'summar
   expect(summary.providers).toContainEqual(
     expect.objectContaining({ id: 'bdef_wul_verified', coverage: 'candidate_index' }),
   );
-  expect(summary.identities.length).toBeGreaterThan(0);
+  const provider = summary.providers.find((provider) => provider.id === 'bdef_wul_verified')!;
+  expect(['returned', 'incomplete']).toContain(provider.status);
   expect(summary.identities.every((node) => node.type === 'BDEF' && node.version === 'active')).toBe(true);
   expect(summary.applicability).toBe('unknown');
   expect(summary.consumed.sends).toBeLessThanOrEqual(mode === 'summary' ? 6 : 20);
@@ -31,6 +32,19 @@ export function assertBdefExtensions(base: Result, result: Result, mode: 'summar
   if (mode === 'summary') {
     expect(summary.identities.length).toBeLessThanOrEqual(2);
     expect(sources).toHaveLength(0);
+    // The live summary has a two-second allowance, not a minimum-result guarantee.
+    // Keep its failure reason and omission consistent; source verification remains strict below.
+    const resourceOmission =
+      provider.reason === 'deadline'
+        ? 'deadline'
+        : provider.reason === 'request_limit'
+          ? 'requests'
+          : provider.reason === 'response_byte_limit'
+            ? 'wire_bytes'
+            : undefined;
+    if (provider.status === 'incomplete' && resourceOmission)
+      expect(summary.omissions[resourceOmission]).toBeGreaterThan(0);
+    else expect(summary.identities.length).toBeGreaterThan(0);
   } else {
     for (const name of ['DEMO_RAP_EXTEND1', 'DEMO_RAP_EVENT_EXT']) {
       expect(summary.identities).toContainEqual(expect.objectContaining({ name }));

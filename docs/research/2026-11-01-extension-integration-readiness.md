@@ -1,5 +1,8 @@
 # Final combined extension integration and review
 
+The original CI result and subsequent live-test assertion repair are recorded in
+[the follow-up](2026-11-01-bdef-summary-assertion-repair.md). Runtime source is unchanged.
+
 Runtime `a2a86b74aee3b6e0b8882d70134d93f88717955c` integrates current main
 `dd1893877` and class prerequisite `eec018270`. DDIC #1143 and source plug-in
 #1158 have merged. Class #1146 incorporates and hardens #1124, retaining the
