@@ -38,6 +38,7 @@ import { CLASS_WRITE_INCLUDES, KNOWN_BASE_TYPES } from './object-types.js';
 import { SAPQuerySchema, SAPQuerySchemaBtp } from './query-input.js';
 import { readMethodOptionError } from './read-method-options.js';
 import { LiveRelationsInput, relationNumber } from './relation-input.js';
+import { searchHelpInputIssue } from './search-help-input.js';
 import {
   ATC_BATCH_TYPES_BTP,
   SAPCONTEXT_TYPES_BTP,
@@ -103,6 +104,11 @@ function validateSapReadInput(
 ): void {
   const methodError = readMethodOptionError(input, input.type);
   if (methodError) ctx.addIssue({ code: 'custom', path: ['method'], message: methodError });
+  if (input.type === 'SHLP') {
+    const issue = searchHelpInputIssue(input);
+    if (issue) ctx.addIssue({ code: 'custom', path: [issue.key], message: issue.message });
+    return;
+  }
   validateExtensionReadInput(input as Record<string, unknown>, ctx);
   if (input.packageScope !== undefined) {
     const allowed = new Set(['type', 'name', 'packageScope', 'objectType', 'maxResults', 'format']);
@@ -631,9 +637,7 @@ function validateFunctionProcessingInput(
   }
 }
 
-// FM signature parameter (issue #252). One entry per IMPORTING/EXPORTING/CHANGING/
-// TABLES/EXCEPTIONS/RAISING line in the FUNCTION signature region. ARC-1 builds
-// the ABAP source from this array; SAP's own signature lives inline in /source/main.
+// Structured FM parameters, serialized into /source/main by fm-signature.ts.
 const fmParameterSchema = z
   .object({
     kind: z.enum(['importing', 'exporting', 'changing', 'tables', 'exceptions', 'raising']),
@@ -644,20 +648,22 @@ const fmParameterSchema = z
       .max(60)
       .refine(isValidFmParameterDescription, 'Use 1–60 printable characters; blank descriptions are not supported.')
       .optional(),
-    /** ABAP type expression. Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. */
     type: z.string().optional(),
     /** Emit `VALUE(name)` wrapper. Default false (pass-by-reference). */
     byValue: looseOptionalBoolean,
     /** Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim. */
     default: z.string().optional(),
-    /** Emit `OPTIONAL` keyword. */
     optional: looseOptionalBoolean,
   })
   .refine(
     (parameter) =>
       parameter.description === undefined || (parameter.kind !== 'exceptions' && parameter.kind !== 'raising'),
     { path: ['description'], message: 'description is supported only for importing/exporting/changing/tables.' },
-  );
+  )
+  .refine((parameter) => parameter.kind === 'exceptions' || parameter.kind === 'raising' || !!parameter.type?.trim(), {
+    path: ['type'],
+    message: 'A non-empty type is required for importing/exporting/changing/tables.',
+  });
 
 const dtelShortLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.short).optional();
 const dtelMediumLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.medium).optional();
@@ -1440,7 +1446,12 @@ export const SAPContextSchema = z
     siblingMaxCandidates: siblingMaxCandidatesSchema,
     includeKtd: looseOptionalBoolean,
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.type !== 'SHLP') return;
+    const issue = searchHelpInputIssue(input, true);
+    if (issue) ctx.addIssue({ code: 'custom', path: [issue.key], message: issue.message });
+  });
 
 export const SAPContextSchemaBtp = z
   .object({

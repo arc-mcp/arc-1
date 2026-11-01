@@ -46,6 +46,7 @@ import {
   objectUrlForType,
 } from './object-types.js';
 import { readMethodOptionError } from './read-method-options.js';
+import { handleSearchHelp } from './search-help.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { handleSyntaxCheck } from './syntax.js';
 
@@ -198,7 +199,7 @@ export async function handleSAPRead(
   cacheSecurity: CacheSecurityContext,
   minimalErrors: boolean,
 ): Promise<ToolResult> {
-  const captured: { version: SourceVersion; source: string } = { version: 'active', source: '' };
+  const captured: { version: SourceVersion; source?: string; group?: string } = { version: 'active' };
   const base = await handleSAPReadBase(client, args, cachingLayer, cacheSecurity, minimalErrors, captured);
   const type = normalizeObjectType(String(args.type ?? ''));
   if (
@@ -207,7 +208,13 @@ export async function handleSAPRead(
     (args.include && ['indexes', 'text_symbols'].includes(String(args.include).toLowerCase()))
   )
     return base;
-  return appendReadExtensions(client, { ...args, type }, base, captured.version, captured.source);
+  return appendReadExtensions(
+    client,
+    { ...args, type, ...(captured.group ? { group: captured.group } : {}) },
+    base,
+    captured.version,
+    captured.source,
+  );
 }
 
 async function handleSAPReadBase(
@@ -216,13 +223,15 @@ async function handleSAPReadBase(
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
   minimalErrors: boolean,
-  extensionBase: { version: SourceVersion; source: string },
+  extensionBase: { version: SourceVersion; source?: string; group?: string },
 ): Promise<ToolResult> {
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
   const requestedVersion = (args.version ?? 'active') as RequestedSourceVersion;
   const methodError = readMethodOptionError(args, type);
   if (methodError) return errorResult(methodError);
+
+  if (type === 'SHLP') return handleSearchHelp(client, args);
 
   const hasLineRange = args.lineStart !== undefined || args.lineEnd !== undefined;
   if (hasLineRange) {
@@ -378,9 +387,11 @@ async function handleSAPReadBase(
   ): Promise<{ source: string; cacheHit: boolean; revalidated: boolean }> => {
     if (!cachingLayer) {
       const result = await fetcher(undefined);
+      extensionBase.source = result.source;
       return { source: result.source, cacheHit: false, revalidated: false };
     }
     const { source, hit, revalidated } = await cachingLayer.getSource(objType, objName, fetcher, { version });
+    extensionBase.source = source;
     return { source, cacheHit: hit, revalidated };
   };
 
@@ -602,6 +613,7 @@ async function handleSAPReadBase(
         }
         group = resolved;
       }
+      extensionBase.group = group;
       const { source, cacheHit, revalidated } = await cachedGet('FUNC', name, effectiveVersion, (ifNoneMatch) =>
         client.getFunction(group, name, { ifNoneMatch, version: effectiveVersion }),
       );
