@@ -125,6 +125,9 @@ Pinned profiler requests bound executions and expiry. ST05 enablement requires a
 SAP user or explicit all-users selection, mutually exclusive; qualify native filter grammar and
 preserve existing state fields. Restore prior trace state in tests, including other operators'
 filters. Formatter patches preserve unrelated native XML/style data and reject unknown shapes.
+SAP documents formatter preferences as user-specific for the selected system connection, not global
+system settings. The [native adapter evidence](../research/2026-11-01-broader-pinned-pp-writes-formatter.md)
+corrects that earlier assumption; separate PP user-scope qualification is still required.
 Quickfix application returns deltas; source persistence still goes through guarded SAPWrite.
 
 ## Upgrade and acceptance

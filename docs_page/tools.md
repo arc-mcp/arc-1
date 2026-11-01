@@ -2228,9 +2228,11 @@ accepted. `format` and formatter-settings actions contact or modify SAP and rema
 - **`lint`** — Check ABAP source for issues. Returns errors and warnings with line/column positions.
 - **`lint_and_fix`** — Lint + auto-fix all fixable issues (keyword case, obsolete statements, etc.). Returns the fixed source code alongside remaining unfixable issues.
 - **`list_rules`** — List all available rules with current config (preset, enabled/disabled status, severity). No source needed.
-- **`format`** — Pretty-print ABAP source via SAP ADT PrettyPrinter using the SAP system's global formatter settings. Returns formatted source text.
-- **`get_formatter_settings`** — Read SAP global PrettyPrinter settings (indentation + keyword style).
-- **`set_formatter_settings`** — Update SAP global PrettyPrinter settings. Provide at least one of `indentation` or `style`. Requires `write` scope and `SAP_ALLOW_WRITES=true`.
+- **`format`** — Pretty-print ABAP source via SAP ADT PrettyPrinter using the connected SAP user's formatter settings for this system. Returns formatted source text.
+- **`get_formatter_settings`** — Read that user's PrettyPrinter settings (indentation + keyword style).
+- **`set_formatter_settings`** — Update that user's PrettyPrinter settings for this system. Provide at least one of `indentation` or `style`. Requires `write` scope and `SAP_ALLOW_WRITES=true`.
+
+SAP documents these options as [user-specific settings stored for the selected system connection](https://help.sap.com/docs/ABAP_PLATFORM_NEW/c238d694b825421f940829321ffa326a/81717979de0243658237fbe2be5a2c6e.html).
 
 **System-Aware Presets:**
 

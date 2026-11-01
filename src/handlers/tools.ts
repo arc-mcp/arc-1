@@ -1090,7 +1090,7 @@ export function getToolDefinitions(
         '- "lint_and_fix": lint + auto-fix fixable issues (keyword case, obsolete statements); returns fixed source.\n' +
         '- "list_rules": list rules + current config (no source).\n' +
         '- "format": pretty-print via SAP\'s ADT formatter (needs source).\n' +
-        '- "get_formatter_settings" / "set_formatter_settings": read/update the system\'s global PrettyPrinter (indentation bool, style keywordUpper|keywordLower|keywordAuto|none; set is blocked read-only).\n' +
+        '- "get_formatter_settings" / "set_formatter_settings": read/update the connected SAP user\'s PrettyPrinter settings for this system (indentation bool, style keywordUpper|keywordLower|keywordAuto|none; set is blocked read-only).\n' +
         'lint/lint_and_fix/list_rules run locally; format/*_formatter_settings call SAP. Syntax: SAPRead(type="SYNTAX"); ATC/unit tests: SAPDiagnose.',
       inputSchema: {
         type: 'object',

@@ -122,7 +122,7 @@ export async function prettyPrint(http: AdtHttpClient, safety: SafetyConfig, sou
   return resp.body;
 }
 
-/** Read system-wide ADT PrettyPrinter settings */
+/** Read the connected SAP user's ADT PrettyPrinter settings for this system. */
 export async function getPrettyPrinterSettings(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -149,7 +149,7 @@ export async function getPrettyPrinterSettings(
   };
 }
 
-/** Update system-wide ADT PrettyPrinter settings */
+/** Update the connected SAP user's ADT PrettyPrinter settings for this system. */
 export async function setPrettyPrinterSettings(
   http: AdtHttpClient,
   safety: SafetyConfig,
