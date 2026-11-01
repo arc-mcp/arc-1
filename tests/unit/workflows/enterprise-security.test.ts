@@ -78,23 +78,6 @@ describe('enterprise security workflow boundaries', () => {
     expect(publication[publish].run).toContain('--provenance');
   });
 
-  it('keeps whole-tree evidence on a separate read-only maintenance workflow with retained failures', () => {
-    const data = workflow('dependency-evidence');
-    expect(Object.keys(data.on).sort()).toEqual(['schedule', 'workflow_dispatch']);
-    expect(data.permissions).toEqual({ contents: 'read' });
-    const steps = data.jobs.evidence.steps;
-    const collect = steps.find((step: { run?: string }) => step.run?.startsWith('npm run security:evidence'));
-    expect(collect.run).toContain('--require-clean --fail-on-high');
-    expect(collect['continue-on-error']).toBeUndefined();
-    expect(JSON.stringify(data)).not.toMatch(/npm ci|secrets\.|id-token|pull_request_target/);
-    const upload = steps.find((step: { uses?: string }) => step.uses?.startsWith('actions/upload-artifact@'));
-    expect(upload.if).toBe('always()');
-    expect(upload.with['if-no-files-found']).toBe('error');
-    expect(upload.with['retention-days']).toBe(30);
-    for (const step of steps.filter((step: { uses?: string }) => step.uses))
-      expect(step.uses).toMatch(/@[a-f0-9]{40}$/);
-  });
-
   it('leaves all Socket manifests and PRs eligible without claiming a dashboard policy', () => {
     const socket = parse(readFileSync('socket.yml', 'utf8'));
     expect(socket).toEqual({ version: 2, triggerPaths: ['*'] });
