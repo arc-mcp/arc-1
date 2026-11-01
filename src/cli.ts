@@ -35,7 +35,9 @@ import {
 } from './cli-checks.js';
 import { registerIdeConfigCommand } from './cli-ide.js';
 import { getToolRegistry, handleToolCall } from './handlers/dispatch.js';
+import { EXTENSION_READ_TYPES } from './handlers/extension-read.js';
 import { setCachedDiscovery, setCachedFeatures } from './handlers/feature-cache.js';
+import { normalizeObjectType } from './handlers/object-types.js';
 import { errorResult, type ToolResult } from './handlers/shared.js';
 import type { LintResult } from './lint/lint.js';
 import { sanitizeArgs } from './server/audit.js';
@@ -483,7 +485,10 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
       .option('--source-version <version>', 'Source version: active, inactive, or auto'),
   ).action(async (type: string, name: string, opts: { flat?: boolean; sourceVersion?: string; output: OutputMode }) => {
     const args: Record<string, unknown> = { type: type.toUpperCase(), name };
-    if (opts.flat) args.format = 'text';
+    if (opts.flat) {
+      args.format = 'text';
+      if (EXTENSION_READ_TYPES.has(normalizeObjectType(type))) args.extensions = 'none';
+    }
     if (opts.sourceVersion) args.version = opts.sourceVersion;
     runtime.state.exitCode = await runToolCall(runtime, 'SAPRead', args, opts.output);
   });
@@ -493,7 +498,12 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
       runtime.state.exitCode = await runToolCall(
         runtime,
         'SAPRead',
-        { type: type.toUpperCase(), name, format: 'text' },
+        {
+          type: type.toUpperCase(),
+          name,
+          format: 'text',
+          ...(EXTENSION_READ_TYPES.has(normalizeObjectType(type)) ? { extensions: 'none' } : {}),
+        },
         opts.output,
       );
     },

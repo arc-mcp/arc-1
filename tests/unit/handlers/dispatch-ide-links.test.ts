@@ -6,7 +6,7 @@ import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const config = { ...DEFAULT_CONFIG, ideLinks: 'eclipse' as const, ideSystemId: 'DEV' };
-const args = { type: 'PROG', name: 'ZHELLO' };
+const args = { type: 'PROG', name: 'ZHELLO', extensions: 'none' };
 
 describe('native IDE links through the real dispatcher', () => {
   beforeEach(() => {

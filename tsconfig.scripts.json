@@ -5,5 +5,5 @@
     "noEmit": true,
     "allowJs": true
   },
-  "include": ["scripts/**/*"]
+  "include": ["scripts/**/*", "src/types/**/*.d.ts"]
 }

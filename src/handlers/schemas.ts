@@ -1,3 +1,4 @@
+import { extensionReadFields, validateExtensionReadInput } from './extension-input.js';
 /**
  * Zod v4 input schemas for all 12 MCP tools.
  *
@@ -35,7 +36,9 @@ import { sourcePreconditionError } from './editable-source.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES, KNOWN_BASE_TYPES } from './object-types.js';
 import { SAPQuerySchema, SAPQuerySchemaBtp } from './query-input.js';
+import { readMethodOptionError } from './read-method-options.js';
 import { LiveRelationsInput, relationNumber } from './relation-input.js';
+import { searchHelpInputIssue } from './search-help-input.js';
 import {
   ATC_BATCH_TYPES_BTP,
   SAPCONTEXT_TYPES_BTP,
@@ -99,6 +102,14 @@ function validateSapReadInput(
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
+  const methodError = readMethodOptionError(input, input.type);
+  if (methodError) ctx.addIssue({ code: 'custom', path: ['method'], message: methodError });
+  if (input.type === 'SHLP') {
+    const issue = searchHelpInputIssue(input);
+    if (issue) ctx.addIssue({ code: 'custom', path: [issue.key], message: issue.message });
+    return;
+  }
+  validateExtensionReadInput(input as Record<string, unknown>, ctx);
   if (input.packageScope !== undefined) {
     const allowed = new Set(['type', 'name', 'packageScope', 'objectType', 'maxResults', 'format']);
     if (input.type !== 'DEVC')
@@ -291,11 +302,13 @@ export const SAPReadSchema = z
     include: z.string().optional(),
     group: z.string().optional(),
     method: z.string().optional(),
+    methodView: z.enum(['signature']).optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     /** 1-based, inclusive start line for a raw line-range read. Requires lineEnd; mutually exclusive with grep. */
     lineStart: z.coerce.number().int().positive().optional(),
     /** 1-based, inclusive end line for a raw line-range read. Clamped to the source's last line. */
     lineEnd: z.coerce.number().int().positive().optional(),
+    ...extensionReadFields,
     expand_includes: looseOptionalBoolean,
     format: z.enum(['text', 'structured', 'editable']).optional(),
     // Keep omission observable: source handlers still default it to active, while DTEL/ENQU
@@ -337,11 +350,13 @@ export const SAPReadSchemaBtp = z
     include: z.string().optional(),
     group: z.string().optional(),
     method: z.string().optional(),
+    methodView: z.enum(['signature']).optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     /** 1-based, inclusive start line for a raw line-range read. Requires lineEnd; mutually exclusive with grep. */
     lineStart: z.coerce.number().int().positive().optional(),
     /** 1-based, inclusive end line for a raw line-range read. Clamped to the source's last line. */
     lineEnd: z.coerce.number().int().positive().optional(),
+    ...extensionReadFields,
     format: z.enum(['text', 'structured', 'editable']).optional(),
     // Keep this aligned with the on-prem schema; the handler owns the per-type default.
     version: z.enum(['active', 'inactive', 'auto']).optional(),
@@ -622,9 +637,7 @@ function validateFunctionProcessingInput(
   }
 }
 
-// FM signature parameter (issue #252). One entry per IMPORTING/EXPORTING/CHANGING/
-// TABLES/EXCEPTIONS/RAISING line in the FUNCTION signature region. ARC-1 builds
-// the ABAP source from this array; SAP's own signature lives inline in /source/main.
+// Structured FM parameters, serialized into /source/main by fm-signature.ts.
 const fmParameterSchema = z
   .object({
     kind: z.enum(['importing', 'exporting', 'changing', 'tables', 'exceptions', 'raising']),
@@ -635,20 +648,22 @@ const fmParameterSchema = z
       .max(60)
       .refine(isValidFmParameterDescription, 'Use 1–60 printable characters; blank descriptions are not supported.')
       .optional(),
-    /** ABAP type expression. Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. */
     type: z.string().optional(),
     /** Emit `VALUE(name)` wrapper. Default false (pass-by-reference). */
     byValue: looseOptionalBoolean,
     /** Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim. */
     default: z.string().optional(),
-    /** Emit `OPTIONAL` keyword. */
     optional: looseOptionalBoolean,
   })
   .refine(
     (parameter) =>
       parameter.description === undefined || (parameter.kind !== 'exceptions' && parameter.kind !== 'raising'),
     { path: ['description'], message: 'description is supported only for importing/exporting/changing/tables.' },
-  );
+  )
+  .refine((parameter) => parameter.kind === 'exceptions' || parameter.kind === 'raising' || !!parameter.type?.trim(), {
+    path: ['type'],
+    message: 'A non-empty type is required for importing/exporting/changing/tables.',
+  });
 
 const dtelShortLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.short).optional();
 const dtelMediumLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.medium).optional();
@@ -1431,7 +1446,12 @@ export const SAPContextSchema = z
     siblingMaxCandidates: siblingMaxCandidatesSchema,
     includeKtd: looseOptionalBoolean,
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.type !== 'SHLP') return;
+    const issue = searchHelpInputIssue(input, true);
+    if (issue) ctx.addIssue({ code: 'custom', path: [issue.key], message: issue.message });
+  });
 
 export const SAPContextSchemaBtp = z
   .object({

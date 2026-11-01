@@ -176,6 +176,17 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
       else await expect(result).rejects.toThrow();
     },
   );
+  it('directs a failed pinned method splice to SAPRead without saving source', async () => {
+    const result = await handlePinnedWrite(
+      client(),
+      { ...update(), action: 'edit_method', method: 'valu', source: 'result = 3.' },
+      config,
+    );
+    expect(result.isError).toBe(true);
+    expect(payload(result).message).toContain('Use SAPRead with method="*"');
+    expect(requests.some((request) => request.method === 'PUT')).toBe(false);
+  });
+
   it('creates with no JWT display responsible and preserves the scoped metadata path', async () => {
     const result = await handlePinnedWrite(
       client(),
