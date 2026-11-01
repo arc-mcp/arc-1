@@ -582,8 +582,9 @@ Keep these with your build record:
 - The MTAR checksum (`sha256sum mta_archives/*.mtar`)
 - Stack, buildpack, Node and npm versions from the staging log
 
-These commands describe the lockfiles, not the staged app. If you need the installed tree or OS
-packages, collect them with your platform tools. Do not put `cf env` output, service keys or other
+Remove `--omit=dev` if you also want build tools in the SBOM. These commands describe the lockfiles,
+not the staged app: if you need the installed tree or OS packages, collect them with your platform
+tools. Do not put `cf env` output, service keys or other
 credentials in the record.
 
 ### What runs in CI

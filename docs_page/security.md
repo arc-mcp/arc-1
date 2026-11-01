@@ -102,7 +102,7 @@ Both are maintainer-led and AI-assisted.
 
 **Decide (security team):** whether that meets your approval requirements.
 
-## A safe first deployment
+## Recommended first deployment
 
 1. Start in a development SAP system, with an approved client and model.
 2. Deploy an approved commit or image digest, and keep its
