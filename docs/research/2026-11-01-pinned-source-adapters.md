@@ -156,8 +156,7 @@ create/delete convergence and the changes below require another review.
   validation; activation remains authoritative.
 - **Evidence/test scope:** defensive BTP fixtures are labeled accordingly. Procedural tests execute
   actual configured lint, cancellation before SAP and after the locked read, and SAPRead-editable
-  hash handoff. Source-call lock assertions run outside the handler's mocked fetch, so an assertion
-  cannot be swallowed as an expected refusal. The INCL fixture now uses the native abapInclude shape.
+  hash handoff. The initial invoke-level assertions ran outside mocked fetch; the fifth review identified remaining in-fetch assertions, corrected in the follow-up below. The INCL fixture now uses the native abapInclude shape.
 
 Author review also found that deletion ignored a failed session close after a successful unlock.
 The result now preserves the confirmed deletion or primary failure, adds the cleanup phase and
@@ -258,3 +257,71 @@ projects, build, lint (four existing informational diagnostics), 135-entry polic
 strict documentation, the 890-file size ratchet/schema budgets, and 59 existing harness simulations
 passed. Five tool-definition snapshots changed only the intentional abstract-method guidance.
 The final type-only test-helper annotation was checked by all three TypeScript projects.
+
+
+## Fifth Claude review and follow-up
+
+Actual Claude Code **Opus 5.5**, launched with **effort max**, reviewed immutable
+`d0993a04939ada38376808a96883a6b28cbaec26`.
+The [verbatim report](broader-pinned-pp-writes/claude-program-lifecycle-review-20261101.md) has SHA-256
+`0dec00e3f64b648788e61b8e15fa230af07771a91e5e2bf8c9ffd6b88f1e0f4f`.
+It found no High, two Medium and eight Low issues. Reviewer and author verification confirmed the
+same 4,320 files unchanged; the reviewer independently passed 437 files/11,991 tests, all three
+TypeScript projects, size/schema checks, 59 historical harness simulations and the source benchmark.
+It executed no individual failing reproductions. Its report records an unallowed, read-only in-tree
+`ls -la review-input`, refused wrong-root reads/searches, an oversized read retried in parts, and
+permitted reads of saved test output. Model initialization and launcher arguments independently
+substantiate model and requested effort. The review was a development checkpoint, not acceptance.
+
+Follow-up dispositions (new code remains subject to independent review and live qualification):
+
+1. **Namespace URI spelling:** normalize only the hex case of `%2f`. Owner and pool spelling tests
+   include both hex cases, uppercase native pool names, namespaced CLAS/INTF/PROG/INCL, duplicates,
+   pool-only and excessive reference lists. Other percent-encoded name characters still refuse.
+2. **Removed-resource cleanup:** the deletion adapter supplies a proof only after successful DELETE
+   and typed owner-absence readback. A typed not-found on owner/pool UNLOCK can then be resolved only
+   by that owning session's confirmed close. Generic 404, unknown deletion, failed close and other
+   unlock errors remain failures and name their URI/status. Native pool/owner UNLOCK statuses still
+   need recording in the next live qualification; authored fixtures are not proof of SAP's behavior.
+3. **Pool metadata:** use the observed native metadata Accept, a bounded namespace-aware XML reader,
+   DOCTYPE/malformed/ambiguous identity refusal, exact owner/type/state and optional package equality
+   against the independently verified owner. [Read-only evidence](2026-11-01-text-pool-active-version.md)
+   records the interface constant and a successful native metadata GET.
+4. **Preaudit identity:** native namespace-bound name/type/deleted fields reach the validator.
+   Mismatches and deletion drafts refuse before confirmation. Conflicting namespace attributes
+   cannot overwrite identity or deletion evidence. Native activation execution evidence also checks
+   the checklist namespace and unambiguous execution flag; legacy parsing remains unchanged.
+5. **Activation reporting/cost:** report the actual owner-only or pool-expanded scope, read PROG
+   pool state after every native result, retain native results if later verification fails, and
+   give `success:false` an explicit uncertain state. Save guidance no longer claims standalone
+   includes activate with a program. Initial owner/recording validation now runs once through the
+   engine callback, then refreshes after a preaudit prompt before confirmation.
+6. **Deletion guidance:** inactive drafts point to review/activation in ADT, not an unavailable
+   pinned REPT action. Known missing textelements service gives a direct safety reason, and the
+   tested NW 7.50 limitation is documented. Deletion never activates drafts automatically.
+7. **Include consumers:** activation/deletion return native context count and returned consumer
+   packages, without authorizing or following them. Docs/results warn of effects on consumers;
+   this is neither a complete where-used inventory nor a new dependency-package gate.
+8. **Owner evidence:** a shared bounded XML reader preserves namespace bindings and refuses
+   ambiguous attributes. Program/include roots, packages and contexts use their actual namespaces;
+   SAPL contexts, including namespaced SAPL names, refuse even when typed PROG/P.
+9. **Tests:** remaining class/procedural mock-fetch assertions became explicit unexpected-request
+   records asserted after dispatch. Program/create mocks now use native prefixed identities and all
+   affected mocks assert no unexpected request. Added creation identity proof under lock,
+   PROG/INCL failure and transportable rows, transportable deletion, pool CTS mismatch and lost/refused
+   LOCK responses. Valid-owner DOCTYPE and isolated context-URI negatives exercise their intended guards.
+10. **Documentation:** correct the earlier test claim, link BTP setup to the actual capability
+    matrix, document definition/signature ABSTRACT and interface refusals, and describe owner checks
+    as mutation checks rather than edit-only checks.
+
+A separate text-part adapter in this follow-up shares the ordinary replacement engine and owning
+session lifecycle. Its explicit active-content proof and remaining PP requirements are recorded in
+[the text-pool note](2026-11-01-text-pool-active-version.md). Earlier live run `77e41fdcd` does not
+qualify any of these new bytes. PR #1142 stays draft and FEAT-93 stays open.
+
+Author validation for the fifth-review follow-up and text adapter: **441 files / 12,136 unit tests**,
+all three TypeScript projects, build, lint (four existing informational diagnostics), the 135-entry
+policy check, strict docs, the 899-file size ratchet/schema budgets, and 59 historical harness
+simulations passed. The initial full run caught the action-list expectation missing the intentionally
+admitted text operation; its correction and stronger refusal assertions are included in the passing
+full run. No new live deployment or mutation qualification is claimed.

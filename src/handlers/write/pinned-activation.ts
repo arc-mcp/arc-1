@@ -1,10 +1,10 @@
 /** Whole-owner activation with an explicit reference validator carried to the confirmation boundary. */
 import type { AdtClient } from '../../adt/client.js';
-import { activate } from '../../adt/devtools.js';
+import { type ActivationReference, type ActivationResult, activate } from '../../adt/devtools.js';
 import { AdtSafetyError } from '../../adt/errors.js';
 import { mutationClient } from '../../adt/mutation-client.js';
 import { pinnedMutationContext } from '../../adt/mutation-context.js';
-import { verifyPinnedProgramOwner } from '../../adt/pinned-program-owner.js';
+import { type PinnedProgramOwnerEvidence, readPinnedProgramOwner } from '../../adt/pinned-program-owner.js';
 import { assertPinnedSourceOwner, pinnedRecording } from '../../adt/pinned-write-policy.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
 import { readOwnedTextPoolState } from '../../adt/text-elements.js';
@@ -17,24 +17,32 @@ import { pinnedFailure } from './pinned-result.js';
 export function validatePinnedActivationReferences(
   owner: string,
   type: 'CLAS' | 'INTF' | 'PROG' | 'INCL',
-  refs: readonly { uri: string }[],
+  refs: readonly ActivationReference[],
 ): void {
-  const allowed = new Set([owner]);
+  // Only the hex spelling of encoded namespace separators is interchangeable. Never decode other escapes.
+  const canonical = (uri: string) => uri.replace(/%2f/gi, '%2F');
+  const expectedName = decodeURIComponent(owner.slice(owner.lastIndexOf('/') + 1)).toUpperCase();
+  const nativeType = { CLAS: 'CLAS/OC', INTF: 'INTF/OI', PROG: 'PROG/P', INCL: 'PROG/I' }[type];
+  const allowed = new Map([[canonical(owner), nativeType]]);
   if (type === 'CLAS')
     for (const include of ['definitions', 'implementations', 'macros', 'testclasses'])
-      allowed.add(`${owner}/includes/${include}`);
+      allowed.set(canonical(`${owner}/includes/${include}`), `CLAS/OCN/${include}`);
   if (type === 'PROG') {
     const encodedName = owner.slice(owner.lastIndexOf('/') + 1);
-    allowed.add(`/sap/bc/adt/textelements/programs/${encodedName}`);
-    allowed.add(
-      `/sap/bc/adt/textelements/programs/${encodeURIComponent(decodeURIComponent(encodedName).toUpperCase())}`,
-    );
+    for (const name of [encodedName, encodeURIComponent(expectedName)])
+      allowed.set(canonical(`/sap/bc/adt/textelements/programs/${name}`), 'PROG/PX');
   }
   if (
     refs.length === 0 ||
     refs.length > (type === 'CLAS' ? 5 : type === 'PROG' ? 2 : 1) ||
     new Set(refs.map((ref) => ref.uri.toLowerCase())).size !== refs.length ||
-    refs.some((ref) => !allowed.has(ref.uri))
+    refs.some(
+      (ref) =>
+        !allowed.has(canonical(ref.uri)) ||
+        (ref.name !== undefined && ref.name !== expectedName) ||
+        (ref.type !== undefined && ref.type !== allowed.get(canonical(ref.uri))) ||
+        (ref.deleted !== undefined && ref.deleted !== 'false'),
+    )
   ) {
     throw new AdtSafetyError(
       'Activation includes an unqualified reference or another owner. No confirmation was sent. Review the complete activation scope in ADT.',
@@ -46,6 +54,9 @@ export async function handlePinnedActivation(client: AdtClient, args: Record<str
   let submitted = false;
   let poolIncluded = false;
   let nativeReported = false;
+  let nativeActivation: ActivationResult | undefined;
+  let textPoolState: 'active' | 'inactive' | 'unknown' | undefined;
+  let includeUsage: PinnedProgramOwnerEvidence['includeUsage'];
   let phase = 'activation';
   try {
     checkOperation(client.safety, OperationType.Activate, 'PinnedActivate');
@@ -68,23 +79,14 @@ export async function handlePinnedActivation(client: AdtClient, args: Record<str
     // The activation engine can create a child budget, but its HTTP/CSRF calls
     // must never extend the outer preflight-to-confirmation deadline.
     const http = client.http;
-    const nativePackage = await verifyPinnedProgramOwner(client, owner);
-    const pkg =
-      nativePackage ??
-      (await enforceAllowedPackageForObjectUrl(client, owner, 'Pinned activation', undefined, requestOptions));
-    if (!pkg) throw new AdtSafetyError('Owner package is unresolved or inconsistent.');
-    await pinnedRecording(http, client.safety, owner, pkg, '', undefined, requestOptions);
+    let pkg: string | undefined;
     const result = await activate(http, client.safety, owner, {
       name: name as string,
       validateReferences: async (refs) => {
         validatePinnedActivationReferences(owner, type, refs);
-        if (type === 'PROG' && refs.some((ref) => ref.uri.startsWith('/sap/bc/adt/textelements/programs/'))) {
-          await readOwnedTextPoolState(http, 'PROG', name as string);
-          poolIncluded = true;
-        }
-        const nativePackage = await verifyPinnedProgramOwner(client, owner);
+        const evidence = await readPinnedProgramOwner(client, owner);
         const currentPackage =
-          nativePackage ??
+          evidence?.packageName ??
           (await enforceAllowedPackageForObjectUrl(
             client,
             owner,
@@ -92,17 +94,27 @@ export async function handlePinnedActivation(client: AdtClient, args: Record<str
             undefined,
             requestOptions,
           ));
-        if (currentPackage !== pkg) throw new AdtSafetyError('Owner package changed before activation.');
+        if (!currentPackage || (pkg !== undefined && currentPackage !== pkg))
+          throw new AdtSafetyError('Owner package is unresolved or changed before activation.');
+        pkg = currentPackage;
+        includeUsage = evidence?.includeUsage;
         await pinnedRecording(http, client.safety, owner, pkg, '', undefined, requestOptions);
+        if (type === 'PROG' && refs.some((ref) => ref.uri.startsWith('/sap/bc/adt/textelements/programs/'))) {
+          await readOwnedTextPoolState(http, 'PROG', name as string, pkg);
+          poolIncluded = true;
+        }
       },
       beforeSubmit: () => {
         submitted = true;
       },
     });
+    nativeActivation = result;
     nativeReported = result.success;
-    if (result.success && poolIncluded) {
+    if (type === 'PROG') {
       phase = 'text-pool-verification';
-      if ((await readOwnedTextPoolState(http, 'PROG', name as string)) !== 'active')
+      textPoolState = 'unknown';
+      textPoolState = await readOwnedTextPoolState(http, 'PROG', name as string, pkg);
+      if (result.success && poolIncluded && textPoolState !== 'active')
         throw new AdtSafetyError('SAP reported activation, but the selected program text pool is still inactive.');
     }
     const payload = toolJson({
@@ -112,17 +124,36 @@ export async function handlePinnedActivation(client: AdtClient, args: Record<str
       action: 'activate',
       ...result,
       retryable: false,
-      ...(poolIncluded && result.success ? { textPoolState: 'active' } : {}),
+      state: result.success ? 'activated' : 'activation-not-confirmed',
+      ...(textPoolState === undefined ? {} : { textPoolState }),
+      ...(includeUsage
+        ? {
+            includeUsage,
+            warnings:
+              'Include consumers may be affected. Returned native contexts are not a complete where-used inventory.',
+          }
+        : {}),
+      ...(type === 'PROG' && !poolIncluded && textPoolState === 'inactive'
+        ? {
+            warnings: 'The program text pool still has an inactive draft; owner activation did not activate that pool.',
+          }
+        : {}),
       scope:
         type === 'PROG'
-          ? 'selected-program-with-native-owned-text-pool-expansion'
+          ? poolIncluded
+            ? 'selected-program-with-native-owned-text-pool-expansion'
+            : 'selected-program-only'
           : type === 'INCL'
             ? 'selected-standalone-include-only'
-            : 'complete-owner-including-existing-inactive-includes',
+            : type === 'INTF'
+              ? 'selected-interface-only'
+              : 'complete-owner-including-existing-inactive-includes',
     });
     return result.success ? textResult(payload) : errorResult(payload);
   } catch (error) {
     return pinnedFailure(error, submitted ? 'activation-not-confirmed' : 'unchanged', phase, false, {
+      nativeActivation,
+      textPoolState,
       ...(nativeReported
         ? {
             warnings:

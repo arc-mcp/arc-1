@@ -6,6 +6,7 @@ import type { MultiTargetWritePolicy, SafetyConfig } from './safety.js';
 export interface MutationCleanupState {
   unlockFailed: boolean;
   sessionClosed?: boolean;
+  unlockFailures?: { uri: string; statusCode?: number; absentAfterDelete?: true }[];
 }
 
 interface SingleTargetMutationContext {
@@ -26,8 +27,8 @@ export interface PinnedMutationContext {
   };
   readonly recordingPolicy: MultiTargetWritePolicy;
   readonly identityMode: 'mapped-user-unverified';
-  /** Source saves do not activate. The existing separate activation adapter must validate the owner. */
-  readonly activationPolicy: 'separate-whole-owner-validation';
+  /** Source saves remain separate; owner or internal resource activation needs its native validation. */
+  readonly activationPolicy: 'validated-native-activation';
   readonly cleanup: MutationCleanupState;
 }
 
@@ -64,7 +65,7 @@ export function pinnedMutationContext(
     requestPolicy: Object.freeze({ ...budget, noReplay: true, retryTransientErrors: false }),
     recordingPolicy: safety.multiTargetWrite,
     identityMode: 'mapped-user-unverified',
-    activationPolicy: 'separate-whole-owner-validation',
+    activationPolicy: 'validated-native-activation',
     cleanup,
   });
 }

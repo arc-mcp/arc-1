@@ -13,6 +13,7 @@ import { getBadiEnhancementImplementation } from '../../adt/enhancement-impl.js'
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, findFmHeader, spliceFmSignature } from '../../adt/fm-signature.js';
 import type { AdtHttpClient } from '../../adt/http.js';
+import { assertMutationContext } from '../../adt/mutation-context.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
 import { withActiveTextPoolForDelete } from '../../adt/text-elements.js';
 import {
@@ -37,6 +38,7 @@ import { replaceClassInclude } from './class-include.js';
 import type { SapWriteContext } from './context.js';
 import { writeMetadataUpdate } from './metadata-update.js';
 import { deletePinnedRepositoryOwner } from './owner-delete.js';
+import { writePinnedTextPool } from './pinned-text-pool.js';
 import { replaceOwnerSource } from './source-update.js';
 
 function isDeleteDependencyError(err: AdtApiError): boolean {
@@ -279,6 +281,7 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
  *  The client locks, reads, PUTs, reads back, unlocks, then activates; the package gate here checks
  *  the owning object's real package (ctx.objectUrl). Not an ABAP-source write → no lint. */
 export async function writeActionEditTextSymbols(ctx: SapWriteContext): Promise<ToolResult> {
+  assertMutationContext(ctx.client.safety, ctx.mutationContext);
   const {
     args,
     client,
@@ -309,7 +312,10 @@ export async function writeActionEditTextSymbols(ctx: SapWriteContext): Promise<
   await enforcePackageForExistingObject();
   let result: Awaited<ReturnType<typeof client.writeTextElementPart>>;
   try {
-    result = await client.writeTextElementPart(type, name, part, source, transport);
+    result =
+      ctx.mutationContext.mode === 'pinned-pp'
+        ? await writePinnedTextPool(ctx, part)
+        : await client.writeTextElementPart(type, name, part, source, transport);
   } finally {
     // A successful PUT can leave a draft even if the subsequent activation fails.
     invalidateWrittenObject();

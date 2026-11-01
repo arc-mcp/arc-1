@@ -219,8 +219,10 @@ describe('text elements routing and safety', () => {
         ),
       );
       const invalidateWrittenObject = vi.fn();
+      const client = createClient();
       const ctx = {
-        client: createClient(),
+        client,
+        mutationContext: singleTargetMutationContext(client.safety),
         args: {},
         type: 'PROG',
         name: 'ZTEST',

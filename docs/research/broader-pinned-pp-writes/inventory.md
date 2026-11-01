@@ -7,7 +7,7 @@ and top-level runtime input fields. Full action lists also detect additions clas
 [nested-input-contracts.json](nested-input-contracts.json) snapshots every object-valued field (including nested arrays, batch/activation objects, quickfix
 objects, KTD short texts and FLP tiles) in both on-premise and BTP schema variants; custom refinements and handler branch combinations still need separate
 behavioral review. The drift tests require deliberate updates as PR 2 proceeds.
-The draft runtime adds formatter operations, class includes and surgery, and standalone PROG/INCL CRUD, unit edits and activation to ADR-0010's scoped subset.
+The draft runtime adds formatter operations, class includes and surgery, standalone PROG/INCL CRUD, unit edits and activation, and CLAS/PROG text-part replacement to ADR-0010's scoped subset.
 These additions have separate qualification records and outstanding final review. The full
 [plan](../../plans/2026-10-26-broader-pinned-pp-writes.md) and proposed
 [ADR-0011](../../adr/0011-broader-pinned-pp-mutations.md) define acceptance.
@@ -27,7 +27,7 @@ be reflected in the later runtime matrix, including nested batch validation:
 | Procedural surgery | Shared `write/unit-surgery.ts`; standalone PROG/INCL owner verification, source hash and owning lock | Implemented offline; PP qualification pending. Group-owned structural includes still pending |
 | FUNC/FUGR/group-owned INCL CRUD | `write.ts`, `write/create.ts`, `write/update-delete.ts`; FUNC resolves group, structural INCL locks the include and inherits group package; class includes are update paths | Pending |
 | Standalone PROG/INCL CRUD | Shared create/update/delete actions; exact native owner/package, native recording; PROG deletion additionally locks and verifies its active text pool | Implemented offline; PP qualification pending |
-| Text elements | `write/update-delete.ts`, `adt/text-elements.ts`; CLAS symbols only, PROG/FUGR supported parts; pool lock differs from owner, save may invoke activation | Pending exact-pool adapter and native active-version readback |
+| Text elements | `write/update-delete.ts`, `adt/text-elements.ts`; CLAS symbols only, PROG/FUGR supported parts; pool lock differs from owner, save may invoke activation | CLAS symbols and PROG parts implemented offline through the shared exact-pool lifecycle and explicit active readback; fresh two-writer PP qualification and FUGR ownership remain pending |
 | TABL/DTT | `write/table-settings.ts`; update only, parent table package; new settings require parent activation | Pending |
 | TABL/DT, TABL/DS | Write normalizer preserves subtype; `STRU/DS` maps to TABL/DS; bare TABL resolves tables/structures | Pending |
 | DOMA/DTEL/MSAG/TTYP/ENQU/ENHO/SRVB | Metadata update/create branches; DTEL, TTYP and others have post-create saves; ENHO requires BADI_IMPL technology; publication is separate | Pending |

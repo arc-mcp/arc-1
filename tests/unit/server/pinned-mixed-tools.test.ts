@@ -205,6 +205,7 @@ describe('mixed-tool pinned admission plumbing (synthetic capability registratio
     }
     const write = tools.find((tool) => tool.name === 'SAPWrite')!;
     expect(actions(write)).toEqual([
+      'edit_text_symbols',
       'update',
       'edit_unit',
       'add_unit',

@@ -1,6 +1,6 @@
 # PR 2: broader built-in writes on pinned PP targets
 
-Status: implementation in progress. Formatter, CLAS/INTF deletion, class-include updates, existing-include method edits and main-source class metadata surgery and standalone on-prem PROG/INCL CRUD, unit edits and owner activation are admitted in the draft. Program deletion retains the active-text-pool precheck and both owning-session locks.
+Status: implementation in progress. Formatter, CLAS/INTF deletion, class-include updates, existing-include method edits and main-source class metadata surgery and standalone on-prem PROG/INCL CRUD, unit edits and owner activation are admitted in the draft. Program deletion retains the active-text-pool precheck and both owning-session locks. CLAS symbols and on-prem PROG text-part replacement now share the native engine with exact-pool activation and explicit active-content verification; their PP qualification is pending.
 Main source replacement and CLAS/INTF creation/deletion now enter through the shared write actions
 with explicit legacy/pinned native adapters. This later convergence is offline-tested only.
 The fresh local run at `77e41fdcd` qualifies include replacement and the refactored main method path;
@@ -18,6 +18,7 @@ Implementation starts with [ADR-0011](../adr/0011-broader-pinned-pp-mutations.md
 [CLAS/INTF deletion integration and qualification limits](../research/2026-11-01-broader-pinned-pp-writes-deletion.md).
 [Class-local include implementation and local two-writer qualification](../research/2026-11-01-broader-pinned-pp-writes-includes.md).
 [Shared source adapters and review dispositions](../research/2026-11-01-pinned-source-adapters.md).
+[Text-part adapter and read-only native evidence](../research/2026-11-01-text-pool-active-version.md).
 [Main-source class metadata adapter and remaining qualification](../research/2026-11-01-pinned-class-metadata.md).
 Proposed title: `feat: expand pinned PP writes across built-in development operations`.
 [Research and owner decisions](../research/2026-10-26-multi-target-write-parity.md).

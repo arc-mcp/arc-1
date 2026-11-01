@@ -48,8 +48,8 @@ establish policy permission.
 !!! note "Writes require a separate pinned PP connection"
 
     Aggregate and Basic routes stay mutation-free. The [pinned write guide](multi-target-writes.md)
-    adds scoped CLAS/INTF writes and whole-owner activation through target-filtered PP routes,
-    with server, destination and exact user grants. CTS/Git management and plugins remain unavailable.
+    lists the supported mutations through target-filtered PP routes,
+    with server, destination and exact user grants. Git management and plugins remain unavailable.
     An independent single-target `/mcp` can coexist only in standard read multi-target mode.
 
 ## Follow the setup in this order

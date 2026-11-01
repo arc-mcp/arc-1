@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { requestContext } from '../../../src/server/context.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -23,16 +23,21 @@ const config = {
     serverAllowedTransports: [],
   },
 };
-const name = 'ZARC1_ACT';
-const pool = '/sap/bc/adt/textelements/programs/zarc1_act';
+let name = 'ZARC1_ACT';
+let pool = '/sap/bc/adt/textelements/programs/zarc1_act';
+let usedInclude = false;
 let owner = '',
   type = 'PROG',
   posts = 0,
   fault = '';
+usedInclude = false;
 let expanded: string[] | undefined;
 let cancel: AbortController | undefined;
 const calls: { path: string; method: string; body: string }[] = [];
+const unexpected: string[] = [];
+afterEach(() => expect(unexpected).toEqual([]));
 beforeEach(() => {
+  unexpected.length = 0;
   vi.restoreAllMocks();
   vi.resetAllMocks();
   posts = 0;
@@ -52,18 +57,18 @@ beforeEach(() => {
         '<DATA><DEVCLASS>$TMP</DEVCLASS><DLVUNIT>LOCAL</DLVUNIT><OPERATION/><RESULT>S</RESULT><RECORDING/></DATA>',
       );
     if (path === owner) {
-      const root = type === 'PROG' ? 'abapProgram' : 'abapInclude';
+      const root = type === 'PROG' ? 'program:abapProgram' : 'include:abapInclude';
       const nativeType = fault === 'owner-drift' && posts ? 'FUGR/I' : `PROG/${type === 'PROG' ? 'P' : 'I'}`;
       return mockResponse(
         200,
-        `<${root} name="${name}" type="${nativeType}" programType="executableProgram"><adtcore:packageRef xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${fault === 'package-drift' && posts ? 'ZOTHER' : '$TMP'}" adtcore:type="DEVC/K"/></${root}>`,
+        `<${root} xmlns:program="http://www.sap.com/adt/programs/programs" xmlns:include="http://www.sap.com/adt/programs/includes" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${name}" adtcore:type="${nativeType}" program:programType="executableProgram" ${usedInclude ? 'include:contextRefCount="20"' : ''}><adtcore:packageRef xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${fault === 'package-drift' && posts ? 'ZOTHER' : '$TMP'}" adtcore:type="DEVC/K"/>${usedInclude ? '<include:contextRef adtcore:type="PROG/P" adtcore:name="ZCONSUMER" adtcore:uri="/sap/bc/adt/programs/programs/zconsumer" adtcore:packageName="ZOUTSIDE"/>' : ''}</${root}>`,
       );
     }
     if (path === pool) {
       if (fault === 'pool-unreadable' && posts > 1) return mockResponse(503, '');
       return mockResponse(
         200,
-        `<textElement name="${fault === 'pool-owner' ? 'ZFOREIGN' : name}" type="PROG/PX" version="${posts > 1 && fault !== 'pool-inactive' ? 'active' : 'inactive'}"/>`,
+        `<text:textElement xmlns:text="http://www.sap.com/adt/textelements" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${fault === 'pool-owner' ? 'ZFOREIGN' : name}" adtcore:type="PROG/PX" adtcore:version="${posts > 1 && fault !== 'pool-inactive' ? 'active' : 'inactive'}"/>`,
       );
     }
     if (path === '/sap/bc/adt/activation') {
@@ -73,19 +78,28 @@ beforeEach(() => {
       if (expanded && uri.searchParams.get('preauditRequested') === 'true')
         return mockResponse(
           200,
-          `<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects" xmlns:adtcore="http://www.sap.com/adt/core">${expanded.map((ref) => `<ioc:entry><ioc:object><ioc:ref adtcore:uri="${ref}" adtcore:name="${name}"/></ioc:object></ioc:entry>`).join('')}</ioc:inactiveObjects>`,
+          `<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects" xmlns:adtcore="http://www.sap.com/adt/core">${expanded.map((ref) => `<ioc:entry><ioc:object ioc:deleted="${fault === 'ref-deleted' ? 'true' : fault === 'ref-deleted-invalid' ? 'maybe' : 'false'}"><ioc:ref adtcore:uri="${ref}" adtcore:type="${fault === 'ref-type' ? 'FUGR/I' : ref.includes('/textelements/') ? 'PROG/PX' : type === 'PROG' ? 'PROG/P' : 'PROG/I'}" adtcore:name="${fault === 'ref-name' ? 'ZFOREIGN' : name}" ${fault === 'ref-collision' ? 'xmlns:other="urn:foreign" other:name="ZFOREIGN"' : ''}/></ioc:object></ioc:entry>`).join('')}</ioc:inactiveObjects>`,
+        );
+      if (fault === 'native-error')
+        return mockResponse(
+          200,
+          '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><chkl:msg severity="error" shortText="Native activation refused"/></chkl:messages>',
         );
       return mockResponse(
         200,
         `<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><chkl:properties activationExecuted="${fault === 'no-execution' ? 'false' : 'true'}"/></chkl:messages>`,
       );
     }
-    throw Error(`Unexpected ${method} ${path}`);
+    unexpected.push(`${method} ${path}`);
+    return mockResponse(599, 'Unexpected test request');
   });
 });
-async function activate(kind = 'PROG', refs?: (owner: string) => string[]) {
+async function activate(kind = 'PROG', refs?: (owner: string) => string[], selectedName = 'ZARC1_ACT') {
   type = kind;
-  owner = `/sap/bc/adt/programs/${kind === 'PROG' ? 'programs' : 'includes'}/zarc1_act`;
+  name = selectedName;
+  const segment = encodeURIComponent(name.toLowerCase()).toLowerCase();
+  pool = `/sap/bc/adt/textelements/programs/${segment}`;
+  owner = `/sap/bc/adt/programs/${kind === 'PROG' ? 'programs' : 'includes'}/${segment}`;
   expanded = refs?.(owner);
   const client = new AdtClient({
     baseUrl: 'http://sap:8000',
@@ -111,11 +125,12 @@ it('confirms only the selected program pool and verifies its final native state'
   expect(payload.textPoolState).toBe('active');
   expect(posts).toBe(2);
   expect(calls.filter((call) => call.path.startsWith(pool))).toHaveLength(2);
+  expect(calls.find((call) => call.path.includes('preauditRequested=false'))!.body).toContain(pool);
 });
 it.each(['foreign-program', 'foreign-pool', 'include-pool', 'duplicate', 'source-fragment'])(
   'refuses %s before native confirmation',
   async (mode) => {
-    const { result } = await activate(mode === 'include-pool' ? 'INCL' : 'PROG', (uri) =>
+    const { result, payload } = await activate(mode === 'include-pool' ? 'INCL' : 'PROG', (uri) =>
       mode === 'foreign-program'
         ? ['/sap/bc/adt/programs/programs/zforeign']
         : mode === 'foreign-pool'
@@ -127,13 +142,22 @@ it.each(['foreign-program', 'foreign-pool', 'include-pool', 'duplicate', 'source
               : [`${uri}/source/main`],
     );
     expect(result.isError).toBe(true);
+    expect(payload).toMatchObject({
+      state: 'activation-not-confirmed',
+      phase: 'activation',
+      message: expect.stringContaining('unqualified reference'),
+    });
     expect(posts).toBe(1);
   },
 );
 it.each(['owner-drift', 'package-drift', 'pool-owner'])('rechecks %s before confirmation', async (failure) => {
   fault = failure;
-  const { result } = await activate('PROG', (uri) => [uri, pool]);
+  const { result, payload } = await activate('PROG', (uri) => [uri, pool]);
   expect(result.isError).toBe(true);
+  expect(payload).toMatchObject({ state: 'activation-not-confirmed', phase: 'activation' });
+  expect(payload.message).toMatch(
+    failure === 'owner-drift' ? /standalone native/ : failure === 'package-drift' ? /package/i : /text-pool state/,
+  );
   expect(posts).toBe(1);
 });
 it.each(['pool-inactive', 'pool-unreadable'])(
@@ -153,8 +177,11 @@ it.each(['pool-inactive', 'pool-unreadable'])(
 );
 it.each(['no-execution', 'network'])('does not infer success or retry after %s', async (failure) => {
   fault = failure;
-  const { result } = await activate();
+  const { result, payload } = await activate();
   expect(result.isError).toBe(true);
+  expect(payload).toMatchObject({ state: 'activation-not-confirmed', phase: 'activation', retryable: false });
+  expect(payload.statusCode).toBe(failure === 'network' ? 503 : undefined);
+  if (failure === 'no-execution') expect(payload.message).toContain('did not affirm activation');
   expect(posts).toBe(1);
 });
 it('cancels between preaudit and confirmation without replay', async () => {
@@ -165,4 +192,93 @@ it('cancels between preaudit and confirmation without replay', async () => {
   );
   expect(result.isError).toBe(true);
   expect(posts).toBe(1);
+});
+
+it.each(['PROG', 'INCL'])('accepts either encoded slash hex spelling for a namespaced %s', async (kind) => {
+  for (const hex of ['%2f', '%2F']) {
+    const { result, payload } = await activate(kind, (uri) => [uri.replace(/%2f/gi, hex)], '/NS/ZARC1_ACT');
+    expect(result.isError, result.content[0].text).toBeUndefined();
+    expect(payload.state).toBe('activated');
+  }
+});
+it.each(['%2f', '%2F'])('confirms namespaced uppercase pool identity with %s separators', async (hex) => {
+  const upperPool = `/sap/bc/adt/textelements/programs/${encodeURIComponent('/NS/ZARC1_ACT').replace(/%2F/g, hex)}`;
+  const { result, payload } = await activate('PROG', (uri) => [uri, upperPool], '/NS/ZARC1_ACT');
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(payload).toMatchObject({
+    state: 'activated',
+    textPoolState: 'active',
+    scope: 'selected-program-with-native-owned-text-pool-expansion',
+  });
+  expect(calls.find((call) => call.path.includes('preauditRequested=false'))!.body).toContain(upperPool);
+});
+it('accepts only the owned pool when native preaudit returns a pool-only prompt', async () => {
+  const { result, payload } = await activate('PROG', () => [pool]);
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(payload.textPoolState).toBe('active');
+  expect(calls.find((call) => call.path.includes('preauditRequested=false'))!.body).toContain(pool);
+  expect(calls.find((call) => call.path.includes('preauditRequested=false'))!.body).not.toContain(owner);
+});
+it.each(['three-refs', 'hex-duplicate', 'encoded-name'])('refuses %s without confirmation', async (mode) => {
+  const { result, payload } = await activate(
+    'PROG',
+    (uri) =>
+      mode === 'three-refs'
+        ? [uri, pool, pool.toUpperCase()]
+        : mode === 'hex-duplicate'
+          ? [uri, uri.replace(/%2f/g, '%2F')]
+          : [uri.replace('zarc', '%7aarc')],
+    '/NS/ZARC1_ACT',
+  );
+  expect(result.isError).toBe(true);
+  expect(payload).toMatchObject({
+    state: 'activation-not-confirmed',
+    phase: 'activation',
+    error: 'PINNED_WRITE_INCOMPLETE',
+  });
+  expect(payload.message).toContain('unqualified reference');
+  expect(posts).toBe(1);
+});
+it.each(['ref-name', 'ref-type', 'ref-deleted', 'ref-deleted-invalid', 'ref-collision'])(
+  'validates native preaudit identity metadata: %s',
+  async (failure) => {
+    fault = failure;
+    const { result, payload } = await activate('PROG', (uri) => [uri, pool]);
+    expect(result.isError).toBe(true);
+    expect(payload).toMatchObject({ state: 'activation-not-confirmed', phase: 'activation' });
+    expect(payload.message).toMatch(failure === 'ref-collision' ? /Ambiguous.*identity/ : /unqualified reference/);
+    expect(posts).toBe(1);
+  },
+);
+it('reports an unactivated pool draft when owner-only activation succeeds', async () => {
+  const { result, payload } = await activate();
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(payload).toMatchObject({ state: 'activated', scope: 'selected-program-only', textPoolState: 'inactive' });
+  expect(payload.warnings).toContain('did not activate that pool');
+  expect(calls.filter((call) => call.path.startsWith(pool))).toHaveLength(1);
+});
+it('keeps an explicit uncertain state and reads the pool after a native error result', async () => {
+  fault = 'native-error';
+  const { result, payload } = await activate('PROG', (uri) => [uri, pool]);
+  expect(result.isError).toBe(true);
+  expect(payload).toMatchObject({
+    success: false,
+    state: 'activation-not-confirmed',
+    textPoolState: 'active',
+    retryable: false,
+  });
+  expect(payload.messages).toContain('Native activation refused');
+  expect(posts).toBe(2);
+  expect(calls.filter((call) => call.path.startsWith(pool))).toHaveLength(2);
+});
+it('reports native include consumers without activating or authorizing them', async () => {
+  usedInclude = true;
+  const { result, payload } = await activate('INCL', (uri) => [uri]);
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(payload.includeUsage).toEqual({
+    contextRefCount: 20,
+    contexts: [{ uri: '/sap/bc/adt/programs/programs/zconsumer', name: 'ZCONSUMER', packageName: 'ZOUTSIDE' }],
+  });
+  expect(payload.warnings).toContain('consumers may be affected');
+  expect(calls.some((call) => call.path.includes('/zconsumer') || call.body.includes('zconsumer'))).toBe(false);
 });

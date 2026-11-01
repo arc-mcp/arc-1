@@ -1,7 +1,17 @@
 /** Existing pinned result serialization, shared by source writes and activation. */
+
+import type { ActivationResult } from '../../adt/devtools.js';
 import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
+import type { MutationCleanupState } from '../../adt/mutation-context.js';
 import { getCurrentContext } from '../../server/context.js';
 import { errorResult, type ToolResult, toolJson } from '../shared.js';
+
+const refusedStates = new Set([
+  'unchanged',
+  'creation-rejected',
+  'include-initialization-rejected',
+  'source-save-rejected',
+]);
 
 export function isPinnedWriteRejection(error: unknown): boolean {
   return error instanceof AdtApiError && [400, 401, 403, 404, 409, 412, 415, 422, 423].includes(error.statusCode);
@@ -11,6 +21,8 @@ export function isPinnedWriteRejection(error: unknown): boolean {
 export function rejectedPinnedSourceState(state: string, phase: string, includeInitialized?: boolean): string {
   if (phase === 'create') return 'creation-rejected';
   if (phase === 'include-initialization') return 'include-initialization-rejected';
+  // Text-pool PUT is not known atomic on error: native 400 responses can follow a committed part.
+  // Keep its submitted state unknown until an explicit readback, even for ordinary HTTP refusals.
   if (phase === 'source-save')
     return includeInitialized
       ? 'created-include-source-rejected'
@@ -28,21 +40,23 @@ export function pinnedFailure(
   details: {
     sourceHash?: string;
     sessionClosed?: boolean;
+    unlockFailures?: MutationCleanupState['unlockFailures'];
     include?: string;
     initialized?: boolean;
     warnings?: string;
     transport?: string;
+    textPart?: string;
+    activePartVerified?: boolean;
+    nativeActivation?: ActivationResult;
+    textPoolState?: 'active' | 'inactive' | 'unknown';
+    next?: string;
   } = {},
 ): ToolResult {
   const context = getCurrentContext();
   const { transport, ...otherDetails } = details;
   return errorResult(
     toolJson({
-      error: ['unchanged', 'creation-rejected', 'include-initialization-rejected', 'source-save-rejected'].includes(
-        state,
-      )
-        ? 'PINNED_WRITE_REFUSED'
-        : 'PINNED_WRITE_INCOMPLETE',
+      error: refusedStates.has(state) ? 'PINNED_WRITE_REFUSED' : 'PINNED_WRITE_INCOMPLETE',
       message:
         error instanceof AdtSafetyError
           ? error.message
@@ -58,11 +72,7 @@ export function pinnedFailure(
       phase,
       ...(error instanceof AdtApiError ? { statusCode: error.statusCode } : {}),
       ...otherDetails,
-      ...(!['unchanged', 'creation-rejected', 'include-initialization-rejected', 'source-save-rejected'].includes(
-        state,
-      ) && transport
-        ? { transport }
-        : {}),
+      ...(!refusedStates.has(state) && transport ? { transport } : {}),
       ...(cleanupFailed || details.sessionClosed === false
         ? {
             cleanupFailed: true,

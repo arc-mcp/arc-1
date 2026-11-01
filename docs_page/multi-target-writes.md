@@ -128,6 +128,7 @@ only the aggregate compatibility connection cannot write through that connection
 |---|---|
 | `SAPWrite.create` | One CLAS/INTF or on-prem standalone PROG/INCL; explicit package and complete source; required allowed request/task for a transportable package |
 | `SAPWrite.update` | CLAS/INTF main source, on-prem standalone PROG/INCL source, or CLAS `definitions`, `implementations`, `macros`, `testclasses`; exact editable-source hash for existing source |
+| `SAPWrite.edit_text_symbols` | CLAS symbols or on-prem PROG symbols/selections/headings; explicit raw part source, including `""` to clear; whole-part replacement without a hash, exact-pool activation and active-content verification |
 | `SAPWrite.edit_unit` / `add_unit` | On-prem standalone PROG/INCL; complete named FORM or MODULE block and hash of the complete owner source; add appends at physical EOF |
 | `SAPWrite.edit_method` | Existing CLAS main-source or local-include method; hash of the complete selected editable source |
 | `SAPWrite.edit_class_definition` | CLAS main definition block with complete main-source hash, or whole selected include replacement; main edits preserve the implementation, compare declared bodies and existing direct interface declarations, and refuse explicit method/interface ABSTRACT changes that need a complete source update |
@@ -135,11 +136,22 @@ only the aggregate compatibility connection cannot write through that connection
 | `SAPWrite.add_method` | CLAS main source; METHODS clause, optional visibility/abstract flag and main hash; abstractness comes from the clause, an explicit flag must agree, and a body stub is added only for a concrete method |
 | `SAPWrite.delete_method` / `change_method_visibility` | CLAS main source; existing method name and main hash; visibility moves additionally require the target section |
 | `SAPWrite.delete` | One CLAS/INTF or on-prem standalone PROG/INCL owner; PROG also holds the text-pool lock and refuses inactive pool drafts; actual package and native recording checks before/under lock, followed by verified owner absence; omit source and source hash |
-| `SAPActivate` | One CLAS/INTF or on-prem standalone PROG/INCL owner; includes its existing inactive class includes or native-reported program text pool, whose active state is checked afterward; INCL does not select its users or their pools |
+| `SAPActivate` | One CLAS/INTF or on-prem standalone PROG/INCL owner; includes its existing inactive class includes or native-reported program text pool, whose state is read afterward even when no pool was selected; results identify the actual scope; INCL does not select its users or their pools |
 | `SAPLint.set_formatter_settings` | Partial indentation/style patch of the mapped SAP user's formatter preferences on this target; native read/merge/write/read-back, not a package-owned object |
 
 Program/include creation, deletion and activation have offline tests in this draft; fresh PP
-qualification remains pending. Function-group structural includes still require their own adapter.
+qualification remains pending. Function-group structural includes still require their own adapter. Native include
+activation/deletion results report the returned context count and consumer packages without treating
+those consumers as additional write owners. These are not complete where-used inventories: changing
+or deleting a shared include can break its consumers.
+
+The tested NW 7.50 system lacks the native textelements service. Text-part replacement and guarded
+PROG deletion refuse when that service is unavailable. A PROG activation that completed before its
+pool verification failed reports the native result and uncertainty; inspect it before another attempt.
+An inactive pool blocks deletion. Review its drafts with their author and activate the intended pool
+in ADT first; pinned SAPActivate does not expose direct REPT activation, and deletion never activates
+pending text changes automatically. Typed resource absence on unlock after verified deletion is
+accepted only when the owning session closes. Other cleanup failures name the affected lock URI.
 Source saves stay inactive until explicit activation. Existing-source updates and unit edits use the owner lock, fresh source hash and exact
 read-back. Shared-line neighbors refuse; put FORM/MODULE boundaries on separate lines first.
 
@@ -180,6 +192,20 @@ an existing include with an exact hash. It keeps its existing trailing-newline n
 Confirmed saves retain their source hash, selected transport and warnings when unlock or session
 closure fails. The result reports the failed cleanup phase and is not a retry instruction.
 
+Text-part writes use the native text-pool lock and replace the selected part completely. They
+read the current inactive part under that lock, preserving other parts, and report removed entries.
+This representation has no optimistic source-hash precondition: read the part first and review the
+whole replacement. Source and verification bodies are limited to 1 MiB of UTF-8. The pool is
+unlocked before activation in the same SAP session. Only that pool is submitted; its other pending
+text parts activate too. Fresh native metadata and an explicit active-version part read must agree
+with the saved readback. A class's already-empty active symbols are a verified no-op; inactive empty
+drafts are not skipped. A never-activated program may need an explicit first owner activation.
+Unconfirmed activation or mismatching active content is incomplete and is never retried automatically.
+Function-group text writes remain pending their ownership adapter. These new text-write paths still
+require fresh two-writer PP qualification; the
+[native read investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-text-pool-active-version.md)
+is read-only evidence.
+
 Writable pinned PP connections also expose `SAPLint.format` and `get_formatter_settings` with their
 normal `read` scope. These supporting reads remain hidden on reader connections, read-only
 destinations, aggregate routes and Basic targets. `format` returns formatted source without saving it.
@@ -213,10 +239,10 @@ contains historical direct-native evidence for the earlier any-404 adapter and t
 PP run at `1b234d3a4`. The latter confirms typed absence for four local CLAS/INTF owners and final
 cleanup. Transportable deletion remains unqualified.
 
-Creates and edits save inactive source. Review it before activation. **Activation is whole-owner**,
+Source creates and edits save inactive source. Review it before activation. **Activation is whole-owner**,
 including drafts created previously or by another session; it is not method-only activation.
-Use `SAP_DENY_ACTIONS=SAPActivate` if your team must activate separately in ADT. Hidden actions,
-other types, procedural surgery, batches, RAP/DDIC, publication, transport management and Git
+Use `SAP_DENY_ACTIONS=SAPActivate,SAPWrite.edit_text_symbols` if your team must activate separately in ADT. Hidden actions,
+other types, batches, RAP/DDIC, publication, transport management and Git
 are refused even if a client sends the call directly. Per-call lint-disable options are unavailable.
 ABAP Unit can execute newly authored code under the SAP user; deny `SAPDiagnose.unittest` unless
 that execution is intended. Global lint configuration applies to main-source saves except intermediate signature edits; class-include

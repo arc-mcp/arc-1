@@ -1279,8 +1279,10 @@ With `include=definitions|implementations|macros|testclasses`, send the full rep
 
 - Added concrete method without a matching `METHOD …. ENDMETHOD.` block in IMPLEMENTATION → "use `add_method`".
 - Removed method that still has an orphan METHOD/ENDMETHOD block in IMPLEMENTATION → "use `delete_method`".
+- Changing an existing method’s ABSTRACT status, or an existing interface’s ABSTRACT METHODS selection → use a complete source update that changes its implementation consistently.
+- Removing a direct interface declaration while a remaining interface-qualified body cannot be accounted for → preserve the declaration or use a complete source update. Composite interfaces can require that full update because ARC-1 cannot infer their inherited declarations locally.
 
-Exempted from the symmetry check (no IMPL needed): `ABSTRACT METHODS`, `EVENTS`, `INTERFACES`, `ALIASES`. For `include=` writes (CCDEF), the refuse-policy is skipped — cross-include validation is not performed; rely on `SAPActivate` to catch breaks.
+New abstract methods, events and aliases do not require method bodies. Interface declarations are not expanded into a complete inherited-method inventory; the interface preservation checks above still apply, and SAP activation checks the complete contract. For `include=` writes (CCDEF), the refuse-policy is skipped — cross-include validation is not performed; rely on `SAPActivate` to catch breaks.
 
 ```jsonc
 // Drop FINAL from a class without touching any method
@@ -1326,7 +1328,7 @@ preserving existing code; `edit_method` can only replace a body that already exi
 
 #### `action="edit_method_signature"` — replace one METHODS clause
 
-One range replacement on a method's declaration. The IMPLEMENTATION block is untouched — any body incompatibility surfaces at `SAPActivate`, same as today's `edit_method` contract. Include ABAP Doc (`"!`) directly above the new `METHODS` clause to replace its attached documentation; omit it to keep the current documentation.
+One range replacement on a method's declaration. Changing ABSTRACT is refused because it also requires adding or removing an implementation; use a complete source update for that transition. The IMPLEMENTATION block is untouched — any body incompatibility surfaces at `SAPActivate`, same as today's `edit_method` contract. Include ABAP Doc (`"!`) directly above the new `METHODS` clause to replace its attached documentation; omit it to keep the current documentation.
 
 ```jsonc
 {

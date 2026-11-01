@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { requestContext } from '../../../src/server/context.js';
@@ -38,7 +38,10 @@ let stored = source,
 let transportable = false;
 let fault = '',
   cancel: AbortController | undefined;
+const unexpected: string[] = [];
+afterEach(() => expect(unexpected).toEqual([]));
 beforeEach(() => {
+  unexpected.length = 0;
   vi.restoreAllMocks();
   vi.resetAllMocks();
   requests.length = 0;
@@ -87,25 +90,26 @@ beforeEach(() => {
         '<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900001" tm:type="K" tm:status="D"><tm:task tm:number="A4HK900002" tm:status="D"/></tm:request></tm:root>',
       );
     if (path === `${owner}/objectstructure`) {
-      expect(locked).toBe(true);
+      if (!locked) unexpected.push(`Unlocked metadata/source request: ${path}`);
       if (cancel) cancel.abort();
       return mockResponse(fault === 'metadata' ? 503 : 200, metadata);
     }
     if (path === `${owner}/source/main`) {
-      expect(locked).toBe(true);
+      if (!locked) unexpected.push(`Unlocked metadata/source request: ${path}`);
       if (method === 'GET')
         return mockResponse(
           saved && fault === 'readback-status' ? 503 : 200,
           saved && fault === 'readback-mismatch' ? 'foreign' : stored,
         );
-      expect(method).toBe('PUT');
-      expect(uri.searchParams.get('lockHandle')).toBe('owner-lock');
+      if (method !== 'PUT' || uri.searchParams.get('lockHandle') !== 'owner-lock')
+        unexpected.push(`Wrong source request: ${method} ${uri.pathname}${uri.search}`);
       if (fault === 'save') return mockResponse(503, 'unavailable');
       stored = String(init.body);
       saved = true;
       return mockResponse(200, '');
     }
-    throw Error(`Unexpected request ${method} ${path}`);
+    unexpected.push(`${method} ${path}`);
+    return mockResponse(599, 'Unexpected test request');
   });
 });
 const inputs: Record<string, Record<string, unknown>> = {
@@ -182,8 +186,14 @@ it.each(['package', 'recording', 'metadata'])(
   'refuses %s failure before saving and closes the owner session',
   async (value) => {
     fault = value;
-    const { result } = await invoke();
+    const { result, body } = await invoke();
     expect(result.isError).toBe(true);
+    expect(body).toMatchObject({
+      state: 'unchanged',
+      phase: value === 'metadata' ? 'structure-read' : 'locked-policy',
+    });
+    expect(body.statusCode).toBe(value === 'metadata' ? 503 : undefined);
+    expect(body.message).toMatch(value === 'package' ? /package/i : value === 'recording' ? /recording/i : /No create/);
     expect(stored).toBe(source);
     expect(requests.some((r) => r.method === 'PUT')).toBe(false);
     expect(requests.some((r) => r.path.includes('UNLOCK'))).toBe(true);
@@ -708,6 +718,12 @@ it.each(['pinned', 'legacy'].flatMap((profile) => [false, true].map((remove) => 
     if (profile === 'pinned' || remove) {
       expect(result.isError).toBe(true);
       expect(requests.filter((r) => r.method === 'PUT')).toHaveLength(0);
+      if (profile === 'pinned')
+        expect(JSON.parse(result.content[0].text)).toMatchObject({
+          state: 'unchanged',
+          phase: 'structure-read',
+          message: expect.stringContaining('Native class structure'),
+        });
       if (profile === 'legacy') expect(result.content[0].text).toContain('orphan implementation');
     } else {
       expect(result.isError, result.content[0].text).toBeUndefined();

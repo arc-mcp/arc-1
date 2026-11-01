@@ -22,6 +22,7 @@ const writer = {
   },
 };
 const admitted = [
+  'SAPWrite.edit_text_symbols',
   'SAPWrite.create',
   'SAPWrite.update',
   'SAPWrite.edit_unit',
@@ -44,6 +45,13 @@ const validArguments = (tool: string, action?: string) =>
 describe('pinned mutation capability matrix', () => {
   it('pins the reviewed action, type, representation and raw-field contracts', () => {
     expect(PINNED_MUTATION_CAPABILITIES.map(({ accepts: _accepts, ...contract }) => contract)).toEqual([
+      {
+        tool: 'SAPWrite',
+        action: 'edit_text_symbols',
+        resource: 'text-pool',
+        types: ['CLAS', 'PROG'],
+        fields: ['action', 'type', 'name', 'source', 'transport', 'textPart'],
+      },
       {
         tool: 'SAPWrite',
         action: 'create',

@@ -4,8 +4,8 @@ import { deleteObject, withLockedMutation } from './crud.js';
 import { AdtApiError, AdtSafetyError, classifySapDomainError, extractExceptionType } from './errors.js';
 import { throwIfRequestCancelled } from './http-deadline.js';
 import { mutationClient } from './mutation-client.js';
-import { assertMutationContext, type PinnedMutationContext } from './mutation-context.js';
-import { verifyPinnedProgramOwner } from './pinned-program-owner.js';
+import { assertMutationContext, type MutationCleanupState, type PinnedMutationContext } from './mutation-context.js';
+import { type PinnedProgramOwnerEvidence, readPinnedProgramOwner } from './pinned-program-owner.js';
 import { assertPinnedSourceOwner, pinnedRecording, validatePinnedLock } from './pinned-write-policy.js';
 import { checkOperation, checkPackage, OperationType } from './safety.js';
 import { withPinnedActiveTextPoolForDelete } from './text-elements.js';
@@ -21,6 +21,9 @@ export interface PinnedDeleteResult {
   cleanupPhase?: 'unlock' | 'session-close';
   cleanup?: string;
   sessionClosed?: boolean;
+  includeUsage?: PinnedProgramOwnerEvidence['includeUsage'];
+  warnings?: string;
+  unlockFailures?: MutationCleanupState['unlockFailures'];
 }
 
 /**
@@ -36,6 +39,7 @@ export async function deletePinnedOwner(
   let phase = 'validation';
   let statusCode: number | undefined;
   let failed = false;
+  let includeUsage: PinnedProgramOwnerEvidence['includeUsage'];
   try {
     assertMutationContext(client.safety, context);
     if (context.mode !== 'pinned-pp') throw new AdtSafetyError('A pinned mutation context is required.');
@@ -55,7 +59,9 @@ export async function deletePinnedOwner(
     const options = context.requestPolicy;
     const packageFor = async (activeClient: AdtClient) => {
       throwIfRequestCancelled(options);
-      const nativePackage = await verifyPinnedProgramOwner(activeClient, owner);
+      const evidence = await readPinnedProgramOwner(activeClient, owner);
+      const nativePackage = evidence?.packageName;
+      includeUsage = evidence?.includeUsage;
       const pkg = nativePackage ?? (await activeClient.resolveObjectPackage(owner, undefined, options));
       if (!pkg) throw new AdtSafetyError('Deletion requires the actual native owner package.');
       if (nativePackage === undefined)
@@ -72,6 +78,7 @@ export async function deletePinnedOwner(
       context,
       owner,
       {
+        confirmedResourceDeletion: () => outcome.state === 'deleted',
         beforeLock: () => {
           phase = 'lock';
           throwIfRequestCancelled(options);
@@ -118,10 +125,13 @@ export async function deletePinnedOwner(
           client.safety,
           input.name,
           {
+            confirmedResourceDeletion: () => outcome.state === 'deleted',
             beforeLock: () => {
+              phase = 'text-pool-lock';
               throwIfRequestCancelled(options);
             },
             validateLock: async (poolSession, poolLock) => {
+              phase = 'text-pool-policy';
               const current = mutationClient(client, context, poolSession);
               if ((await packageFor(current)) !== pkg)
                 throw new AdtSafetyError('The program package changed before its text-pool check.');
@@ -137,9 +147,11 @@ export async function deletePinnedOwner(
               if (fresh.local !== recording.local || fresh.request !== recording.request)
                 throw new AdtSafetyError('Recording changed before the text-pool check.');
               await validatePinnedLock(poolSession, client.safety, poolLock, fresh, options);
+              phase = 'text-pool-read';
             },
           },
           performDelete,
+          pkg,
         );
       },
     );
@@ -176,12 +188,20 @@ export async function deletePinnedOwner(
     ...outcome,
     phase: cleanupFailed && !failed ? cleanupPhase : phase,
     retryable: false,
+    ...(includeUsage
+      ? {
+          includeUsage,
+          warnings:
+            'Deleting an include may break its consumers. Returned native contexts are not a complete where-used inventory.',
+        }
+      : {}),
     ...(statusCode === undefined ? {} : { statusCode }),
     ...(cleanupFailed
       ? {
           cleanupFailed: true,
           cleanupPhase,
           sessionClosed: context.cleanup.sessionClosed,
+          unlockFailures: context.cleanup.unlockFailures,
           cleanup:
             cleanupPhase === 'session-close'
               ? 'Session closure failed. Verify the SAP session and any remaining locks before continuing.'

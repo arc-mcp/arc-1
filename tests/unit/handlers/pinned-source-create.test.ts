@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { requestContext } from '../../../src/server/context.js';
@@ -42,7 +42,10 @@ let owner = '',
 let cancellation: AbortController | undefined;
 let transportable = false;
 const calls: { path: string; method: string; body: string; locked: boolean; created: boolean }[] = [];
+const unexpected: string[] = [];
+afterEach(() => expect(unexpected).toEqual([]));
 beforeEach(() => {
+  unexpected.length = 0;
   vi.restoreAllMocks();
   vi.resetAllMocks();
   created = false;
@@ -95,13 +98,13 @@ beforeEach(() => {
     if (path.includes('/http/sessions')) return mockResponse(200, '');
     if (path === owner) {
       const root = collection.endsWith('/programs')
-        ? 'abapProgram'
+        ? 'program:abapProgram'
         : collection.endsWith('/includes')
-          ? 'abapInclude'
+          ? 'include:abapInclude'
           : 'root';
       return mockResponse(
         200,
-        `<${root} xmlns:adtcore="http://www.sap.com/adt/core" name="${owner.split('/').at(-1)!.toUpperCase()}" type="PROG/${root === 'abapInclude' ? 'I' : 'P'}" programType="executableProgram"><adtcore:packageRef adtcore:type="DEVC/K" adtcore:name="${fault === 'package' ? 'ZFOREIGN' : transportable ? 'ZTEAM' : '$TMP'}"/></${root}>`,
+        `<${root} xmlns:program="http://www.sap.com/adt/programs/programs" xmlns:include="http://www.sap.com/adt/programs/includes" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${owner.split('/').at(-1)!.toUpperCase()}" adtcore:type="${fault === 'owner-identity' ? 'FUGR/I' : `PROG/${root === 'include:abapInclude' ? 'I' : 'P'}`}" program:programType="executableProgram"><adtcore:packageRef adtcore:type="DEVC/K" adtcore:name="${fault === 'package' ? 'ZFOREIGN' : transportable ? 'ZTEAM' : '$TMP'}"/></${root}>`,
       );
     }
     if (path === `${owner}/source/main`) {
@@ -115,7 +118,8 @@ beforeEach(() => {
       stored = String(init.body);
       return mockResponse(200, '');
     }
-    throw Error(`Unexpected ${method} ${path}`);
+    unexpected.push(`${method} ${path}`);
+    return mockResponse(599, 'Unexpected test request');
   });
 });
 async function invoke(
@@ -159,23 +163,28 @@ it.each(['CLAS', 'INTF', 'PROG', 'INCL'] as const)(
     expect(post[0]!.body).toContain('$TMP');
     expect(post[0]!.body).not.toContain('responsible=');
     expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(1);
+    expect(calls.filter((c) => c.method === 'GET' && c.path.split('?')[0] === owner)).toHaveLength(1);
     expect(calls.filter((c) => c.method === 'GET' && c.path.split('?')[0] === `${owner}/source/main`)).toHaveLength(2);
     expect(locked).toBe(false);
   },
 );
-it.each([
-  ['create-reject', 'creation-rejected', false],
-  ['create-unknown', 'creation-unknown', false],
-  ['package', 'created-source-not-confirmed', true],
-  ['initial-read', 'created-source-not-confirmed', true],
-  ['save-reject', 'created-source-rejected', true],
-  ['save-unknown', 'created-source-unknown', true],
-  ['readback', 'created-source-unknown', true],
-  ['unlock', 'saved-inactive', true],
-] as const)('preserves the exact creation outcome on %s', async (failure, state, exists) => {
+it.each(
+  (
+    [
+      ['create-reject', 'creation-rejected', false],
+      ['create-unknown', 'creation-unknown', false],
+      ['package', 'created-source-not-confirmed', true],
+      ['initial-read', 'created-source-not-confirmed', true],
+      ['save-reject', 'created-source-rejected', true],
+      ['save-unknown', 'created-source-unknown', true],
+      ['readback', 'created-source-unknown', true],
+      ['unlock', 'saved-inactive', true],
+    ] as const
+  ).flatMap((row) => (['CLAS', 'PROG', 'INCL'] as const).map((kind) => [kind, ...row] as const)),
+)('preserves %s creation outcome on %s', async (kind, failure, state, exists) => {
   fault = failure;
   const diagnostic = vi.spyOn(quality, 'tryPostSaveSyntaxCheck');
-  const { result, body } = await invoke();
+  const { result, body } = await invoke(kind);
   expect(result.isError).toBe(true);
   expect(body.state).toBe(state);
   const expected = {
@@ -195,7 +204,7 @@ it.each([
   expect(diagnostic).not.toHaveBeenCalled();
   expect(calls.filter((c) => c.method === 'POST' && c.path.split('?')[0] === collection)).toHaveLength(1);
   expect(calls.filter((c) => c.method === 'PUT').length).toBeLessThanOrEqual(1);
-  expect(body.sourceHash).toBe(state === 'saved-inactive' ? sourceHash(texts.CLAS) : undefined);
+  expect(body.sourceHash).toBe(state === 'saved-inactive' ? sourceHash(texts[kind]) : undefined);
 });
 it.each(['cancel-created', 'cancel-read'])(
   'retains the created owner when %s prevents its source save',
@@ -255,7 +264,7 @@ it('cancels before creation without a native request', async () => {
   expect(body.state).toBe('unchanged');
   expect(calls).toHaveLength(0);
 });
-it('uses the verified request on the native creation POST and save', async () => {
+it.each(['CLAS', 'PROG', 'INCL'] as const)('uses the verified request on native %s creation and save', async (kind) => {
   transportable = true;
   const settings = {
     ...config,
@@ -267,7 +276,7 @@ it('uses the verified request on the native creation POST and save', async () =>
       serverAllowedTransports: ['A4HK900001'],
     },
   };
-  const { result } = await invoke('CLAS', { package: 'ZTEAM', transport: 'A4HK900001' }, settings);
+  const { result } = await invoke(kind, { package: 'ZTEAM', transport: 'A4HK900001' }, settings);
   expect(result.isError, result.content[0].text).toBeUndefined();
   expect(calls.find((c) => c.method === 'POST' && c.path.split('?')[0] === collection)?.path).toContain(
     'corrNr=A4HK900001',
@@ -294,4 +303,19 @@ it('runs the actual inline SAP syntax request under the new owner lock', async (
   expect(checks[0]).toMatchObject({ locked: true, created: true, method: 'POST' });
   expect(checks[0]!.body).toContain(Buffer.from(texts.CLAS).toString('base64'));
   expect(calls.indexOf(checks[0]!)).toBeLessThan(calls.findIndex((c) => c.method === 'PUT'));
+});
+
+it.each(['PROG', 'INCL'] as const)('requires native %s identity under its newly created owner lock', async (kind) => {
+  fault = 'owner-identity';
+  const { result, body } = await invoke(kind);
+  expect(result.isError).toBe(true);
+  expect(body).toMatchObject({ state: 'created-source-not-confirmed', phase: 'locked-policy' });
+  expect(body.message).toContain('standalone native PROG/INCL');
+  expect(calls.filter((c) => c.method === 'GET' && c.path.split('?')[0] === owner)).toHaveLength(1);
+  expect(calls.find((c) => c.method === 'GET' && c.path.split('?')[0] === owner)).toMatchObject({
+    created: true,
+    locked: true,
+  });
+  expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(0);
+  expect(calls.filter((c) => c.path.includes('_action=UNLOCK'))).toHaveLength(1);
 });

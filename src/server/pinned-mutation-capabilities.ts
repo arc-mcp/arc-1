@@ -6,7 +6,15 @@ export interface PinnedMutationCapability {
   readonly tool: 'SAPWrite' | 'SAPActivate' | 'SAPManage' | 'SAPTransport' | 'SAPDiagnose' | 'SAPLint';
   readonly action: string;
   /** Resource family; each qualified adapter must enforce its native boundary. */
-  readonly resource: 'repository-source' | 'whole-owner' | 'package' | 'cts' | 'trace' | 'settings' | 'flp';
+  readonly resource:
+    | 'repository-source'
+    | 'text-pool'
+    | 'whole-owner'
+    | 'package'
+    | 'cts'
+    | 'trace'
+    | 'settings'
+    | 'flp';
   /** Absent for operations without an object-type selector; raw fields still have an explicit allowlist. */
   readonly types?: readonly string[];
   readonly fields: readonly string[];
@@ -23,6 +31,16 @@ export const PINNED_CLASS_INCLUDE_NAMES = Object.freeze([
 const ownerFields = ['action', 'type', 'name'];
 const sourceFields = [...ownerFields, 'source', 'transport'];
 const rows: PinnedMutationCapability[] = [
+  {
+    tool: 'SAPWrite',
+    action: 'edit_text_symbols',
+    resource: 'text-pool',
+    types: ['CLAS', 'PROG'],
+    fields: [...sourceFields, 'textPart'],
+    accepts: (args) =>
+      (args.textPart === undefined || ['symbols', 'selections', 'headings'].some((part) => part === args.textPart)) &&
+      (args.type !== 'CLAS' || args.textPart === undefined || args.textPart === 'symbols'),
+  },
   {
     tool: 'SAPWrite',
     action: 'create',

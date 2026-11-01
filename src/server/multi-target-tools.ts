@@ -137,6 +137,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
     if (!surface) return undefined;
     const write = tool.name === 'SAPWrite';
     const procedural = surface.types.includes('PROG');
+    const textPools = surface.actions.includes('edit_text_symbols');
     const fields = surface.fields;
     const properties = Object.fromEntries(
       Object.entries(tool.inputSchema.properties as Record<string, unknown>).filter(([key]) => fields.has(key)),
@@ -144,7 +145,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
     return {
       ...tool,
       description: write
-        ? `Create or delete ${surface.types.join('/')} owners, update their main source or replace a CLAS local include on this pinned PP target. edit_method edits an existing method in main source or a selected/inferred class include. ${procedural ? 'On-prem edit_unit/add_unit replace/append one FORM or MODULE in a standalone PROG/INCL. ' : ''}Main-source class definition/signature edits, method add/delete and visibility moves use verified native main-source structure. Existing source requires expectedSourceHash from SAPRead(format="editable"); a missing optional include can be initialized under the class lock without a hash. Delete takes no source/hash and verifies native owner absence.${procedural ? ' Program deletion locks its text pool and refuses inactive pool drafts.' : ''} Destination and server package/transport restrictions both apply. Saves remain inactive. SAPActivate selects one complete owner, including existing inactive class includes${procedural ? ' or the selected program text pool reported by native preaudit; INCL activation never selects its users or their pools' : ''}.`
+        ? `Create or delete ${surface.types.join('/')} owners, update their main source or replace a CLAS local include on this pinned PP target. edit_method edits an existing method in main source or a selected/inferred class include. ${procedural ? 'On-prem edit_unit/add_unit replace/append one FORM or MODULE in a standalone PROG/INCL. ' : ''}Main-source class definition/signature edits, method add/delete and visibility moves use verified native main-source structure. Existing source requires expectedSourceHash from SAPRead(format="editable"); a missing optional include can be initialized under the class lock without a hash. Delete takes no source/hash and verifies native owner absence.${procedural ? ' Program deletion locks its text pool and refuses inactive pool drafts.' : ''} Destination and server package/transport restrictions both apply. Source saves remain inactive.${textPools ? ` edit_text_symbols replaces CLAS symbols${procedural ? ' or one PROG text part' : ''} without a source hash; it locks and activates the exact text pool, including its other pending text parts, and verifies the active content.` : ''} SAPActivate selects one complete owner, including existing inactive class includes${procedural ? ' or the selected program text pool reported by native preaudit; INCL activation never selects its users or their pools' : ''}.`
         : `Activate one ${surface.types.join('/')} owner on this pinned PP target, including ALL its existing inactive drafts and class includes.${procedural ? ' Native preaudit may add only the selected program text pool, whose final active state is verified. INCL activation selects only that standalone include.' : ''} Additional owners are refused. This is not method-only activation.`,
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
       inputSchema: {
@@ -159,7 +160,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                 },
                 source: {
                   type: 'string',
-                  description: `Complete CLAS/INTF source for create/update${procedural ? ', or complete PROG/INCL source for create/update; one FORM…ENDFORM or MODULE…ENDMODULE block for edit_unit/add_unit' : ''}, or the selected CLAS include for update (source="" with expectedSourceHash clears an existing include); an existing method body or complete METHOD…ENDMETHOD block for edit_method. For edit_class_definition supply the main CLASS DEFINITION block or the whole selected include; for edit_method_signature supply its METHODS clause. Required for create/update/edit_method/${procedural ? 'edit_unit/add_unit/' : ''}edit_class_definition/edit_method_signature; omit for delete/add_method/delete_method/change_method_visibility.`,
+                  description: `Complete CLAS/INTF source for create/update${procedural ? ', or complete PROG/INCL source for create/update; one FORM…ENDFORM or MODULE…ENDMODULE block for edit_unit/add_unit' : ''}, or the selected CLAS include for update (source="" with expectedSourceHash clears an existing include); an existing method body or complete METHOD…ENDMETHOD block for edit_method. For edit_class_definition supply the main CLASS DEFINITION block or the whole selected include; for edit_method_signature supply its METHODS clause. Required for create/update/edit_method/${procedural ? 'edit_unit/add_unit/' : ''}edit_class_definition/edit_method_signature; omit for delete/add_method/delete_method/change_method_visibility.${textPools ? ' For edit_text_symbols, provide the raw selected text-part body; source="" clears it. Whole-part replacement has no optimistic hash precondition and is limited to 1 MiB.' : ''}`,
                 },
                 package: {
                   type: 'string',
@@ -175,8 +176,17 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                   type: 'string',
                   pattern: '^[a-f0-9]{64}$',
                   description:
-                    'SHA-256 from SAPRead(format="editable") on the exact main source or selected include; required for existing source updates and every class/procedural surgery action. Omit only for create/delete or a new optional include verified absent under lock.',
+                    'SHA-256 from SAPRead(format="editable") on the exact main source or selected include; required for existing source updates and every class/procedural surgery action. Omit for create/delete, edit_text_symbols, or a new optional include verified absent under lock.',
                 },
+                ...(textPools
+                  ? {
+                      textPart: {
+                        type: 'string',
+                        enum: procedural ? ['symbols', 'selections', 'headings'] : ['symbols'],
+                        description: `Complete part to replace; default symbols. CLAS supports symbols only.${procedural ? ' PROG also supports selections and headings.' : ''} Activation covers the whole text pool.`,
+                      },
+                    }
+                  : {}),
                 ...(fields.has('include')
                   ? {
                       include: {

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { requestContext } from '../../../src/server/context.js';
@@ -40,7 +40,10 @@ let cancellation: AbortController | undefined;
 let metadataOverride: string | undefined;
 let recordingPackage: string | undefined;
 const requests: { path: string; method: string; locked: boolean; body: string }[] = [];
+const unexpected: string[] = [];
+afterEach(() => expect(unexpected).toEqual([]));
 beforeEach(() => {
+  unexpected.length = 0;
   vi.restoreAllMocks();
   vi.resetAllMocks();
   stored = original;
@@ -59,7 +62,7 @@ beforeEach(() => {
     requests.push({ path: path + uri.search, method, locked, body: String(init.body ?? '') });
     if (method === 'HEAD') return mockResponse(200, '', { 'x-csrf-token': 'token' });
     if (uri.searchParams.get('_action') === 'LOCK') {
-      expect(path).toBe(owner);
+      if (path !== owner) unexpected.push(`Wrong lock owner: ${path}`);
       locked = true;
       return mockResponse(
         200,
@@ -68,7 +71,7 @@ beforeEach(() => {
       );
     }
     if (uri.searchParams.get('_action') === 'UNLOCK') {
-      expect(path).toBe(owner);
+      if (path !== owner) unexpected.push(`Wrong lock owner: ${path}`);
       locked = false;
       return mockResponse(fault === 'unlock' ? 503 : 200, '');
     }
@@ -112,14 +115,15 @@ beforeEach(() => {
           fault === 'read' || (saved && fault === 'readback-status') ? 503 : 200,
           saved && fault === 'readback-mismatch' ? 'foreign source' : stored,
         );
-      expect(method).toBe('PUT');
-      expect(uri.searchParams.get('lockHandle')).toBe('program-lock');
+      if (method !== 'PUT' || uri.searchParams.get('lockHandle') !== 'program-lock')
+        unexpected.push(`Wrong source request: ${method} ${uri.pathname}${uri.search}`);
       if (fault === 'save') return mockResponse(503, 'unavailable');
       stored = String(init.body);
       saved = true;
       return mockResponse(200, '');
     }
-    throw Error(`Unexpected request ${method} ${path}`);
+    unexpected.push(`${method} ${path}`);
+    return mockResponse(599, 'Unexpected test request');
   });
 });
 async function invoke(type = 'PROG', action = 'edit_unit', extra: Record<string, unknown> = {}, settings = config) {
@@ -315,21 +319,40 @@ it.each(['owner-root', 'owner-name', 'owner-type', 'owner-package', 'owner-group
   'requires positive native INCL identity and ownership: %s',
   async (failure) => {
     fault = failure;
-    const { result } = await invoke('INCL');
+    const { result, body } = await invoke('INCL');
     expect(result.isError).toBe(true);
+    expect(body).toMatchObject({ state: 'unchanged', phase: 'package-preflight' });
+    expect(body.message).toMatch(
+      failure === 'owner-root'
+        ? /root/
+        : failure === 'owner-group'
+          ? /bound.*metadata element/
+          : /standalone native PROG\/INCL/,
+    );
     expect(requests.some((r) => r.path.includes('_action=LOCK') || r.method === 'PUT')).toBe(false);
   },
 );
 it('refuses a non-procedural native program kind', async () => {
   fault = 'owner-kind';
-  expect((await invoke()).result.isError).toBe(true);
+  const { result, body } = await invoke();
+  expect(result.isError).toBe(true);
+  expect(body).toMatchObject({
+    state: 'unchanged',
+    phase: 'package-preflight',
+    message: expect.stringContaining('standalone native PROG/INCL'),
+  });
   expect(requests.some((r) => r.path.includes('_action=LOCK') || r.method === 'PUT')).toBe(false);
 });
 it.each(['owner-type-locked', 'owner-name-locked', 'owner-group-locked'])(
   'rechecks native source ownership under the lock: %s',
   async (failure) => {
     fault = failure;
-    expect((await invoke('INCL')).result.isError).toBe(true);
+    const { result, body } = await invoke('INCL');
+    expect(result.isError).toBe(true);
+    expect(body).toMatchObject({ state: 'unchanged', phase: 'locked-policy' });
+    expect(body.message).toMatch(
+      failure === 'owner-group-locked' ? /bound.*metadata element/ : /standalone native PROG\/INCL/,
+    );
     expect(requests.some((r) => r.method === 'PUT')).toBe(false);
     expect(requests.some((r) => r.path.includes('_action=UNLOCK'))).toBe(true);
     expect(locked).toBe(false);
@@ -431,12 +454,17 @@ it.each([false, true])('validates every returned context without following it (f
   expect(requests.filter((r) => r.method === 'PUT')).toHaveLength(foreign ? 0 : 1);
 });
 it.each([
-  '<!DOCTYPE root><abapInclude/>',
+  '<!DOCTYPE include:abapInclude><include:abapInclude xmlns:include="http://www.sap.com/adt/programs/includes" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZARC1_PROGRAM" adtcore:type="PROG/I"><adtcore:packageRef adtcore:name="$TMP" adtcore:type="DEVC/K"/></include:abapInclude>',
   '<abapInclude name="ZARC1_PROGRAM" type="PROG/I"><packageRef name="$TMP" type="DEVC/K"/>',
 ])('refuses non-verifiable owner XML before locking', async (xml) => {
   metadataOverride = xml;
-  const { result } = await invoke('INCL');
+  const { result, body } = await invoke('INCL');
   expect(result.isError).toBe(true);
+  expect(body).toMatchObject({
+    state: 'unchanged',
+    phase: 'package-preflight',
+    message: expect.stringContaining('Cannot verify malformed'),
+  });
   expect(requests.some((r) => r.path.includes('_action=LOCK') || r.method === 'PUT')).toBe(false);
 });
 it('accepts an ordinary namespaced L-prefixed program after native owner verification', async () => {
@@ -459,4 +487,26 @@ it('reports a close-only failure consistently after a confirmed procedural save'
     sessionClosed: false,
   });
   expect(body.cleanup).not.toContain('Unlock failed');
+});
+
+it.each([
+  ['wrong context URI', 'ZCONSUMER', '/sap/bc/adt/functions/groups/zconsumer'],
+  ['SAPL context', 'SAPLZGROUP', '/sap/bc/adt/programs/programs/saplzgroup'],
+  ['namespaced SAPL context', '/NS/SAPLZGROUP', '/sap/bc/adt/programs/programs/%2fns%2fsaplzgroup'],
+] as const)('refuses %s even when its native type claims PROG/P', async (_case, contextName, uri) => {
+  metadataOverride = `<i:abapInclude xmlns:i="http://www.sap.com/adt/programs/includes" xmlns:a="http://www.sap.com/adt/core" a:name="ZARC1_PROGRAM" a:type="PROG/I"><a:packageRef a:name="$TMP" a:type="DEVC/K"/><i:contextRef a:type="PROG/P" a:name="${contextName}" a:uri="${uri}"/></i:abapInclude>`;
+  const { result, body: payload } = await invoke('INCL');
+  expect(result.isError).toBe(true);
+  expect(payload).toMatchObject({ state: 'unchanged', phase: 'package-preflight' });
+  expect(payload.message).toContain('standalone native PROG/INCL');
+  expect(requests.some((r) => r.path.includes('_action=LOCK') || r.method === 'PUT')).toBe(false);
+});
+it('rejects an identity attribute collision before locking the selected owner', async () => {
+  metadataOverride =
+    '<i:abapInclude xmlns:i="http://www.sap.com/adt/programs/includes" xmlns:a="http://www.sap.com/adt/core" xmlns:other="urn:foreign" a:name="ZOTHER" other:name="ZARC1_PROGRAM" a:type="PROG/I"><a:packageRef a:name="$TMP" a:type="DEVC/K"/></i:abapInclude>';
+  const { result, body: payload } = await invoke('INCL');
+  expect(result.isError).toBe(true);
+  expect(payload).toMatchObject({ state: 'unchanged', phase: 'package-preflight' });
+  expect(payload.message).toContain('identity attribute');
+  expect(requests.some((r) => r.path.includes('_action=LOCK') || r.method === 'PUT')).toBe(false);
 });

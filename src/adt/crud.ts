@@ -11,11 +11,14 @@
  */
 
 import { postCreate } from './create-request.js';
-import { AdtApiError, AdtSafetyError, extractExceptionType } from './errors.js';
+import { AdtApiError, AdtSafetyError, classifySapDomainError, extractExceptionType } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
+import { throwIfRequestCancelled } from './http-deadline.js';
 import {
   assertMutationContext,
+  type MutationCleanupState,
   type MutationContext,
+  type PinnedMutationContext,
   pinnedSessionCleanup,
   singleTargetMutationContext,
 } from './mutation-context.js';
@@ -102,6 +105,10 @@ export async function unlockObject(http: AdtHttpClient, objectUrl: string, lockH
 export interface MutationLockPolicy {
   beforeLock: () => void;
   validateLock: (session: AdtHttpClient, lock: LockResult) => Promise<void>;
+  /** Native operations such as text-pool activation require unlock first, on this same SAP session. */
+  afterUnlock?: (session: AdtHttpClient) => Promise<void>;
+  /** Native DELETE adapter only: true after successful DELETE and typed owner-absence readback. */
+  confirmedResourceDeletion?: () => boolean;
 }
 
 const legacyLockPolicy: MutationLockPolicy = {
@@ -115,6 +122,15 @@ type AdditionalLock = <T>(
   operation: (lock: LockResult) => Promise<T>,
 ) => Promise<T>;
 const additionalLocks = new WeakMap<AdtHttpClient, AdditionalLock>();
+const postUnlockContexts = new WeakMap<AdtHttpClient, MutationContext>();
+
+/** Internal owned-resource activation grants exist only during the coordinator's post-unlock phase. */
+export function pinnedPostUnlockContext(session: AdtHttpClient, safety: SafetyConfig): PinnedMutationContext {
+  const context = postUnlockContexts.get(session);
+  if (context?.mode !== 'pinned-pp') throw new AdtSafetyError('An active pinned post-unlock lifecycle is required.');
+  assertMutationContext(safety, context);
+  return context;
+}
 
 /** Additional native locks belong to the existing coordinator/session, never a new SAP context. */
 export function withAdditionalMutationLock<T>(
@@ -140,10 +156,17 @@ export async function withLockedMutation<T>(
 ): Promise<T> {
   assertMutationContext(safety, context);
   checkOperation(safety, OperationType.Update, 'MutationSession');
+  let owningSessionClosed: boolean | undefined;
+  const removedLocks: NonNullable<MutationCleanupState['unlockFailures']> = [];
+  const recordUnlockFailure = (failure: NonNullable<MutationCleanupState['unlockFailures']>[number]) => {
+    if (context.mode !== 'pinned-pp') return;
+    context.cleanup.unlockFailed = true;
+    (context.cleanup.unlockFailures ??= []).push(failure);
+  };
   const run = async (owningSession: AdtHttpClient) => {
     const session = mutationHttp(owningSession, safety, context);
     const held = new Set([objectUrl]);
-    const release = async (url: string, handle: string) => {
+    const release = async (url: string, handle: string, lockPolicy: MutationLockPolicy) => {
       if (context.mode !== 'pinned-pp' || !handle) return;
       try {
         await owningSession.post(
@@ -153,8 +176,18 @@ export async function withLockedMutation<T>(
           undefined,
           { deadline: Date.now() + 30_000, retryTransientErrors: false, noReplay: true },
         );
-      } catch {
-        context.cleanup.unlockFailed = true;
+      } catch (error) {
+        const failure = { uri: url, ...(error instanceof AdtApiError ? { statusCode: error.statusCode } : {}) };
+        if (
+          error instanceof AdtApiError &&
+          error.isNotFound &&
+          extractExceptionType(error.responseBody ?? '') === 'ExceptionResourceNotFound' &&
+          !classifySapDomainError(error.statusCode, error.responseBody, error.path) &&
+          lockPolicy.confirmedResourceDeletion?.() === true
+        ) {
+          // Deleting an owner can remove its pool too. This is only resolved after this session closes.
+          removedLocks.push({ ...failure, absentAfterDelete: true });
+        } else recordUnlockFailure(failure);
       }
     };
     policy.beforeLock();
@@ -170,30 +203,58 @@ export async function withLockedMutation<T>(
             await extraPolicy.validateLock(session, extra);
             return await fn(extra);
           } finally {
-            await release(url, extra.lockHandle);
+            await release(url, extra.lockHandle, extraPolicy);
           }
         } finally {
           held.delete(url);
         }
       });
+    let result: T;
     try {
       await policy.validateLock(session, lock);
-      return await operation(session, lock);
+      result = await operation(session, lock);
     } finally {
       additionalLocks.delete(session);
       if (context.mode === 'single-target') {
         // Preserve legacy finally precedence, including an unlock error replacing the primary error.
         await unlockObject(owningSession, objectUrl, lock.lockHandle);
-      } else await release(objectUrl, lock.lockHandle);
+      } else await release(objectUrl, lock.lockHandle, policy);
     }
+    if (policy.afterUnlock) {
+      if (context.mode === 'pinned-pp') {
+        if (context.cleanup.unlockFailed || removedLocks.length)
+          throw new AdtSafetyError('Unlock was not confirmed; the post-unlock operation was not sent.');
+        throwIfRequestCancelled(context.requestPolicy);
+      }
+      postUnlockContexts.set(session, context);
+      try {
+        await policy.afterUnlock(session);
+      } finally {
+        postUnlockContexts.delete(session);
+      }
+    }
+    return result;
   };
-  return withMutationSession(
-    http,
-    safety,
-    context,
-    run,
-    context.mode === 'pinned-pp' ? pinnedSessionCleanup(context) : undefined,
-  );
+  try {
+    return await withMutationSession(
+      http,
+      safety,
+      context,
+      run,
+      context.mode === 'pinned-pp'
+        ? {
+            ...pinnedSessionCleanup(context),
+            onClose: (closed) => {
+              owningSessionClosed = closed;
+              context.cleanup.sessionClosed = closed;
+            },
+          }
+        : undefined,
+    );
+  } finally {
+    if (context.mode === 'pinned-pp' && owningSessionClosed !== true)
+      for (const failure of removedLocks) recordUnlockFailure(failure);
+  }
 }
 
 /**

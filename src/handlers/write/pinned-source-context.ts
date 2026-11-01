@@ -5,6 +5,7 @@ import { mutationClient } from '../../adt/mutation-client.js';
 import { assertMutationContext, type PinnedMutationContext } from '../../adt/mutation-context.js';
 import { verifyPinnedProgramOwner } from '../../adt/pinned-program-owner.js';
 import { assertPinnedSourceOwner, type PinnedRecording, pinnedRecording } from '../../adt/pinned-write-policy.js';
+import type { TextElementPart, TextElementWriteResult } from '../../adt/text-elements.js';
 import type { ServerConfig } from '../../server/types.js';
 import { type ClassWriteInclude, normalizeClassWriteInclude, objectUrlForType } from '../object-types.js';
 import { enforceAllowedPackageForObjectUrl } from '../write-helpers.js';
@@ -27,6 +28,7 @@ export interface PinnedSourceState {
   readHash?: string;
   unchangedConfirmed?: boolean;
   writeAttempted: boolean;
+  textPool?: { part: TextElementPart; result?: TextElementWriteResult };
 }
 // Transient call state, never indexed by target/user and never reused across requests.
 const states = new WeakMap<SapWriteContext, PinnedSourceState>();

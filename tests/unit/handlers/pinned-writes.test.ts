@@ -353,16 +353,17 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect(hierarchy.mock.calls.filter(([root]) => root === 'ZROOT')).toHaveLength(2);
     expect(hierarchy.mock.calls.filter(([root]) => root === '$TMP')).toHaveLength(0);
   });
-  it('refuses activation when subtree membership changes before the first preaudit submission', async () => {
+  it('refuses activation when its initial fresh subtree check excludes the owner', async () => {
     const c = client();
     c.safety.multiTargetWrite = { ...policy, allowedPackages: ['ZROOT/**'] };
     let roots = 0;
-    vi.spyOn(AdtClient.prototype, 'getSubpackages').mockImplementation(async (root) =>
-      root === 'ZROOT' && ++roots === 1 ? ['$TMP'] : [],
-    );
+    vi.spyOn(AdtClient.prototype, 'getSubpackages').mockImplementation(async (root) => {
+      if (root === 'ZROOT') roots++;
+      return [];
+    });
     const result = await handlePinnedActivation(c, { type: 'CLAS', name: 'ZCL_TEST' });
     expect(result.isError).toBe(true);
-    expect(roots).toBe(2);
+    expect(roots).toBe(1);
     expect(requests.some((r) => r.path.includes('/activation?'))).toBe(false);
   });
   it('refuses subtree drift after the preaudit prompt and keeps hierarchy reads inside the original policy', async () => {
@@ -373,12 +374,12 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     let roots = 0;
     const hierarchy = vi
       .spyOn(AdtClient.prototype, 'getSubpackages')
-      .mockImplementation(async (root) => (root === 'ZROOT' && ++roots < 3 ? ['$TMP'] : []));
+      .mockImplementation(async (root) => (root === 'ZROOT' && ++roots < 2 ? ['$TMP'] : []));
     const result = await requestContext.run({ requestId: 'post-prompt-drift', signal: controller.signal }, () =>
       handlePinnedActivation(c, { type: 'CLAS', name: 'ZCL_TEST' }),
     );
     expect(result.isError).toBe(true);
-    expect(roots).toBe(3);
+    expect(roots).toBe(2);
     const submissions = requests.filter((r) => r.path.includes('/activation?'));
     expect(submissions).toHaveLength(1);
     expect(submissions[0].path).toContain('preauditRequested=true');
@@ -769,4 +770,27 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect(result.isError, result.content[0].text).toBeUndefined();
     expect(requests.filter((r) => r.path.includes('/activation?'))).toHaveLength(1);
   });
+});
+
+it.each(['CLAS', 'INTF'] as const)('refuses duplicate native references for %s', (type) => {
+  const selected = type === 'CLAS' ? owner : '/sap/bc/adt/oo/interfaces/zif_test';
+  expect(() => validatePinnedActivationReferences(selected, type, [{ uri: selected }, { uri: selected }])).toThrow(
+    'unqualified reference',
+  );
+});
+it.each(['CLAS', 'INTF'] as const)('accepts namespace slash hex case only for %s', (type) => {
+  const selected = `/sap/bc/adt/oo/${type === 'CLAS' ? 'classes' : 'interfaces'}/%2Fns%2Fztest`;
+  expect(() =>
+    validatePinnedActivationReferences(selected, type, [
+      {
+        uri: selected.replace(/%2F/g, '%2f'),
+        name: '/NS/ZTEST',
+        type: type === 'CLAS' ? 'CLAS/OC' : 'INTF/OI',
+        deleted: 'false',
+      },
+    ]),
+  ).not.toThrow();
+  expect(() =>
+    validatePinnedActivationReferences(selected, type, [{ uri: selected.replace('ztest', '%7atest') }]),
+  ).toThrow();
 });
