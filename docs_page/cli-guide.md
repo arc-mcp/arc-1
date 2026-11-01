@@ -109,6 +109,8 @@ does not change MCP `isError`. ATC uses the requested severity threshold. AUnit 
 or empty evidence always fails. Use `includeReportXml:true` to request bounded XML
 reports; the default response contains summaries and result paths. These actions
 require explicit packages/packageTrees and normal ADT access; they are single-target only.
+`atc_ci` needs the BTP ABAP Environment; on-premise it is refused before any SAP request,
+so use `arc1 atc DEVC <package>` there.
 
 ```bash
 arc1 call SAPDiagnose --json '{"action":"atc_ci","packages":["ZFOO"]}' --output json

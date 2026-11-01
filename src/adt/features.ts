@@ -277,8 +277,7 @@ async function detectSystemFromComponents(client: AdtHttpClient): Promise<System
     if (resp.statusCode >= 400) return {};
     const components = parseInstalledComponents(resp.body);
     const basis = components.find((c) => c.name.toUpperCase() === 'SAP_BASIS');
-    const hasSapCloud = components.some((c) => c.name.toUpperCase() === 'SAP_CLOUD');
-    const systemType: SystemType | undefined = hasSapCloud ? 'btp' : 'onprem';
+    const systemType = detectSystemType(components);
     return {
       abapRelease: basis?.release || undefined,
       systemType,
@@ -341,11 +340,12 @@ export function detectHanaFromComponents(components: Array<{ name: string }>): b
 
 /**
  * Detect system type from installed components (exported for testing).
- * Returns 'btp' if SAP_CLOUD component is present, 'onprem' otherwise.
+ * Returns 'btp' if SAP_CLOUD is present, 'onprem' for other nonempty lists, or unknown.
  */
 export function detectSystemType(
   components: Array<{ name: string; release: string; description: string }>,
-): SystemType {
+): SystemType | undefined {
+  if (components.length === 0) return undefined;
   const hasSapCloud = components.some((c) => c.name.toUpperCase() === 'SAP_CLOUD');
   return hasSapCloud ? 'btp' : 'onprem';
 }
