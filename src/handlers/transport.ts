@@ -199,7 +199,7 @@ async function resolveIncludeGroup(
   allowMissing: boolean,
 ): Promise<string | undefined> {
   const [lookup] = await client.lookupObjects([includeName]);
-  const matches = lookup?.matches ?? [];
+  const matches = (lookup?.matches ?? []).filter((r) => r.objectType === 'FUGR/I' || r.objectType === 'PROG/I');
   if (matches.length === 0 && allowMissing) return undefined;
   const owners = new Map<string, string | undefined>();
   const unverified = new Error(
@@ -656,6 +656,8 @@ export async function handleSAPTransport(
                   status: 'D',
                 },
               ];
+            } else if (info.result !== 'S') {
+              lockStatusUnknown = true;
             }
           }
         } catch {

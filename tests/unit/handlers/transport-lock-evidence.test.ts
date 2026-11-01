@@ -155,3 +155,98 @@ it('does not choose a group from conflicting exact lookup hits', async () => {
   expect(result.isError).toBe(true);
   expect(mockFetch).not.toHaveBeenCalled();
 });
+
+it.each(['history', 'check'] as const)('ignores a non-include namesake for standalone %s', async (action) => {
+  const client = createClient();
+  const source = {
+    objectName: 'ZINCLUDE',
+    objectType: 'PROG/I',
+    description: '',
+    packageName: '$TMP',
+    uri: '/sap/bc/adt/programs/includes/zinclude',
+  };
+  const other = { ...source, objectType: 'DEVC/K', uri: '/sap/bc/adt/packages/zinclude' };
+  vi.spyOn(client, 'lookupObjects').mockResolvedValue([{ name: 'ZINCLUDE', found: true, matches: [other, source] }]);
+  vi.spyOn(client, 'resolveObjectPackage').mockResolvedValue('$TMP');
+  mockFetch.mockResolvedValue(mockResponse(200, info(), { 'x-csrf-token': 'T' }));
+  const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPTransport', {
+    action,
+    type: 'INCL',
+    name: 'ZINCLUDE',
+    ...(action === 'check' ? { package: '$TMP', operation: 'modify' } : {}),
+  });
+  expect(result.isError).toBeUndefined();
+  if (action === 'history')
+    expect(JSON.parse(result.content[0].text).object.uri).toBe('/sap/bc/adt/programs/includes/ZINCLUDE');
+});
+
+it('allows creating a standalone include when only a non-include namesake exists', async () => {
+  const client = createClient();
+  vi.spyOn(client, 'lookupObjects').mockResolvedValue([
+    {
+      name: 'ZINCLUDE',
+      found: true,
+      matches: [
+        {
+          objectName: 'ZINCLUDE',
+          objectType: 'DTEL/DE',
+          description: '',
+          packageName: 'ZPKG',
+          uri: '/sap/bc/adt/ddic/dataelements/zinclude',
+        },
+      ],
+    },
+  ]);
+  mockFetch.mockResolvedValue(mockResponse(200, info(), { 'x-csrf-token': 'T' }));
+  const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPTransport', {
+    action: 'check',
+    type: 'INCL',
+    name: 'ZINCLUDE',
+    package: 'ZPKG',
+    operation: 'create',
+  });
+  expect(result.isError).toBeUndefined();
+  expect(JSON.parse(result.content[0].text).transportAssignmentRequired).toBe(true);
+});
+
+it.each([
+  ['FUGR/I', '/sap/bc/adt/functions/groups/zgroup/includes/other'],
+  ['PROG/I', '/sap/bc/adt/functions/groups/zgroup/includes/zinclude'],
+  ['FUGR/I', 'https://external.example/sap/bc/adt/functions/groups/zgroup/includes/zinclude'],
+])('refuses malformed include identity %s %s', async (objectType, uri) => {
+  const client = createClient();
+  vi.spyOn(client, 'lookupObjects').mockResolvedValue([
+    {
+      name: 'ZINCLUDE',
+      found: true,
+      matches: [{ objectName: 'ZINCLUDE', objectType, description: '', packageName: '$TMP', uri }],
+    },
+  ]);
+  const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPTransport', {
+    action: 'history',
+    type: 'INCL',
+    name: 'ZINCLUDE',
+  });
+  expect(result.isError).toBe(true);
+  expect(mockFetch).not.toHaveBeenCalled();
+});
+
+it.each(['', 'E'])('does not infer no lock from an unacknowledged CTS result %s', async (status) => {
+  const client = createClient();
+  vi.spyOn(client, 'resolveObjectPackage').mockResolvedValue('ZPKG');
+  mockFetch.mockImplementation(async (url: string) =>
+    mockResponse(
+      200,
+      String(url).includes('/transportchecks')
+        ? info().replace('<RESULT>S</RESULT>', `<RESULT>${status}</RESULT>`)
+        : '',
+      { 'x-csrf-token': 'T' },
+    ),
+  );
+  const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPTransport', {
+    action: 'history',
+    type: 'INTF',
+    name: 'ZIF_TEST',
+  });
+  expect(JSON.parse(result.content[0].text).lockStatusUnknown).toBe(true);
+});
