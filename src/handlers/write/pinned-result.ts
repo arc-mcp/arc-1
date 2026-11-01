@@ -8,12 +8,14 @@ export function pinnedFailure(
   state: string,
   phase: string,
   cleanupFailed = false,
-  details: { sourceHash?: string; sessionClosed?: boolean } = {},
+  details: { sourceHash?: string; sessionClosed?: boolean; include?: string; initialized?: boolean } = {},
 ): ToolResult {
   const context = getCurrentContext();
   return errorResult(
     toolJson({
-      error: ['unchanged', 'creation-rejected', 'source-save-rejected'].includes(state)
+      error: ['unchanged', 'creation-rejected', 'include-initialization-rejected', 'source-save-rejected'].includes(
+        state,
+      )
         ? 'PINNED_WRITE_REFUSED'
         : 'PINNED_WRITE_INCOMPLETE',
       message:

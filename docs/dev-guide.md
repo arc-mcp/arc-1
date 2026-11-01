@@ -198,6 +198,9 @@ npm run btp:validate
 
 `src/adt/crud.ts::withLockedMutation` is shared by single-target `safeUpdateSource`,
 `safeUpdateClassInclude`, and the pinned CLAS/INTF adapter in `handlers/write/pinned.ts`.
+The class-include protocol lives in `adt/class-include-write.ts` with a compatibility export from
+`crud.ts`; pinned main/include writes share `handlers/write/pinned-lock.ts` for under-lock policy.
+Existing pinned includes require their own hash; initialization requires typed native absence.
 `mutation-context.ts` requires a factory-created legacy or pinned context; a multi-target client
 cannot enter the legacy wrapper. The required callbacks keep package/recording revalidation in
 the pinned adapter. This is not a generic metadata, deletion, transport or activation engine.

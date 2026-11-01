@@ -1,7 +1,7 @@
 /** Reviewed mutation surface; independent of tool advertisement and general single-target schemas. */
 import { isMutatingOperationType, isOperationAllowed, OperationType } from '../adt/safety.js';
 import { ACTION_POLICY } from '../authz/policy.js';
-import { stripLlmEmptyValues } from '../handlers/object-types.js';
+import { normalizeObjectType, stripLlmEmptyValues } from '../handlers/object-types.js';
 import {
   type PinnedCompanionCapability,
   type PinnedMutationCapability,
@@ -21,9 +21,20 @@ export function pinnedUnsupportedRawFields(tool: string, action: unknown, args: 
   const selected = action ?? (tool === 'SAPActivate' ? 'activate' : undefined);
   const capability = pinnedMutationCapability(tool, selected) ?? pinnedCompanionCapability(tool, selected);
   if (!capability) return []; // The invocation gate independently refuses unadmitted mutations.
-  return Object.entries(stripLlmEmptyValues(args))
+  const cleaned = stripLlmEmptyValues(args);
+  const unsupported = Object.entries(cleaned)
     .filter(([key, value]) => value !== undefined && !capability.fields.includes(key))
     .map(([key]) => key);
+  // Legacy normalization removes inapplicable includes (for example on INTF). Validate the selector
+  // while still present, so an unsupported selection cannot turn into a main-source write.
+  if (
+    tool === 'SAPWrite' &&
+    cleaned.include !== undefined &&
+    capability.fields.includes('include') &&
+    !capability.accepts({ ...cleaned, type: normalizeObjectType(String(cleaned.type ?? '')) })
+  )
+    unsupported.push('include');
+  return unsupported;
 }
 
 function capabilityEnabled(capability: PinnedMutationCapability, config: ServerConfig): boolean {

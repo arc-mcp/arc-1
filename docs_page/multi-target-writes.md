@@ -127,11 +127,18 @@ only the aggregate compatibility connection cannot write through that connection
 | Action | Requirements |
 |---|---|
 | `SAPWrite.create` | One CLAS or INTF; explicit package and complete source; required allowed request/task for a transportable package |
-| `SAPWrite.update` | CLAS/INTF main source; `expectedSourceHash` from `SAPRead(format="editable")` |
+| `SAPWrite.update` | CLAS/INTF main source or CLAS `definitions`, `implementations`, `macros`, `testclasses`; exact editable-source hash for existing source |
 | `SAPWrite.edit_method` | Existing CLAS main-source method; hash of the complete editable main source |
 | `SAPWrite.delete` | One CLAS/INTF owner; actual package and native recording checks before/under lock, followed by verified owner absence; omit source and source hash |
 | `SAPActivate` | One CLAS/INTF owner; activates all of that owner's existing inactive drafts and includes |
 | `SAPLint.set_formatter_settings` | Partial indentation/style patch of the mapped SAP user's formatter preferences on this target; native read/merge/write/read-back, not a package-owned object |
+
+For an existing class include, read `SAPRead(type="CLAS", name=..., include=..., format="editable")`
+and pass that include's hash to update. Omit `include` for main source. An omitted hash can initialize
+a new optional include only after native absence is verified under the class lock; it cannot replace
+an existing include. Explicit empty include source clears its contents. Results retain a partial
+initialization if the following save fails. Activation still affects the complete class and its drafts.
+This draft's include addition has offline tests; its [native/PP qualification is pending](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-includes.md).
 
 Writable pinned PP connections also expose `SAPLint.format` and `get_formatter_settings` with their
 normal `read` scope. These supporting reads remain hidden on reader connections, read-only

@@ -316,7 +316,9 @@ describe('pinned write policy composition', () => {
       expect(instructions.length).toBeLessThan(2048);
       if (kind === 'writer') {
         expect(instructions).toContain('scoped read/write');
-        expect(instructions).toContain('CLAS/INTF main-source writes and owner deletion require both package policies');
+        expect(instructions).toContain(
+          'CLAS/INTF main-source writes, CLAS local-include replacements and owner deletion require both package policies',
+        );
         expect(instructions).toContain('Activation affects the whole owner');
         expect(instructions).not.toContain('Writes, activation, transport/Git mutations');
       } else {
@@ -423,7 +425,12 @@ describe('pinned write policy composition', () => {
     const write = definitions.find((t) => t.name === 'SAPWrite')!;
     expect(write).toBeDefined();
     expect(write.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: false });
-    expect(write.inputSchema.properties).not.toHaveProperty('include');
+    expect(write.inputSchema.properties).toHaveProperty('include.enum', [
+      'definitions',
+      'implementations',
+      'macros',
+      'testclasses',
+    ]);
     expect(write.inputSchema.properties).not.toHaveProperty('lintBeforeWrite');
     const aggregate = runtime(auth(), 'aggregate');
     expect(

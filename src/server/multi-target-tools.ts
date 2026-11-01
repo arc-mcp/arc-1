@@ -13,7 +13,11 @@ import {
   pinnedMutationAllowed,
   pinnedMutationSurface,
 } from './multi-target-write-surface.js';
-import { pinnedCompanionCapability, pinnedMutationCapability } from './pinned-mutation-capabilities.js';
+import {
+  PINNED_CLASS_INCLUDE_NAMES,
+  pinnedCompanionCapability,
+  pinnedMutationCapability,
+} from './pinned-mutation-capabilities.js';
 import type { ServerConfig } from './types.js';
 
 export const MULTI_TARGET_TOOLS = new Set([
@@ -139,7 +143,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
     return {
       ...tool,
       description: write
-        ? 'Create/delete CLAS/INTF or update their main source on this pinned PP target. edit_method supports existing CLAS main methods. Updates require expectedSourceHash from SAPRead(format="editable"); delete takes no source/hash and verifies native owner absence. Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate activates the complete owner, including existing inactive includes.'
+        ? 'Create/delete CLAS/INTF, update their main source or replace a CLAS local include on this pinned PP target. edit_method supports existing CLAS main methods. Existing source requires expectedSourceHash from SAPRead(format="editable"); a missing optional include can be initialized under the class lock without a hash. Delete takes no source/hash and verifies native owner absence. Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate activates the complete owner, including existing inactive includes.'
         : 'Activate one CLAS/INTF owner on this pinned PP target, including ALL its existing inactive drafts and includes. Additional owners are refused. This is not method-only activation.',
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
       inputSchema: {
@@ -155,7 +159,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                 source: {
                   type: 'string',
                   description:
-                    'Complete CLAS/INTF main source for create/update; an existing main method body or complete METHOD…ENDMETHOD block for edit_method. Required for create/update/edit_method; omit for delete.',
+                    'Complete CLAS/INTF main source for create/update, or the selected CLAS include for update (an explicit empty include clears it); an existing main method body or complete METHOD…ENDMETHOD block for edit_method. Required for create/update/edit_method; omit for delete.',
                 },
                 package: {
                   type: 'string',
@@ -171,8 +175,18 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                   type: 'string',
                   pattern: '^[a-f0-9]{64}$',
                   description:
-                    'Required for update/edit_method: SHA-256 from SAPRead(format="editable") on this owner main source. Omit for create/delete.',
+                    'SHA-256 from SAPRead(format="editable") on the exact main source or selected include; required for existing source updates and edit_method. Omit only for create/delete or a new optional include verified absent under lock.',
                 },
+                ...(fields.has('include')
+                  ? {
+                      include: {
+                        type: 'string',
+                        enum: [...PINNED_CLASS_INCLUDE_NAMES],
+                        description:
+                          'CLAS update only: replace this complete local include, under the owning class lock. Omit for main source or other actions; main and text_symbols are not accepted values.',
+                      },
+                    }
+                  : {}),
                 method: {
                   type: 'string',
                   description:

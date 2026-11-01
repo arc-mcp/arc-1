@@ -221,9 +221,9 @@ Opus 5.5 max accepted running that controlled qualification with documented oper
 Its subsequent evidence review found no High/Medium issues; minor documentation and harness
 recovery fixes are recorded with the review. This closes the
 previous local deletion/v5 run gap, not broader PR readiness. Remaining work includes transportable
-deletion, other types/includes/surgery, DDIC/RAP, batches, package/API/publication, CTS, tracing and
+deletion, class-include native/PP qualification, other types and surgery, DDIC/RAP, batches, package/API/publication, CTS, tracing and
 classic FLP, with their operation-specific adapters and PP qualification. Secondary native preference
-proof, unsupported native formatter styles/releases and the separate legacy v2 preservation issue
+proof, untested or unsupported native formatter styles, other releases and the separate legacy v2 preservation issue
 remain explicit limits. Aggregate, Basic and read-only connections stay mutation-free.
 
 **Resume when.** The PR 1 acceptance and owner request prerequisites are met. Continue the guarded

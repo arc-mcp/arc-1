@@ -11,7 +11,7 @@
  */
 
 import { postCreate } from './create-request.js';
-import { AdtApiError, extractExceptionType, isNotFoundError } from './errors.js';
+import { AdtApiError, extractExceptionType } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import {
   assertMutationContext,
@@ -377,66 +377,8 @@ export async function initClassInclude(
   await postCreate(http, url, '');
 }
 
-/**
- * High-level: update a class-local include, auto-initialising it first if it
- * doesn't exist yet. lock → GET-probe include → (POST-create if 404) → PUT → unlock,
- * all in one stateful session sharing a single lock.
- *
- * Why probe-first instead of catch-the-500: the missing-include PUT failure is a
- * release/language-dependent 500 ("does not have any inactive version"), whereas
- * a `GET` 404 is deterministic and release-agnostic. Probing before the write
- * also avoids relying on an untested "POST-init + retry-PUT after a failed PUT in
- * the same locked session" path. The extra GET is cheap — include writes are
- * deliberate edits, not a hot path — and when the include already exists (the
- * common case, including the auto-existing CCDEF/CCIMP/CCMAC) the probe returns
- * 200 and init is skipped, so behaviour for those includes is unchanged.
- *
- * Returns `{ initialized }` so the handler can tell the caller whether the
- * include was created as part of this write.
- */
-export async function safeUpdateClassInclude(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  classObjectUrl: string,
-  includeUrl: string,
-  source: string,
-  transport?: string,
-  abapRelease?: string,
-  expectedSourceHash?: string,
-): Promise<{ initialized: boolean }> {
-  checkOperation(safety, OperationType.Update, 'UpdateSource');
-  return await withLockedMutation(
-    http,
-    safety,
-    singleTargetMutationContext(safety),
-    classObjectUrl,
-    legacyLockPolicy,
-    async (session, lock) => {
-      const effectiveTransport = transport ?? (lock.corrNr || undefined);
-      let initialized = false;
-      // Probe whether the include exists. 404 → not initialised yet.
-      let exists = true;
-      try {
-        checkOperation(safety, OperationType.Read, 'GetClassInclude');
-        const current = await session.get(includeUrl, { 'Cache-Control': 'no-cache' }, { suppressNotFoundLog: true });
-        assertSourceHash(current.body, expectedSourceHash, includeUrl);
-      } catch (err) {
-        if (isNotFoundError(err) && expectedSourceHash === undefined) {
-          exists = false;
-        } else {
-          throw err;
-        }
-      }
-      if (!exists) {
-        await initClassInclude(session, safety, includeUrl, lock.lockHandle, effectiveTransport);
-        initialized = true;
-      }
-      await updateSource(session, safety, includeUrl, source, lock.lockHandle, effectiveTransport);
-      return { initialized };
-    },
-    abapRelease,
-  );
-}
+// Compatibility export; the shared adapter keeps the legacy signature and explicit pinned policy.
+export { safeUpdateClassInclude } from './class-include-write.js';
 
 /**
  * High-level: update object metadata with guaranteed unlock.

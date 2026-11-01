@@ -1,19 +1,24 @@
 /** Pinned PP policy and source adapter over the shared lock/session lifecycle. */
 import type { AdtClient } from '../../adt/client.js';
-import { withLockedMutation } from '../../adt/crud.js';
+import { safeUpdateClassInclude, withLockedMutation } from '../../adt/crud.js';
 import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
 import { throwIfRequestCancelled } from '../../adt/http-deadline.js';
 import { mutationClient } from '../../adt/mutation-client.js';
 import type { MutationCleanupState } from '../../adt/mutation-context.js';
 import { deletePinnedOwner } from '../../adt/pinned-delete.js';
-import { assertPinnedOwner, pinnedRecording, validatePinnedLock } from '../../adt/pinned-write-policy.js';
+import { assertPinnedOwner, pinnedRecording } from '../../adt/pinned-write-policy.js';
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
 import { assertSourceHash, sourceHash } from '../../adt/source-precondition.js';
 import { spliceMethod } from '../../context/method-surgery.js';
 import type { ServerConfig } from '../../server/types.js';
 import { getCachedFeatures } from '../feature-cache.js';
-import { objectUrlForType } from '../object-types.js';
+import {
+  type ClassWriteInclude,
+  classIncludeUrl,
+  normalizeClassWriteInclude,
+  objectUrlForType,
+} from '../object-types.js';
 import { pinnedOperationContext, pinnedOperationResult } from '../pinned-operation.js';
 import { type ToolResult, textResult, toolJson } from '../shared.js';
 import {
@@ -22,6 +27,7 @@ import {
   runPreWriteLint,
   runPreWriteSyntaxCheck,
 } from '../write-helpers.js';
+import { pinnedSourceLockPolicy } from './pinned-lock.js';
 import { pinnedFailure } from './pinned-result.js';
 
 export { pinnedFailure } from './pinned-result.js';
@@ -35,6 +41,8 @@ export async function handlePinnedWrite(
   let phase = 'validation';
   const cleanup: MutationCleanupState = { unlockFailed: false };
   let savedHash: string | undefined;
+  let include: ClassWriteInclude | undefined;
+  let includeInitialized: boolean | undefined;
   try {
     // The HTTP gate validates all raw fields before Zod strips unknown fields. Recheck capability here.
     checkOperation(client.safety, OperationType.Update, 'PinnedWrite');
@@ -51,10 +59,16 @@ export async function handlePinnedWrite(
       });
       return pinnedOperationResult(result, config, { action, type, name: objectName });
     }
-    if (typeof args.source !== 'string' || !args.source.trim())
-      throw new AdtSafetyError('A non-empty source is required.');
+    include = normalizeClassWriteInclude(args.include);
+    if (args.include !== undefined && (action !== 'update' || type !== 'CLAS' || !include))
+      throw new AdtSafetyError('Only CLAS update supports definitions, implementations, macros or testclasses.');
+    if (typeof args.source !== 'string' || (!include && !args.source.trim()))
+      throw new AdtSafetyError(
+        include ? 'Include source is required; an explicit empty string clears it.' : 'A non-empty source is required.',
+      );
     if (
       action !== 'create' &&
+      (!include || args.expectedSourceHash !== undefined) &&
       (typeof args.expectedSourceHash !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedSourceHash))
     )
       throw new AdtSafetyError('Read SAPRead(format="editable") and supply its expectedSourceHash before editing.');
@@ -75,7 +89,7 @@ export async function handlePinnedWrite(
         );
       return result.warnings;
     };
-    let warnings = action === 'edit_method' ? undefined : lint(source);
+    let warnings = action === 'edit_method' || include ? undefined : lint(source);
     let pkg: string;
     if (action === 'create') {
       if (typeof args.package !== 'string' || !args.package.trim())
@@ -111,33 +125,40 @@ export async function handlePinnedWrite(
       );
       state = 'created-source-not-confirmed';
     }
-    await withLockedMutation(
-      client.http,
-      client.safety,
-      context,
-      owner,
-      {
-        beforeLock: () => {
-          phase = 'lock';
-          throwIfRequestCancelled(options);
+    const lockPolicy = pinnedSourceLockPolicy(client, context, owner, pkg, recording, (value) => {
+      phase = value;
+    });
+    if (include) {
+      const result = await safeUpdateClassInclude(
+        client.http,
+        client.safety,
+        owner,
+        classIncludeUrl(objectName.toLowerCase(), include),
+        source,
+        recording.request,
+        getCachedFeatures()?.abapRelease,
+        args.expectedSourceHash as string | undefined,
+        {
+          context,
+          lockPolicy,
+          onPhase: (value) => {
+            if (value === 'include-initialization') state = 'include-initialization-unknown';
+            if (value === 'source-save') {
+              includeInitialized = phase === 'include-initialization';
+              state = includeInitialized ? 'created-include-source-unknown' : 'source-save-unknown';
+            }
+            phase = value;
+          },
         },
-        validateLock: async (http, lock) => {
-          phase = 'locked-policy';
-          const actualPackage = await enforceAllowedPackageForObjectUrl(
-            mutationClient(client, context, http),
-            owner,
-            'Pinned write under lock',
-            undefined,
-            options,
-          );
-          if (actualPackage !== pkg) throw new AdtSafetyError('The owner package changed since preflight.');
-          const fresh = await pinnedRecording(http, client.safety, owner, pkg, '', recording.request, options);
-          if (fresh.local !== recording.local || fresh.request !== recording.request)
-            throw new AdtSafetyError('Recording context changed since preflight.');
-          await validatePinnedLock(http, client.safety, lock, fresh, options);
-        },
-      },
-      async (http, lock) => {
+      );
+      if (result.source === undefined || result.sourceHash === undefined)
+        throw new AdtSafetyError('Pinned include read-back was not confirmed.');
+      includeInitialized = result.initialized;
+      source = result.source;
+      savedHash = result.sourceHash;
+      state = 'saved-inactive';
+    } else
+      await withLockedMutation(client.http, client.safety, context, owner, lockPolicy, async (http, lock) => {
         if (action !== 'create') {
           const current = await http.get(sourceUrl, { Accept: 'text/plain' }, options);
           assertSourceHash(current.body, args.expectedSourceHash as string, sourceUrl);
@@ -190,12 +211,13 @@ export async function handlePinnedWrite(
         source = saved.body; // SAP normalizes line endings; return the hash of its actual editable bytes.
         state = 'saved-inactive';
         savedHash = sourceHash(source);
-      },
-    );
+      });
     if (cleanup.unlockFailed)
       return pinnedFailure(new Error('Unlock failed'), state, 'unlock', true, {
         sourceHash: savedHash,
         sessionClosed: cleanup.sessionClosed,
+        include,
+        initialized: includeInitialized,
       });
     return textResult(
       toolJson({
@@ -204,6 +226,7 @@ export async function handlePinnedWrite(
         name,
         action,
         state,
+        ...(include ? { include, initialized: includeInitialized } : {}),
         sourceHash: sourceHash(source),
         ...(recording.request ? { transport: recording.request } : {}),
         ...(warnings ? { warnings } : {}),
@@ -214,12 +237,19 @@ export async function handlePinnedWrite(
     // Definitive SAP rejections did not accept this phase; network/429/5xx outcomes remain unknown.
     if (error instanceof AdtApiError && [400, 401, 403, 404, 409, 412, 415, 422, 423].includes(error.statusCode)) {
       if (phase === 'create') state = 'creation-rejected';
+      if (phase === 'include-initialization') state = 'include-initialization-rejected';
       if (phase === 'source-save')
-        state = state.startsWith('created-') ? 'created-source-rejected' : 'source-save-rejected';
+        state = includeInitialized
+          ? 'created-include-source-rejected'
+          : state.startsWith('created-')
+            ? 'created-source-rejected'
+            : 'source-save-rejected';
     }
     return pinnedFailure(error, state, phase, cleanup.unlockFailed, {
       sourceHash: savedHash,
       sessionClosed: cleanup.sessionClosed,
+      include,
+      initialized: includeInitialized,
     });
   }
 }

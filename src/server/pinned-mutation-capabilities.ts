@@ -1,16 +1,24 @@
 /** Explicit admitted combinations. Pending PR 2 adapters must not be inferred from the single-target registry. */
+
 import { SAPLintSchema } from '../handlers/schemas.js';
 
 export interface PinnedMutationCapability {
   readonly tool: 'SAPWrite' | 'SAPActivate' | 'SAPManage' | 'SAPTransport' | 'SAPDiagnose' | 'SAPLint';
   readonly action: string;
   /** Resource family; each qualified adapter must enforce its native boundary. */
-  readonly resource: 'main-source' | 'whole-owner' | 'package' | 'cts' | 'trace' | 'settings' | 'flp';
+  readonly resource: 'repository-source' | 'whole-owner' | 'package' | 'cts' | 'trace' | 'settings' | 'flp';
   /** Absent for operations without an object-type selector; raw fields still have an explicit allowlist. */
   readonly types?: readonly string[];
   readonly fields: readonly string[];
   readonly accepts: (args: Record<string, unknown>) => boolean;
 }
+
+export const PINNED_CLASS_INCLUDE_NAMES = Object.freeze([
+  'definitions',
+  'implementations',
+  'macros',
+  'testclasses',
+] as const);
 
 const ownerFields = ['action', 'type', 'name'];
 const sourceFields = [...ownerFields, 'source', 'transport'];
@@ -18,7 +26,7 @@ const rows: PinnedMutationCapability[] = [
   {
     tool: 'SAPWrite',
     action: 'create',
-    resource: 'main-source',
+    resource: 'repository-source',
     types: ['CLAS', 'INTF'],
     fields: [...sourceFields, 'package', 'description'],
     accepts: () => true,
@@ -26,15 +34,17 @@ const rows: PinnedMutationCapability[] = [
   {
     tool: 'SAPWrite',
     action: 'update',
-    resource: 'main-source',
+    resource: 'repository-source',
     types: ['CLAS', 'INTF'],
-    fields: [...sourceFields, 'expectedSourceHash'],
-    accepts: () => true,
+    fields: [...sourceFields, 'expectedSourceHash', 'include'],
+    accepts: (args) =>
+      args.include === undefined ||
+      (args.type === 'CLAS' && PINNED_CLASS_INCLUDE_NAMES.some((include) => include === args.include)),
   },
   {
     tool: 'SAPWrite',
     action: 'edit_method',
-    resource: 'main-source',
+    resource: 'repository-source',
     types: ['CLAS'],
     fields: [...sourceFields, 'method', 'expectedSourceHash'],
     accepts: (args) => !/^(?:lhc_|lcl_|ltc_)/i.test(String(args.method ?? '')),

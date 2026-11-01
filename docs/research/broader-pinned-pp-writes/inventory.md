@@ -21,6 +21,7 @@ be reflected in the later runtime matrix, including nested batch validation:
 | Family/action | Branch evidence and constraints | Current pinned qualification |
 | --- | --- | --- |
 | CLAS/INTF create/update | `write/pinned.ts`; main source only, explicit create package, source hash on update | ADR-0010 only |
+| CLAS local-include update | Shared `adt/class-include-write.ts` plus `write/pinned-lock.ts`; four explicit selectors, hash for existing source, typed absence for initialization under class lock | Implemented/admitted in draft; [review and native/PP qualification pending](../2026-11-01-broader-pinned-pp-writes-includes.md) |
 | CLAS/INTF delete | `adt/pinned-delete.ts`; shared native DELETE/lock lifecycle, fresh package/recording checks, verified absence; no source hash | Admitted; combined two-writer PP run at `1b234d3a4` verifies typed absence for local CLAS/INTF; transportable deletion remains pending |
 | Class surgery | `write/class-surgery.ts`, `class-edit.ts`; CLAS only; definitions/implementations/macros/testclasses routing and local-method inference differ by action | Existing main `edit_method` only; other combinations pending |
 | Procedural surgery | `write/unit-surgery.ts`; PROG or INCL; FUGR structural include is INCL plus `group`, not `type=FUGR` | Pending |
