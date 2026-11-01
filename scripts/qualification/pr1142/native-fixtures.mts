@@ -127,6 +127,7 @@ try {
   report.error.message = error instanceof Error ? error.message.slice(0, 4096) : 'Non-Error failure';
   failure = error;
 } finally {
+  report.cleanupState = { ...context.cleanup };
   report.absenceEvidence = Object.fromEntries(absenceEvidence);
   report.finishedAt = new Date().toISOString();
   await durable(path, report);

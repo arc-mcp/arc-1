@@ -100,3 +100,30 @@ uses `$TMP`.
 The stale-hash case reuses the first save's real hash after the second save. The journal records
 which include kinds were initialized. Missing initialization coverage fails qualification without
 stopping the remaining cleanup; it is never reported as a successful initialization test.
+
+## Second Opus review and harness correction
+
+The [verbatim follow-up review](broader-pinned-pp-writes/claude-include-harness-review-20261101.md)
+examined `00dde0613`. It closed the previous four findings but identified a High harness defect:
+the include-save predicate required `ok`, which real source-save results do not return. A shared
+predicate now consumes actual `handleToolCall` results in contract tests; the simulation no longer
+invents that field. Production response semantics are unchanged.
+
+The Medium finding concerned per-include attribution. Native receipts now capture each include's
+`createdBy`, `changedBy` and `version`, require the expected last changer and active version, and
+compare those fields during cleanup as well as both source hashes. Missing or ambiguous metadata
+fails qualification; a class-level author is not substituted. These observations follow whole-owner
+activation and do not independently attribute every earlier request or expose other users' drafts.
+
+The Low findings add empty-without-hash and whitespace refusals before the first save, preserve
+cleanup diagnostics in failed native-worker reports, and expand fault coverage. The actual combined
+wrapper is exercised offline with only the formatter branch replaced; durable include progress is
+checked after success, cancellation, uncertain save and refusal. Additional simulations cover
+tool-level read errors, denied-route writes, second-writer-only failure and wrong include authorship.
+Unavailable preliminary reads remain explicitly distinct from native absence evidence.
+
+The reviewer actually passed 13 files / 437 tests, all 44 then-current simulations and the complete
+typecheck. Snapshot hashes were unchanged. Its outside-root read attempt was refused and an
+unsupported search expression failed; neither changed the snapshot. The candidate staged from
+`00dde0613` was never selected or started, and no temporary SAP/IAM/destination permissions were
+enabled. A new reviewed source binding is required before live qualification.

@@ -134,17 +134,22 @@ bodies before protocol validation; known access tokens and JWT-shaped strings ar
 
 The live combined command also runs `include-qualification.mjs` for each writer's temporary
 class before its first whole-owner activation and independent ownership receipt. It exercises
-all four include kinds, missing/stale hashes, existing saves, hash-guarded empty replacement,
+all four include kinds, blank/whitespace refusals, missing/stale hashes, existing saves, hash-guarded empty replacement,
 final restoration and denied-route calls. The native observer binds the receipt to all active
-and editable include hashes, then rechecks those hashes before and under any cleanup lock.
+and editable include hashes plus per-include last changer and active version, then rechecks those
+fields before and under any cleanup lock. Missing or ambiguous native metadata fails qualification.
 It never replaces the first ownership receipt. A failure before a complete receipt, or any
 later foreign draft visible to the primary native reader, preserves the fixture for investigation.
 It does not establish visibility of other users' private inactive drafts.
 
-The local suite adds seven composed include scenarios: success, ignored clear, accepted stale
-hash, wrong native include proof, a foreign include draft, a failed preliminary read and absent initialization coverage. Native
-reader/cleanup unit tests separately exercise active/editable hash mismatches and a foreign
-draft discovered under the actual shared lock callback. These are offline tests, not live proof.
+The local suite includes thirteen composed include scenarios: success, ignored clear, accepted stale
+hash, wrong native include proof, a foreign include draft, failed HTTP/tool-level preliminary reads,
+absent initialization coverage, denied-route writes, cancellation, uncertain save, second-writer-only
+failure and wrong include authorship. Tests also execute the actual combined wrapper and consume
+real handler save results; durable partial journals and denied-route call counts are asserted.
+Native reader/cleanup tests exercise active/editable hash and author/version mismatches, missing or
+duplicate include metadata, and a foreign draft under the actual shared lock callback.
+These are offline tests, not live proof.
 The first missing-include read may fail; that is not absence evidence. Only the writer's fresh,
 typed native 404 under the class lock permits initialization. Clearing requires an existing hash.
 

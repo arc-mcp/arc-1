@@ -313,7 +313,9 @@ export async function qualify({
             Object.entries(entry.includes.kinds).every(
               ([kind, value]) =>
                 observed.includes?.[kind]?.sourceSha256 === value.sourceHash &&
-                observed.includes?.[kind]?.activeSourceSha256 === value.sourceHash,
+                observed.includes?.[kind]?.activeSourceSha256 === value.sourceHash &&
+                observed.includes?.[kind]?.changedBy === actors.find((a) => a.label === fixture.actor).sapUser &&
+                observed.includes?.[kind]?.version === 'active',
             ),
         );
       }

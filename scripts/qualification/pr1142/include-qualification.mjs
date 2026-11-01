@@ -6,6 +6,18 @@ export const includeSource = (fixture, marker, include, version) =>
   `" ${marker} ${fixture.name} ${include} version ${version}\n`;
 const comparable = (source) => source.replace(/\r\n/g, '\n').replace(/\n+$/, '');
 
+/** Shared with the real-handler contract test; source saves have no `ok` field. */
+export const isIncludeSaveResult = (body, expected) =>
+  body?.state === 'saved-inactive' &&
+  body.action === 'update' &&
+  body.target === expected.target &&
+  body.type === 'CLAS' &&
+  body.name === expected.name &&
+  body.include === expected.include &&
+  body.initialized === expected.initialized &&
+  typeof body.sourceHash === 'string' &&
+  /^[a-f0-9]{64}$/.test(body.sourceHash);
+
 /** Runs only inside the deletion qualifier, with its verified frozen writer and owned fixture. */
 export async function qualifyIncludes({ fixture, marker, entry, client, target, call, ensure, step, save }) {
   ensure(`includes.${fixture.name}.class`, fixture.type === 'CLAS');
@@ -39,6 +51,38 @@ export async function qualifyIncludes({ fixture, marker, entry, client, target, 
     }
     // A failed MCP read is NOT absence evidence. The writer must independently prove typed
     // absence under the class lock before initialization; otherwise this qualification fails.
+    state.blankRefusals = [];
+    for (const [label, source] of [
+      ['empty-without-hash', ''],
+      ['whitespace', ' \r\n\t'],
+    ]) {
+      step(`${prefix}-${label}`);
+      const refused = (await call(client, 'SAPWrite', { ...key, action: 'update', source }, 'PINNED_WRITE_REFUSED'))
+        .body;
+      ensure(`${prefix}.${label}.unchanged_result`, refused?.state === 'unchanged');
+      const afterResponse = await client.request('tools/call', {
+        name: 'SAPRead',
+        arguments: { ...key, format: 'editable' },
+      });
+      const after = readToolBody(afterResponse);
+      ensure(
+        `${prefix}.${label}.protocol`,
+        afterResponse.status === 200 && after.result != null && !afterResponse.json?.error,
+      );
+      if (state.initialReadAvailable) {
+        ensure(
+          `${prefix}.${label}.unchanged_source`,
+          after.result.isError !== true &&
+            after.body?.sourceHash === expectedSourceHash &&
+            digest(after.body.source) === expectedSourceHash,
+        );
+      } else {
+        // Unavailable is deliberately not called absent: the initial MCP read cannot prove that.
+        ensure(`${prefix}.${label}.still_unavailable`, after.result.isError === true);
+      }
+      state.blankRefusals.push(label);
+      await save();
+    }
     const write = async (source, label) => {
       step(`${prefix}-${label}`);
       state.attempt = label;
@@ -55,13 +99,12 @@ export async function qualifyIncludes({ fixture, marker, entry, client, target, 
       await save();
       ensure(
         `${prefix}.${label}.saved`,
-        body?.ok === true &&
-          body.state === 'saved-inactive' &&
-          body.target === target &&
-          body.type === 'CLAS' &&
-          body.name === fixture.name &&
-          body.include === include &&
-          body.initialized === (expectedSourceHash === undefined),
+        isIncludeSaveResult(body, {
+          target,
+          name: fixture.name,
+          include,
+          initialized: expectedSourceHash === undefined,
+        }),
       );
       const current = await read();
       ensure(

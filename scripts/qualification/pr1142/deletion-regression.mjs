@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { qualify } from './deletion-qualification.mjs';
 import { qualifyIncludes, includeKinds } from './include-qualification.mjs';
 import { durable } from './durable-journal.mjs';
@@ -22,6 +23,12 @@ const scenarios = [
   'includes-foreign-draft',
   'includes-read-loss',
   'includes-no-initialization',
+  'includes-tool-read-error',
+  'includes-denied-write',
+  'includes-abort',
+  'includes-uncertain',
+  'includes-writer-b-failure',
+  'includes-wrong-include-author',
   'success-replay',
   'frozen-sessions',
   'wrong-identity',
@@ -40,7 +47,7 @@ const scenarios = [
   'visible-denied-write',
   'abort-before-delete',
 ];
-for (const scenario of scenarios) {
+export async function runDeletionScenario(scenario, options = {}) {
   const includesEnabled = scenario.startsWith('includes-');
   const root = await mkdtemp(join(tmpdir(), 'arc1-deletion-harness-test-'));
   const manifest = {
@@ -94,10 +101,17 @@ for (const scenario of scenarios) {
       requests = 0,
       mutations = 0,
       includeMutations = 0,
+      deniedIncludeCalls = 0,
       injected = false,
       formatterCalled = false;
     const abort = new AbortController();
     const emit = (event, value) => {
+      if (
+        scenario === 'includes-abort' &&
+        event === 'qualification_phase' &&
+        value.phase === `include-${manifest.fixtures[0].name}-definitions-existing-save`
+      )
+        abort.abort();
       if (
         scenario === 'abort-before-delete' &&
         event === 'qualification_phase' &&
@@ -150,14 +164,18 @@ for (const scenario of scenarios) {
         const rawExtra =
           args.action === 'delete' && Object.keys(args).some((k) => !['action', 'type', 'name', 'target'].includes(k));
         const leak =
-          (scenario === 'denied-delete-success' && denied) || (scenario === 'ignored-include' && args.include);
+          (scenario === 'denied-delete-success' && denied) ||
+          (scenario === 'ignored-include' && args.include) ||
+          (scenario === 'includes-denied-write' && denied && args.include);
+        if (denied && args.include) deniedIncludeCalls++;
         if ((denied || rawExtra) && !leak)
           result = failure(scenario === 'wrong-refusal' ? 'WRONG_CODE' : 'MULTI_TARGET_OPERATION_FORBIDDEN');
         else if (name === 'SAPRead') {
           assert.ok(entry);
           if (args.include) {
             if (scenario === 'includes-read-loss') return new Response('unavailable', { status: 500 });
-            if (!Object.hasOwn(entry.includes, args.include)) result = failure('NATIVE_READ_UNAVAILABLE');
+            if (scenario === 'includes-tool-read-error' || !Object.hasOwn(entry.includes, args.include))
+              result = failure('NATIVE_READ_UNAVAILABLE');
             else body = { source: entry.includes[args.include], sourceHash: digest(entry.includes[args.include]) };
           } else body = { source: entry.source, sourceHash: digest(entry.source) };
         } else if (name === 'SAPActivate') {
@@ -190,7 +208,8 @@ for (const scenario of scenarios) {
           assert.ok(includeKinds.includes(args.include));
           const initialized = !Object.hasOwn(entry.includes, args.include);
           const stale = !initialized && args.expectedSourceHash !== digest(entry.includes[args.include]);
-          if (stale && !(scenario === 'includes-stale-write' && phase.endsWith('-stale-hash'))) {
+          const invalidBlank = !args.source.trim() && (args.source !== '' || args.expectedSourceHash === undefined);
+          if (invalidBlank || (stale && !(scenario === 'includes-stale-write' && phase.endsWith('-stale-hash')))) {
             result = {
               isError: true,
               content: [{ type: 'text', text: JSON.stringify({ error: 'PINNED_WRITE_REFUSED', state: 'unchanged' }) }],
@@ -198,9 +217,17 @@ for (const scenario of scenarios) {
           } else {
             mutations++;
             includeMutations++;
-            if (!(scenario === 'includes-bad-clear' && args.source === '')) entry.includes[args.include] = args.source;
+            if (
+              !(
+                (scenario === 'includes-bad-clear' ||
+                  (scenario === 'includes-writer-b-failure' && actor === 'writerB')) &&
+                args.source === ''
+              )
+            )
+              entry.includes[args.include] = args.source;
+            if (scenario === 'includes-uncertain') throw new Error('simulated response loss after include save');
             body = {
-              ok: true,
+              action: 'update',
               state: 'saved-inactive',
               target: 'PR1142/001',
               type: 'CLAS',
@@ -277,10 +304,17 @@ for (const scenario of scenarios) {
           identity.includes = Object.fromEntries(
             includeKinds.map((kind) => [
               kind,
-              { sourceSha256: digest(entry.includes[kind]), activeSourceSha256: digest(entry.activeIncludes[kind]) },
+              {
+                sourceSha256: digest(entry.includes[kind]),
+                activeSourceSha256: digest(entry.activeIncludes[kind]),
+                createdBy: entry.createdBy,
+                changedBy: entry.createdBy,
+                version: 'active',
+              },
             ]),
           );
           if (scenario === 'includes-wrong-native') identity.includes.macros.activeSourceSha256 = '0'.repeat(64);
+          if (scenario === 'includes-wrong-include-author') identity.includes.macros.changedBy = 'OTHER';
         }
         if (entry.createdBy === actors.find((a) => a.label === f.actor).sapUser)
           receipts.set(name, structuredClone(identity));
@@ -333,6 +367,12 @@ for (const scenario of scenarios) {
                 receipts.get(name)?.includes[kind].activeSourceSha256,
                 'Active include differs',
               );
+              assert.equal(entry.createdBy, receipts.get(name)?.includes[kind].changedBy, 'Include author differs');
+              assert.equal(
+                entry.active ? 'active' : 'inactive',
+                receipts.get(name)?.includes[kind].version,
+                'Include version differs',
+              );
             }
           objects.delete(name);
         }
@@ -350,6 +390,7 @@ for (const scenario of scenarios) {
         nativeSeedRestored: true,
       };
     };
+    options.configureFormatter?.(formatterQualifier);
     const journalOverride = async (path, value, exclusive) => {
       if (scenario === 'cleanup-journal-failure' && phase?.startsWith('cleanup-') && !injected) {
         injected = true;
@@ -358,7 +399,7 @@ for (const scenario of scenarios) {
       return durable(path, value, exclusive);
     };
     const invoke = () =>
-      qualify({
+      (options.qualifier ?? qualify)({
         action: { plan: 'delete-two-user-v1' },
         sessions,
         baseUrl,
@@ -367,8 +408,9 @@ for (const scenario of scenarios) {
         emit,
         nativeOverride,
         configurationOverride: { root, target: 'PR1142/001', actors },
-        formatterQualifier,
-        ...(includesEnabled ? { includeQualifier: qualifyIncludes } : {}),
+        ...(options.qualifier
+          ? {}
+          : { formatterQualifier, ...(includesEnabled ? { includeQualifier: qualifyIncludes } : {}) }),
         journalOverride,
         signal: abort.signal,
       });
@@ -380,6 +422,8 @@ for (const scenario of scenarios) {
       assert.equal(objects.size, 0);
       assert.equal(formatterCalled, true);
       if (includesEnabled) assert.equal(includeMutations, 32);
+      if (includesEnabled)
+        assert.equal(deniedIncludeCalls, 8, 'All four denied routes must exercise both class includes');
       if (scenario === 'success-replay') {
         const bytes = await readFile(`${root}/deletion-qualification.json`, 'utf8'),
           beforeRequests = requests;
@@ -405,6 +449,12 @@ for (const scenario of scenarios) {
           'includes-wrong-native',
           'includes-foreign-draft',
           'includes-read-loss',
+          'includes-tool-read-error',
+          'includes-denied-write',
+          'includes-abort',
+          'includes-uncertain',
+          'includes-writer-b-failure',
+          'includes-wrong-include-author',
           'create-uncertain',
           'stale-write-accepted',
           'wrong-native-author',
@@ -421,6 +471,21 @@ for (const scenario of scenarios) {
       }
     }
     if (scenario === 'includes-read-loss') assert.equal(includeMutations, 0);
+    if (scenario === 'includes-tool-read-error') assert.equal(includeMutations, 0);
+    if (scenario === 'includes-denied-write') {
+      assert.equal(deniedIncludeCalls, 1);
+      assert.ok(
+        output.failures.some((f) => f.test.startsWith('reader.') && f.test.endsWith('.expected_outcome')),
+        JSON.stringify(output.failures),
+      );
+    }
+    if (scenario === 'includes-abort') {
+      assert.equal(includeMutations, 1);
+      assert.ok(output.failures.some((f) => f.code === 'QUALIFICATION_STOP_REQUESTED'));
+    }
+    if (scenario === 'includes-uncertain')
+      assert.equal(includeMutations, 1, 'An uncertain include save is never replayed');
+    if (scenario === 'includes-writer-b-failure') assert.deepEqual([...objects.keys()], [manifest.fixtures[2].name]);
     if (scenario === 'includes-no-initialization') {
       assert.equal(output.failed, 2);
       assert.ok(
@@ -433,11 +498,46 @@ for (const scenario of scenarios) {
     }
     if (scenario === 'includes-foreign-draft')
       assert.ok(objects.get(manifest.fixtures[0].name).includes.macros.endsWith('foreign edit'));
-    console.log(
-      JSON.stringify({ scenario, passed: true, requests, mutations, includeMutations, remainingObjects: objects.size }),
-    );
+    if (includesEnabled) {
+      const journal = JSON.parse(await readFile(`${root}/deletion-qualification.json`, 'utf8'));
+      const first = journal.fixtures.find((f) => f.name === manifest.fixtures[0].name).includes;
+      if (['includes-success', 'includes-writer-b-failure'].includes(scenario)) {
+        assert.equal(first.complete, true);
+        assert.deepEqual(first.initializedKinds, ['implementations', 'testclasses']);
+        for (const kind of includeKinds) {
+          assert.equal(first.kinds[kind].complete, true);
+          assert.deepEqual(first.kinds[kind].blankRefusals, ['empty-without-hash', 'whitespace']);
+          assert.equal(
+            first.kinds[kind].sourceHash,
+            digest(
+              objects.get(manifest.fixtures[0].name)?.includes[kind] ??
+                `" ${manifest.marker} ${manifest.fixtures[0].name} ${kind} version 3\n`,
+            ),
+          );
+        }
+      }
+      if (
+        ['includes-bad-clear', 'includes-abort', 'includes-uncertain', 'includes-tool-read-error'].includes(scenario)
+      ) {
+        assert.equal(first.complete, false);
+        const saved = first.kinds.definitions;
+        assert.equal(
+          saved.attempt,
+          scenario === 'includes-bad-clear' ? 'clear' : scenario === 'includes-abort' ? 'existing-save' : 'first-save',
+        );
+        if (scenario === 'includes-uncertain' || scenario === 'includes-tool-read-error')
+          assert.equal(saved.lastWrite, undefined);
+        else assert.equal(saved.lastWrite.state, 'saved-inactive');
+      }
+    }
+    const summary = { scenario, passed: true, requests, mutations, includeMutations, remainingObjects: objects.size };
+    if (!options.quiet) console.log(JSON.stringify(summary));
+    return summary;
   } finally {
     globalThis.fetch = oldFetch;
     await rm(root, { recursive: true, force: true });
   }
+}
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  for (const scenario of scenarios) await runDeletionScenario(scenario);
 }

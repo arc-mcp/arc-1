@@ -13,8 +13,15 @@ import { pinnedRecording, validatePinnedLock } from '../../../src/adt/pinned-wri
 vi.mock('../../../src/adt/crud.js', () => ({ deleteObject: vi.fn(), withLockedMutation: vi.fn() }));
 vi.mock('../../../src/adt/pinned-write-policy.js', () => ({ pinnedRecording: vi.fn(), validatePinnedLock: vi.fn() }));
 const fixture = { name: 'ZARC1_DPP_AC_1234ABCD', type: 'CLAS', actor: 'writerA' };
-const metadata = (user = 'FIRST') =>
-  `<c:abapClass xmlns:c="urn:adt" c:name="${fixture.name}" c:version="active" c:masterSystem="A4H" c:createdBy="${user}" c:changedBy="${user}" c:createdAt="2026-11-01"><c:packageRef c:name="$TMP"/></c:abapClass>`;
+const metadata = (
+  user = 'FIRST',
+  includes = includeKinds
+    .map(
+      (kind) => `<c:include c:includeType="${kind}" c:createdBy="${user}" c:changedBy="${user}" c:version="active"/>`,
+    )
+    .join(''),
+) =>
+  `<c:abapClass xmlns:c="urn:adt" c:name="${fixture.name}" c:version="active" c:masterSystem="A4H" c:createdBy="${user}" c:changedBy="${user}" c:createdAt="2026-11-01"><c:packageRef c:name="$TMP"/>${includes}</c:abapClass>`;
 
 describe('PR1142 actual native identity and cleanup branches', () => {
   beforeEach(() => {
@@ -88,12 +95,13 @@ describe('PR1142 actual native identity and cleanup branches', () => {
   function includeIdentity() {
     const observed: any[] = [];
     let foreign: 'current' | 'active' | undefined;
+    let metadataBody = metadata();
     const expectedIncludes = {
       complete: true,
       kinds: Object.fromEntries(includeKinds.map((kind) => [kind, { complete: true, sourceHash: digest(kind) }])),
     };
     const get = vi.fn(async (path: string) => {
-      if (path.endsWith(fixture.name.toLowerCase())) return { body: metadata() };
+      if (path.endsWith(fixture.name.toLowerCase())) return { body: metadataBody };
       if (path.includes('/source/main')) return { body: 'MARKER main' };
       const kind = path.split('/includes/')[1]?.split('?')[0];
       expect(includeKinds).toContain(kind);
@@ -115,6 +123,9 @@ describe('PR1142 actual native identity and cleanup branches', () => {
       get,
       observed,
       expectedIncludes,
+      changeMetadata: (body: string) => {
+        metadataBody = body;
+      },
       change: (value: 'current' | 'active') => {
         foreign = value;
       },
@@ -126,9 +137,38 @@ describe('PR1142 actual native identity and cleanup branches', () => {
     const identity = await test.identity();
     expect(Object.keys(identity.includes)).toEqual(includeKinds);
     for (const kind of includeKinds)
-      expect(identity.includes[kind]).toEqual({ sourceSha256: digest(kind), activeSourceSha256: digest(kind) });
+      expect(identity.includes[kind]).toEqual({
+        sourceSha256: digest(kind),
+        activeSourceSha256: digest(kind),
+        createdBy: 'FIRST',
+        changedBy: 'FIRST',
+        version: 'active',
+      });
     expect(test.get).toHaveBeenCalledTimes(11);
   });
+
+  it.each(['wrong-author', 'inactive', 'missing', 'duplicate'])(
+    'refuses %s per-include metadata even with matching class ownership and source hashes',
+    async (mode) => {
+      const test = includeIdentity();
+      const descriptors = includeKinds
+        .flatMap((kind) => {
+          const entry = `<c:include c:includeType="${kind}" c:createdBy="FIRST" c:changedBy="${kind === 'macros' && mode === 'wrong-author' ? 'OTHER' : 'FIRST'}" c:version="${kind === 'macros' && mode === 'inactive' ? 'inactive' : 'active'}"/>`;
+          return kind !== 'macros'
+            ? [entry]
+            : mode === 'missing'
+              ? []
+              : mode === 'duplicate'
+                ? [entry, entry]
+                : [entry];
+        })
+        .join('');
+      test.changeMetadata(metadata('FIRST', descriptors));
+      await expect(test.identity()).rejects.toThrow(/Native include/);
+      if (mode === 'wrong-author') expect(test.observed.at(-1).includes.macros.changedBy).toBe('OTHER');
+      if (mode === 'inactive') expect(test.observed.at(-1).includes.macros.version).toBe('inactive');
+    },
+  );
 
   it.each(['current', 'active'] as const)('records and refuses a changed %s include', async (version) => {
     const test = includeIdentity();

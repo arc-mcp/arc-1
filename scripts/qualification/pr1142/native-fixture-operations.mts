@@ -67,15 +67,34 @@ export async function nativeIdentity({ fixture, actor, marker, http, options, ob
     assert.equal(expectedIncludes.complete, true, 'Include qualification is incomplete');
     assert.deepEqual(Object.keys(expectedIncludes.kinds).sort(), [...includeKinds].sort());
     identity.includes = {};
+    const descriptors = Array.isArray(metadata?.include)
+      ? metadata.include
+      : metadata?.include
+        ? [metadata.include]
+        : [];
     for (const include of includeKinds) {
       const expected = expectedIncludes.kinds[include];
       assert.equal(expected.complete, true);
       assert.match(expected.sourceHash, /^[a-f0-9]{64}$/);
+      const matches = descriptors.filter((entry: any) => entry?.['@_includeType'] === include);
+      assert.equal(matches.length, 1, 'Native include metadata is missing or ambiguous');
+      const descriptor = matches[0];
+      const observed = {
+        createdBy: descriptor['@_createdBy'] ?? null,
+        changedBy: descriptor['@_changedBy'] ?? null,
+        version: descriptor['@_version'] ?? null,
+        sourceSha256: null as string | null,
+        activeSourceSha256: null as string | null,
+      };
+      identity.includes[include] = observed;
+      await observe(structuredClone(identity));
+      assert.equal(observed.changedBy, actor.sapUser, 'Native include last changer differs');
+      assert.equal(observed.version, 'active', 'Native include metadata is not active');
       const path = `${owner}/includes/${include}`;
       const current = (await http.get(path, { ...headers, Accept: 'text/plain' }, options)).body;
       const active = (await http.get(`${path}?version=active`, { ...headers, Accept: 'text/plain' }, options)).body;
       const hashes = { sourceSha256: digest(current), activeSourceSha256: digest(active) };
-      identity.includes[include] = hashes;
+      Object.assign(observed, hashes);
       await observe(structuredClone(identity));
       assert.equal(hashes.sourceSha256, expected.sourceHash, 'Native include differs from PP read-back');
       assert.equal(hashes.activeSourceSha256, expected.sourceHash, 'Inactive or changed include; preserve it');

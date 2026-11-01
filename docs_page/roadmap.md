@@ -215,7 +215,9 @@ additional operations. The explicit capability table and mixed-tool admission/pr
 Broader type/action adapters and their PP qualification remain outstanding. The class-include adapter and
 its two-writer qualification harness are implemented in the draft; the first Opus include review
 identified an ambiguous blank-source case, now restricted to hash-guarded clearing. Live include
-qualification and the follow-up review remain open.
+qualification remains open. The follow-up review found a harness response-shape mismatch and
+missing per-include native attribution; corrections and expanded failure simulations await the
+next review before live qualification. No additional family is qualified by these harness changes.
 The formatter and local CLAS/INTF deletion adapters now have a
 [combined two-writer PP qualification](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
 at `1b234d3a4`: native authorship/source binding, typed absence, v5 optional-preference preservation

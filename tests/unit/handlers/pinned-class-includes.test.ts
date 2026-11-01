@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { isIncludeSaveResult } from '../../../scripts/qualification/pr1142/include-qualification.mjs';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -7,6 +8,7 @@ import { mockFetch } from './setup-undici-mock.js';
 
 const { AdtClient } = await import('../../../src/adt/client.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { handlePinnedWrite } = await import('../../../src/handlers/write/pinned.js');
 const owner = '/sap/bc/adt/oo/classes/zcl_include';
 const original = '* Original include\n';
 const replacement = '* Updated include\n';
@@ -129,6 +131,10 @@ describe('pinned class include handler and native lock policy', () => {
         initialized: false,
         sourceHash: sourceHash(replacement),
       });
+      expect(body).not.toHaveProperty('ok');
+      expect(
+        isIncludeSaveResult(body, { target: config.targetId, name: 'ZCL_INCLUDE', include, initialized: false }),
+      ).toBe(true);
       expect(includeWrites()).toHaveLength(1);
       expect(includeWrites()[0].path).toContain(`/includes/${include}?lockHandle=class-lock`);
       expect(requests.filter((r) => r.path.includes('_action=LOCK'))[0].path).toContain(`${owner}?`);
@@ -185,10 +191,23 @@ describe('pinned class include handler and native lock policy', () => {
       stored = undefined;
       const { result } = await invoke({ source, expectedSourceHash: undefined });
       expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text)).toMatchObject({ error: 'PINNED_WRITE_REFUSED', state: 'unchanged' });
       expect(includeWrites()).toHaveLength(0);
       expect(stored).toBeUndefined();
     },
   );
+
+  it.each([
+    { source: '', expectedSourceHash: undefined },
+    { source: ' \r\n\t', expectedSourceHash: undefined },
+    { source: ' \r\n\t', expectedSourceHash: sourceHash(original) },
+  ])('the direct pinned adapter refuses blank input before SAP I/O: %j', async (input) => {
+    const client = new AdtClient({ baseUrl: 'http://sap:8000', safety: { ...defaultSafetyConfig(), ...config } });
+    const result = await handlePinnedWrite(client, args(input), config);
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text)).toMatchObject({ error: 'PINNED_WRITE_REFUSED', state: 'unchanged' });
+    expect(requests).toHaveLength(0);
+  });
 
   it.each([undefined, 'a'.repeat(64)])('refuses missing or stale include hashes: %s', async (expectedSourceHash) => {
     const { body } = await invoke({ expectedSourceHash });
@@ -207,6 +226,14 @@ describe('pinned class include handler and native lock policy', () => {
       });
       expect(result.isError, result.content[0].text).toBeUndefined();
       expect(body).toMatchObject({ state: 'saved-inactive', initialized: true });
+      expect(
+        isIncludeSaveResult(body, {
+          target: config.targetId,
+          name: 'ZCL_INCLUDE',
+          include: 'definitions',
+          initialized: true,
+        }),
+      ).toBe(true);
       expect(includeWrites().map((r) => r.method)).toEqual(['POST', 'PUT']);
       for (const request of includeWrites()) {
         const url = new URL(request.path, 'http://sap');
