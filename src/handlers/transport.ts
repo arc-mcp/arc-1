@@ -5,6 +5,7 @@
 
 import { type AdtClient, clampSearchResults } from '../adt/client.js';
 import { AdtApiError } from '../adt/errors.js';
+import { canonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { checkTransport } from '../adt/safety.js';
 import {
   checkRecursiveTransportReleaseScope,
@@ -191,12 +192,50 @@ function summarizeTransport(t: TransportRequest) {
   };
 }
 
+/** Owning group of a function-group include, or undefined for a standalone include. */
+async function resolveIncludeGroup(
+  client: AdtClient,
+  includeName: string,
+  allowMissing: boolean,
+): Promise<string | undefined> {
+  const [lookup] = await client.lookupObjects([includeName]);
+  const matches = (lookup?.matches ?? []).filter((r) => r.objectType === 'FUGR/I' || r.objectType === 'PROG/I');
+  if (matches.length === 0 && allowMissing) return undefined;
+  const owners = new Map<string, string | undefined>();
+  const unverified = new Error(
+    `Cannot verify the owning group of include "${includeName}". Provide "group" explicitly.`,
+  );
+  for (const r of matches) {
+    const path = canonicalHostRelativeAdtPath(r.uri, '/sap/bc/adt/', { allowRawEncodedSlash: true });
+    if (!path || path.includes('?')) throw unverified;
+    const grouped = path.match(/^\/sap\/bc\/adt\/functions\/groups\/([^/]+)\/includes\/([^/?#]+)$/i);
+    if (
+      r.objectType === 'FUGR/I' &&
+      grouped &&
+      decodeURIComponent(grouped[2]).toUpperCase() === includeName.toUpperCase()
+    ) {
+      const group = decodeURIComponent(grouped[1]).toUpperCase();
+      owners.set(group, group);
+    } else if (
+      r.objectType === 'PROG/I' &&
+      path.toUpperCase() === `/sap/bc/adt/programs/includes/${encodeURIComponent(includeName)}`.toUpperCase()
+    ) {
+      owners.set('standalone', undefined);
+    } else {
+      throw unverified;
+    }
+  }
+  if (owners.size !== 1) throw unverified;
+  return owners.values().next().value;
+}
+
 /** FUNC and structural INCL objects use a parent-group collection. */
 async function resolveTransportObjectUrl(
   client: AdtClient,
   type: string,
   name: string,
   group: string | undefined,
+  allowMissingInclude = false,
 ): Promise<string> {
   let parent = group?.trim();
   if (type === 'FUNC' && !parent) {
@@ -204,6 +243,7 @@ async function resolveTransportObjectUrl(
     if (!parent)
       throw new Error(`Cannot resolve function group for FM "${name}". Provide the "group" parameter explicitly.`);
   }
+  if (type === 'INCL' && !parent) parent = await resolveIncludeGroup(client, name, allowMissingInclude);
   if (type === 'FUNC' && parent) return functionModuleObjectUrl(parent, name);
   if (type === 'INCL' && parent)
     return `${functionGroupObjectUrl(parent)}/includes/${encodeURIComponent(name.toLowerCase())}`;
@@ -513,13 +553,14 @@ export async function handleSAPTransport(
       if (!objectType || !objectName) return errorResult('"type" and "name" are required for "check" action.');
       if (!pkg) return errorResult('"package" is required for "check" action.');
 
+      const operation = args.operation === 'modify' ? 'modify' : 'create';
       const objectUrl = await resolveTransportObjectUrl(
         client,
         objectType,
         objectName,
         args.group as string | undefined,
+        operation === 'create',
       );
-      const operation = args.operation === 'modify' ? 'modify' : 'create';
       const info = await getTransportInfo(
         client.http,
         client.safety,
@@ -527,6 +568,8 @@ export async function handleSAPTransport(
         pkg,
         operation === 'create' ? 'I' : '',
       );
+      if (info.lockedTransportAmbiguous || (info.lockedTasks.length > 0 && !info.lockedTransport))
+        return errorResult('SAP returned ambiguous CTS lock holders. Inspect the object in CTS before editing.');
       const transportRequired = !info.isLocal && (info.recording || Boolean(info.lockedTransport));
       const transportAssignmentRequired = !info.isLocal && info.recording && !info.lockedTransport;
       const candidateLimit = clampSearchResults(args.maxResults as number | undefined, DEFAULT_TRANSPORT_CHECK_RESULTS);
@@ -586,36 +629,60 @@ export async function handleSAPTransport(
       );
       const primary = await getObjectTransports(client.http, client.safety, objectUrl);
       let candidateTransports = primary.candidateTransports;
+      let lockedTransport = primary.lockedTransport;
+      let relatedTransports = primary.relatedTransports;
+      let lockStatusUnknown = false;
 
       // Fallback: if per-object transport lookup is empty, derive the package via
       // the object metadata endpoint and ask transportchecks for candidate transports.
       if (primary.relatedTransports.length === 0 && candidateTransports.length === 0) {
         try {
           const pkg = await client.resolveObjectPackage(objectUrl);
-          if (pkg && pkg !== '$TMP') {
+          if (!pkg) lockStatusUnknown = true;
+          else if (pkg !== '$TMP') {
             const info = await getTransportInfo(client.http, client.safety, objectUrl, pkg, '');
             candidateTransports = info.existingTransports;
+            // transportchecks reports locks (incl. other users') that /transports omitted.
+            if (info.lockedTransportAmbiguous || (info.lockedTasks.length > 0 && !info.lockedTransport)) {
+              lockStatusUnknown = true;
+            } else if (info.lockedTransport) {
+              lockedTransport = info.lockedTransport;
+              const owner = info.lockedTransportOwner ?? '';
+              relatedTransports = [
+                {
+                  id: info.lockedTransport,
+                  description: candidateTransports.find((t) => t.id === info.lockedTransport)?.description ?? '',
+                  owner,
+                  status: 'D',
+                },
+              ];
+            } else if (info.result !== 'S') {
+              lockStatusUnknown = true;
+            }
           }
         } catch {
-          // best-effort-fallback
+          lockStatusUnknown = true;
         }
       }
 
-      const lockOwner = primary.relatedTransports[0]?.owner;
+      const lockOwner = relatedTransports[0]?.owner;
       const candidateTotal = candidateTransports.length;
       const candidateLimit = clampSearchResults(args.maxResults as number | undefined, DEFAULT_TRANSPORT_RESULTS);
       const boundedCandidates = candidateTransports.slice(0, candidateLimit);
       const candidateTruncated = candidateTotal > boundedCandidates.length;
-      const summary = primary.lockedTransport
-        ? `Object ${objectName} is locked in transport ${primary.lockedTransport}${lockOwner ? ` by ${lockOwner}` : ''}.`
-        : candidateTotal > 0
-          ? `Object ${objectName} has no active lock; ${candidateTotal} transport(s) available for assignment.`
-          : `Object ${objectName} has no current lock or assignment candidates.`;
+      const summary = lockStatusUnknown
+        ? `The current CTS lock for ${objectName} could not be verified. Inspect it in CTS before editing.`
+        : lockedTransport
+          ? `Object ${objectName} is locked in transport ${lockedTransport}${lockOwner ? ` by ${lockOwner}` : ''}.`
+          : candidateTotal > 0
+            ? `Object ${objectName} has no active lock; ${candidateTotal} transport(s) available for assignment.`
+            : `Object ${objectName} has no current lock or assignment candidates.`;
 
       const history: ObjectTransportHistory = {
         object: { type: objectType, name: objectName, uri: objectUrl },
-        ...(primary.lockedTransport ? { lockedTransport: primary.lockedTransport } : {}),
-        relatedTransports: primary.relatedTransports,
+        ...(lockedTransport ? { lockedTransport } : {}),
+        ...(lockStatusUnknown ? { lockStatusUnknown: true } : {}),
+        relatedTransports,
         candidateTransports: boundedCandidates,
         candidateTotal,
         candidateTruncated,
