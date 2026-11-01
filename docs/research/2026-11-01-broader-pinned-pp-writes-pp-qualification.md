@@ -65,7 +65,7 @@ per-run harness hashes were not retained, master-system evidence was observed ra
 gate, and cleanup checked metadata without an exact source hash under lock. Failed secondary attempt
 reservations were preserved as backend-probe-failed and create-403 records before the inspected retry.
 Cloud/access restoration was verified by separate operator controls, not by the qualification module.
-The machine-readable record now distinguishes these sources. The new deletion-capable candidate
+The machine-readable record labels the separate operator controls and their limits. The new deletion-capable candidate
 requires fresh qualification; this older harness deliberately refuses deletion.
 
 Concurrent writers, shared-owner inactive drafts, INTF and broader object families, transport
@@ -82,7 +82,8 @@ draft.
   the original application was started and its health endpoint returned HTTP 200.
 - The original XSUAA security descriptor was restored. The temporary IAM role and collection were
   deleted and subsequently reported absent; the temporary destination was deleted and verified absent.
-- The local OAuth harness stopped with tokens held only in process memory; no token was persisted.
+- Operator handling records report that the local OAuth harness stopped and discarded its in-memory
+  sessions; no exhaustive token-persistence attestation was performed.
 
 CI on the deployed revision had passed the Node 22/24 suites, native integration, docs, policy/build
 gates, platform builds and security checks at this checkpoint. Its separate e2e status was still

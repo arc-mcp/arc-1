@@ -222,6 +222,19 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect(saves()).toHaveLength(0);
     expect(requests.filter((r) => r.path.includes('_action=UNLOCK'))).toHaveLength(1);
   });
+  it.each([
+    { action: 'create', type: 'CLAS', name: 'ZCL_TEST', package: '$TMP' },
+    { action: 'update', type: 'CLAS', name: 'ZCL_TEST', expectedSourceHash: sourceHash(initial) },
+    { action: 'edit_method', type: 'CLAS', name: 'ZCL_TEST', method: 'VALUE', expectedSourceHash: sourceHash(initial) },
+  ])('requires source for $action before any backend request', async (args) => {
+    const result = await handlePinnedWrite(client(), args, config);
+    expect(payload(result)).toMatchObject({
+      error: 'PINNED_WRITE_REFUSED',
+      state: 'unchanged',
+      message: 'A non-empty source is required.',
+    });
+    expect(requests).toHaveLength(0);
+  });
   it('requires a hash before any backend request and rejects a stale hash under lock', async () => {
     const missing = update();
     delete (missing as Partial<typeof missing>).expectedSourceHash;

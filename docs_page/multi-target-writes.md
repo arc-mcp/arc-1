@@ -144,14 +144,16 @@ ETags are used when available; otherwise the result reports `native-unconditiona
 updates to the same user's preferences can overwrite each other. An uncertain outcome is not a
 rollback; read the settings before deciding whether another update is appropriate. The
 [formatter qualification record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-formatter.md)
-records direct native and two-user PP evidence; final Claude acceptance remains pending in draft PR #1142.
+records direct-native checks and a two-identity MCP-visible result. Claude identified missing
+in-run actor/backend proof; a strengthened current-revision run remains required in draft PR #1142.
 
 Deletion removes the current complete owner. It does not require or protect a previous source read.
 Use `SAP_DENY_ACTIONS=SAPWrite.delete` to disable deletion while retaining other admitted writes.
 If SAP accepts DELETE but absence cannot be verified, the result remains unconfirmed; inspect the
 object before deciding whether to try again. A verified deletion with failed cleanup is reported
 as deleted with a cleanup failure. The [deletion record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-deletion.md)
-currently contains direct native evidence; its two-user PP qualification is still pending.
+contains historical direct-native evidence for the earlier any-404 adapter. Typed absence has unit
+evidence only so far; current-revision two-user PP qualification remains pending.
 
 Creates and edits save inactive source. Review it before activation. **Activation is whole-owner**,
 including drafts created previously or by another session; it is not method-only activation.

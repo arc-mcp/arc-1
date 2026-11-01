@@ -52,6 +52,10 @@
   "limitations": [
     "Direct MARIAN authentication, not PP route qualification.",
     "Local $TMP only; CTS and negative behavior are unit evidence.",
-    "No tool admission at this checkpoint; other native deletion prechecks remain out of scope."
+    "No tool admission at this checkpoint; other native deletion prechecks remain out of scope.",
+    "The live adapter accepted any HTTP 404; current typed absence has unit evidence only until a new live run.",
+    "Independent absence means separate from the candidate, using the same endpoint, account and client stack; no TADIR cross-check.",
+    "The historical receipt did not gate active version or record changedBy.",
+    "The historical cleanup branch was source-reviewed but not fault-tested."
   ]
 }

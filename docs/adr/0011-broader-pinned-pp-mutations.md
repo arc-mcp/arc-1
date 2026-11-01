@@ -127,12 +127,13 @@ preserve existing state fields. Restore prior trace state in tests, including ot
 filters. Formatter patches preserve unrelated native XML/style data and reject unknown shapes.
 SAP documents formatter preferences as user-specific for the selected system connection, not global
 system settings. The [native adapter evidence](../research/2026-11-01-broader-pinned-pp-writes-formatter.md)
-corrects that earlier assumption and records the separate two-user PP qualification. Claude
-acceptance remains pending; the formatter result does not accept this broader ADR.
+corrects that earlier assumption and records a two-identity MCP-visible run. Claude identified
+missing in-run actor/backend proof; a stronger current-revision run is required. This does not accept
+the broader ADR.
 The [CLAS/INTF deletion integration](../research/2026-11-01-broader-pinned-pp-writes-deletion.md)
 reuses native DELETE and the shared owning-session lifecycle with fresh recording/package checks
-and a native absence readback. Its direct-native evidence is local; PP qualification and final
-review remain pending. It does not qualify other object families' deletion prechecks.
+and a typed native absence readback. Claude accepted the corrected production delta at source
+level; typed absence and the integrated operations still require current-revision PP qualification. It does not qualify other object families' deletion prechecks.
 Quickfix application returns deltas; source persistence still goes through guarded SAPWrite.
 
 ## Upgrade and acceptance

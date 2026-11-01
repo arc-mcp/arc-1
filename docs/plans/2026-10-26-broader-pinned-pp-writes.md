@@ -1,7 +1,8 @@
 # PR 2: broader built-in writes on pinned PP targets
 
-Status: implementation in progress. Formatter admission and two-user PP qualification are recorded;
-the remaining broader capabilities and final acceptance are outstanding.
+Status: implementation in progress. Formatter and CLAS/INTF deletion are admitted in the draft.
+Claude accepted the corrected production delta at source level; stronger current-revision PP
+qualification, remaining broader capabilities and final acceptance are outstanding.
 Date: 26 October 2026. Research baseline: `e538bf71197ddb47ea74aca225c340a856d331af`.
 Dependency: [PR 1 shared mutation infrastructure](2026-10-26-shared-mutation-infrastructure.md).
 PR 1 merged as [#1138](https://github.com/arc-mcp/arc-1/pull/1138), commit `ac8385fa4`.
@@ -9,7 +10,7 @@ Implementation starts with [ADR-0011](../adr/0011-broader-pinned-pp-mutations.md
 [mutation inventory](../research/broader-pinned-pp-writes/inventory.md) and request-scoped package hierarchy checks.
 [Implementation checkpoint and incomplete review status](../research/2026-10-29-broader-pinned-pp-writes-progress.md).
 [Existing CLAS two-writer PP evidence and remaining qualification](../research/2026-11-01-broader-pinned-pp-writes-pp-qualification.md).
-[Unadvertised native deletion candidate](../research/2026-11-01-broader-pinned-pp-writes-deletion.md).
+[CLAS/INTF deletion integration and qualification limits](../research/2026-11-01-broader-pinned-pp-writes-deletion.md).
 Proposed title: `feat: expand pinned PP writes across built-in development operations`.
 [Research and owner decisions](../research/2026-10-26-multi-target-write-parity.md).
 
@@ -437,7 +438,8 @@ circumvent that choice.
 
 The [1 November formatter checkpoint](../research/2026-11-01-broader-pinned-pp-writes-formatter.md)
 records SAP's user-specific scope documentation, native adapter and handler integration, a restored
-direct-authentication round trip and two-user PP qualification. Its Claude acceptance remains pending.
+direct-authentication round trip and a two-identity MCP-visible run. Claude identified missing
+in-run actor/backend proof; stronger current-revision PP qualification remains required.
 
 Verify the native scope of formatter settings through PP. The current parser maps unknown styles
 to `keywordUpper` and the writer emits only two fields; do not describe that as preserving native

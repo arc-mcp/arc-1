@@ -136,6 +136,9 @@
     "nativeAuthors": "Native fixture evidence script plus operator inspection; masterSystem was recorded but not part of the scripted passed predicate. Final source used a value regex, not an exact final-source hash.",
     "fixtureCleanup": "Native cleanup script with metadata checks; no source hash recheck under the cleanup lock.",
     "cloudAndSapAccessRestoration": "Separate operator-run CF/BTP/destination controls and SAP role/profile verification; not assertions produced by the qualification module.",
-    "tokensPersisted": "Operator handling statement; no exhaustive persistence attestation."
+    "tokensPersisted": "Operator handling statement; no exhaustive persistence attestation.",
+    "backendSentinel": "Operator-entered native-read hash supplied to the harness; not produced by its qualification function.",
+    "preflightAbsent": "Operator-entered fact from a separate native preflight read.",
+    "secondaryAttemptReservations": "Operator inspection of retained backend-probe-failed and create-403 attempt files; not attested by the frozen source packet."
   }
 }

@@ -14,7 +14,8 @@ separate bounded budget. No source hash is required for deletion: the authorizat
 concern the current owner, as specified in the accepted plan.
 
 A successful DELETE response alone is insufficient. The adapter requires a subsequent uncached
-native owner read returning 404. A surviving owner, denied read, network failure or server failure
+native owner read returning typed object-not-found evidence. The historical live adapter accepted
+any 404; the current typed-absence correction has unit evidence only until its new live run. A surviving owner, denied read, network failure or server failure
 remains unconfirmed. Definitive DELETE rejections are separate from uncertain outcomes. An
 independently confirmed deletion and a failed unlock are also reported separately; callers must
 not retry a mutation merely because its cleanup failed.
@@ -36,7 +37,8 @@ CTS restrictions, lock locality and invalid/legacy contexts. The complete unit s
 
 This is direct native evidence, not two-user PP qualification. The live fixtures were local;
 transportable deletion and negative cases currently have unit evidence. Handler/catalog
-admission, live PP qualification and actual Claude Code Opus 5.5 max review remain outstanding.
+admission had not occurred at that checkpoint. Current admission and review status follow below;
+current-revision live PP qualification remains outstanding.
 
 ## Handler and catalog integration
 
@@ -50,8 +52,8 @@ A shared pinned context/result boundary now serves source writes, deletion and f
 It verifies the selected target against both policies, preserves per-operation finite budgets,
 uses request cancellation and reports the selected target/request correlation. Any pinned marker
 in SAPWrite selects the guarded path; incomplete state cannot silently select legacy writes.
-Source-save/activation behavior remains separate. Native deletion evidence above still qualifies
-the same low-level adapter; the new integration needs its own PP run and Claude acceptance.
+Source-save/activation behavior remains separate. The historical native run exercised the earlier
+any-404 adapter. The corrected typed-absence adapter and integration need a fresh PP run.
 
 Integration adds 23 handler tests and eight route/catalog cases, including exact write-grant,
 destination, raw scope, global, aggregate and Basic refusals, deny rules, context mismatch,
@@ -81,3 +83,25 @@ on the corrected revision, including stronger actor/backend binding, remains out
 Validation of the review corrections: **391 unit files / 10,843 tests**, typecheck, build, lint,
 file/schema budgets and strict documentation build passed. No candidate deployment occurred during
 this correction loop; the test app and temporary SAP/IAM access remain restored.
+
+## Closing production review and next harness
+
+The actual Opus 5.5 max [follow-up](broader-pinned-pp-writes/claude-adapters-followup-20261101.md)
+accepted all six production corrections at immutable `1a621f67f`, with no new authorization or
+lifecycle defect. Its Low test gap is closed by missing-source regressions for create, update and
+edit_method. The historical records, operator-provenance labels and public status text were corrected
+as requested; matching pre/post native bytes alone do not prove that the PP mutation reached that user.
+
+The next [qualification harness](../../scripts/qualification/pr1142/README.md) is archived in the
+repository. It binds clean source and harness hashes to a unique private run, freezes all user tokens,
+checks fresh CLAS/INTF authors/source and passes those same tokens into formatter sentinel checks.
+Primary native preference reads occur during both users' patches and after restoration. It validates
+formatting behavior, exact refusal codes and per-field recovery. The native deletion proof records
+the 404 exception type; cleanup checks exact owner source and metadata and preserves uncertain work.
+The 15 formatter and 14 deletion fault scenarios passed without accessing SAP or CF. This new harness
+has not yet produced live evidence and still needs its own independent review.
+
+The completed correction/harness checkpoint passed **391 unit files / 10,846 tests**, all 29 local
+harness fault scenarios, typecheck (including native harness scripts), build, lint, file/schema
+budgets and strict docs. Script type checking infers the archived MJS modules through `allowJs`;
+no wildcard declarations erase their exported types.

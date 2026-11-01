@@ -322,7 +322,8 @@
     "account": "MARIAN",
     "beforeSha256": "fc0445edf7ccc2ea8abb4df4370abce8dce096198d8b03a9c869900f6015dcbe",
     "afterSha256": "fc0445edf7ccc2ea8abb4df4370abce8dce096198d8b03a9c869900f6015dcbe",
-    "originalBytesRestored": true
+    "originalBytesRestored": true,
+    "interpretation": "Historical field originalBytesRestored means before/after bytes match. With no during-write native read, it does not establish that these PP writes reached this record."
   },
   "cleanup": {
     "appDropletRestored": true,
@@ -375,6 +376,11 @@
     "tests/unit/handlers/pinned-formatter.test.ts": "c607ea8c1593063d23521ef7853e315e64e8bbd90a5484506733217886a33498",
     "tests/unit/server/multi-target-writes.test.ts": "b26c554e87711d3d62595a055ee78780df35806f02505b7af10230523dd8a423"
   },
-  "evidenceScope": "MCP-visible state on the configured PP route; native MARIAN before/after bytes prove restoration only, not the identity/backend during mutation.",
-  "review": "Actual Claude Code claude-opus-5-5, max, CLI 2.1.302: source-level token/refusal/differing-write/replay checks accepted; same-backend/same-actor proof not accepted (FMT-1); strengthened rerun required."
+  "evidenceScope": "MCP-visible state on the configured PP route. The native MARIAN record ended byte-identical to its pre-run state; this does not show the PP writes reached that record.",
+  "review": "Actual Claude Code claude-opus-5-5, max, CLI 2.1.302: source-level token/refusal/differing-write/replay checks accepted; same-backend/same-actor proof not accepted (FMT-1); strengthened rerun required.",
+  "claimProvenance": {
+    "assertions": "Qualification harness outputs, source-reviewed; Claude did not reproduce the live execution.",
+    "cloudAndSapAccessRestoration": "Separate operator-run CF/BTP/destination controls and SAP role/profile comparison; not produced by the formatter qualifier.",
+    "tokensPersisted": "Operator handling statement; no exhaustive persistence attestation."
+  }
 }

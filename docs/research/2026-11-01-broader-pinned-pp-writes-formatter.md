@@ -4,8 +4,8 @@ This record began as the native-adapter checkpoint at `70ab1f7b4` for draft PR #
 integration admits `SAPLint.set_formatter_settings`, `format` and `get_formatter_settings` only on
 writable pinned PP connections. The normal single-target implementation is unchanged apart from
 correcting its scope description. The integrated build at `69b28b22e509517b268981ce0538220aea49db3c`
-passed the two-user PP qualification below. Claude review is still pending; this is not a completed
-release acceptance.
+produced the 241-assertion MCP-visible result below. Claude reviewed it and did not accept
+in-run SAP actor/backend proof; a strengthened current-revision qualification remains required.
 
 ## Scope correction
 
@@ -79,7 +79,7 @@ subsequent work without treating the earlier direct-authentication test as PP ev
 
 The following delta routes all three SAP-backed formatter actions through an explicit pinned handler.
 It rechecks selected-target identity and effective write policy, preserves the normal scopes (`write`
-for settings, `read` for companions), and refuses to enter the legacy handler when multi-target state
+for settings, `read` for companions on an otherwise writable pinned connection), and refuses to enter the legacy handler when multi-target state
 is present but incomplete. Raw fields and input validation are checked before PP preparation. The
 existing Zod schema remains authoritative for loose boolean normalization, including `"false"` and `0`.
 
@@ -104,7 +104,8 @@ write grants for **both** target IDs. The original A4H destination's omitted `ar
 remained false, so its refusal supports the destination ceiling based on the reported configuration; the refusal code
 itself does not identify which gate applied.
 
-All three tokens stayed in the local harness process. Before any SAP request the harness verified
+Operator handling records report that all three tokens stayed in the local harness process;
+this is not an exhaustive persistence attestation. Before any SAP request the harness verified
 signature/audience/expiry, expected email and IdP origin, read/write scope, exact write grants, read
 grants and remaining lifetime. The two writers used the identities previously mapped to `MARIAN`
 and `ARC1_WG_RO`; the third token belonged to the primary identity with a read scope and no write scope.
@@ -138,10 +139,10 @@ intervening concurrent change. Six simulated scenarios additionally checked repl
 a response lost after a secondary update, an unrelated concurrent change, a cleanup-read failure
 and incorrect login identity. These simulations are harness checks, not native SAP evidence.
 
-Cleanup restored and independently compared the original SAP role, validity and profile; the
+Separate operator-run controls restored and compared the original SAP role, validity and profile; the
 temporary role definition remains unassigned. The original app droplet, full user environment,
 route and XSUAA descriptor were restored. Temporary IAM role/collection and destination were
-deleted and absence verified; `/health` returned 200. Tokens were discarded and test tabs closed.
+deleted and absence verified; `/health` returned 200. The operator recorded token disposal and closed the test tabs.
 The [PP evidence record](broader-pinned-pp-writes/formatter-pp-2026-11-01.json) contains the source
 revision, source/harness hashes, assertions and restoration facts without credentials.
 
@@ -153,7 +154,8 @@ accept same-backend/same-actor mutation proof (FMT-1).** This run establishes MC
 the configured route. Both SAP mappings rely on earlier class evidence and reported configuration;
 there was no native sentinel or during-write native preference read in this run. The secondary
 role change turning a refusal into success supports its mapping, but does not replace that proof.
-Only the primary has native byte-level restoration evidence; secondary restoration checks two
+Only the primary ended byte-identical to its pre-run native XML; this alone does not show that
+the pinned writes reached that record. secondary restoration checks two
 fields through the candidate route. The six simulations did not test every negative oracle or
 actual restore-only recovery. A strengthened current-revision run remains required. Same-user
 concurrent updates still have the documented native-unconditional risk when no strong ETag exists.

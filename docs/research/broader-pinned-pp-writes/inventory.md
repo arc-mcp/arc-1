@@ -21,7 +21,7 @@ be reflected in the later runtime matrix, including nested batch validation:
 | Family/action | Branch evidence and constraints | Current pinned qualification |
 | --- | --- | --- |
 | CLAS/INTF create/update | `write/pinned.ts`; main source only, explicit create package, source hash on update | ADR-0010 only |
-| CLAS/INTF delete | `adt/pinned-delete.ts`; shared native DELETE/lock lifecycle, fresh package/recording checks, verified absence; no source hash | Admitted; local direct-native evidence, PP/review pending |
+| CLAS/INTF delete | `adt/pinned-delete.ts`; shared native DELETE/lock lifecycle, fresh package/recording checks, verified absence; no source hash | Admitted; corrected production delta accepted at source level; current typed-absence/PP evidence pending |
 | Class surgery | `write/class-surgery.ts`, `class-edit.ts`; CLAS only; definitions/implementations/macros/testclasses routing and local-method inference differ by action | Existing main `edit_method` only; other combinations pending |
 | Procedural surgery | `write/unit-surgery.ts`; PROG or INCL; FUGR structural include is INCL plus `group`, not `type=FUGR` | Pending |
 | FUNC/FUGR/INCL CRUD | `write.ts`, `write/create.ts`, `write/update-delete.ts`; FUNC resolves group, structural INCL locks the include and inherits group package; class includes are update paths | Pending |
@@ -37,7 +37,7 @@ be reflected in the later runtime matrix, including nested batch validation:
 | Package/API state/publication | `manage.ts`, `adt/api-release.ts`, `adt/refactoring.ts`, `adt/devtools.ts`; actual owners, both move packages and native recording behavior need separate treatment | Pending |
 | CTS | `transport.ts` at handler and ADT layers; low-level whitelist and recursive-release gates cannot simply inherit runtime `allowedTransports=[]` | Internal verified-scope prerequisite implemented; management adapters and PP qualification pending |
 | Trace/proposals | `diagnose.ts`, `adt/diagnostics.ts`; profiler two-stage create, explicit PP user, ST05 per-instance state; quickfix returns edits without persisting source | Pending |
-| Formatter | `pinned-formatter.ts`, `adt/pinned-formatter.ts`; preserving partial XML patch and explicit read companions | Admitted; direct-native/two-user PP evidence, final review pending |
+| Formatter | `pinned-formatter.ts`, `adt/pinned-formatter.ts`; preserving partial XML patch and explicit read companions | Admitted; direct-native and MCP-visible two-identity evidence; stronger in-run actor/backend proof pending |
 | Classic FLP | `manage.ts`, `adt/flp.ts`; five mutations through PAGE_BUILDER_CUST, relationships and membership evidence differ by operation | Pending PP non-ADT path/CSRF/recording/readback qualification |
 | Git/custom extensions | Explicit owner exclusion; retain hidden-call denial and plugins-off topology | Excluded |
 
