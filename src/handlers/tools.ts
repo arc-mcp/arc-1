@@ -808,7 +808,7 @@ export function getToolDefinitions(
                 type: {
                   type: 'string',
                   description:
-                    'ABAP type, e.g. STRING, I, BAPIRET2. TABLES includes TYPE/LIKE, e.g. TYPE STANDARD TABLE OF X or LIKE DOKHL-OBJECT. Ignored for exceptions/raising.',
+                    'Required except exceptions/raising. Bare STRING or REF TO CL_X, explicit TYPE STRING or TYPE REF TO CL_X, or LIKE ICON-NAME (obsolete).',
                 },
                 byValue: {
                   type: 'boolean',

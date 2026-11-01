@@ -626,9 +626,7 @@ function validateFunctionProcessingInput(
   }
 }
 
-// FM signature parameter (issue #252). One entry per IMPORTING/EXPORTING/CHANGING/
-// TABLES/EXCEPTIONS/RAISING line in the FUNCTION signature region. ARC-1 builds
-// the ABAP source from this array; SAP's own signature lives inline in /source/main.
+// Structured FM parameters, serialized into /source/main by fm-signature.ts.
 const fmParameterSchema = z
   .object({
     kind: z.enum(['importing', 'exporting', 'changing', 'tables', 'exceptions', 'raising']),
@@ -639,20 +637,22 @@ const fmParameterSchema = z
       .max(60)
       .refine(isValidFmParameterDescription, 'Use 1–60 printable characters; blank descriptions are not supported.')
       .optional(),
-    /** ABAP type expression. Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. */
     type: z.string().optional(),
     /** Emit `VALUE(name)` wrapper. Default false (pass-by-reference). */
     byValue: looseOptionalBoolean,
     /** Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim. */
     default: z.string().optional(),
-    /** Emit `OPTIONAL` keyword. */
     optional: looseOptionalBoolean,
   })
   .refine(
     (parameter) =>
       parameter.description === undefined || (parameter.kind !== 'exceptions' && parameter.kind !== 'raising'),
     { path: ['description'], message: 'description is supported only for importing/exporting/changing/tables.' },
-  );
+  )
+  .refine((parameter) => parameter.kind === 'exceptions' || parameter.kind === 'raising' || !!parameter.type?.trim(), {
+    path: ['type'],
+    message: 'A non-empty type is required for importing/exporting/changing/tables.',
+  });
 
 const dtelShortLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.short).optional();
 const dtelMediumLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.medium).optional();

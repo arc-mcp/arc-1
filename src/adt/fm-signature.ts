@@ -30,8 +30,8 @@ export interface FmParameter {
    *   `TYPE ANY ##ADT_PARAMETER_UNTYPED`.
    * Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING.
    *
-   * For TABLES, the leading keyword (`TYPE` / `LIKE`) is part of the type expression
-   * since the older SAPGUI form uses `LIKE struct` while modern style uses `TYPE …`.
+   * Explicit TYPE/LIKE clauses are emitted as supplied; bare expressions use TYPE.
+   * Readback keeps LIKE and TABLES keywords, but otherwise omits TYPE.
    */
   type?: string;
   /** Native synchronized short text (1–60 printable characters); data parameters only. */
@@ -105,13 +105,12 @@ function formatParam(p: FmParameter): string {
   if (p.kind === 'exceptions' || p.kind === 'raising') {
     return upperName;
   }
-  // TABLES: type may be `LIKE struct` or `TYPE STANDARD TABLE …`. The user's
-  // string already contains the keyword; emit verbatim.
-  // For other kinds the type string is the bare type name; we prepend `TYPE `.
+  // Accept explicit TYPE/LIKE clauses for every data parameter kind.
+  // A bare expression (including LIKE-FIELD) still needs the TYPE keyword.
   const typeStr = (p.type ?? '').trim();
   const namePart = p.byValue ? `VALUE(${upperName})` : upperName;
   let line: string;
-  if (p.kind === 'tables' && /^(TYPE|LIKE)\b/i.test(typeStr)) {
+  if (/^(TYPE|LIKE)\s+\S/i.test(typeStr)) {
     line = `${namePart} ${typeStr}`;
   } else {
     line = `${namePart} TYPE ${typeStr}`;
@@ -356,19 +355,18 @@ function addParamFromLine(params: FmParameter[], kind: FmParameterKind, lineCont
   // string starts with `VALUE` (case-insensitive).
   const byValue = /^\s*VALUE\s*\(/i.test(trimmed);
 
-  // For TABLES, prepend the keyword (TYPE/LIKE) so the type round-trips verbatim.
-  // For other kinds, drop the keyword (ARC-1's emit prepends `TYPE`).
+  // Keep LIKE and the existing TABLES clauses; ordinary TYPE reads stay bare.
   let typeStr: string;
   let optional = false;
   let defaultExpr: string | undefined;
 
   // Split off OPTIONAL and DEFAULT modifiers from the trailing portion.
   let remaining = rest.trim();
-  // OPTIONAL is a standalone trailing word.
-  const optMatch = /\s+OPTIONAL\s*$/i.exec(remaining);
+  // SAP may put pragmas after OPTIONAL; keep those pragmas in the type expression.
+  const optMatch = /\s+OPTIONAL(?=(?:\s+##\w+(?:\[[^\]\r\n]*\])?)*\s*$)/i.exec(remaining);
   if (optMatch) {
     optional = true;
-    remaining = remaining.slice(0, optMatch.index).trim();
+    remaining = `${remaining.slice(0, optMatch.index)}${remaining.slice(optMatch.index + optMatch[0].length)}`.trim();
   }
   // DEFAULT introduces an expression up to the end (after stripping OPTIONAL).
   const defMatch = /\s+DEFAULT\s+(.+)$/i.exec(remaining);
@@ -377,7 +375,7 @@ function addParamFromLine(params: FmParameter[], kind: FmParameterKind, lineCont
     remaining = remaining.slice(0, defMatch.index).trim();
   }
 
-  if (kind === 'tables') {
+  if (kind === 'tables' || typeKeyword.toUpperCase() === 'LIKE') {
     typeStr = `${typeKeyword.toUpperCase()} ${remaining}`.trim();
   } else {
     typeStr = remaining;
