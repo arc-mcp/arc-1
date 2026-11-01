@@ -410,6 +410,14 @@ Optional pre-write validation layers and tool/schema selection.
 | `--tool-mode` | `ARC1_TOOL_MODE` | `standard` | `standard` exposes the 12 intent-based tools (schema payload guarded by CI budgets). `hyperfocused` exposes a single universal `sap` tool (~200 tokens) that dispatches everything internally. Use `hyperfocused` for severely token-constrained LLM clients (e.g. GPT-4o-mini, Copilot Studio). |
 | `--schema-nullable-optionals` | `ARC1_SCHEMA_NULLABLE_OPTIONALS` | `auto` | Controls whether optional `SAPWrite` JSON Schema fields are emitted as nullable unions (`type: ["string","null"]`). `auto` currently resolves to `off` and logs MCP client info for future allow-listing. `off` keeps the portable plain schema required by clients that reject unions (GitHub Copilot IDEs, Gemini CLI, Cursor/Foundry-style converters). `on` is an explicit compatibility escape hatch for OpenAI/Azure strict-mode function schemas that need nullable optionals to avoid fabricated enum values ([#360](https://github.com/arc-mcp/arc-1/issues/360)). Use `on` only after testing the target client accepts nullable unions; it can break clients affected by [#520](https://github.com/arc-mcp/arc-1/issues/520). |
 
+Parser findings can also reflect unsupported abaplint grammar. For an existing object, check the full
+proposed source with `SAPRead(type="SYNTAX", objectType, name, source)` before changing SAP-accepted code.
+For a confirmed parser gap, standard writes can use `lintBeforeWrite=false` for one call; pinned writes
+require an administrator's lint-policy review. To make just `parser_error` advisory, an administrator
+can put `{"rules":{"parser_error":{"severity":"Warning"}}}` in the JSON file `SAP_ABAPLINT_CONFIG` points
+to. That file must be present in the deployed app. This is instance-wide and does not relax structural
+parser errors. `SAP_CHECK_BEFORE_WRITE` remains non-blocking feedback.
+
 ---
 
 ## IDE navigation

@@ -125,6 +125,20 @@ const update = () => ({
 });
 
 describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
+  it('keeps parser gaps blocking and gives administrator guidance before any request', async () => {
+    const result = await handlePinnedWrite(
+      client(),
+      { ...update(), source: replacement.replace('result = 2.', 'INVALID SYNTAX HERE.') },
+      { ...config, lintBeforeWrite: true, systemType: 'onprem', abapRelease: '757' },
+    );
+    expect(result.isError).toBe(true);
+    expect(payload(result)).toMatchObject({ error: 'PINNED_WRITE_REFUSED', state: 'unchanged' });
+    expect(result.content[0].text).toContain('grammar abaplint does not support');
+    expect(result.content[0].text).toContain('administrator');
+    expect(result.content[0].text).not.toContain('lintBeforeWrite');
+    expect(requests).toHaveLength(0);
+  });
+
   it('saves and reads back under an owning lock through shared dispatch', async () => {
     const result = await handleToolCall(client(), config, 'SAPWrite', update());
     expect(result.isError, result.content[0].text).toBeUndefined();

@@ -55,6 +55,40 @@ describe('pre-write lint uses the supplied object type', () => {
     expect(lint.blocked).toBe(true);
     expect(lint.result?.content[0]?.text).toContain(finding);
     expect(lint.result?.content[0]?.text).toContain('"v758"');
+    expect(lint.result?.content[0]?.text).toContain('grammar abaplint does not support');
+    expect(lint.result?.content[0]?.text).toContain(`SAPRead(type="SYNTAX", objectType="${type}"`);
+    expect(lint.result?.content[0]?.text).not.toContain('Fix these errors');
+    expect(lint.result?.content[0]?.text).not.toContain('lint_and_fix');
+    expect(lint.result?.content[0]?.text).toContain('lintBeforeWrite=false');
+    expect(lint.result?.content[0]?.text).toContain('do not rewrite');
+  });
+
+  it.each([
+    ['begin_end_names', 'DATA: BEGIN OF stru, field TYPE i, END OF other.'],
+    ['unreachable_code', 'REPORT z_test.\nSTART-OF-SELECTION.\nRETURN.\nWRITE / 1.'],
+    ['identical_conditions', 'REPORT z_test.\nIF 1 = 1.\nWRITE / 1.\nELSEIF 1 = 1.\nWRITE / 2.\nENDIF.'],
+  ])('keeps non-parser %s errors blocking and asks for genuine errors to be corrected', (rule, source) => {
+    const lint = runPreWriteLint(source, 'PROG', 'Z_TEST', config);
+    expect(lint.blocked).toBe(true);
+    expect(lint.result?.content[0]?.text).toContain(`[${rule}]`);
+    expect(lint.result?.content[0]?.text).toContain('Correct genuine errors');
+    expect(lint.result?.content[0]?.text).toContain('lint_and_fix');
+    expect(lint.result?.content[0]?.text).toContain('lintBeforeWrite=false');
+    expect(lint.result?.content[0]?.text).not.toContain('grammar abaplint does not support');
+  });
+
+  it('limits autofix advice to non-parser findings in a mixed block', () => {
+    const lint = runPreWriteLint(
+      'REPORT z_test.\nSTART-OF-SELECTION.\nRETURN.\nWRITE / 1.\nINVALID SYNTAX HERE.',
+      'PROG',
+      'Z_TEST',
+      config,
+    );
+    expect(lint.blocked).toBe(true);
+    expect(lint.result?.content[0]?.text).toContain('[parser_error]');
+    expect(lint.result?.content[0]?.text).toContain('[unreachable_code]');
+    expect(lint.result?.content[0]?.text).toContain('fixable non-parser findings');
+    expect(lint.result?.content[0]?.text).toContain('grammar abaplint does not support');
   });
 
   it.each(['TABL', 'BDEF', 'DDLX', 'SRVD', 'FUNC', 'UNKNOWN', '', 'constructor', 'toString', '__proto__'])(
