@@ -167,13 +167,22 @@ typed native 404 under the class lock permits initialization. Clearing requires 
 
 Rejected fetches and response reads have sanitized RPC receipts before cleanup: recognized error
 name/cause code, tool/method, configured timeout, start time, wall elapsed time and monotonic elapsed
-time. Unknown names/codes are not reflected; raw messages, URLs, headers and arguments are omitted.
+time. Unknown names/codes are not reflected; an unlisted cause code becomes fixed `OTHER`, while
+an absent code remains null. Raw messages, URLs, headers and arguments are omitted. Loopback tests
+cover an SSE body that stalls or disconnects after headers. Failed receipt persistence retains the
+original transport error and marks `receiptWriteFailed`; a successful response whose receipt cannot
+be persisted still stops the run.
 Save and follow-up read have separate phase labels. A repeated failure at the same include step
 requires recovery and diagnosis before another live attempt, not an automatic retry.
 
 If an incomplete fixture lacks its normal ownership receipt, prepare a separate recovery bound to
 that run's preflight absence, manifest, original actor and exact saved source receipts. Archive and
-hash the recovery script before use. Persist the observed metadata/source comparisons and their
+hash the recovery script before use, and include that hash in both inspection and cleanup records.
+Use owner-only input reads and verify the current HEAD, run ID, harness, fixture-manifest hash and
+receipt binding before any SAP call. Select the original writer from the verified run configuration;
+never default to writer A or substitute the native reader for writer B's expected author. Historical
+recovery scripts are evidence only, not reusable recovery commands. A new failure must remain
+preserved until its specifically rebound script is inspected. Persist the observed metadata/source comparisons and their
 success before locking and again under the owning lock, before DELETE. Refuse any mismatch or
 unobservable draft; verify typed absence and record cleanup. Earlier recovery records without these
 comparison observations must remain explicitly limited; do not reconstruct them after deletion.

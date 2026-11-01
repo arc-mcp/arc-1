@@ -102,7 +102,7 @@ describe('PR1142 real harness safety boundaries', () => {
       const diagnostic = await boundedFetch(new URL('https://example.invalid'), {}, { rpcTool: secret }).catch(
         safeFailure,
       );
-      expect(diagnostic).toMatchObject({ causeCode: null });
+      expect(diagnostic).toMatchObject({ causeCode: 'OTHER' });
       expect(diagnostic).not.toHaveProperty('rpcTool');
       expect(JSON.stringify(diagnostic)).not.toContain(secret);
     } finally {

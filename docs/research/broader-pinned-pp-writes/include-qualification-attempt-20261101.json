@@ -192,7 +192,53 @@
     "temporaryDestinationRemoved": true,
     "sapRoleProfileAndDefinitionRestored": true,
     "iamAndXsuaaRestored": false,
-    "pending": "Operator BTP session renewal"
+    "pending": "Operator BTP session renewal",
+    "sapAccessScopeAudit": {
+      "at": "2026-11-01T12:33:32.764Z",
+      "system": "A4H",
+      "client": "001",
+      "subjectUser": "ARC1_WG_RO",
+      "reader": "MARIAN",
+      "originalUnlabelledDefinitionScope": "Z_ARC1_PR2_TEST",
+      "baselineSha256": "6f24916bd8c69ad3ddbfba77e67a0a045152d1e7dff5481af2121ee50e1f0f08",
+      "restoredSha256": "a218ada91e4c7065df0c3377d929969bd12919b70f9cdf6c97c91faef89370fe",
+      "roles": [
+        {
+          "UNAME": "ARC1_WG_RO",
+          "AGR_NAME": "Z_ARC1_WG_RO",
+          "FROM_DAT": "20260928",
+          "TO_DAT": "99991231"
+        }
+      ],
+      "profiles": [
+        {
+          "BNAME": "ARC1_WG_RO",
+          "PROFILE": "T-AH390011"
+        }
+      ],
+      "developmentActivities": [
+        {
+          "low": "03",
+          "high": ""
+        }
+      ],
+      "baselineRoleAndProfileMatch": true,
+      "temporaryRoleDefinitionMatchesBaseline": true,
+      "temporaryRoleAssigned": false,
+      "originalRoleFullBeforeDefinitionAvailable": false,
+      "limit": "The complete Z_ARC1_WG_RO definition was not saved before the earlier run. This fresh named observation confirms its current display-only development activities; it cannot establish byte-for-byte historical definition equality. The original assignment/profile and the retained unassigned test-role definition match their saved baseline.",
+      "definitionSummary": {
+        "Z_ARC1_PR2_TEST": {
+          "rowCount": 16,
+          "developmentActivities": ["01", "02", "03", "06", "07"]
+        },
+        "Z_ARC1_WG_RO": {
+          "rowCount": 15,
+          "developmentActivities": ["03"]
+        }
+      },
+      "fullNamedRowsRetainedPrivately": true
+    }
   },
   "qualification": "incomplete; retry with a fresh reviewed source binding and fixture manifest",
   "deployment": {

@@ -209,3 +209,30 @@ Author validation of the diagnostic follow-up passed **422 files / 11,478 tests*
 typecheck projects, **59 offline simulations** (20 formatter and 39 deletion, including 22 include
 scenarios), lint, strict documentation and file/schema budgets. No production `src/` changes were
 made after the `main` integration. Follow-up Opus review and the next live qualification remain pending.
+
+## Integration review and follow-up dispositions
+
+The [actual Opus 5.5 max integration review](broader-pinned-pp-writes/claude-main-integration-review-20261101.md)
+retained `92dc1a711`, found no High/Medium issue, and closed the seven earlier findings within their
+documented limits. It passed 11,478 tests, 59 simulations and all typecheck projects. The 2,600-file
+snapshot was unchanged before and after. Its size check could not run because the archive had no
+Git index; the author check passed. Its supplied merge-resolution diff named the wrong revision;
+the next review must use the actual `c8a0c9c27` merge. Neither limitation is a passed check.
+
+The seven new Low findings have these dispositions:
+
+| Finding | Follow-up |
+| --- | --- |
+| SSE failures and timing evidence | Real loopback tests send partial SSE, then stall or disconnect. They verify response-read failure, status, parseable start time and nonzero elapsed clocks near the timeout. Failed receipt persistence preserves the original error and adds a fixed flag; successful-response receipt failure still stops the run. |
+| Unknown transport causes | Additional network, HTTP-parser and TLS codes have explicit allowlist entries. An unlisted code becomes fixed `OTHER`; absent codes remain null. Arbitrary values and messages are not copied. |
+| Pinned CSRF 503 retry change | Retained. Create/update adapter tests prove one bootstrap HEAD, no mutation submission and an unchanged recording-preflight refusal. This is distinct from a rejected fetch. |
+| Unnamed SAP definition | A fresh named audit confirms the old `definition` rows describe the unassigned `Z_ARC1_PR2_TEST`, not `Z_ARC1_WG_RO`. User roles/profile and the test-role definition match their baseline. The currently assigned read-only role has only S_DEVELOP activity 03. Its complete pre-run definition was not saved, so historical full-definition equality cannot be established. |
+| Recovery template binding | Historical scripts are evidence only. Any new recovery requires owner-only inputs, verified run/HEAD/harness/manifest/actor/receipt binding, and a script hash on both inspection and cleanup. This is a prerequisite for a newly rebound recovery, not executed generic recovery coverage. A preserved fixture may wait. |
+| Offline controls absent from CI | The full `test:qualification:pr1142` command now runs in the existing Node 22/24 test matrix. |
+| Include-support contradiction | The writes document now distinguishes admitted include replacement from still-refused include method surgery. |
+
+The [shared chain refusal](2026-11-01-class-surgery-range-boundaries.md) at `65585c620` was added
+after that immutable review and still needs independent review. The same follow-up will examine
+the host-sleep observation, named SAP audit and changes above. Author validation passes **425 files /
+11,516 tests**, all three typecheck projects, **59 simulations** and lint. Live include qualification
+and IAM/XSUAA rollback remain incomplete; FEAT-93 remains open.

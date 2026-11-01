@@ -1,5 +1,5 @@
 import { runBackendChecks, validateBackendChecks } from './backend-checks.mjs';
-import { boundedFetch, HarnessError, readToolBody, safeFailure } from './safe-io.mjs';
+import { boundedFetch, HarnessError, noteReceiptWriteFailure, readToolBody, safeFailure } from './safe-io.mjs';
 import { checkTargetSchemaProjection } from './schema-projection.mjs';
 
 const MUTATION_TOOLS = ['SAPWrite', 'SAPActivate', 'SAPGit', 'SAPManage'];
@@ -46,7 +46,11 @@ export class McpSession {
         },
       );
     } catch (error) {
-      await this.responseObserver?.(method, { failure: safeFailure(error) });
+      try {
+        await this.responseObserver?.(method, { failure: safeFailure(error) });
+      } catch {
+        noteReceiptWriteFailure(error);
+      }
       throw error;
     }
     await this.responseObserver?.(method, response);

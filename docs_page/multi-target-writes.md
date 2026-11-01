@@ -177,7 +177,7 @@ cleanup. Transportable deletion remains unqualified.
 Creates and edits save inactive source. Review it before activation. **Activation is whole-owner**,
 including drafts created previously or by another session; it is not method-only activation.
 Use `SAP_DENY_ACTIONS=SAPActivate` if your team must activate separately in ADT. Hidden actions,
-other types, include editing, batches, RAP/DDIC, publication, transport management and Git
+other types, include method surgery, batches, RAP/DDIC, publication, transport management and Git
 are refused even if a client sends the call directly. Per-call lint-disable options are unavailable.
 ABAP Unit can execute newly authored code under the SAP user; deny `SAPDiagnose.unittest` unless
 that execution is intended. Global lint configuration applies; `SAP_CHECK_BEFORE_WRITE` remains advisory. SAP authorization is

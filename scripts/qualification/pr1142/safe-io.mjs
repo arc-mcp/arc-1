@@ -17,6 +17,12 @@ const errorNames = new Set(['Error', 'TypeError', 'AbortError', 'TimeoutError', 
 const causeCodes = new Set([
   'ECONNREFUSED',
   'ECONNRESET',
+  'ECONNABORTED',
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+  'ENETDOWN',
+  'EADDRNOTAVAIL',
+  'EPROTO',
   'ENOTFOUND',
   'EAI_AGAIN',
   'ETIMEDOUT',
@@ -25,6 +31,24 @@ const causeCodes = new Set([
   'UND_ERR_HEADERS_TIMEOUT',
   'UND_ERR_BODY_TIMEOUT',
   'UND_ERR_SOCKET',
+  'UND_ERR_CLOSED',
+  'UND_ERR_DESTROYED',
+  'HPE_INVALID_CONSTANT',
+  'HPE_INVALID_HEADER_TOKEN',
+  'HPE_INVALID_CHUNK_SIZE',
+  'HPE_INVALID_STATUS',
+  'HPE_UNEXPECTED_CONTENT_LENGTH',
+  'HPE_HEADER_OVERFLOW',
+  'HPE_INVALID_VERSION',
+  'HPE_INVALID_EOF_STATE',
+  'HPE_INVALID_TRANSFER_ENCODING',
+  'ERR_SSL_WRONG_VERSION_NUMBER',
+  'ERR_SSL_TLSV1_ALERT_PROTOCOL_VERSION',
+  'ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE',
+  'ERR_SSL_TLSV1_ALERT_UNKNOWN_CA',
+  'ERR_SSL_TLSV1_ALERT_DECODE_ERROR',
+  'ERR_SSL_CERTIFICATE_VERIFY_FAILED',
+  'ERR_SSL_TLSV1_UNRECOGNIZED_NAME',
   'ERR_TLS_CERT_ALTNAME_INVALID',
   'CERT_HAS_EXPIRED',
   'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
@@ -48,16 +72,16 @@ const rpcTools = new Set([
   'SAPTargets',
 ]);
 
-function transportFailure(code, error, started, timeoutMs, rpc, status) {
+function transportFailure(code, error, started, timeoutMs, rpc, status, timedOut = false) {
   const failure = new HarnessError(code, status);
   // Whitelists, not arbitrary strings: even an error name/code can contain credentials.
   transportDiagnostics.set(
     failure,
     Object.freeze({
       errorName: errorNames.has(error?.name) ? error.name : 'UnknownError',
-      causeCode: causeCodes.has(error?.cause?.code) ? error.cause.code : null,
+      causeCode: causeCodes.has(error?.cause?.code) ? error.cause.code : error?.cause?.code == null ? null : 'OTHER',
       failureKind:
-        error?.name === 'TimeoutError'
+        timedOut || error?.name === 'TimeoutError'
           ? 'timeout'
           : error?.cause?.message === 'unexpected redirect'
             ? 'redirect-refused'
@@ -71,6 +95,11 @@ function transportFailure(code, error, started, timeoutMs, rpc, status) {
     }),
   );
   return failure;
+}
+
+export function noteReceiptWriteFailure(error) {
+  if (error instanceof HarnessError)
+    transportDiagnostics.set(error, Object.freeze({ ...transportDiagnostics.get(error), receiptWriteFailed: true }));
 }
 
 export function safeFailure(error) {
@@ -171,10 +200,12 @@ export async function boundedFetch(url, init = {}, options = {}) {
   const started = { wall: Date.now(), monotonic: performance.now() };
   const rpc = { method: rpcMethod, tool: rpcTool };
   let response;
+  let signal;
   try {
-    response = await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) });
+    signal = AbortSignal.timeout(timeoutMs);
+    response = await fetch(url, { ...init, redirect: 'error', signal });
   } catch (error) {
-    throw transportFailure('HTTP_REQUEST_FAILED', error, started, timeoutMs, rpc);
+    throw transportFailure('HTTP_REQUEST_FAILED', error, started, timeoutMs, rpc, undefined, signal?.aborted);
   }
   let text = '';
   let json;
@@ -214,7 +245,7 @@ export async function boundedFetch(url, init = {}, options = {}) {
       text = Buffer.concat(chunks).toString('utf8');
     } catch (error) {
       if (error instanceof HarnessError) throw error;
-      throw transportFailure('HTTP_RESPONSE_FAILED', error, started, timeoutMs, rpc, response.status);
+      throw transportFailure('HTTP_RESPONSE_FAILED', error, started, timeoutMs, rpc, response.status, signal?.aborted);
     } finally {
       reader.releaseLock();
     }
