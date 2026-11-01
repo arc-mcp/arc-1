@@ -101,6 +101,9 @@ The generic `call` command preserves MCP semantics. Its `--output json` value is
 `content[0].text`. Ordinary successful tool calls exit `0` even if their domain payload
 contains test failures, ATC findings, or a non-empty diff.
 
+Dump lists can append a history-window or authorization note in text mode. For scripts, use
+`--output json` and parse the list from `content[0].text`; later blocks contain the note.
+
 The headless quality actions `SAPDiagnose.atc_ci` and `SAPDiagnose.unittest_ci`
 also evaluate their CI outcome: `status: "completed"` with `fail: false` exits `0`;
 `fail: true`, tool errors, or missing/malformed/incomplete outcome fields exit `1`.

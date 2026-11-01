@@ -21,7 +21,7 @@ import { Version } from '@abaplint/core';
 import type { FeatureConfig, FeatureMode } from './config.js';
 import { fetchDiscoveryDocument } from './discovery.js';
 import { AdtApiError } from './errors.js';
-import type { AdtHttpClient } from './http.js';
+import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import { parseReleaseNumber } from './release.js';
 import type { AuthProbeResult, FeatureStatus, ResolvedFeatures, SystemType, TextSearchStatus } from './types.js';
 import { parseInstalledComponents, parseSyntaxConfigurations } from './xml-parser.js';
@@ -267,12 +267,15 @@ interface SystemDetection {
  *
  * This reuses the same `/sap/bc/adt/system/components` call — zero extra HTTP requests.
  */
-async function detectSystemFromComponents(client: AdtHttpClient): Promise<SystemDetection> {
+async function detectSystemFromComponents(
+  client: AdtHttpClient,
+  request?: AdtRequestOptions,
+): Promise<SystemDetection> {
   try {
     const resp = await client.get(
       '/sap/bc/adt/system/components',
       { Accept: 'application/atom+xml;type=feed' },
-      { probe: true },
+      { ...request, probe: true },
     );
     if (resp.statusCode >= 400) return {};
     const components = parseInstalledComponents(resp.body);
@@ -295,12 +298,15 @@ async function detectSystemFromComponents(client: AdtHttpClient): Promise<System
  * release. The Standard ABAP language entry (`version="X"`) carries the parser
  * release in its link `etag` attribute, e.g. `etag="757"`.
  */
-async function detectReleaseFromSyntaxConfigurations(client: AdtHttpClient): Promise<string | undefined> {
+async function detectReleaseFromSyntaxConfigurations(
+  client: AdtHttpClient,
+  request?: AdtRequestOptions,
+): Promise<string | undefined> {
   try {
     const resp = await client.get(
       '/sap/bc/adt/abapsource/syntax/configurations',
       { Accept: 'application/vnd.sap.adt.syntaxconfigurations+xml' },
-      { probe: true },
+      { ...request, probe: true },
     );
     if (resp.statusCode >= 400) return undefined;
     const configs = parseSyntaxConfigurations(resp.body);
@@ -308,6 +314,20 @@ async function detectReleaseFromSyntaxConfigurations(client: AdtHttpClient): Pro
   } catch {
     return undefined;
   }
+}
+
+/**
+ * SAP_BASIS as the feature probe reads it, for callers that need the release when the probe could not
+ * read it (for example a startup probe under a restricted technical user). Never throws.
+ */
+export async function detectAbapRelease(
+  client: AdtHttpClient,
+  request?: AdtRequestOptions,
+): Promise<string | undefined> {
+  if (request?.signal?.aborted) return undefined;
+  const release = (await detectSystemFromComponents(client, request)).abapRelease;
+  if (release || request?.signal?.aborted) return release;
+  return detectReleaseFromSyntaxConfigurations(client, request);
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   ABAPLINT_MAX_RELEASE,
   classifyAuthProbeError,
   classifyFeatureProbeStatus,
+  detectAbapRelease,
   detectHanaFromComponents,
   detectSystemType,
   isBeyondAbaplintCeiling,
@@ -636,6 +637,40 @@ describe('Feature Detection', () => {
       const result = await probeFeatures(client, defaultConfig);
 
       expect(result.abapRelease).toBeUndefined();
+    });
+
+    it('detectAbapRelease reads the release like the probe, without the other probes', async () => {
+      const client = mockProbeClientWithSyntaxConfigs({ componentsBody: emptyComponentsFeed });
+      expect(await detectAbapRelease(client)).toBe('757');
+      const calls = (client as any).get.mock.calls.map((args: unknown[]) => args[0]);
+      expect(calls).toEqual(['/sap/bc/adt/system/components', '/sap/bc/adt/abapsource/syntax/configurations']);
+
+      expect(await detectAbapRelease(mockProbeClientWithSyntaxConfigs({ componentsBody: componentsXml }))).toBe('758');
+    });
+
+    it('detectAbapRelease leaves the release unknown when SAP refuses both reads', async () => {
+      const client = {
+        get: vi.fn().mockImplementation((url: string) => Promise.reject(new AdtApiError('Forbidden', 403, url))),
+      } as unknown as AdtHttpClient;
+      await expect(detectAbapRelease(client)).resolves.toBeUndefined();
+    });
+    it('carries the caller signal and deadline through both release reads', async () => {
+      const client = mockProbeClientWithSyntaxConfigs({ componentsBody: emptyComponentsFeed });
+      const request = { signal: new AbortController().signal, deadline: Date.now() + 5000 };
+      expect(await detectAbapRelease(client, request)).toBe('757');
+      for (const call of vi.mocked(client.get).mock.calls) expect(call[2]).toMatchObject({ ...request, probe: true });
+    });
+    it('does not retry release detection after caller cancellation', async () => {
+      const controller = new AbortController();
+      const get = vi.fn(async () => {
+        controller.abort();
+        throw new Error('cancelled');
+      });
+      const client = { get } as unknown as AdtHttpClient;
+      expect(await detectAbapRelease(client, { signal: controller.signal })).toBeUndefined();
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(await detectAbapRelease(client, { signal: controller.signal })).toBeUndefined();
+      expect(get).toHaveBeenCalledTimes(1);
     });
 
     function makeComponentsXml(entries: Array<{ id: string; title: string }>): string {

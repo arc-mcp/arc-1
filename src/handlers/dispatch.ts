@@ -706,6 +706,8 @@ export function getToolRegistry(): ToolRegistry {
   reg('SAPLint', (ctx) => handleSAPLint(ctx.client, ctx.args, ctx.config));
   reg('SAPDiagnose', (ctx) =>
     handleSAPDiagnose(ctx.client, ctx.args, ctx.config.minimalErrors, {
+      configuredAbapRelease:
+        ctx.config.multiTargetEndpoints || ctx.config.targetId ? undefined : ctx.config.abapRelease,
       configuredSystemType: ctx.config.systemType === 'auto' ? undefined : ctx.config.systemType,
     }),
   );
