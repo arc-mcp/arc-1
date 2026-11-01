@@ -22,8 +22,6 @@ jobs:
       tag_name: ${{ steps.release.outputs.tag_name }}
       version: ${{ steps.release.outputs.version }}
     steps:
-      # Keep the built-in GITHUB_TOKEN. GitHub holds bot-created PR workflows
-      # for maintainer approval; see docs/security-operations.md before requiring checks.
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5
         id: release
         # No release-type here — the action reads release-please-config.json.
@@ -63,8 +61,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Preserve the release-time test gate: bot-created PR workflows need
-      # maintainer approval and may not have run. Required PR checks are security-only.
+      # Sole guaranteed test gate for the release: release-please opens its PR with the
+      # default GITHUB_TOKEN, so test.yml runs on it only if a maintainer approves the
+      # bot-created PR's workflows, and nothing else tests the released commit. Do not remove.
       # Coverage is dropped here: it's non-gating and no one reads it at publish time.
       #
       # release-notes.test.ts is excluded for the same reason link-release-notes is
