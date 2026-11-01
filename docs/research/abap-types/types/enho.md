@@ -65,19 +65,20 @@ The original BAdI GET remains first, preserving its one-request success path and
 JSON shape. Only HTTP 400/404/500 triggers one bounded repository search. ARC-1
 requires a unique recognized subtype for the exact name. SAP 750 decorates search
 names with a display label, so an exact relative URI matching the constructed,
-known object path also qualifies. Metadata/source routes are constructed from that identity.
-Only a canonical revision-content link for the same include can be followed; ARC-1 does not probe
-all collections or retry with another identity. Unknown or ambiguous results keep
+known object path also qualifies. ARC-1 never follows a returned URI, probes all
+collections, or retries with another identity. Unknown or ambiguous results keep
 the original failure; denied searches and source errors propagate.
 
-When the generic XH read fails with 400/404/500, ARC-1 reads the enhancement include's
-revision feed and requires exactly one same-include `/versions/<timestamp>/00000/content` link.
-Atom ids can be URNs; historical versions and `99999` drafts never stand in for active source.
-It returns that source with `enhancementInclude` and a `note`; a missing, ambiguous or invalid feed keeps the
+When the generic XH read has a qualified source-unavailable failure, ARC-1 reads the enhancement include's
+revision feed and returns the active revision's content as `source` with
+`enhancementInclude` and a `note`; a feed that is missing, empty or invalid keeps the
 original SAP error, which then lists the include route among the attempted routes.
 Content reads denied by SAP propagate unchanged.
-Unknown switch support is omitted. Plain and ranged include reads retain provenance and draft warnings;
-editable snapshots and `expand_includes` keep their direct-read behavior and can still fail.
+
+The current guard accepts 404, typed `ExceptionResourceReadFailure` 500s, and only the observed
+750 unsupported-technology / 758 null-reference 500 bodies when the matching release is probed.
+Arbitrary 400/500, authentication, throttling and network failures never authorize revision fallback.
+Unqualified generated references such as EIMP are counted as missing sources, without fetching them.
 
 XHH returns `source`, `enhancedObject` and `hookImplementations` in addition to the
 common metadata. Hook entries retain IDs, spots, programs, methods, overwrite

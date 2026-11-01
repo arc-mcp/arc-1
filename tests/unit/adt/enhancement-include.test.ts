@@ -1,40 +1,97 @@
-import { expect, it, vi } from 'vitest';
-import { readEnhancementIncludeRevision } from '../../../src/adt/enhancement-include.js';
-import type { RevisionInfo } from '../../../src/adt/types.js';
+import { describe, expect, it, vi } from 'vitest';
+import { DataResponseBudget } from '../../../src/adt/data-result-context.js';
+import {
+  enhancementIncludeName,
+  enhancementIncludeReferences,
+  enhancementMethodIncludes,
+  readEnhancementIncludeRevision,
+} from '../../../src/adt/enhancement-include.js';
+import { RequestAttemptBudget } from '../../../src/adt/request-attempt-budget.js';
+import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 
-const include = `${'ZTEST'.padEnd(30, '=')}E`;
-const uri = (version: string, name = include) =>
-  `/sap/bc/adt/programs/includes/${encodeURIComponent(name)}/source/main/versions/20261101000000/${version}/content`;
-const revision = (version: string, name = include): RevisionInfo => ({
-  id: `urn:revision:${version}`,
-  author: 'TEST',
-  timestamp: '2026-11-01T00:00:00Z',
-  uri: uri(version, name),
-});
-function client(revisions: RevisionInfo[]) {
+const include = enhancementIncludeName('CL_OO_ADT_ENHANCED_CLASS1');
+const path = `/sap/bc/adt/programs/includes/${encodeURIComponent(include.toLowerCase())}/source/main/versions/19700101091123/00000/content`;
+const active = { id: '00000', author: 'SAP', timestamp: '1970-01-01', uri: path };
+function client(overrides = {}) {
   return {
-    getRevisions: vi.fn().mockResolvedValue({ object: { type: 'REPS', name: include }, revisions }),
-    getRevisionSource: vi.fn().mockResolvedValue('active source'),
+    safety: defaultSafetyConfig(),
+    getRevisions: vi
+      .fn()
+      .mockResolvedValue({ object: { name: include, type: 'REPS' }, revisions: [active], ...overrides }),
+    getRevisionSource: vi.fn().mockResolvedValue('unchanged generated source'),
   };
 }
-
-it('identifies the active content link even when the Atom id is a URN and a draft is first', async () => {
-  const sap = client([revision('99999'), revision('00001'), revision('00000')]);
-  const result = await readEnhancementIncludeRevision(sap, include);
-  expect(result?.source).toBe('active source');
-  expect(sap.getRevisionSource).toHaveBeenCalledExactlyOnceWith(uri('00000'));
-});
-
-it.each([
-  ['only history', [revision('00001')]],
-  ['only a draft', [revision('99999')]],
-  ['duplicate active entries', [revision('00000'), revision('00000')]],
-  ['another include', [{ ...revision('00000', 'OTHER'), id: '00000' }]],
-  ['a misleading id', [{ ...revision('00001'), id: '00000' }]],
-  ['an external URI', [{ ...revision('00000'), uri: `https://other.example${uri('00000')}` }]],
-  ['a malformed URI', [{ ...revision('00000'), uri: uri('00000', 'OTHER').replace('OTHER', '%ZZ') }]],
-] as const)('does not fetch source when the feed contains %s', async (_label, revisions) => {
-  const sap = client([...revisions]);
-  expect(await readEnhancementIncludeRevision(sap, include)).toBeUndefined();
-  expect(sap.getRevisionSource).not.toHaveBeenCalled();
+describe('qualified generated include revisions', () => {
+  it('bounds scanning of long nonmatching words while retaining namespaced padded references', () => {
+    const foreign = '/NS/OTHER=====================EM001';
+    expect(
+      enhancementIncludeReferences(`* ${'A'.repeat(150_000)}\nINCLUDE ${foreign}.\nINCLUDE ${include}M001.`),
+    ).toEqual([foreign, `${include}M001`]);
+  });
+  it.each(['INCL', 'VERSIONS', 'VERSION_SOURCE'])(
+    'obeys the hidden SAPRead.%s denial before any feed/content read',
+    async (type) => {
+      const c = client();
+      c.safety.denyActions.push(`SAPRead.${type}`);
+      await expect(readEnhancementIncludeRevision(c, include)).rejects.toThrow('denied');
+      expect(c.getRevisions).not.toHaveBeenCalled();
+      expect(c.getRevisionSource).not.toHaveBeenCalled();
+    },
+  );
+  it('binds the active entry and forwards every transport budget to both reads', async () => {
+    const c = client({ revisions: [{ ...active, id: '00001', timestamp: '2099-01-01' }, active] });
+    const request = {
+      deadline: Date.now() + 1000,
+      signal: new AbortController().signal,
+      attemptBudget: new RequestAttemptBudget(3),
+      responseBudget: new DataResponseBudget(1000, 'test'),
+      retryTransientErrors: false,
+    };
+    expect(await readEnhancementIncludeRevision(c, include, request)).toMatchObject({
+      source: 'unchanged generated source',
+      revision: { id: '00000', timestamp: '1970-01-01', uri: path },
+    });
+    expect(c.getRevisions).toHaveBeenCalledWith('INCL', include, {}, request);
+    expect(c.getRevisionSource).toHaveBeenCalledWith(path, request);
+  });
+  it.each([
+    { object: { name: 'ANOTHER', type: 'REPS' } },
+    { object: { name: include, type: 'PROG' } },
+    { revisions: [active, active] },
+    { revisions: [{ ...active, uri: path.replace('/00000/', '/00001/') }] },
+    { revisions: [{ ...active, uri: path.replace('cl_oo_adt_enhanced_class1', 'another') }] },
+    { revisions: [{ ...active, uri: `https://other.test${path}` }] },
+    { revisions: [{ ...active, uri: path.replace('/versions/', '/%2e%2e/versions/') }] },
+    { revisions: [{ ...active, uri: `${path}?version=inactive` }] },
+    { revisions: [{ ...active, uri: path.replace('/00000/content', '/99999/content') }] },
+  ])('rejects a feed/content ownership or version mismatch %#', async (overrides) => {
+    const c = client(overrides);
+    await expect(readEnhancementIncludeRevision(c, include)).rejects.toThrow('revision history');
+    expect(c.getRevisionSource).not.toHaveBeenCalled();
+  });
+  it('does not select history or substitute active content for an inactive request', async () => {
+    const c = client({ revisions: [{ ...active, id: '00001' }] });
+    expect(await readEnhancementIncludeRevision(c, include)).toBeUndefined();
+    c.getRevisions.mockClear();
+    expect(await readEnhancementIncludeRevision(c, include, { version: 'inactive' })).toBeUndefined();
+    expect(c.getRevisions).not.toHaveBeenCalled();
+    expect(c.getRevisionSource).not.toHaveBeenCalled();
+  });
+  it.each(['../WRONG', 'A'.repeat(31), 'Z?x', '', '/BAD/NAME/EXTRA'])('validates candidate name %s', (name) => {
+    expect(() => enhancementIncludeName(name)).toThrow();
+  });
+  it('follows only a method child discovered in a real statement for the same owner', async () => {
+    const child = `${include}M001`;
+    expect(
+      enhancementMethodIncludes(
+        `* INCLUDE ${include}M002.\nDATA(s) = 'INCLUDE ${include}M003.'.\nINCLUDE ${child}.\nINCLUDE OTHER=========================EM001.`,
+        include,
+      ),
+    ).toEqual([child]);
+    const c = client({
+      object: { name: child, type: 'REPS' },
+      revisions: [{ ...active, uri: path.replace('%3De/', '%3Dem001/') }],
+    });
+    expect(await readEnhancementIncludeRevision(c, child)).toMatchObject({ include: child });
+  });
 });

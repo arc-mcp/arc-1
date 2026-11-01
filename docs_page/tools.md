@@ -106,7 +106,7 @@ the complete inherited API.
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `methodView` | string | No | `"signature"`: return one method declaration owned by the global CLAS MAIN source, including parameter and exception clauses. Requires a bare `method` name; omit for the existing implementation-body read. No `method="*"`, locals, interface-qualified or inherited signatures; only omitted/`main` include and plain text format. Incompatible with grep, ranges, diff and editable reads. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. For FUGR, `grep` implies `expand_includes` and searches each include on its own: matches are grouped under `=== <include> ===` with line numbers counted within that include. For PROG and INCL, `grep` searches the object itself unless `expand_includes=true`; the response then names the includes that the expansion would also search. Falls back to a literal search when the pattern is not valid regex. |
-| `extensions` | string | No | `none`, `summary`, or `sources`. Full TABL, PROG, INCL, FUNC and FUGR reads default to a bounded summary; partial reads default to none. Sources adds separate labelled extension bodies and a bounded graph. See [Extension discovery](#extension-discovery). |
+| `extensions` | string | No | `none`, `summary`, or `sources`. Full TABL, PROG, INCL, FUNC, FUGR, CLAS and INTF source reads default to a bounded summary; partial reads default to none. Sources adds separate labelled extension bodies and a bounded graph. See [Extension discovery](#extension-discovery). |
 | `enhancementContext` | object | No | Standalone INCL only: `{type: "PROG"\|"FUGR"\|"CLAS", name: "..."}` identifies the owning main object. Required for standalone include plug-in discovery; actual child includes inherit their root context. |
 | `lineStart` | integer | No | First source line (1-based, inclusive); requires `lineEnd`. Supports PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, DDLX and TABL. CLAS `include` selects one source section. Plain text only: do not combine with grep, method, diff, structured/editable output, signature or element extraction. Draft/version notices precede the numbered source. |
 | `lineEnd` | integer | No | Last source line (inclusive); requires `lineStart`. Clamped to the source end; a start beyond the source is an error. |
@@ -140,13 +140,31 @@ for extension context through the CLI.
 The current implementation qualifies DDIC appends on SAP_BASIS 750 SP02, 758 SP02, and BTP ABAP
 Environment 920 SP05 with a developer's browser OAuth identity. Source plug-in XML is qualified
 on 750 and 758. Live positive coverage includes PROG on 750 and INCL, FUNC and FUGR on 758;
-other family/release combinations remain unqualified. CLAS, INTF and BDEF public integration
-remains in later stages and explicit requests currently report `unsupported`.
+other family/release combinations remain unqualified. BDEF public integration
+remains a separate stage and explicit requests currently report `unsupported`.
 Read-only BTP ABAP 920 checks cover FUNC `RFC_SYSTEM_INFO` (provider not advertised) and FUGR
 `SRFC` (empty root identities and bounded source traversal). These establish contract behavior,
 not positive BTP plug-in source coverage. PROG/INCL remain excluded from the BTP public schema;
 other BTP objects, releases and live principal propagation remain unqualified. CDS/DDLX extensions
 and BAdIs are outside this feature.
+
+CLAS combines selected-source hook coverage with a separate native `EXTED_OBJ` graph for the owning
+class. Denying `SAPNavigate.relations` suppresses this native provider while independent hooks
+remain governed by their SAPRead rules. Main and local sections stay distinct. A class can have structural enhancements despite an
+empty hook/source response. Native graph edges retain their direction and ENHO types; the type
+alone does not identify enhancement technology. The native provider is qualified on 758 and BTP 920; 750's
+unsupported response remains explicit. Hook wire formats are qualified on both releases.
+
+Class sources retain rendered plug-ins or authored ENHO bodies as separate blocks. A qualified
+active-source failure may use a generated include's exact active revision (`00000`, matching REPS
+owner and content URI). Generated source may omit implementation names; only a method include
+actually named by that returned source is followed. It remains a labelled representation, not an
+inferred edit target. INTF's tested 758 ENV fallback is `unsupported_context`; 750 is an unsupported
+provider. Neither is evidence of absent interface extensions. Positive interface coverage is unqualified.
+Read-only BTP 920 tests through direct service-key/browser OAuth find structural identities and
+return the main hook example's eight bodies and three replacement edges. Structural and selected
+local authored sources return 403 for the tested identity; these stay denied without generated
+fallback. INTF returns unsupported context. BTP principal propagation remains unqualified here.
 
 Method, grep, line-window and class-include reads default to none. An explicit mode on a partial
 read describes its **owning object/source**, without claiming the extension bodies match the
@@ -493,22 +511,22 @@ navigation links). A failed source read returns an error, not successful partial
 
 ARC-1 resolves a different enhancement subtype through repository search only after
 an unsupported BAdI read. This needs search permission as well as read permission.
-When the generic `enhoxh` route fails for a source-code plug-in or class enhancement
-(observed on 750/758), ARC-1 reads the active revision of the implementation's enhancement
-include (the name padded with `=` to 30 characters plus `E`). It returns `source`,
-`enhancementInclude` provenance and a `note`; technology, description, package, enhanced object
-and hook positions remain unavailable. `SAPRead(type="INCL")` on such an include can use the same fallback after a
-direct include read fails, with a provenance note. ENHO needs read and search permission;
-INCL needs read permission. An explicit inactive include read never falls back to active source.
-Automatic source-plugin discovery still needs its direct resources; optional discovery failures
-are reported separately from the source read.
+A qualified source-unavailable failure can use the implementation's generated enhancement include
+(the name padded with `=` to 30 characters plus `E`). The fallback is qualified on 750/758; ordinary
+server errors, authorization, throttling and network failures do not authorize it. ARC-1 requires
+one exact active revision (`00000`) with matching REPS/include identity and canonical content URI;
+missing active entries never select a historical or inactive version. The source is returned with
+`enhancementInclude` provenance and a `note`; technology, description, package, enhanced object and
+hook positions remain unavailable. `SAPRead(type="INCL")` applies the same checks when a generated
+include's direct read is unavailable, prefixes source with provenance and preserves draft warnings.
+An explicit inactive include read is not served from revisions. Both routes obey the INCL,
+VERSIONS and VERSION_SOURCE deny rules in addition to the requested read action.
 Some other enhancement implementations still fail inside SAP; use SE80/SE19 or Eclipse's SAP GUI
 integration when the error identifies an unavailable ADT route. Only BAdI implementations
 are writable ([BAdI implementation writes](#badi-implementation-writes-enho)); ENHO source filtering
 (`grep`, method or line selection) is not supported.
 
-Native ENHO reads use SAP's unversioned developer view: omit `version` or use `auto`.
-The revision fallback is active-only and does not check for pending ENHO drafts.
+ENHO preserves SAP's unversioned developer view: omit `version` or use `auto`.
 Explicit `active`/`inactive` selection is refused because its behavior is not verified
 for these resources. Metadata and source are separate reads, not an atomic snapshot.
 
