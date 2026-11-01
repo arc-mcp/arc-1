@@ -1,4 +1,3 @@
-import type { SystemType } from '../adt/types.js';
 /**
  * SAPDiagnose handler — runtime diagnostics: short dumps (ST22), traces, gateway errors, object
  * state, ATC, unit tests, CDS test cases.
@@ -63,6 +62,7 @@ import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import type {
   DumpDetail,
   FixAffectedObject,
+  SystemType,
   TracedObjectType,
   TracedProcessType,
   TraceRequestCreateOptions,
@@ -880,7 +880,7 @@ export async function handleSAPDiagnose(
       if (!type || !name)
         return errorResult(
           '"type" and "name" are required for "atc" (e.g. type="CLAS", name="ZCL_FOO"), or pass "objects" for a batch. ' +
-            'For whole packages use action="atc_ci".',
+            'For packages use action="atc", type="DEVC", name=<package>; BTP also supports action="atc_ci".',
         );
       const objectUrl = objectUrlForType(type, name);
       const variant = args.variant as string | undefined;
