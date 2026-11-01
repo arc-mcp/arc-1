@@ -1,0 +1,250 @@
+{
+  "baseRevision": "90abdfc3",
+  "transport": "In-process handleToolCall over live ADT; not deployed remote MCP",
+  "systems": [
+    {
+      "system": "a4h",
+      "release": "758",
+      "auth": "direct ADT Basic; client 001; default read-only safety",
+      "node": "v22.18.0",
+      "checkedAt": "2026-10-29T18:32:31.948Z",
+      "tokenizer": "gpt-tokenizer 3.4.0 o200k_base",
+      "code": {
+        "src/handlers/read.ts": "940e329d0615f1c0d037feecadbc2954b3148be04ba37a5ba94520230a1ed24d",
+        "src/handlers/read-method-options.ts": "9453b195b2ed969a9b9a1bca095f9daddfe8d7c2a5c1d9b1fc844b33db0cec08",
+        "src/context/method-signature.ts": "8c5000a3d8f16e39a6c66b9bf5ddc88fce3f06c9d9ebf946e26e84673bd7ad00",
+        "src/context/method-suggestions.ts": "a294c26484bde26b75554a6a243dd07ca6a51023c3bea2bbc1e6c0955a7cad14",
+        "src/context/method-surgery.ts": "c44b03c642b53e2b244a1d650bbf2ac336ed1cfa3296acbfac136d638d347cf7",
+        "src/handlers/schemas.ts": "e3dede285d084ed36818bcaca19bbe98719ba0484f02b6374c56087c4390d5a3",
+        "src/handlers/tools.ts": "b3cb54f4e5165427fa55efd99772715c24061bd783455dc793e673f7d820288e"
+      },
+      "rows": [
+        {
+          "name": "http-body",
+          "args": {
+            "name": "CL_HTTP_CLIENT",
+            "method": "CREATE_BY_URL"
+          },
+          "isError": false,
+          "sapGets": 1,
+          "responseTokens": 4281,
+          "decodedTokens": 3848,
+          "bytes": 14660
+        },
+        {
+          "name": "http-inventory",
+          "args": {
+            "name": "CL_HTTP_CLIENT",
+            "method": "*"
+          },
+          "isError": false,
+          "sapGets": 1,
+          "responseTokens": 2062,
+          "decodedTokens": 1994,
+          "bytes": 7534
+        },
+        {
+          "name": "http-signature",
+          "args": {
+            "name": "CL_HTTP_CLIENT",
+            "method": "CREATE_BY_URL",
+            "methodView": "signature"
+          },
+          "isError": false,
+          "sapGets": 1,
+          "responseTokens": 365,
+          "decodedTokens": 321,
+          "bytes": 1299
+        },
+        {
+          "name": "gui-signature",
+          "args": {
+            "name": "CL_GUI_FRONTEND_SERVICES",
+            "method": "GUI_DOWNLOAD",
+            "methodView": "signature"
+          },
+          "isError": false,
+          "sapGets": 1,
+          "responseTokens": 577,
+          "decodedTokens": 511,
+          "bytes": 2091
+        },
+        {
+          "name": "alv-typo",
+          "args": {
+            "name": "CL_GUI_ALV_GRID",
+            "method": "REFRESH_TABLE_DISPLA"
+          },
+          "isError": true,
+          "sapGets": 1,
+          "responseTokens": 102,
+          "decodedTokens": 84,
+          "bytes": 348
+        },
+        {
+          "name": "interface-refusal",
+          "args": {
+            "name": "CL_HTTP_CLIENT",
+            "method": "SEND",
+            "methodView": "signature"
+          },
+          "isError": true,
+          "sapGets": 1,
+          "responseTokens": 51,
+          "decodedTokens": 34,
+          "bytes": 163
+        },
+        {
+          "name": "structured-guard-CREATE_BY_URL",
+          "args": {
+            "name": "CL_HTTP_CLIENT",
+            "method": "CREATE_BY_URL",
+            "format": "structured",
+            "version": "auto"
+          },
+          "isError": true,
+          "sapGets": 0,
+          "responseTokens": 99,
+          "decodedTokens": 77,
+          "bytes": 358
+        },
+        {
+          "name": "structured-guard-*",
+          "args": {
+            "name": "CL_HTTP_CLIENT",
+            "method": "*",
+            "format": "structured",
+            "version": "auto"
+          },
+          "isError": true,
+          "sapGets": 0,
+          "responseTokens": 99,
+          "decodedTokens": 77,
+          "bytes": 358
+        }
+      ]
+    },
+    {
+      "system": "npl",
+      "release": "750",
+      "auth": "direct ADT Basic; client 001; default read-only safety",
+      "node": "v22.18.0",
+      "checkedAt": "2026-10-29T18:32:53.999Z",
+      "tokenizer": "gpt-tokenizer 3.4.0 o200k_base",
+      "code": {
+        "src/handlers/read.ts": "940e329d0615f1c0d037feecadbc2954b3148be04ba37a5ba94520230a1ed24d",
+        "src/handlers/read-method-options.ts": "9453b195b2ed969a9b9a1bca095f9daddfe8d7c2a5c1d9b1fc844b33db0cec08",
+        "src/context/method-signature.ts": "8c5000a3d8f16e39a6c66b9bf5ddc88fce3f06c9d9ebf946e26e84673bd7ad00",
+        "src/context/method-suggestions.ts": "a294c26484bde26b75554a6a243dd07ca6a51023c3bea2bbc1e6c0955a7cad14",
+        "src/context/method-surgery.ts": "c44b03c642b53e2b244a1d650bbf2ac336ed1cfa3296acbfac136d638d347cf7",
+        "src/handlers/schemas.ts": "e3dede285d084ed36818bcaca19bbe98719ba0484f02b6374c56087c4390d5a3",
+        "src/handlers/tools.ts": "b3cb54f4e5165427fa55efd99772715c24061bd783455dc793e673f7d820288e"
+      },
+      "rows": [
+        {
+          "name": "http-body",
+          "args": {
+            "name": "CL_HTTP_CLIENT",
+            "method": "CREATE_BY_URL"
+          },
+          "isError": false,
+          "sapGets": 1,
+          "responseTokens": 2649,
+          "decodedTokens": 2338,
+          "bytes": 8704
+        },
+        {
+          "name": "http-inventory",
+          "args": {
+            "name": "CL_HTTP_CLIENT",
+            "method": "*"
+          },
+          "isError": false,
+          "sapGets": 1,
+          "responseTokens": 1261,
+          "decodedTokens": 1206,
+          "bytes": 4479
+        },
+        {
+          "name": "http-signature",
+          "args": {
+            "name": "CL_HTTP_CLIENT",
+            "method": "CREATE_BY_URL",
+            "methodView": "signature"
+          },
+          "isError": false,
+          "sapGets": 1,
+          "responseTokens": 162,
+          "decodedTokens": 137,
+          "bytes": 571
+        },
+        {
+          "name": "gui-signature",
+          "args": {
+            "name": "CL_GUI_FRONTEND_SERVICES",
+            "method": "GUI_DOWNLOAD",
+            "methodView": "signature"
+          },
+          "isError": false,
+          "sapGets": 1,
+          "responseTokens": 577,
+          "decodedTokens": 511,
+          "bytes": 2091
+        },
+        {
+          "name": "alv-typo",
+          "args": {
+            "name": "CL_GUI_ALV_GRID",
+            "method": "REFRESH_TABLE_DISPLA"
+          },
+          "isError": true,
+          "sapGets": 1,
+          "responseTokens": 102,
+          "decodedTokens": 84,
+          "bytes": 348
+        },
+        {
+          "name": "interface-refusal",
+          "args": {
+            "name": "CL_HTTP_CLIENT",
+            "method": "SEND",
+            "methodView": "signature"
+          },
+          "isError": true,
+          "sapGets": 1,
+          "responseTokens": 51,
+          "decodedTokens": 34,
+          "bytes": 163
+        },
+        {
+          "name": "structured-guard-CREATE_BY_URL",
+          "args": {
+            "name": "CL_HTTP_CLIENT",
+            "method": "CREATE_BY_URL",
+            "format": "structured",
+            "version": "auto"
+          },
+          "isError": true,
+          "sapGets": 0,
+          "responseTokens": 99,
+          "decodedTokens": 77,
+          "bytes": 358
+        },
+        {
+          "name": "structured-guard-*",
+          "args": {
+            "name": "CL_HTTP_CLIENT",
+            "method": "*",
+            "format": "structured",
+            "version": "auto"
+          },
+          "isError": true,
+          "sapGets": 0,
+          "responseTokens": 99,
+          "decodedTokens": 77,
+          "bytes": 358
+        }
+      ]
+    }
+  ]
+}

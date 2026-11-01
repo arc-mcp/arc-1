@@ -210,13 +210,16 @@ export async function callTool(
 
 /**
  * Assert a tool call returned successfully (no error).
- * Returns the text content for further assertions.
+ * Returns the first text block for base-result assertions. Additional text blocks
+ * carry separately labelled context, such as DDIC extension discovery.
  */
 export function expectToolSuccess(result: ToolResult): string {
   expect(result.isError, `Expected success but got error: ${result.content?.[0]?.text?.slice(0, 300)}`).toBeFalsy();
-  expect(result.content).toHaveLength(1);
-  expect(result.content[0].type).toBe('text');
-  expect(result.content[0].text).toBeTruthy();
+  expect(result.content.length).toBeGreaterThan(0);
+  for (const block of result.content) {
+    expect(block.type).toBe('text');
+    expect(block.text).toBeTruthy();
+  }
   return result.content[0].text;
 }
 

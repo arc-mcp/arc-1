@@ -871,6 +871,13 @@ export async function handleSAPDiagnose(
           ? errorResult(toolJson(result))
           : textResult(toolJson(result));
       }
+      // Without type+name the URL degrades to a bare collection path (e.g. /programs/programs/) that SAP
+      // only rejects AFTER a worklist and run were already created, leaving an orphan worklist.
+      if (!type || !name)
+        return errorResult(
+          '"type" and "name" are required for "atc" (e.g. type="CLAS", name="ZCL_FOO"), or pass "objects" for a batch. ' +
+            'For whole packages use action="atc_ci".',
+        );
       const objectUrl = objectUrlForType(type, name);
       const variant = args.variant as string | undefined;
       const result = await runAtcCheck(client.http, client.safety, objectUrl, variant, {

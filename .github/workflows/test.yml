@@ -84,8 +84,7 @@ jobs:
       # slower steps run. Audits production AND dev deps — a compromised
       # dev dep (test runner, linter) can poison the published artifact.
       # Threshold = high (moderate is too noisy for transitive deps).
-      # audit-ci.json contains an expiring exception for one unpatched advisory.
-      # Other high/critical advisories and audit failures still block the job.
+      # All high/critical advisories and audit failures block the job.
       - name: Security audit (npm audit)
         run: npm run audit:ci
 
