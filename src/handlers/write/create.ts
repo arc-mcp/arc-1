@@ -19,7 +19,7 @@ import {
 } from '../../adt/ddic-xml.js';
 import { activate, activateBatch } from '../../adt/devtools.js';
 import { badiContainerXml, hasBadiImplementations } from '../../adt/enhancement-impl.js';
-import { AdtApiError, AdtError, AdtSafetyError } from '../../adt/errors.js';
+import { AdtApiError, type AdtError, AdtSafetyError } from '../../adt/errors.js';
 import { type FmParameter, findFmHeader, spliceFmSignature } from '../../adt/fm-signature.js';
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
 import { isServerDrivenObjectType } from '../../adt/server-driven.js';
@@ -77,6 +77,7 @@ import {
 } from './batch-results.js';
 import type { SapWriteContext } from './context.js';
 import { resolveCreateTransport } from './create-transport.js';
+import { postCreateError } from './post-create-error.js';
 
 const FUNCTION_MODULE_MEDIA_TYPE = /^application\/vnd\.sap\.adt\.functions\.fmodules(?:\.v\d+)?\+xml\b/i;
 
@@ -176,16 +177,6 @@ function functionModuleCreateError(
   step: 'source' | 'processing metadata',
   object = { name: ctx.name, group: ctx.args.group },
 ): AdtError {
-  const error =
-    cause instanceof AdtError
-      ? cause
-      : new AdtError(
-          ctx.config.minimalErrors
-            ? 'FUNC follow-up verification failed. Detailed diagnostics are hidden.'
-            : cause instanceof Error
-              ? cause.message
-              : String(cause),
-        );
   const identity = `type="FUNC", name="${object.name}", group="${object.group}"`;
   const recovery =
     step === 'source'
@@ -195,13 +186,7 @@ function functionModuleCreateError(
     `FUNC ${object.name} was created, but its ${step} step failed. Saved state is unconfirmed. ` +
     `Inspect SAPRead(${identity}, version="inactive", includeSignature=true); do not repeat create. ${recovery} ` +
     'If an edit lock remains, release it in ADT/SM12 before retrying.';
-  error.extraHint = [error.extraHint, hint].filter(Boolean).join('\n\n');
-  try {
-    ctx.invalidateWrittenObject('FUNC', object.name);
-  } catch {
-    // Cache bookkeeping must not replace the original SAP failure or its recovery guidance.
-  }
-  return error;
+  return postCreateError(ctx, cause, 'FUNC', object.name, hint);
 }
 
 async function persistFunctionModuleProcessingMetadata(
@@ -275,25 +260,25 @@ async function resolveFunctionGroupCreatePackage(
   return actualPackage;
 }
 
-function ttypPostCreateFailureMessage(name: string, cause: unknown): string {
-  const detail = cause instanceof Error ? cause.message : String(cause);
+function ttypPostCreateFailureHint(name: string): string {
   return (
     `TTYP post-create update failed for ${name} after SAP accepted the create POST. ` +
     `The object may remain as SAP's default metadata shell (CHAR). To recover, run ` +
-    `SAPWrite(action="update", type="TTYP", name="${name}", rowType=…) to write the intended row type, ` +
-    `or delete it — a plain re-create fails with "already exists". Verify with SAPRead first. ` +
-    detail
+    `SAPWrite(action="update", type="TTYP", name="${name}", rowType=…). Repeat rowType and any ` +
+    `rowTypeKind, rowTypeLength and rowTypeDecimals from the create request. ` +
+    `Verify with SAPRead first; do not repeat create. If an edit lock remains, release it in ADT/SM12 before retrying.`
   );
 }
 
 async function putTtypMetadataAfterCreate(
-  client: SapWriteContext['client'],
+  ctx: SapWriteContext,
   objectUrl: string,
   name: string,
   body: string,
   contentType: string,
   transport: string | undefined,
 ): Promise<void> {
+  const { client } = ctx;
   try {
     await client.http.withStatefulSession(async (session) => {
       const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
@@ -305,7 +290,7 @@ async function putTtypMetadataAfterCreate(
       }
     });
   } catch (err) {
-    throw new Error(ttypPostCreateFailureMessage(name, err));
+    throw postCreateError(ctx, err, 'TTYP', name, ttypPostCreateFailureHint(name));
   }
 }
 
@@ -676,17 +661,17 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
           getCachedFeatures()?.abapRelease,
         );
       } catch (err) {
-        // The POST above already succeeded, so the KTD exists. Say so — a generic
-        // read/rewrite/PUT failure invites the same create again, which 409s.
-        invalidateWrittenObject(type, name);
-        const documentationPart = shortTexts?.length ? 'documentation' : 'documentation body';
-        return errorResult(
-          `Created SKTD ${name} in package ${pkg}, but the ${documentationPart} was NOT written: ` +
-            `${err instanceof Error ? err.message : String(err)}\n` +
-            `The object exists — verify it with SAPRead. Inspect the reported cause: correct or remove invalid ` +
-            `${[hasSource && 'source', shortTexts?.length && 'shortTexts'].filter(Boolean).join(' and ')} input, ` +
-            `or wait for a transient read/PUT failure to recover. Then use ` +
-            `SAPWrite(action="update", type="SKTD", name="${name}", …); do not retry create.`,
+        const input = [hasSource && 'source', shortTexts?.length && 'shortTexts'].filter(Boolean).join(' and ');
+        throw postCreateError(
+          ctx,
+          err,
+          type,
+          name,
+          `Created SKTD ${name} in package ${pkg}, but its documentation write state is unconfirmed. ` +
+            `First verify it with SAPRead. To correct or remove invalid ${input} input without writing, use ` +
+            `SAPWrite(action="update", type="SKTD", name="${name}", dryRun=true, …). ` +
+            `When ready, update without dryRun; do not retry create. ` +
+            'If an edit lock remains, release it in ADT/SM12 before retrying.',
         );
       }
       invalidateWrittenObject(type, name);
@@ -850,7 +835,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     // TTYP: the POST creates a default-typed (CHAR) shell — a follow-up PUT writes the real row type.
     if (type === 'TTYP') {
       const ct = vendorContentTypeForType(type);
-      await putTtypMetadataAfterCreate(client, objectUrl, name, body, ct, effectiveTransport);
+      await putTtypMetadataAfterCreate(ctx, objectUrl, name, body, ct, effectiveTransport);
     }
     invalidateWrittenObject();
     const followUpHint =
@@ -1027,7 +1012,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         plan.result.write = 'not_attempted';
       }
     } catch (err) {
-      errors.push(batchFailureMessage(err, false));
+      errors.push(batchFailureMessage(err, err instanceof AdtApiError && config.minimalErrors));
     }
     if (errors.length) failBatchEntry(plan.result, 'preflight', errors.join('\n'));
   }
@@ -1189,14 +1174,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         });
       }
       if (plan.type === 'TTYP')
-        await putTtypMetadataAfterCreate(
-          client,
-          plan.objectUrl,
-          plan.name,
-          plan.body,
-          plan.contentType,
-          plan.transport,
-        );
+        await putTtypMetadataAfterCreate(ctx, plan.objectUrl, plan.name, plan.body, plan.contentType, plan.transport);
       if (!plan.metadataObject && plan.source) {
         await safeUpdateSource(
           client.http,

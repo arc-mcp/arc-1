@@ -154,6 +154,17 @@ describe('FUNC creation recovery after accepted POST', () => {
     const payload = JSON.parse(String(result.content[1]?.text));
     expect(payload.batch.results[0]).toMatchObject({ creation: 'confirmed', write: 'unknown', failedPhase: 'write' });
   });
+  it('does not describe a confirmed FUNC create as absent after a follow-up 404', async () => {
+    fixture('source');
+    const client = createClient();
+    vi.spyOn(client, 'getObjectMetadata').mockRejectedValue(new AdtApiError(sensitive, 404, root));
+    const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', args);
+    expect(result.isError).toBe(true);
+    const message = result.content[0].text;
+    expect(message).toContain('status 404');
+    expect(message).toContain('was created');
+    expect(message).not.toContain('was not found');
+  });
   it('keeps the batch manifest when deferred activation cache invalidation fails', async () => {
     const calls = fixture('metadata');
     const client = createClient();
