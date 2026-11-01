@@ -3,6 +3,7 @@ import type { AdtClient } from '../../../src/adt/client.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import {
   BASELINE,
+  call,
   checkTarget,
   cleanupPair,
   createOwned,
@@ -10,6 +11,7 @@ import {
   type Pair,
   preparePair,
   recordDescriptions,
+  recordError,
   selectRetention,
   snapshotIndex,
 } from '../../helpers/where-used-experiment.js';
@@ -162,7 +164,7 @@ describe('bounded owned-pair research lifecycle', () => {
     }
     expect(cases.map((p) => p.retain)).toEqual(['control', undefined, 'failure', undefined]);
   });
-  it('does not retain setup, index-capture or unexpected-source failures', () => {
+  it('preserves an activated failure despite missing diagnostics but rejects unexpected source', () => {
     const p = pair();
     const s = state(p);
     p.outcome = 'ordinary-scoped-failure';
@@ -171,7 +173,8 @@ describe('bounded owned-pair research lifecycle', () => {
     p.activatedAt = 1;
     p.indexOk = false;
     selectRetention(s, p);
-    expect(p.retain).toBeUndefined();
+    expect(p.retain).toBe('failure');
+    p.retain = undefined;
     p.indexOk = true;
     p.activeSourcesMatch = false;
     selectRetention(s, p);
@@ -227,6 +230,18 @@ describe('bounded owned-pair research lifecycle', () => {
       rows: [],
       outsideExactPrefix: 1,
     });
+  });
+  it('publishes only fixed error fields from minimal tool failures', async () => {
+    const p = pair();
+    const s = state(p);
+    mocks.dispatch.mockResolvedValue({
+      isError: true,
+      content: [{ text: 'ADT API error: status 503. Category: service-unavailable. private backend details' }],
+    });
+    const error = await call(fakeClient(), 'SAPWrite', {}).catch((caught) => caught);
+    recordError(s, 'create', error);
+    expect(s.errors).toEqual([{ phase: 'create', kind: 'tool', status: 503, category: 'service-unavailable' }]);
+    expect(JSON.stringify(mocks.write.mock.calls)).not.toContain('private backend details');
   });
   it('classifies unknown result descriptions without preserving their text', async () => {
     const client = fakeClient();

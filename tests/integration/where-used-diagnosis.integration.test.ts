@@ -12,6 +12,7 @@ import {
   preparePair,
   readManifest,
   recordDescriptions,
+  recordError,
   selectRetention,
   snapshotIndex,
   withReadDeadline,
@@ -45,12 +46,17 @@ ENDCLASS.`,
   let testFailed = false;
   beforeAll(() => {
     pending = (async () => {
+      pair.phase = 'target';
       await checkTarget(client);
+      pair.phase = 'preflight';
       await preparePair(client, state, pair);
       for (const [name, source] of sources) await createOwned(client, state, pair, name, source);
       pair.activatedAt = Date.now();
       writeJson(MANIFEST, state);
-    })();
+    })().catch((error) => {
+      recordError(state, pair.phase ?? 'setup', error);
+      throw error;
+    });
     return pending;
   }, 120_000);
 
@@ -60,8 +66,10 @@ ENDCLASS.`,
     if (testFailed && pair.outcome === 'passed') pair.outcome = 'other-failure';
     if (pair.activatedAt) {
       try {
+        pair.phase = 'index';
         await snapshotIndex(client, pair, 'original');
         pair.indexOk = true;
+        pair.phase = 'active-source';
         await withReadDeadline(client, 15_000, async () => {
           const active = [];
           for (const [name, source] of sources) {
@@ -72,14 +80,15 @@ ENDCLASS.`,
             active.push({
               name,
               sourceMatches: normalize(source) === normalize(result.source),
-              metadataUserMatchesNativePreflight: owner === undefined ? null : owner === 'DEVELOPER',
+              metadataUserMatchesCiUser: owner === undefined ? null : owner === process.env.TEST_SAP_USER,
             });
           }
           pair.activeSourcesMatch = active.every((row) => row.sourceMatches);
           writeJson(`${PUBLIC_DIR}/${root}-active.json`, { active });
           if (!pair.activeSourcesMatch) state.stop = 'setup';
         });
-      } catch {
+      } catch (error) {
+        recordError(state, pair.phase ?? 'index', error);
         pair.indexOk = false;
         state.stop = 'index';
       }
@@ -139,6 +148,9 @@ ENDCLASS.`,
         const empty = JSON.parse(await call(client, 'SAPNavigate', { ...args, packages: ['ZARC1018_ABSENT'] }));
         expect(empty.total).toBe(0);
         pair.outcome = 'passed';
+      } catch (error) {
+        recordError(state, 'original-query', error);
+        throw error;
       } finally {
         evidence.restore();
         descriptions.restore();

@@ -16,11 +16,12 @@ jobs:
       cancel-in-progress: false
       queue: max
     env:
-      TEST_SAP_URL: ${{ secrets.TEST_SAP_URL }}
+      # Same 816 backend through its verified HTTPS proxy; do not alter repository secrets.
+      TEST_SAP_URL: https://a4h-2025.marianzeis.de
       TEST_SAP_USER: ${{ secrets.TEST_SAP_USER }}
       TEST_SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
       TEST_SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
-      TEST_SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
+      TEST_SAP_INSECURE: 'false'
       TEST_FILE_PARALLELISM: 'false'
     steps:
       - uses: actions/checkout@v7
@@ -41,6 +42,7 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
       - name: Observe retained pairs through minute five
+        if: ${{ !cancelled() }}
         timeout-minutes: 8
         run: npx tsx scripts/diagnose-1057.ts observe-before-native
       - name: Publish the native inspection checkpoint
@@ -52,7 +54,8 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
       - name: Continue observations until the twenty-minute hold ends
-        timeout-minutes: 14
+        if: ${{ !cancelled() }}
+        timeout-minutes: 16
         run: npx tsx scripts/diagnose-1057.ts observe-after-native
       - name: Delete only registered owned objects and verify metadata 404
         if: always()

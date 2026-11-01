@@ -14,6 +14,7 @@ import {
   PUBLIC_DIR,
   readManifest,
   recordDescriptions,
+  recordError,
   snapshotIndex,
   withReadDeadline,
   writeJson,
@@ -27,6 +28,8 @@ async function trials() {
     baseline: BASELINE,
     runningRevision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     packageVersion: JSON.parse(readFileSync('package.json', 'utf8')).version,
+    runId: process.env.GITHUB_RUN_ID ?? null,
+    transport: 'HTTPS proxy; historical CI used direct HTTP on the same SAP host',
   });
   // Fail before creating anything if the CI secrets point to a different system.
   await checkTarget(makeClient());
@@ -85,12 +88,17 @@ async function trials() {
 
 async function observe(phase: 'before-native' | 'after-native') {
   const state = readManifest();
-  if (!state.holdStartedUtc && (state.stop || !state.pairs.some((pair) => pair.retain === 'failure'))) {
+  if (!state.pairs.some((pair) => pair.retain === 'failure')) {
     console.log('No qualifying retained failure; no inspection hold.');
     return;
   }
   const client = makeClient();
-  await checkTarget(client);
+  try {
+    await checkTarget(client);
+  } catch (error) {
+    state.observationFailures = (state.observationFailures ?? 0) + 1;
+    recordError(state, 'observation-target', error);
+  }
   if (phase === 'after-native' && !state.holdStartedUtc) return;
   state.holdStartedUtc ??= new Date().toISOString();
   const started = Date.parse(state.holdStartedUtc);
@@ -101,6 +109,11 @@ async function observe(phase: 'before-native' | 'after-native') {
       const label = `minute-${minute}`;
       try {
         await snapshotIndex(client, pair, label);
+      } catch (error) {
+        state.observationFailures = (state.observationFailures ?? 0) + 1;
+        recordError(state, 'sample-index', error);
+      }
+      try {
         await withReadDeadline(client, 25_000, async () => {
           const descriptions = recordDescriptions(client, pair.root);
           const evidence = recordWhereUsed(client.http, {
@@ -131,9 +144,10 @@ async function observe(phase: 'before-native' | 'after-native') {
             writeJson(`${PUBLIC_DIR}/${pair.root}-${label}-descriptions.json`, descriptions.descriptions);
           }
         });
-      } catch {
+      } catch (error) {
         // Preserve the agreed inspection window even when a diagnostic read fails.
         state.observationFailures = (state.observationFailures ?? 0) + 1;
+        recordError(state, 'sample-references', error);
         writeJson(`${PUBLIC_DIR}/${pair.root}-${label}-error.json`, {
           observationFailed: true,
           observedUtc: new Date().toISOString(),
@@ -199,7 +213,12 @@ async function main() {
     );
   } else throw new Error('Unknown diagnostic stage.');
 }
-main().catch(() => {
+main().catch((error) => {
+  try {
+    if (existsSync(MANIFEST)) recordError(readManifest(), 'driver', error);
+  } catch {
+    /* A corrupt manifest must never trigger an improvised cleanup. */
+  }
   console.error('Diagnostic stage failed; inspect the bounded manifest and stage status.');
   process.exitCode = 1;
 });

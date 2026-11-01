@@ -23,6 +23,7 @@ export interface Pair {
   retain?: 'control' | 'failure';
   indexOk?: boolean;
   activeSourcesMatch?: boolean;
+  phase?: string;
   cleanup: Record<string, 'absent' | 'failed' | 'conflict-refused'>;
 }
 export interface Manifest {
@@ -30,6 +31,7 @@ export interface Manifest {
   startedUtc: string;
   pairs: Pair[];
   trialFailures: number;
+  errors?: { phase: string; kind: string; status: number | null; category: string | null }[];
   stop?: 'target' | 'setup' | 'index' | 'cleanup' | 'process';
   observationFailures?: number;
   nativeInspectionReadyUtc?: string;
@@ -39,9 +41,25 @@ export interface Manifest {
 }
 
 export class ProbeError extends Error {
-  constructor(public readonly kind: 'lock' | 'conflict' | 'tool' | 'target' | 'ownership' | 'metadata') {
+  constructor(
+    public readonly kind: 'lock' | 'conflict' | 'tool' | 'target' | 'ownership' | 'metadata',
+    public readonly status: number | null = null,
+    public readonly category: string | null = null,
+  ) {
     super(`Diagnostic operation failed (${kind}).`);
   }
+}
+
+export function recordError(state: Manifest, phase: string, error: unknown): void {
+  state.errors ??= [];
+  if (state.errors.length < 64)
+    state.errors.push({
+      phase,
+      kind: error instanceof ProbeError ? error.kind : 'unexpected',
+      status: error instanceof ProbeError ? error.status : null,
+      category: error instanceof ProbeError ? error.category : null,
+    });
+  writeJson(MANIFEST, state);
 }
 
 export function writeJson(path: string, value: unknown): void {
@@ -81,20 +99,18 @@ export function makeClient(): AdtClient {
 
 export async function checkTarget(client: AdtClient): Promise<void> {
   const configured = new URL(process.env.TEST_SAP_URL ?? 'https://invalid.invalid');
-  if (
-    configured.href !== 'https://a4h-2025.marianzeis.de/' ||
-    process.env.TEST_SAP_CLIENT !== '001' ||
-    process.env.TEST_SAP_INSECURE === 'true'
-  )
-    throw new ProbeError('target');
+  const target = {
+    urlMatches: configured.href === 'https://a4h-2025.marianzeis.de/',
+    clientMatches: process.env.TEST_SAP_CLIENT === '001',
+    tlsVerified: process.env.TEST_SAP_INSECURE !== 'true',
+    basisMatches: null as boolean | null,
+  };
+  writeJson(`${PUBLIC_DIR}/target.json`, target);
+  if (!target.urlMatches || !target.clientMatches || !target.tlsVerified) throw new ProbeError('target');
   const components = await client.getInstalledComponents();
-  if (!components.some((row) => row.name === 'SAP_BASIS' && row.release === '816')) throw new ProbeError('target');
-  writeJson(`${PUBLIC_DIR}/target.json`, {
-    urlMatches: true,
-    clientMatches: true,
-    basisMatches: true,
-    userMatchesNativePreflight: process.env.TEST_SAP_USER === 'DEVELOPER',
-  });
+  target.basisMatches = components.some((row) => row.name === 'SAP_BASIS' && row.release === '816');
+  writeJson(`${PUBLIC_DIR}/target.json`, target);
+  if (!target.basisMatches) throw new ProbeError('target');
   client.http.setDiscoveryMap((await fetchDiscoveryDocument(client.http)).map);
 }
 
@@ -102,11 +118,15 @@ export async function call(client: AdtClient, tool: string, args: Record<string,
   const result = await handleToolCall(client, { ...DEFAULT_CONFIG, minimalErrors: true }, tool, args);
   if (!result.isError) return result.content[0]!.text!;
   const text = result.content[0]?.text ?? '';
+  const statusText = /\bstatus (\d{3})\b/i.exec(text)?.[1];
+  const status = statusText ? Number(statusText) : null;
+  const category = /\bCategory: ([a-z-]{1,64})\./.exec(text)?.[1] ?? null;
   if (/Category: (lock-conflict|invalid-lock-handle|enqueue-error)\./.test(text) || /status 423\./.test(text)) {
-    throw new ProbeError('lock');
+    throw new ProbeError('lock', status, category);
   }
-  if (/Category: object-exists\.|\balready exists?\b|\bstatus 409\b/i.test(text)) throw new ProbeError('conflict');
-  throw new ProbeError('tool');
+  if (/Category: object-exists\.|\balready exists?\b|\bstatus 409\b/i.test(text))
+    throw new ProbeError('conflict', status, category);
+  throw new ProbeError('tool', status, category);
 }
 
 export async function absent(client: AdtClient, name: string): Promise<boolean> {
@@ -137,6 +157,7 @@ export async function createOwned(
   checkMutationScope(client);
   if (!pair.absentBeforeCreate || ![pair.root, pair.consumer].includes(name)) throw new ProbeError('ownership');
   pair.attempts.push(name);
+  pair.phase = 'create';
   writeJson(MANIFEST, state);
   try {
     await call(client, 'SAPWrite', { action: 'create', type: 'CLAS', name, package: '$TMP', source });
@@ -147,11 +168,14 @@ export async function createOwned(
     }
     throw error;
   }
+  pair.phase = 'activate';
+  writeJson(MANIFEST, state);
   await call(client, 'SAPActivate', { type: 'CLAS', name });
 }
 
 export function selectRetention(state: Manifest, pair: Pair): void {
-  if (!pair.activatedAt || !pair.indexOk || !pair.activeSourcesMatch) return;
+  if (!pair.activatedAt || pair.activeSourcesMatch === false) return;
+  if (pair.outcome === 'passed' && (!pair.indexOk || !pair.activeSourcesMatch)) return;
   const role =
     pair.outcome === 'passed' ? 'control' : pair.outcome === 'ordinary-scoped-failure' ? 'failure' : undefined;
   if (role && !state.pairs.some((other) => other !== pair && other.retain === role)) pair.retain = role;
@@ -182,6 +206,7 @@ export async function cleanupPair(client: AdtClient, state: Manifest, pair: Pair
           continue;
         }
         pair.cleanup[name] = 'failed';
+        recordError(state, 'cleanup', error);
         ok = false;
         break;
       }
