@@ -19,23 +19,40 @@ import {
   withReadDeadline,
   writeJson,
 } from '../tests/helpers/where-used-experiment.js';
-import { suiteFailed, summarizeSuite } from '../tests/helpers/where-used-suite.js';
+import {
+  assertOriginalTestOnly,
+  ORIGINAL_TEST,
+  suiteFailed,
+  summarizeSuite,
+} from '../tests/helpers/where-used-suite.js';
 
 async function suite() {
   const orderProof = `${PUBLIC_DIR}/order.json`;
   const reportPath = 'test-results/integration.json';
   if (existsSync(MANIFEST) || existsSync(orderProof) || existsSync(reportPath))
     throw new Error('Refusing to overwrite prior diagnostic evidence.');
+  // --filesOnly resolves the selection without loading tests or invoking SAP. Refuse before
+  // creating the manifest too, so an always-run cleanup cannot connect after a selection failure.
+  const selected = JSON.parse(
+    execFileSync(
+      process.execPath,
+      ['node_modules/vitest/vitest.mjs', 'list', '--config', 'vitest.research-1057.config.ts', '--filesOnly', '--json'],
+      { encoding: 'utf8' },
+    ),
+  ) as { file: string }[];
+  assertOriginalTestOnly(selected.map((entry) => entry.file));
   let state: Manifest = { baseline: BASELINE, startedUtc: new Date().toISOString(), pairs: [], suiteExitCode: null };
   writeJson(MANIFEST, state);
   writeJson(`${PUBLIC_DIR}/provenance.json`, {
     baseline: BASELINE,
+    experiment: 'original-test-only; full-suite comparison is run 41329470276 at 1c2626e8',
     runningRevision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+    originalTestBlob: execFileSync('git', ['hash-object', ORIGINAL_TEST], { encoding: 'utf8' }).trim(),
+    productionSourceTree: execFileSync('git', ['rev-parse', 'HEAD:src'], { encoding: 'utf8' }).trim(),
     packageVersion: JSON.parse(readFileSync('package.json', 'utf8')).version,
     runId: process.env.GITHUB_RUN_ID ?? null,
     transport: 'HTTPS proxy; historical CI used direct HTTP on the same SAP host',
-    setupDifferences:
-      'Installed-component and metadata ownership probes; $TMP mutation safety may resolve packages; research config restores frozen baseline size order',
+    setupDifferences: 'Same original instrumented test and guards as full-suite run; preceding suite files omitted',
     bail: 1,
     retry: 0,
   });
@@ -57,11 +74,7 @@ async function suite() {
       // Neither the default report path nor this private directory is uploaded.
       renameSync(reportPath, 'test-results/1057-private/suite.json');
       const order = JSON.parse(readFileSync(orderProof, 'utf8'));
-      if (
-        order.fileCount !== 35 ||
-        order.targetRank !== 27 ||
-        order.predecessor !== 'tests/integration/mutation-lifecycle.integration.test.ts'
-      )
+      if (order.fileCount !== 1 || order.targetRank !== 1 || order.predecessor !== null)
         throw new Error('Unverified integration order.');
       const allowedFiles = new Set(
         execFileSync('git', ['ls-files', 'tests/integration'], { encoding: 'utf8' })
@@ -73,6 +86,8 @@ async function suite() {
         JSON.parse(readFileSync('test-results/1057-private/suite.json', 'utf8')),
         allowedFiles,
       );
+      if (summary.files.length !== 1 || summary.files[0]?.path !== ORIGINAL_TEST)
+        throw new Error('Unexpected files in the original-test-only report.');
       writeJson(`${PUBLIC_DIR}/suite-summary.json`, summary);
       if (!summary.success && result.status === 0) state.stop = 'process';
       if (!summary.ownedTestReported || state.pairs.length !== 1 || state.pairs[0]?.outcome === 'setup')

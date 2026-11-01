@@ -1,36 +1,28 @@
-/** Temporary research only. Preserve e21b7159e's uncached, single-project integration order. */
-import { mkdirSync, statSync, writeFileSync } from 'node:fs';
-import { relative } from 'node:path';
+/** Temporary research only. Run the unchanged original test without preceding suite files. */
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { defineConfig } from 'vitest/config';
 import { BaseSequencer, type TestSpecification } from 'vitest/node';
+import { assertOriginalTestOnly, ORIGINAL_TEST } from './tests/helpers/where-used-suite.js';
 import integration from './vitest.integration.config.js';
 
-const ORIGINAL = 'tests/integration/where-used-details.integration.test.ts';
-const PREDECESSOR = 'tests/integration/mutation-lifecycle.integration.test.ts';
 export const ORDER_PROOF = 'test-results/1057-public/order.json';
 
-export class OriginalIntegrationOrder extends BaseSequencer {
+export class OriginalTestOnly extends BaseSequencer {
   async sort(files: TestSpecification[]): Promise<TestSpecification[]> {
-    const sizes = new Map(
-      files.map((file) => [
-        file,
-        // The only instrumented integration file was 4169 bytes at the frozen baseline.
-        relative(process.cwd(), file.moduleId) === ORIGINAL ? 4169 : statSync(file.moduleId).size,
-      ]),
-    );
-    const order = [...files].sort((a, b) => sizes.get(b)! - sizes.get(a)!);
-    const target = order.findIndex((file) => relative(process.cwd(), file.moduleId) === ORIGINAL);
-    if (files.length !== 35 || target !== 26 || relative(process.cwd(), order[target - 1]!.moduleId) !== PREDECESSOR)
-      throw new Error('1057: frozen integration order not reproduced');
+    assertOriginalTestOnly(files.map((file) => file.moduleId));
     mkdirSync('test-results/1057-public', { recursive: true });
-    writeFileSync(ORDER_PROOF, JSON.stringify({ fileCount: 35, targetRank: 27, predecessor: PREDECESSOR }), {
+    writeFileSync(ORDER_PROOF, JSON.stringify({ fileCount: 1, targetRank: 1, predecessor: null }), {
       mode: 0o600,
     });
-    return order;
+    return files;
   }
 }
 
 export default defineConfig({
   ...integration,
-  test: { ...integration.test, sequence: { ...integration.test?.sequence, sequencer: OriginalIntegrationOrder } },
+  test: {
+    ...integration.test,
+    include: [ORIGINAL_TEST],
+    sequence: { ...integration.test?.sequence, sequencer: OriginalTestOnly },
+  },
 });

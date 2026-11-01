@@ -3,6 +3,14 @@ import { isAbsolute, relative } from 'node:path';
 import { z } from 'zod';
 import type { Manifest } from './where-used-experiment.js';
 
+export const ORIGINAL_TEST = 'tests/integration/where-used-details.integration.test.ts';
+
+/** The solo control must refuse an empty, changed or expanded selection before touching SAP. */
+export function assertOriginalTestOnly(files: readonly string[]): void {
+  if (files.length !== 1 || !isAbsolute(files[0]!) || relative(process.cwd(), files[0]!) !== ORIGINAL_TEST)
+    throw new Error('1057: expected only the original where-used test');
+}
+
 const status = z.enum(['passed', 'failed', 'pending', 'skipped', 'todo']);
 const reportSchema = z.object({
   success: z.boolean(),
@@ -43,9 +51,7 @@ export function summarizeSuite(input: unknown, allowedFiles: ReadonlySet<string>
     reportedTotalTests: report.numTotalTests,
     reportedFailedSuites: report.numFailedTestSuites,
     ownedTestReported: files.some(
-      (file) =>
-        file.path === 'tests/integration/where-used-details.integration.test.ts' &&
-        file.assertions.passed + file.assertions.failed > 0,
+      (file) => file.path === ORIGINAL_TEST && file.assertions.passed + file.assertions.failed > 0,
     ),
     // Canceled files can be reported as passed with no assertions. Times alone do not prove execution.
     order: 'Vitest reported start times; see assertion counts for unexecuted or pending tests',

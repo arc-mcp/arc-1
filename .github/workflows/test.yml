@@ -1,5 +1,5 @@
 # Temporary research workflow on this branch only; never merge this workflow into main.
-name: SAP 1057 retained-pair diagnosis
+name: SAP 1057 original-test-only diagnosis
 
 on:
   workflow_dispatch:
@@ -33,7 +33,7 @@ jobs:
         env:
           TEST_SAP_USER: ''
           TEST_SAP_PASSWORD: ''
-      - name: Run the full integration suite once
+      - name: Run the original integration test alone once
         timeout-minutes: 30
         run: npx tsx scripts/diagnose-1057.ts suite
       - name: Publish names and original observations before inspection
