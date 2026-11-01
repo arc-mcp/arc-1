@@ -1,6 +1,7 @@
 /** Reviewed mutation surface; independent of tool advertisement and general single-target schemas. */
 import { isMutatingOperationType, isOperationAllowed, OperationType } from '../adt/safety.js';
 import { ACTION_POLICY } from '../authz/policy.js';
+import { stripLlmEmptyValues } from '../handlers/object-types.js';
 import {
   type PinnedCompanionCapability,
   type PinnedMutationCapability,
@@ -13,6 +14,16 @@ import type { ServerConfig } from './types.js';
 
 export function pinnedWriteEnabled(config: ServerConfig): boolean {
   return config.allowWrites && config.multiTargetWrite?.enabled === true && config.ppEnabled && config.ppStrict;
+}
+
+/** Field check only, never admission. Preserve meaningful raw inputs before legacy normalization drops them. */
+export function pinnedUnsupportedRawFields(tool: string, action: unknown, args: Record<string, unknown>): string[] {
+  const selected = action ?? (tool === 'SAPActivate' ? 'activate' : undefined);
+  const capability = pinnedMutationCapability(tool, selected) ?? pinnedCompanionCapability(tool, selected);
+  if (!capability) return []; // The invocation gate independently refuses unadmitted mutations.
+  return Object.entries(stripLlmEmptyValues(args))
+    .filter(([key, value]) => value !== undefined && !capability.fields.includes(key))
+    .map(([key]) => key);
 }
 
 function capabilityEnabled(capability: PinnedMutationCapability, config: ServerConfig): boolean {

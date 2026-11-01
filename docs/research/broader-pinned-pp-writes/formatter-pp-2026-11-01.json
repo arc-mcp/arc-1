@@ -356,10 +356,13 @@
   ],
   "limits": [
     "one backend/client, two aliases",
-    "secondary SAP mapping relies on preceding native class-author evidence",
     "no same-user concurrency guarantee without strong native ETag",
     "other mutation families and complete PR acceptance remain pending",
-    "actual Claude Code Opus 5.5 max review pending"
+    "Both SAP identity/backend bindings rely on previous class evidence and reported destination configuration; no in-run native sentinel or during-write native preference read.",
+    "Only primary native XML byte restoration was checked; secondary restoration covers two fields through the candidate route.",
+    "Restore checked only changes visible before its PUT; concurrent intervening edits could be overwritten.",
+    "Format output check only matched the program name; keyword behavior and repository absence were not asserted.",
+    "Six simulations did not cover every negative oracle or actual restore-only recovery; journal durability does not cover host restart."
   ],
   "sourceSha256": {
     "src/adt/pinned-formatter.ts": "2b2aa7e1cf45960cdeb8465d191352946acfece0cbe7139039095882ef3a95bd",
@@ -371,5 +374,7 @@
     "src/server/multi-target-server.ts": "2952429d097c1f78e3c054efcae3d9cbbbf578b84ee5d64de10880658b2a858f",
     "tests/unit/handlers/pinned-formatter.test.ts": "c607ea8c1593063d23521ef7853e315e64e8bbd90a5484506733217886a33498",
     "tests/unit/server/multi-target-writes.test.ts": "b26c554e87711d3d62595a055ee78780df35806f02505b7af10230523dd8a423"
-  }
+  },
+  "evidenceScope": "MCP-visible state on the configured PP route; native MARIAN before/after bytes prove restoration only, not the identity/backend during mutation.",
+  "review": "Actual Claude Code claude-opus-5-5, max, CLI 2.1.302: source-level token/refusal/differing-write/replay checks accepted; same-backend/same-actor proof not accepted (FMT-1); strengthened rerun required."
 }

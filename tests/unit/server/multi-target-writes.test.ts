@@ -1,4 +1,5 @@
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import { checkPackage, checkTransport, defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
@@ -94,8 +95,37 @@ describe('pinned write policy composition', () => {
       (t) => t.name === 'SAPWrite',
     )!;
     expect((write.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).toContain('delete');
+    const validate = new Ajv2020({ strictTypes: false, allowUnionTypes: true }).compile(write.inputSchema);
+    expect(validate({ action: 'delete', type, name: 'ZARC1_DELETE' }), JSON.stringify(validate.errors)).toBe(true);
     const denied = filterToolsByAuthScope([write], ['read', 'write'], ['SAPWrite.delete'])[0];
     expect((denied.inputSchema.properties as Record<string, { enum: string[] }>).action.enum).not.toContain('delete');
+  });
+  it.each([
+    { action: 'delete', type: 'CLAS', include: 'testclasses' },
+    { action: 'delete', type: 'CLAS', processingType: 'normal' },
+    { action: 'delete', type: 'CLAS', updateTaskKind: 'immediate' },
+    { action: 'create', type: 'CLAS', source: 'source', package: '$TMP', include: 'definitions' },
+    { action: 'create', type: 'INTF', source: 'source', package: '$TMP', processingType: 'normal' },
+    { action: 'update', type: 'INTF', source: 'source', expectedSourceHash: 'a'.repeat(64), include: 'main' },
+  ])('rejects raw input before legacy normalization drops it: %j', async (rawArgs) => {
+    const r = registry();
+    const identity = auth();
+    const result = await prepareMultiTargetCall({
+      options: {
+        mode: 'pinned',
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: base,
+        authorization: projectMultiTargetRequest(r, identity),
+      },
+      toolName: 'SAPWrite',
+      rawArgs: { name: 'ZARC1_DELETE', ...rawArgs },
+      requestId: 'raw-field-refusal',
+      authInfo: identity,
+    });
+    expect(result.handled).toBe(true);
+    if (!result.handled) throw new Error('Meaningful raw field reached destination preparation');
+    expect(JSON.stringify(result.result)).toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
   });
   it.each(['reader', 'no-write-grant', 'destination-readonly', 'global-readonly', 'aggregate', 'basic'] as const)(
     'keeps deletion out of %s catalogs and direct calls',

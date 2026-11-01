@@ -62,7 +62,7 @@ export async function handleSAPWrite(
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
 ): Promise<ToolResult> {
-  if (config.multiTargetEndpoints || config.targetId || config.multiTargetWrite || client.safety.multiTargetWrite)
+  if (config.targetId || config.multiTargetWrite || client.safety.multiTargetWrite)
     return handlePinnedWrite(client, args, config);
   const action = String(args.action ?? '');
   const type = normalizeWriteObjectType(String(args.type ?? ''));

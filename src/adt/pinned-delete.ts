@@ -1,7 +1,7 @@
 /** Bounded owner deletion candidate over the shared native DELETE and lock/session lifecycle. */
 import type { AdtClient } from './client.js';
 import { deleteObject, withLockedMutation } from './crud.js';
-import { AdtApiError, AdtSafetyError } from './errors.js';
+import { AdtApiError, AdtSafetyError, classifySapDomainError, extractExceptionType } from './errors.js';
 import { throwIfRequestCancelled } from './http-deadline.js';
 import { mutationClient } from './mutation-client.js';
 import { assertMutationContext, type PinnedMutationContext } from './mutation-context.js';
@@ -16,6 +16,8 @@ export interface PinnedDeleteResult {
   statusCode?: number;
   message?: string;
   cleanupFailed?: boolean;
+  cleanupPhase?: 'unlock';
+  cleanup?: string;
   sessionClosed?: boolean;
 }
 
@@ -32,6 +34,7 @@ export async function deletePinnedOwner(
   const outcome: { state: PinnedDeleteResult['state']; message?: string } = { state: 'unchanged' };
   let phase = 'validation';
   let statusCode: number | undefined;
+  let failed = false;
   try {
     assertMutationContext(client.safety, context);
     if (context.mode !== 'pinned-pp') throw new AdtSafetyError('A pinned mutation context is required.');
@@ -86,7 +89,12 @@ export async function deletePinnedOwner(
         try {
           await session.get(owner, { 'Cache-Control': 'no-cache' }, options);
         } catch (error) {
-          if (error instanceof AdtApiError && error.isNotFound) {
+          if (
+            error instanceof AdtApiError &&
+            error.isNotFound &&
+            extractExceptionType(error.responseBody ?? '') === 'ExceptionResourceNotFound' &&
+            !classifySapDomainError(error.statusCode, error.responseBody, error.path)
+          ) {
             outcome.state = 'deleted';
             return;
           }
@@ -96,20 +104,40 @@ export async function deletePinnedOwner(
       },
     );
   } catch (error) {
+    failed = true;
+    if (outcome.state === 'deleted') phase = 'cleanup';
     if (error instanceof AdtSafetyError) outcome.message = error.message;
     if (error instanceof AdtApiError) {
       statusCode = error.statusCode;
       if (phase === 'delete' && [400, 401, 403, 404, 409, 412, 415, 422, 423].includes(error.statusCode))
         outcome.state = 'delete-rejected';
     }
+    outcome.message ??=
+      outcome.state === 'unchanged'
+        ? 'No DELETE request was sent. Review the reported phase and native policy evidence before continuing.'
+        : outcome.state === 'delete-rejected'
+          ? 'SAP rejected the deletion. Inspect the current owner and native status before continuing.'
+          : 'SAP did not confirm the complete deletion operation. Inspect the owner and reported phase before deciding the next action; do not automatically retry.';
   }
   const cleanupFailed = context?.mode === 'pinned-pp' && context.cleanup?.unlockFailed === true;
+  if (cleanupFailed && !failed)
+    outcome.message = 'The owner is confirmed absent, but lock cleanup failed. Verify the SAP lock before continuing.';
   return {
-    ok: outcome.state === 'deleted' && !cleanupFailed,
+    ok: outcome.state === 'deleted' && !cleanupFailed && !failed,
     ...outcome,
-    phase: cleanupFailed ? 'unlock' : phase,
+    phase: cleanupFailed && !failed ? 'unlock' : phase,
     retryable: false,
     ...(statusCode === undefined ? {} : { statusCode }),
-    ...(cleanupFailed ? { cleanupFailed: true, sessionClosed: context.cleanup.sessionClosed } : {}),
+    ...(cleanupFailed
+      ? {
+          cleanupFailed: true,
+          cleanupPhase: 'unlock' as const,
+          sessionClosed: context.cleanup.sessionClosed,
+          cleanup:
+            context.cleanup.sessionClosed === true
+              ? 'Unlock failed; the owning session was closed. Verify the SAP lock before continuing.'
+              : 'Unlock failed; session closure was not confirmed. Verify the SAP lock before continuing.',
+        }
+      : {}),
   };
 }

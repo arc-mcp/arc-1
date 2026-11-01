@@ -21,7 +21,7 @@ import type { MultiTargetRequestProjection } from './multi-target-request-projec
 import { buildMultiTargetConfig } from './multi-target-runtime.js';
 import type { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js';
 import { multiTargetInvocationDecision, normalizeTarget } from './multi-target-tools.js';
-import { pinnedWriteEnabled } from './multi-target-write-surface.js';
+import { pinnedUnsupportedRawFields, pinnedWriteEnabled } from './multi-target-write-surface.js';
 import { NATIVE_NAVIGATION_INSTRUCTIONS } from './server-instructions.js';
 import type { ServerConfig } from './types.js';
 
@@ -606,6 +606,7 @@ export async function prepareMultiTargetCall(args: {
 
   // Use the same canonical arguments as the shared dispatch pipeline. This keeps
   // the early policy/PP gate and the eventual handler decision identical.
+  const suppliedArgs = callArgs;
   callArgs = normalizeTypeArgsForValidation(toolName, callArgs);
   if (toolName === 'SAPActivate' && callArgs.action === undefined) callArgs = { ...callArgs, action: 'activate' };
   const activeConfig = buildMultiTargetConfig(options.instanceConfig, selectedTarget, {
@@ -613,7 +614,9 @@ export async function prepareMultiTargetCall(args: {
     authorization: projection,
   });
   const action = invocationPolicyKey(toolName, callArgs);
-  const invocationDecision = multiTargetInvocationDecision(toolName, callArgs, activeConfig);
+  const invocationDecision = pinnedUnsupportedRawFields(toolName, action, suppliedArgs).length
+    ? 'forbidden'
+    : multiTargetInvocationDecision(toolName, callArgs, activeConfig);
   if (invocationDecision === 'forbidden') {
     logger.emitAudit({
       timestamp: new Date().toISOString(),

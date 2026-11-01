@@ -10,7 +10,9 @@ PR 2 mutations, every intermediate mutation's audit actor, or the complete CLAS/
 
 The [machine-readable evidence](broader-pinned-pp-writes/pp-qualification-2026-11-01.json) records
 the source revision, assertions, failed attempts, limitations, cleanup and final local harness
-snapshot hashes. Credentials, tokens, account emails and native XML remain outside the repository.
+snapshot hashes. These hashes are not per-run attestations: the primary positive and first secondary
+probe used earlier harness versions whose hashes were not retained. Final-snapshot safeguards cannot
+be retroactively attributed to those runs. Credentials and native XML remain outside the repository.
 
 ## Setup and execution
 
@@ -57,11 +59,14 @@ meaningfully different denied payloads, catalog validation, source/hash assertio
 use, durable attempt/output reservation, paired native author verification and fixture cleanup.
 Cleanup now verifies the captured owner metadata again under its owning lock before deletion.
 
-The follow-up Claude review stopped at the account session limit, reported to reset at **02:20
-Europe/Berlin on 1 November**. It produced no approval. The final local harness snapshot includes
-subsequent target-sentinel and cleanup checks and still needs the requested independent closing
-review. No substitute model was used. The earlier production foundation/capability-table reviews
-remain scoped to their recorded revisions.
+The resumed actual Claude Code Opus 5.5 max [closing review](broader-pinned-pp-writes/claude-qualification-review-20261101.md)
+accepted F1–F9 at final-snapshot source level. It identified historical evidence limits CLS-1–6:
+per-run harness hashes were not retained, master-system evidence was observed rather than an automated
+gate, and cleanup checked metadata without an exact source hash under lock. Failed secondary attempt
+reservations were preserved as backend-probe-failed and create-403 records before the inspected retry.
+Cloud/access restoration was verified by separate operator controls, not by the qualification module.
+The machine-readable record now distinguishes these sources. The new deletion-capable candidate
+requires fresh qualification; this older harness deliberately refuses deletion.
 
 Concurrent writers, shared-owner inactive drafts, INTF and broader object families, transport
 management, tracing/settings, classic FLP and final expanded catalogs remain outside this live run.

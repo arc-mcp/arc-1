@@ -58,3 +58,26 @@ destination, raw scope, global, aggregate and Basic refusals, deny rules, contex
 cancellation propagation and result correlation. The full suite passed **391 files / 10,819 tests**,
 with typecheck, build, lint, file/schema budgets and strict documentation build. The source budget
 and non-replay tests, existing source lifecycle and formatter tests remain green after consolidation.
+
+## First production review and corrections
+
+Actual Claude Code `claude-opus-5-5`, effort `max`, CLI 2.1.302 reviewed immutable revision
+`96dfc4e6b734667c46d284d45c3a37dbc1460e9b`. Its [report](broader-pinned-pp-writes/claude-adapters-review-20261101.md)
+refused acceptance: two High findings, one Medium and three Low. Corrections preserve legacy
+single-target dispatch on overlap deployments; reject meaningful raw fields before normalization
+can drop a deletion include selector; and make source optional in the mixed-action catalog while
+retaining runtime create/update requirements. Native absence now requires a typed resource-not-found
+response and excludes classified service errors. Failed deletion retains its original phase/status,
+with separate cleanup details and inspection guidance. The operator guide documents the deletion
+opt-out. Regression checks cover each behavioral defect, including actual advertised-schema validation.
+
+The accompanying [harness review](broader-pinned-pp-writes/claude-qualification-review-20261101.md)
+accepted direct-native deletion only as a MARIAN happy-path fixture exercise. Its independent absence
+read used the same endpoint, account and client stack; no TADIR cross-check was performed. The old
+receipt did not gate active version or record changedBy, and its cleanup branch was not fault-tested.
+These limits are not retrospectively erased. Fresh two-writer CLAS/INTF deletion and formatter evidence
+on the corrected revision, including stronger actor/backend binding, remains outstanding.
+
+Validation of the review corrections: **391 unit files / 10,843 tests**, typecheck, build, lint,
+file/schema budgets and strict documentation build passed. No candidate deployment occurred during
+this correction loop; the test app and temporary SAP/IAM access remain restored.

@@ -24,6 +24,7 @@ let local: string;
 let exists: boolean;
 let deleteStatus: number;
 let readbackStatus: number;
+let readbackBody: string;
 let unlockStatus: number;
 let retainOwner: boolean;
 let recordingCalls: number;
@@ -59,6 +60,8 @@ beforeEach(() => {
   exists = true;
   deleteStatus = 204;
   readbackStatus = 404;
+  readbackBody =
+    '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><namespace id="com.sap.adt"/><type id="ExceptionResourceNotFound"/><message>Resource does not exist.</message></exc:exception>';
   unlockStatus = 200;
   retainOwner = false;
   recordingCalls = 0;
@@ -94,7 +97,7 @@ beforeEach(() => {
       return mockResponse(deleteStatus, deleteStatus === 204 ? '' : 'native failure');
     }
     if (method === 'GET' && (parsed.pathname === owner || parsed.pathname.startsWith('/sap/bc/adt/oo/interfaces/'))) {
-      if (!exists) return mockResponse(readbackStatus, 'not found');
+      if (!exists) return mockResponse(readbackStatus, readbackBody);
       return mockResponse(
         200,
         `<class:abapClass xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="${pkg}"/></class:abapClass>`,
@@ -105,6 +108,52 @@ beforeEach(() => {
 });
 
 describe('bounded pinned owner deletion', () => {
+  it.each([
+    '<html><head><title>Service cannot be reached</title></head></html>',
+    '<type id="ExceptionResourceNotFound"/><message>No suitable resource found</message>',
+    '<html><title>404 Not Found</title><body>nginx</body></html>',
+    '<type id="ExceptionOther"/>',
+    '',
+  ])('does not treat a generic/service 404 as native owner absence: %s', async (body) => {
+    readbackBody = body;
+    const c = client();
+    expect(await deletePinnedOwner(c, context(c), input)).toMatchObject({
+      ok: false,
+      state: 'delete-unconfirmed',
+      phase: 'absence-readback',
+      statusCode: 404,
+      message: expect.stringContaining('Inspect the owner'),
+    });
+  });
+  it('preserves the primary failure phase/status when unlock also fails', async () => {
+    deleteStatus = 403;
+    unlockStatus = 503;
+    const c = client();
+    expect(await deletePinnedOwner(c, context(c), input)).toMatchObject({
+      ok: false,
+      state: 'delete-rejected',
+      phase: 'delete',
+      statusCode: 403,
+      cleanupFailed: true,
+      cleanupPhase: 'unlock',
+      message: expect.stringContaining('SAP rejected'),
+      cleanup: expect.stringContaining('Unlock failed'),
+    });
+  });
+  it('provides inspection guidance for a lost response without retrying the DELETE', async () => {
+    afterDelete = () => {
+      throw new Error('Socket failed after the backend applied DELETE');
+    };
+    const c = client();
+    expect(await deletePinnedOwner(c, context(c), input)).toMatchObject({
+      ok: false,
+      state: 'delete-unconfirmed',
+      phase: 'delete',
+      retryable: false,
+      message: expect.stringContaining('do not automatically retry'),
+    });
+    expect(deletes()).toHaveLength(1);
+  });
   it.each([
     ['CLAS', 'ZCL_TEST'],
     ['INTF', 'ZIF_TEST'],

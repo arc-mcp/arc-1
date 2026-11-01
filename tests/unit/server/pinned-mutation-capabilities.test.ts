@@ -172,9 +172,7 @@ describe('pinned mutation capability matrix', () => {
       expect(properties.action.enum).toEqual(surface.actions);
       expect(properties.type.enum).toEqual(surface.types);
       expect(Object.keys(properties).sort()).toEqual([...surface.fields].sort());
-      expect(tool.inputSchema.required).toEqual(
-        name === 'SAPWrite' ? ['action', 'type', 'name', 'source'] : ['type', 'name'],
-      );
+      expect(tool.inputSchema.required).toEqual(name === 'SAPWrite' ? ['action', 'type', 'name'] : ['type', 'name']);
       expect(tool.inputSchema.additionalProperties).toBe(false);
       expect(tool.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
     }

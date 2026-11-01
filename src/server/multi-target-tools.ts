@@ -155,7 +155,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                 source: {
                   type: 'string',
                   description:
-                    'Complete CLAS/INTF main source for create/update; an existing main method body or complete METHOD…ENDMETHOD block for edit_method.',
+                    'Complete CLAS/INTF main source for create/update; an existing main method body or complete METHOD…ENDMETHOD block for edit_method. Omit for delete.',
                 },
                 package: {
                   type: 'string',
@@ -183,7 +183,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
           type: { type: 'string', enum: surface.types },
           action: { type: 'string', enum: surface.actions },
         },
-        required: write ? ['action', 'type', 'name', 'source'] : ['type', 'name'],
+        required: write ? ['action', 'type', 'name'] : ['type', 'name'],
         additionalProperties: false,
       },
     };

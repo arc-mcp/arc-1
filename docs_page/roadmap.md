@@ -211,17 +211,17 @@ restored; it does not qualify the broader capabilities. Implementation started w
 and request-scoped package hierarchy checks. Follow-up infrastructure binds native adapters to the
 mutation budget and verifies CTS parent/task scopes. The follow-up Claude review loop is accepted,
 with fresh hierarchy early-exit and complete nested-schema drift tests; these do not enable
-additional operations. A reviewed capability table now centralizes only the four existing admitted
-combinations and preserves the current catalogs. Mixed-tool admission/projection infrastructure is
-implemented with synthetic-capability tests; its Claude review is pending. Broader type/action
-adapters, companion-read projection and their PP qualification remain outstanding.
+additional operations. The explicit capability table and mixed-tool admission/projection infrastructure are implemented.
+Broader type/action adapters and their PP qualification remain outstanding.
 The [formatter adapter](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-formatter.md)
-now has pinned handler/companion integration, unit, restored direct-native and two-identity PP evidence
-(241 assertions). Its Claude acceptance remains outstanding; this does not close the broader write scope.
+has pinned handler/companion integration and restored direct-native checks. Its 241-assertion
+two-identity run establishes MCP-visible state on the configured route; Claude identified missing
+in-run actor/backend proof. A stronger current-revision PP run remains required.
 A [CLAS/INTF deletion candidate](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-deletion.md)
 reuses native DELETE and the shared lock/session lifecycle, with fresh policy checks and verified
 absence. Handler/catalog admission is implemented, with unit and restored direct-native checks;
-PP qualification and Claude review remain outstanding.
+The first Claude production review found routing, raw-input and schema defects; corrections and
+regressions are implemented. Closing review and current-revision PP qualification remain outstanding.
 
 **Resume when.** The PR 1 acceptance and owner request prerequisites are met. Continue the guarded
 adapters and native qualification against the reviewed PR 2 plan. Preserve the shared foundation's

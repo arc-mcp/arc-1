@@ -93,7 +93,7 @@ and Basic route tests keep their original formatter action lists and refuse dire
 This integration adds 32 tests across route preparation and the real dispatch/native-HTTP boundary.
 The full suite passed **389 files / 10,758 tests**, plus typecheck, build, lint and file/schema budgets.
 The native candidate evidence above remains valid for its protocol; the following live run covers
-the new handler. Claude review remains pending.
+the new handler. The subsequent review and evidence limits are recorded below.
 
 ## Two-user pinned PP qualification
 
@@ -101,12 +101,13 @@ The exact `69b28b22e` build was staged and selected on the existing isolated CF 
 staging and droplet selection preserved its route. The temporary destination `PR1142/001` and the
 existing read-only `A4H/001` both resolved to A4H/client 001. Both test identities received exact
 write grants for **both** target IDs. The original A4H destination's omitted `arc1.allow_writes`
-remained false, so its refusal isolates the destination ceiling rather than a missing target grant.
+remained false, so its refusal supports the destination ceiling based on the reported configuration; the refusal code
+itself does not identify which gate applied.
 
 All three tokens stayed in the local harness process. Before any SAP request the harness verified
 signature/audience/expiry, expected email and IdP origin, read/write scope, exact write grants, read
 grants and remaining lifetime. The two writers used the identities previously mapped to `MARIAN`
-and `ARC1_WG_RO`; the third token belonged to the primary identity with only the read scope.
+and `ARC1_WG_RO`; the third token belonged to the primary identity with a read scope and no write scope.
 
 An initial browser sign-in reused the secondary identity and was refused before backend calls.
 After explicit sign-in, the first qualification reached SAP but the secondary user's original
@@ -122,7 +123,8 @@ The fresh qualification completed **241 assertions, zero failures**:
    The secondary user's settings remained unchanged.
 3. Secondary style changed to `none`; its indentation stayed intact. The primary settings retained
    their distinct expected value.
-4. Both identities formatted source without creating or saving a repository object.
+4. Both identities received formatter output containing the submitted program name. Keyword-case
+   behavior and repository absence were not independently asserted.
 5. A read-only token, the read-only destination with a valid write grant, `/multi/mcp` and
    `/authorize` hid all three formatter actions and refused each direct invocation with the exact
    `MULTI_TARGET_OPERATION_FORBIDDEN` code. Both settings were read back unchanged after each group.
@@ -130,8 +132,9 @@ The fresh qualification completed **241 assertions, zero failures**:
    native GET as MARIAN returned **byte-identical original XML**.
 
 Every response was checked for private/no-store caching. The harness saved an exclusive attempt
-record before each mutation, refused blind replay, and restored only the original or its own
-expected state. Six simulated scenarios additionally checked replay protection, shared preferences,
+record before each forward mutation and refused blind replay. Restore checked that the two exposed
+fields matched the original or expected state before its PUT; this does not protect against an
+intervening concurrent change. Six simulated scenarios additionally checked replay protection, shared preferences,
 a response lost after a secondary update, an unrelated concurrent change, a cleanup-read failure
 and incorrect login identity. These simulations are harness checks, not native SAP evidence.
 
@@ -144,9 +147,15 @@ revision, source/harness hashes, assertions and restoration facts without creden
 
 ### Limits
 
-This qualifies two users on one backend/client, not different SAP systems or all backend releases.
-The preference endpoint does not return a native username; the secondary SAP mapping is supported
-by the earlier independent class-author qualification, not a new WHOAMI response. Same-user
+The actual Claude Code Opus 5.5 max [closing review](broader-pinned-pp-writes/claude-qualification-review-20261101.md)
+accepted the token, exact-refusal, differing-write and replay checks at source level. **It did not
+accept same-backend/same-actor mutation proof (FMT-1).** This run establishes MCP-visible state on
+the configured route. Both SAP mappings rely on earlier class evidence and reported configuration;
+there was no native sentinel or during-write native preference read in this run. The secondary
+role change turning a refusal into success supports its mapping, but does not replace that proof.
+Only the primary has native byte-level restoration evidence; secondary restoration checks two
+fields through the candidate route. The six simulations did not test every negative oracle or
+actual restore-only recovery. A strengthened current-revision run remains required. Same-user
 concurrent updates still have the documented native-unconditional risk when no strong ETag exists.
 Basic/global-readonly/deny-rule boundaries have unit coverage but were not new live fixtures here.
 This formatter result does not qualify CTS, traces, FLP, broad CRUD or whole PR #1142 for merging.

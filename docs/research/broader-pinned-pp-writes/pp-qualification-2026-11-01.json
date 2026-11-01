@@ -13,17 +13,20 @@
     "writerA": {
       "passedAssertions": 79,
       "failedAssertions": 0,
-      "failedChecks": []
+      "failedChecks": [],
+      "harnessRevision": "Earlier harness; executed hash not retained"
     },
     "writerAneg": {
       "passedAssertions": 57,
       "failedAssertions": 0,
-      "failedChecks": []
+      "failedChecks": [],
+      "harnessRevision": "Per-run executed hash not retained; final snapshot hash is source-review evidence only"
     },
     "readonlyA": {
       "passedAssertions": 23,
       "failedAssertions": 0,
-      "failedChecks": []
+      "failedChecks": [],
+      "harnessRevision": "Per-run executed hash not retained; final snapshot hash is source-review evidence only"
     },
     "writerB": {
       "passedAssertions": 12,
@@ -39,7 +42,8 @@
           "phase": "backend_components",
           "code": "BACKEND_BASIS_758"
         }
-      ]
+      ],
+      "harnessRevision": "Earlier harness; executed hash not retained"
     },
     "writerB2": {
       "passedAssertions": 16,
@@ -60,15 +64,17 @@
           "phase": "create",
           "code": "UNEXPECTED_TOOL_OUTCOME"
         }
-      ]
+      ],
+      "harnessRevision": "Per-run executed hash not retained; final snapshot hash is source-review evidence only"
     },
     "writerB3": {
       "passedAssertions": 104,
       "failedAssertions": 0,
-      "failedChecks": []
+      "failedChecks": [],
+      "harnessRevision": "Per-run executed hash not retained; final snapshot hash is source-review evidence only"
     }
   },
-  "primaryInitialLimit": "Use positive lifecycle evidence only; weak negative error predicates superseded by writerAneg.",
+  "primaryInitialLimit": "Observed positive lifecycle and native author results are historical evidence. Executed harness hash was not retained; final-snapshot F4\u2013F6 safeguards cannot be attributed to this run. Weak negative predicates are superseded by writerAneg.",
   "secondaryAttempts": [
     "Components probe stopped before mutation; native sentinel added.",
     "Create rejected by SAP with 403; SU53 showed missing S_ABPLNGVS. Native GET confirmed absent.",
@@ -111,7 +117,8 @@
     "Read-only destination also lacked a write-target grant; this run does not isolate those two gates.",
     "No concurrent writers, cross-user same-owner drafts, INTF writes or broader operations qualified.",
     "Native createdBy and final changedBy verified; no claim about every intermediate mutation audit actor.",
-    "Claude follow-up harness review hit the account session limit; final snapshot is not independently approved."
+    "Claude Opus 5.5 max accepted F1\u2013F9 at final-snapshot source level; historical evidence limits CLS-1\u20136 are recorded in the closing review.",
+    "Final harness hashes do not attest the exact harness executed for each historical run; all results remain pinned to source revision 2d160378."
   ],
   "harnessSourceSha256": {
     "qualification.mjs": "780fa5341cd4cdeb61d768627e211629e39030eb33b7e7cb2a008e171a35123c",
@@ -123,5 +130,12 @@
     "native-fixture-evidence.mts": "e203968696ee2f07cd9b2e533acd5e2cea23e82388fc61708d2463c00a4e5bb4",
     "cleanup-fixtures.mts": "f4724f8978ab015bec9c32a8c4227ba35c85f27c46bb42bc4b638c66118374bb",
     "verify-sap-rollback.mts": "6ddfd27cfb8aef3313783a643db7f7e01a3388b548385731bf479d36c49e8b73"
+  },
+  "secondaryAttemptReservations": "Failed backend-probe and create-403 attempt files were retained under separate names before the inspected retry; independent native absence was checked before writerB3.",
+  "claimProvenance": {
+    "nativeAuthors": "Native fixture evidence script plus operator inspection; masterSystem was recorded but not part of the scripted passed predicate. Final source used a value regex, not an exact final-source hash.",
+    "fixtureCleanup": "Native cleanup script with metadata checks; no source hash recheck under the cleanup lock.",
+    "cloudAndSapAccessRestoration": "Separate operator-run CF/BTP/destination controls and SAP role/profile verification; not assertions produced by the qualification module.",
+    "tokensPersisted": "Operator handling statement; no exhaustive persistence attestation."
   }
 }

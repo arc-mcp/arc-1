@@ -7,6 +7,7 @@ import { AdtClient, mockFetch } from './setup-undici-mock.js';
 const native = await import('../../../src/adt/pinned-delete.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { handleSAPWrite } = await import('../../../src/handlers/write.js');
+const legacy = await import('../../../src/handlers/write/update-delete.js');
 const { requestContext, getCurrentContext } = await import('../../../src/server/context.js');
 const args = { action: 'delete', type: 'CLAS', name: 'ZCL_TEST' };
 
@@ -46,6 +47,54 @@ beforeEach(() => {
 });
 
 describe('pinned owner deletion admission through shared dispatch', () => {
+  it('retains single-target writes on an instance that also serves multi-target endpoints', async () => {
+    const client = new AdtClient({
+      baseUrl: 'https://sap.example.test',
+      safety: { ...defaultSafetyConfig(), allowWrites: true },
+    });
+    const config = {
+      ...DEFAULT_CONFIG,
+      multiTargetEndpoints: true,
+      allowWrites: true,
+      destinationName: 'SINGLE_TARGET',
+    };
+    const operation = vi
+      .spyOn(legacy, 'writeActionDelete')
+      .mockResolvedValue({ content: [{ type: 'text', text: 'Legacy delete reached' }] });
+    const result = await handleToolCall(client, config, 'SAPWrite', args);
+    expect(result.isError).toBeUndefined();
+    expect(operation).toHaveBeenCalledOnce();
+    expect(result.content[0].text).toBe('Legacy delete reached');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+  it.each([
+    { ...args, include: 'testclasses' },
+    { ...args, processingType: 'normal' },
+    { ...args, updateTaskKind: 'immediate' },
+    { ...args, action: 'create', source: 'class source', package: '$TMP', include: 'definitions' },
+    { ...args, action: 'create', source: 'class source', package: '$TMP', processingType: 'normal' },
+    {
+      ...args,
+      action: 'update',
+      type: 'INTF',
+      source: 'interface source',
+      expectedSourceHash: 'a'.repeat(64),
+      include: 'main',
+    },
+  ])('refuses meaningful fields before shared normalization can discard them: %j', async (rawArgs) => {
+    const { client, config, adapter } = fixture();
+    const result = await handleToolCall(client, config, 'SAPWrite', rawArgs);
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text).error).toBe('MULTI_TARGET_OPERATION_FORBIDDEN');
+    expect(adapter).not.toHaveBeenCalled();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+  it.each([null, '', '   ', undefined])('still treats empty optional pollution as omitted: %j', async (include) => {
+    const { client, config, adapter } = fixture();
+    const result = await handleToolCall(client, config, 'SAPWrite', { ...args, include });
+    expect(result.isError).toBeUndefined();
+    expect(adapter).toHaveBeenCalledOnce();
+  });
   it('carries the request cancellation signal and correlation into the native context/result', async () => {
     const { client, config, adapter } = fixture();
     const controller = new AbortController();

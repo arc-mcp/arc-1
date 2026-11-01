@@ -147,6 +147,7 @@ rollback; read the settings before deciding whether another update is appropriat
 records direct native and two-user PP evidence; final Claude acceptance remains pending in draft PR #1142.
 
 Deletion removes the current complete owner. It does not require or protect a previous source read.
+Use `SAP_DENY_ACTIONS=SAPWrite.delete` to disable deletion while retaining other admitted writes.
 If SAP accepts DELETE but absence cannot be verified, the result remains unconfirmed; inspect the
 object before deciding whether to try again. A verified deletion with failed cleanup is reported
 as deleted with a cleanup failure. The [deletion record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-deletion.md)
