@@ -213,7 +213,8 @@ read-only-route refusals. Native authorship/source checks and complete temporary
 restoration passed. The recorded failed attempt remains failed. Actual Opus 5.5 max reviews and
 finding dispositions are linked from the evidence; this is not whole-PR acceptance.
 
-Remaining work is all refactored transportable-object paths, other object types and class/procedural surgery,
+Remaining work includes convergence of the overlapping pinned CRUD orchestrator onto shared adapters,
+all refactored transportable-object paths, other object types and class/procedural surgery,
 DDIC/RAP, batches, package/API/publication, CTS, runtime tracing and classic FLP, each with its
 resource policy, tests and PP qualification. Main-source class metadata surgery now has exact owner/source/name/range and inventory checks
 with offline tests; its PP qualification remains open. Definition-include replacement shares the

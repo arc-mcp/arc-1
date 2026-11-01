@@ -1,19 +1,18 @@
 /** Pinned policy around the same class-action callback used by single-target writes. */
-import { verifiedClassStructure } from '../../adt/class-structure-evidence.js';
 import { updateSource, withLockedMutation } from '../../adt/crud.js';
 import { AdtSafetyError } from '../../adt/errors.js';
 import { throwIfRequestCancelled } from '../../adt/http-deadline.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
 import { assertSourceHash, editableSourceEquals, sourceHash } from '../../adt/source-precondition.js';
 import type { ToolResult } from '../shared.js';
-import type { ClassEdit } from './class-edit.js';
 import type { SapWriteContext } from './context.js';
 import { pinnedClassState } from './pinned-class-context.js';
 import { pinnedSourceLockPolicy } from './pinned-lock.js';
+import type { SourceEdit } from './source-edit.js';
 
 export async function withPinnedClassEdit(
   ctx: SapWriteContext,
-  edit: (locked: ClassEdit) => Promise<ToolResult>,
+  edit: (locked: SourceEdit) => Promise<ToolResult>,
 ): Promise<ToolResult> {
   const state = pinnedClassState(ctx);
   if (!state.pkg || !state.recording)
@@ -36,16 +35,6 @@ export async function withPinnedClassEdit(
         state.readHash = sourceHash(current.body);
         state.phase = 'edit-preparation';
         return current.body;
-      },
-      async readMainAndStructure() {
-        if (state.include) throw new AdtSafetyError('Native class metadata selects main source only.');
-        const main = await this.read(state.sourceUrl);
-        state.phase = 'structure-read';
-        checkOperation(ctx.client.safety, OperationType.Read, 'GetClassStructure');
-        const metadata = await http.get(`${ctx.objectUrl}/objectstructure`, { 'Cache-Control': 'no-cache' });
-        const structure = verifiedClassStructure(metadata.body, main, ctx.name, ctx.objectUrl, ctx.client.sapClient);
-        state.phase = 'edit-preparation';
-        return { main, structure };
       },
       unchanged() {
         if (

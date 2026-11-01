@@ -96,3 +96,11 @@ the earlier run and earlier review snapshot are not retroactively extended to it
 Follow-up validation: 432 files / 11,733 tests, all three TypeScript projects, build, lint, policy,
 file/schema budgets and strict documentation pass. The added whole-include cases are real shared
 handler/native-client tests; the unchanged live harness still needs expansion before PP qualification.
+
+### Shared source-edit lifecycle follow-up
+
+Class and procedural unit surgery now use the same lock/read/hash/save/unlock adapter.
+The class facet supplies native metadata; procedural unit editing supplies its existing parser.
+Legacy cache-error handling stays explicit for each caller. This does not yet admit pinned
+PROG/INCL edits or remove the remaining pinned CRUD orchestrator. All 11,733 unit tests
+(432 files) and three TypeScript projects passed after extraction.
