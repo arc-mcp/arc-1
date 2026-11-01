@@ -29,12 +29,12 @@ After committing the clean source and building it, run `node scripts/qualificati
 It exclusively creates the private run directory, source/harness hashes and random fixture manifest.
 Save the actual deployment artifact manifest and CF droplet/package identity separately. A current
 Git SHA, MCP package version or environment label alone is not proof of the deployed build.
-Our executable module closure is archived here; the verifier entry module and package lock are
-hashed, but the installed third-party dependency bytes are not independently attested.
+Our executable module closure is archived here; the installed `@arc-mcp/xsuaa-auth` JavaScript closure and package lock are hashed; other installed
+third-party dependency bytes are not independently attested.
 
 `live-harness.mjs` takes `--base-url`, `--credentials-file`, `--auth-module` and optional `--port`.
-Use the existing isolated test app, owner-only XSUAA credential JSON, and this build's
-`dist/server/xsuaa.js`. Obtain sessions interactively through its login commands; no token-import
+Use the existing isolated test app, owner-only XSUAA credential JSON, and the installed
+`node_modules/@arc-mcp/xsuaa-auth/dist/index.js` (the path must match the resolved package entry). Obtain sessions interactively through its login commands; no token-import
 command is provided. The qualifier freezes and verifies all three sessions before SAP requests.
 The expected session labels are `writerA`, `writerB`, `readerA`; request only `read write`, `read write`
 and `read`, respectively. Both writers need exact write grants for `PR1142/001` and `A4H/001`, while

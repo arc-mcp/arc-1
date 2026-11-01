@@ -23,6 +23,7 @@ assert.equal(journal.runId, run.runId);
 assert.equal(journal.sourceRevision, run.sourceRevision);
 const client = getTestClient();
 assert.equal(client.username, configuration.actors[0].sapUser);
+assert.equal(client.sapClient, '001');
 const response = await client.http.get(
   '/sap/bc/adt/abapsource/prettyprinter/settings',
   { Accept: 'application/vnd.sap.adt.ppsettings.v2+xml', 'Cache-Control': 'no-cache' },

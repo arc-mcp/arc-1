@@ -12,6 +12,14 @@ import { assertSafeDiagnosticEnvironment, HarnessError, outsideRepository, priva
 const directory = fileURLToPath(new URL('./', import.meta.url));
 const workspace = fileURLToPath(new URL('../../../', import.meta.url));
 const digest = (value) => createHash('sha256').update(value).digest('hex');
+export const verifierEntry = fileURLToPath(import.meta.resolve('@arc-mcp/xsuaa-auth'));
+async function verifierFiles() {
+  const directory = dirname(verifierEntry),
+    files = {};
+  for (const name of (await readdir(directory, { recursive: true })).filter((n) => n.endsWith('.js')).sort())
+    files[name] = digest(await readFile(resolve(directory, name)));
+  return files;
+}
 async function harnessFiles() {
   const files = {};
   for (const name of (await readdir(directory)).filter((n) => /\.(mjs|mts)$/.test(n)).sort())
@@ -26,7 +34,7 @@ export async function verifyRunManifest(root) {
   const currentRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workspace, encoding: 'utf8' }).trim();
   if (
     currentRevision !== run.sourceRevision ||
-    digest(await readFile(resolve(workspace, 'dist/server/xsuaa.js'))) !== run.authModuleSha256 ||
+    digest(JSON.stringify(await verifierFiles())) !== run.authModulesSha256 ||
     digest(await readFile(resolve(workspace, 'package-lock.json'))) !== run.packageLockSha256
   )
     throw new HarnessError('SOURCE_OR_VERIFIER_CHANGED_SINCE_RUN_PREPARATION');
@@ -48,7 +56,8 @@ export async function prepareRun() {
   const status = execFileSync('git', ['status', '--porcelain'], { cwd: workspace, encoding: 'utf8' });
   if (status.trim()) throw new HarnessError('COMMITTED_CLEAN_WORKTREE_REQUIRED');
   const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workspace, encoding: 'utf8' }).trim();
-  const files = await harnessFiles();
+  const files = await harnessFiles(),
+    authModules = await verifierFiles();
   await mkdir(dirname(root), { recursive: true, mode: 0o700 });
   const parent = await realpath(dirname(root)),
     temporary = await realpath(tmpdir());
@@ -64,10 +73,11 @@ export async function prepareRun() {
     harnessSha256: digest(JSON.stringify(files)),
     harnessFiles: files,
     preparedAt: new Date().toISOString(),
-    authModuleSha256: digest(await readFile(resolve(workspace, 'dist/server/xsuaa.js'))),
+    authModules,
+    authModulesSha256: digest(JSON.stringify(authModules)),
     packageLockSha256: digest(await readFile(resolve(workspace, 'package-lock.json'))),
     bindingLimit:
-      'Source tree and local harness checks; deployed droplet/artifact must also be recorded out of band. Installed dependency bytes are not attested.',
+      'Source tree and local harness checks; deployed droplet/artifact must also be recorded out of band. The installed xsuaa-auth JavaScript closure is hashed; other third-party dependency bytes are not attested.',
   };
   await durable(`${root}/run-manifest.json`, run, true);
   const marker = randomBytes(16).toString('hex').toUpperCase();

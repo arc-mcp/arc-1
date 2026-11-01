@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 /** Interactive real-system test harness. Tokens stay in this process; browsers are never opened here. */
 import { createHash, randomBytes } from 'node:crypto';
+import { realpath } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { exchangeForeignUser } from './foreign-user.mjs';
 import { guardedMcpChecks, validateScenario } from './mcp-checks.mjs';
 import { clientCredentialsToken, postToken } from './oauth-requests.mjs';
 import { qualify } from './qualification.mjs';
 import { configuration, validateConfiguration } from './qualification-config.mjs';
-import { verifyRunManifest } from './run-manifest.mjs';
+import { verifierEntry, verifyRunManifest } from './run-manifest.mjs';
 import {
   assertSafeDiagnosticEnvironment,
   boundedFetch,
@@ -63,7 +64,7 @@ async function main() {
   const config = options();
   validateConfiguration(configuration);
   await verifyRunManifest(configuration.root);
-  if (resolve(config['auth-module']) !== fileURLToPath(new URL('../../../dist/server/xsuaa.js', import.meta.url)))
+  if ((await realpath(resolve(config['auth-module']))) !== (await realpath(verifierEntry)))
     throw new HarnessError('THIS_BUILD_AUTH_MODULE_REQUIRED');
   const baseUrl = validateBaseUrl(config['base-url']);
   const stored = await privateJson(config['credentials-file']);
