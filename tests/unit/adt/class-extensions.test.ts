@@ -87,7 +87,12 @@ describe('class-bound enhancements', () => {
   it('accepts the observed nested-owner source representation without following the parent URI', async () => {
     const s = setup();
     s.get
-      .mockResolvedValueOnce({ body: fixture('nested-owner-source-reference.xml') })
+      .mockResolvedValueOnce({
+        body: fixture('nested-owner-source-reference.xml').replace(
+          '<enho:enhancement ',
+          '<enho:enhancement enho:switchSupported="true" ',
+        ),
+      })
       .mockResolvedValueOnce({ body: 'exact active child source' });
     const name = 'SEEF_ADT_TEST_ENHO_CLASS_11';
     const source = await readActiveClassEnhancementSource(
@@ -104,7 +109,7 @@ describe('class-bound enhancements', () => {
       '758',
     );
     expect(source.source).toBe('exact active child source');
-    expect(typeof source.switchSupported).toBe('boolean');
+    expect(source.switchSupported).toBe(true);
     expect(s.get.mock.calls[1]?.[0]).toBe(
       `/sap/bc/adt/enhancements/enhoxhh/${name.toLowerCase()}/source/main?version=active`,
     );

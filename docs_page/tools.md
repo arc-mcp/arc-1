@@ -517,7 +517,7 @@ server errors, authorization, throttling and network failures do not authorize i
 one exact active revision (`00000`) with matching REPS/include identity and canonical content URI;
 missing active entries never select a historical or inactive version. The source is returned with
 `enhancementInclude` provenance and a `note`; technology, description, package, enhanced object and
-hook positions remain unavailable; `switchSupported` is omitted when unavailable.
+hook positions remain unavailable. The fallback omits `switchSupported`.
 `SAPRead(type="INCL")` applies the same checks when a generated
 include's direct read is unavailable, prefixes source with provenance and preserves draft warnings.
 An explicit inactive include read is not served from revisions. Both routes obey the INCL,
