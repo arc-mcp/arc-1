@@ -29,6 +29,11 @@ const scenarios = [
   'includes-uncertain',
   'includes-writer-b-failure',
   'includes-wrong-include-author',
+  'includes-wrong-session',
+  'includes-wrong-include-version',
+  'includes-blank-mutates-existing',
+  'includes-blank-initializes',
+  'includes-blank-wrong-state',
   'success-replay',
   'frozen-sessions',
   'wrong-identity',
@@ -125,8 +130,17 @@ export async function runDeletionScenario(scenario, options = {}) {
     globalThis.fetch = async (url, init) => {
       requests++;
       assert.equal(url.origin, baseUrl.origin);
-      const request = JSON.parse(init.body),
-        actor = keyOf(init.headers.Authorization.slice(7)),
+      const request = JSON.parse(init.body);
+      // Model a transport wired to the wrong writer, independently of the class creator.
+      if (
+        scenario === 'includes-wrong-session' &&
+        keyOf(init.headers.Authorization.slice(7)) === 'writerA' &&
+        request.params?.name === 'SAPWrite' &&
+        request.params.arguments?.action === 'update' &&
+        request.params.arguments.include
+      )
+        init = { ...init, headers: { ...init.headers, Authorization: `Bearer ${token('writerB')}` } };
+      const actor = keyOf(init.headers.Authorization.slice(7)),
         denied = actor === 'readerA' || url.pathname !== '/PR1142/001/mcp';
       let result, body;
       if (request.method === 'notifications/initialized')
@@ -195,6 +209,7 @@ export async function runDeletionScenario(scenario, options = {}) {
                     scenario === 'includes-no-initialization'
                       ? Object.fromEntries(includeKinds.map((kind) => [kind, `default ${kind}\n`]))
                       : { definitions: 'default definitions\n', macros: 'default macros\n' },
+                  includeAuthors: {},
                 }
               : {}),
             createdBy: scenario === 'wrong-native-author' ? 'ALIEN' : actors.find((a) => a.label === actor).sapUser,
@@ -209,10 +224,39 @@ export async function runDeletionScenario(scenario, options = {}) {
           const initialized = !Object.hasOwn(entry.includes, args.include);
           const stale = !initialized && args.expectedSourceHash !== digest(entry.includes[args.include]);
           const invalidBlank = !args.source.trim() && (args.source !== '' || args.expectedSourceHash === undefined);
+          const writeStep = ['first-save', 'existing-save', 'clear', 'final-save'].find((step) =>
+            phase.endsWith(`-${step}`),
+          );
+          if (!denied && writeStep) {
+            const disk = JSON.parse(await readFile(`${root}/deletion-qualification.json`, 'utf8'));
+            assert.equal(
+              disk.fixtures.find((f) => f.name === fixture.name)?.includes?.kinds[args.include]?.attempt,
+              writeStep,
+              'The include attempt must be durable before the HTTP mutation is sent',
+            );
+          }
           if (invalidBlank || (stale && !(scenario === 'includes-stale-write' && phase.endsWith('-stale-hash')))) {
+            if (
+              invalidBlank &&
+              ((scenario === 'includes-blank-mutates-existing' && !initialized) ||
+                (scenario === 'includes-blank-initializes' && initialized))
+            ) {
+              mutations++;
+              includeMutations++;
+              entry.includes[args.include] = 'unexpected write despite refusal';
+              entry.includeAuthors[args.include] = actors.find((a) => a.label === actor).sapUser;
+            }
             result = {
               isError: true,
-              content: [{ type: 'text', text: JSON.stringify({ error: 'PINNED_WRITE_REFUSED', state: 'unchanged' }) }],
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    error: 'PINNED_WRITE_REFUSED',
+                    state: invalidBlank && scenario === 'includes-blank-wrong-state' ? 'incomplete' : 'unchanged',
+                  }),
+                },
+              ],
             };
           } else {
             mutations++;
@@ -223,8 +267,10 @@ export async function runDeletionScenario(scenario, options = {}) {
                   (scenario === 'includes-writer-b-failure' && actor === 'writerB')) &&
                 args.source === ''
               )
-            )
+            ) {
               entry.includes[args.include] = args.source;
+              entry.includeAuthors[args.include] = actors.find((a) => a.label === actor).sapUser;
+            }
             if (scenario === 'includes-uncertain') throw new Error('simulated response loss after include save');
             body = {
               action: 'update',
@@ -308,13 +354,14 @@ export async function runDeletionScenario(scenario, options = {}) {
                 sourceSha256: digest(entry.includes[kind]),
                 activeSourceSha256: digest(entry.activeIncludes[kind]),
                 createdBy: entry.createdBy,
-                changedBy: entry.createdBy,
+                changedBy: entry.includeAuthors[kind],
                 version: 'active',
               },
             ]),
           );
           if (scenario === 'includes-wrong-native') identity.includes.macros.activeSourceSha256 = '0'.repeat(64);
           if (scenario === 'includes-wrong-include-author') identity.includes.macros.changedBy = 'OTHER';
+          if (scenario === 'includes-wrong-include-version') identity.includes.macros.version = 'inactive';
         }
         if (entry.createdBy === actors.find((a) => a.label === f.actor).sapUser)
           receipts.set(name, structuredClone(identity));
@@ -367,7 +414,16 @@ export async function runDeletionScenario(scenario, options = {}) {
                 receipts.get(name)?.includes[kind].activeSourceSha256,
                 'Active include differs',
               );
-              assert.equal(entry.createdBy, receipts.get(name)?.includes[kind].changedBy, 'Include author differs');
+              assert.equal(
+                entry.includeAuthors[kind],
+                actors.find((a) => a.label === f.actor).sapUser,
+                'Foreign include author preserved',
+              );
+              assert.equal(
+                entry.includeAuthors[kind],
+                receipts.get(name)?.includes[kind].changedBy,
+                'Include author differs',
+              );
               assert.equal(
                 entry.active ? 'active' : 'inactive',
                 receipts.get(name)?.includes[kind].version,
@@ -455,6 +511,11 @@ export async function runDeletionScenario(scenario, options = {}) {
           'includes-uncertain',
           'includes-writer-b-failure',
           'includes-wrong-include-author',
+          'includes-wrong-session',
+          'includes-wrong-include-version',
+          'includes-blank-mutates-existing',
+          'includes-blank-initializes',
+          'includes-blank-wrong-state',
           'create-uncertain',
           'stale-write-accepted',
           'wrong-native-author',
@@ -486,6 +547,18 @@ export async function runDeletionScenario(scenario, options = {}) {
     if (scenario === 'includes-uncertain')
       assert.equal(includeMutations, 1, 'An uncertain include save is never replayed');
     if (scenario === 'includes-writer-b-failure') assert.deepEqual([...objects.keys()], [manifest.fixtures[2].name]);
+    const expectedFailure = {
+      'includes-blank-mutates-existing': '.empty-without-hash.unchanged_source',
+      'includes-blank-initializes': '.empty-without-hash.still_unavailable',
+      'includes-blank-wrong-state': '.empty-without-hash.unchanged_result',
+      'includes-wrong-session': '.native_includes',
+      'includes-wrong-include-version': '.native_includes',
+    }[scenario];
+    if (expectedFailure)
+      assert.ok(
+        output.failures.some((f) => f.test.endsWith(expectedFailure)),
+        JSON.stringify(output.failures),
+      );
     if (scenario === 'includes-no-initialization') {
       assert.equal(output.failed, 2);
       assert.ok(
@@ -501,6 +574,16 @@ export async function runDeletionScenario(scenario, options = {}) {
     if (includesEnabled) {
       const journal = JSON.parse(await readFile(`${root}/deletion-qualification.json`, 'utf8'));
       const first = journal.fixtures.find((f) => f.name === manifest.fixtures[0].name).includes;
+      if (scenario === 'includes-writer-b-failure') {
+        const second = journal.fixtures.find((f) => f.name === manifest.fixtures[2].name).includes;
+        assert.equal(second.complete, false);
+        assert.equal(second.kinds.definitions.attempt, 'clear');
+        assert.equal(second.kinds.definitions.lastWrite.state, 'saved-inactive');
+        assert.equal(
+          second.kinds.definitions.sourceHash,
+          digest(objects.get(manifest.fixtures[2].name).includes.definitions),
+        );
+      }
       if (['includes-success', 'includes-writer-b-failure'].includes(scenario)) {
         assert.equal(first.complete, true);
         assert.deepEqual(first.initializedKinds, ['implementations', 'testclasses']);

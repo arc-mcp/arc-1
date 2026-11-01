@@ -8,6 +8,17 @@ import { includeKinds } from './include-qualification.mjs';
 
 const headers = { 'Cache-Control': 'no-cache' };
 
+/** The worker records the owning session's cleanup state on success and failure. */
+export async function withNativeCleanupReport({ context, report, operation, persist }: any) {
+  try {
+    return await operation();
+  } finally {
+    report.cleanupState = { ...context.cleanup };
+    report.finishedAt = new Date().toISOString();
+    await persist();
+  }
+}
+
 export async function nativeAbsent(fixture: any, http: any, options: any, observe: (value: any) => void) {
   try {
     await http.get(ownerOf(fixture), headers, options);
@@ -77,6 +88,14 @@ export async function nativeIdentity({ fixture, actor, marker, http, options, ob
       assert.equal(expected.complete, true);
       assert.match(expected.sourceHash, /^[a-f0-9]{64}$/);
       const matches = descriptors.filter((entry: any) => entry?.['@_includeType'] === include);
+      await observe({
+        ...structuredClone(identity),
+        includeMetadata: {
+          kind: include,
+          count: matches.length,
+          descriptorTypes: descriptors.map((entry: any) => entry?.['@_includeType'] ?? null),
+        },
+      });
       assert.equal(matches.length, 1, 'Native include metadata is missing or ambiguous');
       const descriptor = matches[0];
       const observed = {

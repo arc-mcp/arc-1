@@ -1,0 +1,178 @@
+{
+  "sourceRevision": "b7fa68830cd2e290c95b129460db5e2e88bf6d89",
+  "runId": "85255428-666f-4e20-a960-19624f580d30",
+  "harnessSha256": "2f991ac646d698b2c8a8bd3b60f7fd2d2831a5fb01a7a849452ac817d68549f3",
+  "scope": "Local A4H/001 class includes; incomplete primary-writer run, no two-writer qualification",
+  "directNativeCheck": {
+    "passed": true,
+    "fixture": "ZARC1_ICC_9F9B40A1",
+    "probeSha256": "c1356bc08f5569d8dfba0f9a75533b6f4fb96820574259c41107b73627fd188a",
+    "steps": {
+      "create": {
+        "target": "DIRECT_TEST/001",
+        "type": "CLAS",
+        "name": "ZARC1_ICC_9F9B40A1",
+        "action": "create",
+        "state": "saved-inactive",
+        "sourceHash": "6961940a4b8b007c4a69fd316c30a7a47db56fe23e626c7a200b8a79bb692640",
+        "next": "Review the inactive source. SAPActivate activates this complete owner, including all existing inactive drafts/includes."
+      },
+      "first": {
+        "target": "DIRECT_TEST/001",
+        "type": "CLAS",
+        "name": "ZARC1_ICC_9F9B40A1",
+        "action": "update",
+        "state": "saved-inactive",
+        "include": "testclasses",
+        "initialized": true,
+        "sourceHash": "759b2bf2905136262d6680ce81528babb84661f4ae271b2d7a94745227421b74",
+        "next": "Review the inactive source. SAPActivate activates this complete owner, including all existing inactive drafts/includes."
+      },
+      "second": {
+        "error": "PINNED_WRITE_REFUSED",
+        "message": "The include already exists. Read its editable source and provide expectedSourceHash.",
+        "retryable": false,
+        "state": "unchanged",
+        "phase": "include-read",
+        "sessionClosed": true,
+        "include": "testclasses"
+      },
+      "activation": {
+        "target": "DIRECT_TEST/001",
+        "type": "CLAS",
+        "name": "ZARC1_ICC_9F9B40A1",
+        "action": "activate",
+        "success": true,
+        "messages": [],
+        "details": [],
+        "retryable": false,
+        "scope": "complete-owner-including-existing-inactive-includes"
+      },
+      "metadata": {
+        "count": 1,
+        "descriptors": [
+          {
+            "createdBy": "MARIAN",
+            "changedBy": "MARIAN",
+            "version": "active"
+          }
+        ]
+      },
+      "activeSourceHash": "759b2bf2905136262d6680ce81528babb84661f4ae271b2d7a94745227421b74"
+    },
+    "cleanup": {
+      "attempted": true,
+      "absent": true,
+      "state": {
+        "unlockFailed": false,
+        "sessionClosed": true
+      }
+    },
+    "initialProbeAttempt": "The first direct probe created a class shell but SAP rejected its source comment placement; independently inspected and deleted before the successful probe."
+  },
+  "ppAttempt": {
+    "startedAt": "2026-11-01T06:56:26.917Z",
+    "finishedAt": "2026-11-01T07:13:47.014Z",
+    "passedAssertions": 386,
+    "failedAssertions": 2,
+    "failures": [
+      {
+        "test": "qualification.execution",
+        "pass": false,
+        "phase": "include-ZARC1_DPP_AC_004C944E-testclasses-existing-save",
+        "code": "HTTP_REQUEST_FAILED"
+      },
+      {
+        "test": "cleanup-ZARC1_DPP_AC_004C944E.failure",
+        "pass": false,
+        "code": "INDEPENDENT_NATIVE_CHECK_FAILED"
+      }
+    ],
+    "completedIncludeKinds": ["definitions", "implementations", "macros"],
+    "lastSave": {
+      "target": "PR1142/001",
+      "type": "CLAS",
+      "name": "ZARC1_DPP_AC_004C944E",
+      "action": "update",
+      "state": "saved-inactive",
+      "include": "testclasses",
+      "initialized": false,
+      "sourceHash": "837cdb8d6f52df782f6298e06152bf408988a56db4265973dda80925f21e1523",
+      "next": "Review the inactive source. SAPActivate activates this complete owner, including all existing inactive drafts/includes."
+    },
+    "lastReadBackHash": "b0b65c1b1f4c7b9b3f1286d0c0391ad3e554e73987ff402027f63529b3a2de90",
+    "secondWriterReached": false,
+    "activationReached": false,
+    "formatterReached": false,
+    "httpFailureCause": "Not established; no response was received for the follow-up read. No mutation was replayed."
+  },
+  "manualRecovery": {
+    "inspection": "Main source exactly matched the saved editable MCP receipt; every include matched its last successful save hash and expected test content. Package and native actors were verified before and under the owning class lock. Metadata and all source bytes were unchanged between both checks.",
+    "allFixturesAbsent": {
+      "ZARC1_DPP_AC_004C944E": true,
+      "ZARC1_DPP_AI_059DBB68": true,
+      "ZARC1_DPP_BC_4F7AA58E": true,
+      "ZARC1_DPP_BI_3419C41E": true
+    },
+    "absenceEvidence": {
+      "ZARC1_DPP_AC_004C944E": {
+        "statusCode": 404,
+        "exceptionType": "ExceptionResourceNotFound",
+        "classifiedServiceError": false
+      },
+      "ZARC1_DPP_AI_059DBB68": {
+        "statusCode": 404,
+        "exceptionType": "ExceptionResourceNotFound",
+        "classifiedServiceError": false
+      },
+      "ZARC1_DPP_BC_4F7AA58E": {
+        "statusCode": 404,
+        "exceptionType": "ExceptionResourceNotFound",
+        "classifiedServiceError": false
+      },
+      "ZARC1_DPP_BI_3419C41E": {
+        "statusCode": 404,
+        "exceptionType": "ExceptionResourceNotFound",
+        "classifiedServiceError": false
+      }
+    },
+    "cleanupState": {
+      "unlockFailed": false,
+      "sessionClosed": true
+    },
+    "finishedAt": "2026-11-01T11:09:13.146Z"
+  },
+  "restoration": {
+    "harnessStopped": true,
+    "activeOperations": 0,
+    "originalAppEnvironmentAndDropletRestored": true,
+    "temporaryDestinationRemoved": true,
+    "sapRoleProfileAndDefinitionRestored": true,
+    "iamAndXsuaaRestored": false,
+    "pending": "Operator BTP session renewal"
+  },
+  "qualification": "incomplete; retry with a fresh reviewed source binding and fixture manifest",
+  "deployment": {
+    "artifactBuiltAtRevision": "00dde061316d7bdc6f6d6a206e2684831b7f2a70",
+    "sourceRevision": "b7fa68830cd2e290c95b129460db5e2e88bf6d89",
+    "artifactReuse": {
+      "verifiedAt": "2026-11-01T06:22:41.346373+00:00",
+      "reason": "Only qualification scripts, unit tests and documentation changed; every shipped file matches the staged artifact byte-for-byte.",
+      "filesVerified": 1135,
+      "changedPaths": [
+        "docs/research/2026-11-01-broader-pinned-pp-writes-includes.md",
+        "docs/research/broader-pinned-pp-writes/claude-include-harness-review-20261101.md",
+        "docs_page/roadmap.md",
+        "scripts/qualification/pr1142/README.md",
+        "scripts/qualification/pr1142/deletion-qualification.mjs",
+        "scripts/qualification/pr1142/deletion-regression.mjs",
+        "scripts/qualification/pr1142/include-qualification.mjs",
+        "scripts/qualification/pr1142/native-fixture-operations.mts",
+        "scripts/qualification/pr1142/native-fixtures.mts",
+        "tests/unit/handlers/pinned-class-includes.test.ts",
+        "tests/unit/scripts/pr1142-combined-qualification.test.ts",
+        "tests/unit/scripts/pr1142-native-fixtures.test.ts"
+      ]
+    }
+  }
+}

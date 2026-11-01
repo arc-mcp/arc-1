@@ -5,7 +5,12 @@ import { mutationHttp } from '../../../src/adt/mutation-http.js';
 import { getTestClient } from '../../../tests/integration/helpers.js';
 import { durable } from './durable-journal.mjs';
 import { actors, root, target, validateFixtures } from './fixture-contract.mjs';
-import { cleanupNativeFixture, nativeAbsent, nativeIdentity } from './native-fixture-operations.mjs';
+import {
+  cleanupNativeFixture,
+  nativeAbsent,
+  nativeIdentity,
+  withNativeCleanupReport,
+} from './native-fixture-operations.mjs';
 import { configuration, validateConfiguration } from './qualification-config.mjs';
 import { retainNativeWorkerOnInterrupt } from './process-boundaries.mjs';
 import { verifyRunManifest } from './run-manifest.mjs';
@@ -75,63 +80,68 @@ const report: any = {
 const path = `${root}/native-${mode}${name ? `-${name}` : ''}${attempt ? `-${attempt}` : ''}.json`;
 await durable(path, report, true);
 let failure: unknown;
-try {
-  for (const fixture of selected) {
-    const result: any = { name: fixture.name, type: fixture.type };
-    report.fixtures.push(result);
-    if (mode === 'preflight' || mode === 'absence') {
-      result.absent = await absent(fixture);
-      assert.equal(result.absent, true);
-    } else if (mode === 'identity' || mode === 'unchanged') {
-      result.identity = await identity(fixture);
-      if (mode === 'unchanged') {
-        const receipt = await privateJson(`${root}/native-identity-${fixture.name}.json`);
-        assert.equal(receipt.manifestSha256, manifestSha256);
-        assert.equal(receipt.status, 'complete');
-        assert.deepEqual(
-          result.identity,
-          receipt.fixtures.find((f: any) => f.name === fixture.name)?.identity,
-          'Fixture changed; preserve foreign work',
-        );
-        result.unchanged = true;
-      }
-    } else {
-      Object.assign(
-        result,
-        await cleanupNativeFixture({
-          fixture,
-          manifestSha256,
-          load: (name: string) => privateJson(`${root}/${name}`),
-          absent,
-          identity,
-          http,
-          client,
-          context,
-          options,
-          attempted: async () => {
-            result.cleanupAttempted = true;
-            await durable(path, report);
-          },
-        }),
-      );
-    }
+await withNativeCleanupReport({
+  context,
+  report,
+  persist: async () => {
+    report.absenceEvidence = Object.fromEntries(absenceEvidence);
     await durable(path, report);
-  }
-  report.status = 'complete';
-} catch (error) {
-  report.status = 'failed';
-  report.error =
-    error instanceof AdtApiError
-      ? { code: 'NATIVE_HTTP_ERROR', statusCode: error.statusCode }
-      : { code: 'NATIVE_CHECK_FAILED' };
-  report.error.message = error instanceof Error ? error.message.slice(0, 4096) : 'Non-Error failure';
-  failure = error;
-} finally {
-  report.cleanupState = { ...context.cleanup };
-  report.absenceEvidence = Object.fromEntries(absenceEvidence);
-  report.finishedAt = new Date().toISOString();
-  await durable(path, report);
-}
+  },
+  operation: async () => {
+    try {
+      for (const fixture of selected) {
+        const result: any = { name: fixture.name, type: fixture.type };
+        report.fixtures.push(result);
+        if (mode === 'preflight' || mode === 'absence') {
+          result.absent = await absent(fixture);
+          assert.equal(result.absent, true);
+        } else if (mode === 'identity' || mode === 'unchanged') {
+          result.identity = await identity(fixture);
+          if (mode === 'unchanged') {
+            const receipt = await privateJson(`${root}/native-identity-${fixture.name}.json`);
+            assert.equal(receipt.manifestSha256, manifestSha256);
+            assert.equal(receipt.status, 'complete');
+            assert.deepEqual(
+              result.identity,
+              receipt.fixtures.find((f: any) => f.name === fixture.name)?.identity,
+              'Fixture changed; preserve foreign work',
+            );
+            result.unchanged = true;
+          }
+        } else {
+          Object.assign(
+            result,
+            await cleanupNativeFixture({
+              fixture,
+              manifestSha256,
+              load: (name: string) => privateJson(`${root}/${name}`),
+              absent,
+              identity,
+              http,
+              client,
+              context,
+              options,
+              attempted: async () => {
+                result.cleanupAttempted = true;
+                await durable(path, report);
+              },
+            }),
+          );
+        }
+        await durable(path, report);
+      }
+      report.status = 'complete';
+    } catch (error) {
+      report.status = 'failed';
+      report.error =
+        error instanceof AdtApiError
+          ? { code: 'NATIVE_HTTP_ERROR', statusCode: error.statusCode }
+          : { code: 'NATIVE_CHECK_FAILED' };
+      report.error.message = error instanceof Error ? error.message.slice(0, 4096) : 'Non-Error failure';
+      failure = error;
+    }
+  },
+});
 console.log(
   JSON.stringify({
     mode,

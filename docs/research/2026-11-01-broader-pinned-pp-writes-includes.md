@@ -111,8 +111,8 @@ invents that field. Production response semantics are unchanged.
 
 The Medium finding concerned per-include attribution. Native receipts now capture each include's
 `createdBy`, `changedBy` and `version`, require the expected last changer and active version, and
-compare those fields during cleanup as well as both source hashes. Missing or ambiguous metadata
-fails qualification; a class-level author is not substituted. These observations follow whole-owner
+compare those fields during cleanup as well as both source hashes. Missing or ambiguous include descriptors, last changer or active version
+fail qualification; creator is recorded when present, and a class-level author is not substituted. These observations follow whole-owner
 activation and do not independently attribute every earlier request or expose other users' drafts.
 
 The Low findings add empty-without-hash and whitespace refusals before the first save, preserve
@@ -124,6 +124,45 @@ Unavailable preliminary reads remain explicitly distinct from native absence evi
 
 The reviewer actually passed 13 files / 437 tests, all 44 then-current simulations and the complete
 typecheck. Snapshot hashes were unchanged. Its outside-root read attempt was refused and an
-unsupported search expression failed; neither changed the snapshot. The candidate staged from
-`00dde0613` was never selected or started, and no temporary SAP/IAM/destination permissions were
-enabled. A new reviewed source binding is required before live qualification.
+unsupported search expression failed; neither changed the snapshot. At that review checkpoint, the candidate staged from
+`00dde0613` had not been selected or started, and no temporary SAP/IAM/destination permissions were
+enabled. The later reviewed attempt is recorded below.
+
+## Reviewed native check and incomplete PP attempt at `b7fa68830`
+
+The next actual [Opus 5.5 max review](broader-pinned-pp-writes/claude-include-harness-fix-review-20261101.md)
+accepted a controlled qualification after checking same-session initialization directly. That native
+check passed: a missing `testclasses` include was initialized and read back in its owning session,
+an unhashed repeat was refused, and whole-owner activation produced an active descriptor with the
+expected last changer. The fixture was deleted with verified native absence. The first probe's
+rejected main-source comment placement left a shell, which was separately inspected and deleted;
+both attempts remain in the private operator record. Direct identity evidence does not establish PP.
+
+The [source-bound PP attempt](broader-pinned-pp-writes/include-qualification-attempt-20261101.json)
+passed 386 assertions before an HTTP failure on the read following a successful `testclasses`
+update. Primary-writer definitions, implementations and macros completed their include sequences;
+testclasses initialization and its subsequent save returned success. The run did not reach owner
+activation, the second writer, formatter qualification or normal deletion. The HTTP failure's cause
+is not established. These results do not qualify the complete class-include family.
+
+Automatic cleanup preserved the unfinished class because it lacked a completed independent
+ownership receipt. Operator recovery compared the main source with its saved editable receipt and
+all four includes with their successful save hashes and exact test content, checked native package
+and actors, then repeated these checks under the owning class lock before deletion. All four fixture
+names were independently confirmed absent. The harness stopped with zero active operations.
+The original application/environment, temporary destination and SAP role/profile are restored;
+temporary IAM entries and XSUAA restoration await operator BTP session renewal.
+
+The follow-up closes the review's offline coverage gaps: persisted attempts are checked when the
+mock receives each include mutation, including the second writer; contradictory or missing save
+fields are rejected; blank requests traverse route preparation and the real handler; and refusal
+side effects, wrong writing sessions and inactive include metadata have negative controls. Native
+diagnostics record descriptor counts/types before refusal. Missing last changer/version are tested
+separately from the optional creator. The native worker's cleanup reporter is exercised on a failing
+operation with failed unlock and successful session closure. The combined wrapper has an explicit
+30-second test budget. These changes still require follow-up review and a fresh complete live run.
+
+Author validation for this follow-up passed 398 files / 10,976 tests, all three typecheck projects,
+55 offline qualification simulations, lint, strict documentation and file/schema budgets. The
+switched-session simulation was refined afterward to replace the Authorization header at the mock
+transport boundary; all 35 deletion/include simulations passed again. Production files are unchanged.

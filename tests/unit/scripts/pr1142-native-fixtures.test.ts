@@ -5,6 +5,7 @@ import {
   cleanupNativeFixture,
   nativeAbsent,
   nativeIdentity,
+  withNativeCleanupReport,
 } from '../../../scripts/qualification/pr1142/native-fixture-operations.mjs';
 import { deleteObject, withLockedMutation } from '../../../src/adt/crud.js';
 import { AdtApiError } from '../../../src/adt/errors.js';
@@ -167,8 +168,41 @@ describe('PR1142 actual native identity and cleanup branches', () => {
       await expect(test.identity()).rejects.toThrow(/Native include/);
       if (mode === 'wrong-author') expect(test.observed.at(-1).includes.macros.changedBy).toBe('OTHER');
       if (mode === 'inactive') expect(test.observed.at(-1).includes.macros.version).toBe('inactive');
+      if (mode === 'missing' || mode === 'duplicate')
+        expect(test.observed.at(-1).includeMetadata).toEqual({
+          kind: 'macros',
+          count: mode === 'missing' ? 0 : 2,
+          descriptorTypes:
+            mode === 'missing'
+              ? includeKinds.filter((kind) => kind !== 'macros')
+              : includeKinds.flatMap((kind) => (kind === 'macros' ? [kind, kind] : [kind])),
+        });
     },
   );
+
+  it.each(['changedBy', 'version'])('records and refuses missing include %s', async (attribute) => {
+    const test = includeIdentity();
+    const missing = metadata().replace(/<c:include c:includeType="macros"[^>]*\/>/, (descriptor) =>
+      descriptor.replace(new RegExp(` c:${attribute}="[^"]*"`), ''),
+    );
+    test.changeMetadata(missing);
+    await expect(test.identity()).rejects.toThrow(/Native include/);
+    expect(test.observed.at(-1).includes.macros[attribute]).toBeNull();
+  });
+
+  it('records missing include creator without treating it as last-changer evidence', async () => {
+    const test = includeIdentity();
+    test.changeMetadata(
+      metadata().replace(/<c:include c:includeType="macros"[^>]*\/>/, (descriptor) =>
+        descriptor.replace(' c:createdBy="FIRST"', ''),
+      ),
+    );
+    expect((await test.identity()).includes.macros).toMatchObject({
+      createdBy: null,
+      changedBy: 'FIRST',
+      version: 'active',
+    });
+  });
 
   it.each(['current', 'active'] as const)('records and refuses a changed %s include', async (version) => {
     const test = includeIdentity();
@@ -237,6 +271,30 @@ describe('PR1142 actual native identity and cleanup branches', () => {
       '/sap/bc/adt/oo/classes/zarc1_dpp_ac_1234abcd',
       'LOCK',
     );
+  });
+
+  it('persists failed unlock and session closure when native cleanup throws', async () => {
+    const test = cleanup();
+    const report: Record<string, unknown> = {};
+    const persisted: unknown[] = [];
+    vi.mocked(withLockedMutation).mockImplementation(async () => {
+      Object.assign(test.context.cleanup, { unlockFailed: true, sessionClosed: true });
+      throw new Error('Native delete response lost');
+    });
+    await expect(
+      withNativeCleanupReport({
+        context: test.context,
+        report,
+        operation: () => cleanupNativeFixture(test),
+        persist: async () => persisted.push(structuredClone(report)),
+      }),
+    ).rejects.toThrow('Native delete response lost');
+    expect(persisted).toEqual([
+      {
+        cleanupState: { unlockFailed: true, sessionClosed: true },
+        finishedAt: expect.any(String),
+      },
+    ]);
   });
 
   it('preserves a foreign include draft discovered by the actual native reader under the class lock', async () => {

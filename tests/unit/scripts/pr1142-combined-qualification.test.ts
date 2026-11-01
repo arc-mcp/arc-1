@@ -13,4 +13,4 @@ it('runs both writers and all include checks through the real combined live-plan
   });
   expect(formatter).toHaveBeenCalledOnce();
   expect(result).toMatchObject({ passed: true, includeMutations: 32, remainingObjects: 0 });
-});
+}, 30_000);

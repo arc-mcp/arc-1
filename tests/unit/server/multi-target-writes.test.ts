@@ -1,7 +1,9 @@
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { Ajv2020 } from 'ajv/dist/2020.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { AdtClient } from '../../../src/adt/client.js';
 import { checkPackage, checkTransport, defaultSafetyConfig } from '../../../src/adt/safety.js';
+import { handleToolCall } from '../../../src/handlers/dispatch.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { DestinationRegistry } from '../../../src/server/destination-registry.js';
 import { parseTargetGrant } from '../../../src/server/multi-target-authorization.js';
@@ -74,6 +76,36 @@ function runtime(identity = auth(), mode: 'pinned' | 'aggregate' = 'pinned') {
 }
 
 describe('pinned write policy composition', () => {
+  it.each(['', ' \r\n\t'])('routes blank include input to the handler refusal without SAP I/O: %j', async (source) => {
+    const r = registry(),
+      identity = auth();
+    const prepared = await prepareMultiTargetCall({
+      options: {
+        mode: 'pinned',
+        registry: r,
+        target: r.targets[0],
+        instanceConfig: base,
+        authorization: projectMultiTargetRequest(r, identity),
+      },
+      toolName: 'SAPWrite',
+      rawArgs: { action: 'update', type: 'CLAS', name: 'ZARC1_INCLUDE', include: 'definitions', source },
+      requestId: 'include-blank',
+      authInfo: identity,
+    });
+    expect(prepared.handled).toBe(false);
+    if (prepared.handled) throw new Error('Blank input must reach the handler');
+    const client = new AdtClient({
+      baseUrl: 'http://sap.invalid',
+      safety: { ...defaultSafetyConfig(), ...prepared.activeConfig },
+    });
+    const requests = (['get', 'post', 'put', 'delete'] as const).map((method) =>
+      vi.spyOn(client.http, method).mockRejectedValue(new Error('Unexpected SAP I/O')),
+    );
+    const result = await handleToolCall(client, prepared.activeConfig, 'SAPWrite', prepared.args);
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text)).toMatchObject({ error: 'PINNED_WRITE_REFUSED', state: 'unchanged' });
+    for (const request of requests) expect(request).not.toHaveBeenCalled();
+  });
   it.each([{ source: '', expectedSourceHash: 'a'.repeat(64) }, { source: '* New include\n' }])(
     'prepares a valid include update through the pinned route and catalog: %j',
     async (input) => {
