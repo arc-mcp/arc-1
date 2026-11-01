@@ -6,6 +6,23 @@ import { describe, expect, it } from 'vitest';
 import { extractDependencies } from '../../../src/context/deps.js';
 
 describe('extractDependencies', () => {
+  it.each([true, false])('excludes built-in OBJECT with filterSapStandard=%s', (filterSapStandard) => {
+    const source = `CLASS zcl_test DEFINITION INHERITING FROM ObJeCt.
+  PUBLIC SECTION.
+    DATA generic TYPE REF TO object.
+    DATA concrete TYPE REF TO zcl_object_helper.
+    METHODS run.
+ENDCLASS.
+CLASS zcl_test IMPLEMENTATION.
+  METHOD run.
+    generic = CAST OBJECT( concrete ).
+  ENDMETHOD.
+ENDCLASS.`;
+
+    const names = extractDependencies(source, 'zcl_test', filterSapStandard).map((dep) => dep.name.toUpperCase());
+    expect(names).toEqual(['ZCL_OBJECT_HELPER']);
+  });
+
   // ─── TYPE REF TO ────────────────────────────────────────────────────
 
   it('extracts TYPE REF TO references', () => {
