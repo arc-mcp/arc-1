@@ -78,6 +78,7 @@ export interface SapErrorClassification {
     | 'object-exists'
     | 'method-not-supported'
     | 'icf-handler-not-bound'
+    | 'program-variants-unavailable'
     | 'icf-service-inactive'
     | 'gateway-service-not-found'
     | 'bdef-base-not-extensible'
@@ -806,6 +807,22 @@ export function classifySapDomainError(
       hint,
       transaction: releaseNum !== undefined && releaseNum >= STATEFUL_SESSION_MIN_RELEASE ? 'SM12' : undefined,
       details: typeId ? { exceptionType: typeId } : undefined,
+    };
+  }
+
+  // Verified on 750/758: this unregistered variants route answers in EN or DE.
+  if (
+    statusCode === 404 &&
+    path &&
+    /^\/sap\/bc\/adt\/programs\/programs\/[^/?]+\/variants(?:\?|$)/i.test(path) &&
+    /No suitable resource found|Keine geeignete Ressource gefunden/i.test(bodyRaw)
+  ) {
+    return {
+      category: 'program-variants-unavailable',
+      hint:
+        'SAP has no program-variant ADT resource for this request, so ARC-1 cannot read program variants here. ' +
+        'This 404 does not show whether the program exists or has variants. ' +
+        'Use SE38 in SAP GUI to inspect variants.',
     };
   }
 
