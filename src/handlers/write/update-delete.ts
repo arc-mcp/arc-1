@@ -36,6 +36,7 @@ import {
 import { replaceClassInclude } from './class-include.js';
 import type { SapWriteContext } from './context.js';
 import { writeMetadataUpdate } from './metadata-update.js';
+import { deletePinnedRepositoryOwner } from './owner-delete.js';
 import { replaceOwnerSource } from './source-update.js';
 
 function isDeleteDependencyError(err: AdtApiError): boolean {
@@ -195,6 +196,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
 export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResult> {
   const { client, type, name, transport, objectUrl, invalidateWrittenObject, enforcePackageForExistingObject } = ctx;
   checkOperation(client.safety, OperationType.Delete, 'DeleteObject');
+  if (ctx.mutationContext.mode === 'pinned-pp') return deletePinnedRepositoryOwner(ctx);
   await enforcePackageForExistingObject();
   if (type === 'ENHO') {
     const stored = await getBadiEnhancementImplementation(client.http, client.safety, name);

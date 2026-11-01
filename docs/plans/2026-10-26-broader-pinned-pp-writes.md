@@ -1,6 +1,8 @@
 # PR 2: broader built-in writes on pinned PP targets
 
 Status: implementation in progress. Formatter, CLAS/INTF deletion, class-include updates, existing-include method edits and main-source class metadata surgery and standalone on-prem PROG/INCL updates/unit edits are admitted in the draft.
+Main source replacement and CLAS/INTF creation/deletion now enter through the shared write actions
+with explicit legacy/pinned native adapters. This later convergence is offline-tested only.
 The fresh local run at `77e41fdcd` qualifies include replacement and the refactored main method path;
 the later include-method and class metadata adapters, refactored transportable paths and remaining families still need qualification.
 The [combined PP run](../research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)

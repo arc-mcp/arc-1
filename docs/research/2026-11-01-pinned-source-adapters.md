@@ -79,6 +79,28 @@ uncertain-write state. Checks now run before those transitions. If initializatio
 the following PUT was prevented, the result is `created-include-source-not-saved` with
 `initialized: true` and no unverified source hash.
 
+## Creation and deletion convergence
+
+The existing CLAS/INTF create and delete operations now enter through the ordinary
+`writeActionCreate` and `writeActionDelete` handlers. Creation shares the XML builder, quality
+precheck, native `createObject` POST and source-save dispatch. Explicit profile adapters retain
+legacy recording/quality/cache behavior and the pinned package, recording, owner lock, exact
+read-back and cleanup requirements. Pinned creation freshly reads the native initial source
+under the new owner's lock before saving. No caller source hash is required for creation.
+
+Creation state is recorded separately from saving. A rejected POST remains unchanged; an uncertain
+POST is not retried; a created owner whose initial read, syntax check, PUT or read-back fails is
+reported as partial or uncertain without an unverified hash. Cancellation before PUT preserves
+the confirmed creation state. PP creation continues to omit a caller-selected responsible user.
+Fourteen native HTTP-mock cases execute these transitions through the shared handler.
+
+Deletion selects the existing strict native deletion adapter from the shared action. It retains
+its package/recording rechecks, owning lock, typed absence read-back and bounded cleanup. The
+legacy action retains its original text-pool/CDS prechecks and error/cleanup behavior. This does
+not admit PROG/INCL creation/deletion or bypass their pending technology-specific ownership and
+text-pool rules. The duplicate pinned CRUD orchestrator is removed; native adapters remain
+explicit about their legacy and pinned policies.
+
 ## Evidence limits and next work
 
 New tests exercise actual shared handler/native HTTP boundaries, exact saved source and neighbor

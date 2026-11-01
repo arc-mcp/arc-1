@@ -8,12 +8,13 @@ import { pinnedOperationContext } from '../pinned-operation.js';
 import { type ToolResult, textResult, toolJson } from '../shared.js';
 import { dispatchClassSurgery } from './class-surgery-dispatch.js';
 import type { SapWriteContext } from './context.js';
+import { writeActionCreate } from './create.js';
 import { createPinnedClassContext } from './pinned-class-context.js';
 import { isPinnedWriteRejection, pinnedFailure, rejectedPinnedSourceState } from './pinned-result.js';
 import { forgetPinnedSourceContext, type PinnedSourceState, pinnedSourceState } from './pinned-source-context.js';
 import { createPinnedTextSourceContext } from './pinned-source-input.js';
 import { writeActionUnit } from './unit-surgery.js';
-import { writeActionUpdate } from './update-delete.js';
+import { writeActionDelete, writeActionUpdate } from './update-delete.js';
 
 export async function handlePinnedSourceWrite(
   client: AdtClient,
@@ -24,20 +25,29 @@ export async function handlePinnedSourceWrite(
   let ctx: SapWriteContext | undefined;
   let state: PinnedSourceState | undefined;
   try {
-    checkOperation(client.safety, OperationType.Update, 'PinnedWrite');
+    checkOperation(
+      client.safety,
+      args.action === 'delete' ? OperationType.Delete : OperationType.Update,
+      'PinnedWrite',
+    );
     const context = pinnedOperationContext(client, config, { tool: 'SAPWrite', args, timeoutMs: 300_000, cleanup });
     ctx =
+      args.action === 'delete' ||
+      args.action === 'create' ||
       (args.action === 'update' && args.include === undefined) ||
       args.action === 'edit_unit' ||
       args.action === 'add_unit'
         ? createPinnedTextSourceContext(client, args, config, context)
         : createPinnedClassContext(client, args, config, context);
     state = pinnedSourceState(ctx);
-    const result = await (args.action === 'update'
-      ? writeActionUpdate(ctx)
-      : args.action === 'edit_unit' || args.action === 'add_unit'
-        ? writeActionUnit(ctx)
-        : dispatchClassSurgery(ctx));
+    if (args.action === 'delete') return await writeActionDelete(ctx);
+    const result = await (args.action === 'create'
+      ? writeActionCreate(ctx)
+      : args.action === 'update'
+        ? writeActionUpdate(ctx)
+        : args.action === 'edit_unit' || args.action === 'add_unit'
+          ? writeActionUnit(ctx)
+          : dispatchClassSurgery(ctx));
     if (result.isError) throw new AdtSafetyError(result.content.map((part) => part.text).join('\n'));
     if (cleanup.unlockFailed || cleanup.sessionClosed === false) {
       state.phase = cleanup.unlockFailed ? 'unlock' : 'session-close';

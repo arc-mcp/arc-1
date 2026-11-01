@@ -54,7 +54,7 @@ export async function withPinnedSourceEdit(
         checkOperation(ctx.client.safety, OperationType.Update, 'PinnedSave');
         throwIfRequestCancelled(context.requestPolicy);
         state.phase = 'source-save';
-        state.state = 'source-save-unknown';
+        state.state = state.createdOwner ? 'created-source-unknown' : 'source-save-unknown';
         state.writeAttempted = true;
         await updateSource(http, ctx.client.safety, url, source, lock.lockHandle, recording.request);
         state.phase = 'source-readback';

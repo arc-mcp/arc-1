@@ -78,6 +78,7 @@ import {
 } from './batch-results.js';
 import type { SapWriteContext } from './context.js';
 import { resolveCreateTransport } from './create-transport.js';
+import { createRepositoryObject, prepareCreationRecording, saveCreatedSource } from './creation.js';
 import { postCreateError } from './post-create-error.js';
 
 const FUNCTION_MODULE_MEDIA_TYPE = /^application\/vnd\.sap\.adt\.functions\.fmodules(?:\.v\d+)?\+xml\b/i;
@@ -515,11 +516,9 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     name,
     source,
     hasSource,
-    transport,
     lintOverride,
     preflightOverride,
     objectUrl,
-    srcUrl,
     invalidateWrittenObject,
   } = ctx;
   // Discovery gate before any SAP call (the TTYP/DOMA gates live in write.ts, which is at its size budget).
@@ -536,12 +535,9 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
   const description = String(args.description ?? name);
 
-  let effectiveTransport = transport;
-  if (!transport) {
-    const resolved = await resolveCreateTransport(client, objectUrl, pkg, config.minimalErrors);
-    if (resolved.error) return errorResult(resolved.error);
-    effectiveTransport = resolved.transport;
-  }
+  const resolved = await prepareCreationRecording(ctx, pkg);
+  if (resolved.error) return errorResult(resolved.error);
+  const effectiveTransport = resolved.transport;
 
   // MSAG transport-vs-task guard. Some SAP releases silently drop message inserts when
   // given a task number as corrNr — CL_ADT_MESSAGE_CLASS_API=>create() passes corrNr to
@@ -723,20 +719,20 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   const needsPackageParam = type === 'BDEF' || type === 'TABL' || type === 'TABL/DT' || type === 'TABL/DS';
   let result: string;
   try {
-    result = await createObject(
-      client.http,
-      client.safety,
-      createUrl,
-      type === 'ENHO' ? badiContainerXml(body) : body,
+    result = await createRepositoryObject(ctx, {
+      url: createUrl,
+      body: type === 'ENHO' ? badiContainerXml(body) : body,
       contentType,
-      effectiveTransport,
-      needsPackageParam ? pkg : undefined,
-      getCachedFeatures()?.abapRelease,
+      transport: effectiveTransport,
+      packageName: needsPackageParam ? pkg : undefined,
       systemType,
-      name,
-    );
+    });
   } catch (createErr) {
-    if (createErr instanceof AdtApiError && (createErr.statusCode === 400 || createErr.statusCode === 409)) {
+    if (
+      ctx.mutationContext.mode === 'single-target' &&
+      createErr instanceof AdtApiError &&
+      (createErr.statusCode === 400 || createErr.statusCode === 409)
+    ) {
       const syntaxDetail = await tryPostSaveSyntaxCheck(client, type, name);
       if (syntaxDetail) {
         createErr.message += syntaxDetail;
@@ -857,14 +853,11 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     const createSource = funcPreparation.source;
 
     try {
-      await safeUpdateSource(
-        client.http,
-        client.safety,
-        objectUrl,
-        srcUrl,
+      await saveCreatedSource(
+        ctx,
         createSource,
         effectiveTransport,
-        getCachedFeatures()?.abapRelease,
+        mergePreWriteWarnings(preflightWarnings.warnings, lintWarnings.warnings, ...funcPreparation.warnings),
       );
     } catch (cause) {
       if (type === 'FUNC') throw functionModuleCreateError(ctx, cause, 'source');

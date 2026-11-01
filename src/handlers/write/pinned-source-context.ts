@@ -15,6 +15,7 @@ export interface PinnedSourceState {
   readonly include?: ClassWriteInclude;
   readonly wholeIncludeReplacement: boolean;
   includeInitialized?: boolean;
+  createdOwner?: boolean;
   phase: string;
   state: string;
   pkg?: string;
