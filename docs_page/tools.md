@@ -319,7 +319,7 @@ approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated
 | `MSAG` | Message class metadata (structured JSON with `number`, `shortText`, `longText` per message). `MSAG` is the canonical TADIR R3TR short type (added in audit Plan B — docs/research/abap-types/types/msag.md). |
 | `MESSAGES` | Deprecated alias for `MSAG`. Still accepted with a stderr warning; use `MSAG` going forward. |
 | `TEXT_ELEMENTS` | Text elements for `PROG`, `CLAS`, or `FUGR`, selected with `objectType`; see [Text elements](#text-elements). |
-| `VARIANTS` | Program variants, only where SAP serves the ADT resource. On tested SAP_BASIS 750 and 758 the call returns an error, not an empty list. ARC-1 adds no table-data alternative. |
+| `VARIANTS` | Program variants, only where SAP serves the ADT resource. No tested release does: SAP_BASIS 750, 758 and 816 return an error, not an empty list. ARC-1 adds no table-data alternative. |
 | `INACTIVE_OBJECTS` | List all objects pending activation for the calling user (no `name` needed). Returns rich metadata: `name`, `type`, `uri`, `description?`, `user`, `deleted`, `transport`, `parentTransport`. |
 
 For a global class declaration (`INTERFACES`, `INHERITING FROM`) or its implementation,

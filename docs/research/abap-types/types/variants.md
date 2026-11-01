@@ -7,13 +7,14 @@ capture in this repository and conflict with these live checks.
 
 ## Verified evidence (November 1–2, 2026)
 
-All probes used report `RSUSR002`, client 001, with writes disabled.
+The 758 and 816 probes used report `RSUSR002`, client 001, with writes and data preview disabled.
+The 750 row used the same report through an installed MCP instance.
 
 | SAP_BASIS | Route | Observed result |
 |---|---|---|
 | 750 SP0002 | Installed ARC-1 MCP | HTTP 404, `No suitable resource found`; the program source is readable |
 | 758 SP0002 | Direct HTTPS/Basic, public tool pipeline | HTTP 404; English: `No suitable resource found`; German: `Keine geeignete Ressource gefunden` |
-| 816 SP0001 | Direct HTTPS/Basic, public tool pipeline | HTTP 404, `No suitable resource found` |
+| 816 SP0001 | Direct HTTPS/Basic, public tool pipeline | HTTP 404; English: `No suitable resource found`; German: `Keine geeignete Ressource gefunden` |
 
 On 750 and 758, reading `CL_SEDI_ADT_RES_APP_PROGRAMS->REGISTER_RESOURCES` confirmed that
 the registered program resources include metadata, source and revisions, but no `variants` route.

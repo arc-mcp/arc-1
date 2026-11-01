@@ -810,7 +810,8 @@ export function classifySapDomainError(
     };
   }
 
-  // Verified on 750/758: this unregistered variants route answers in EN or DE.
+  // Captured: EN on 750/758/816, DE on 758/816. The exact path scopes these markers so callers
+  // without release metadata get the same classification.
   if (
     statusCode === 404 &&
     path &&
