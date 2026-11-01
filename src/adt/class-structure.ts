@@ -22,13 +22,18 @@
  * the intended change).
  */
 
+import { Expressions, Statements } from '@abaplint/core';
 import {
+  assertClassDefinitionReplacement,
   assertClassEditBoundary,
   assertClassEndInsertionBoundary,
   assertMethodDeclarationBoundary,
+  assertMethodDeclarationReplacement,
   assertMethodImplementationBoundary,
   assertSectionHeaderBoundary,
+  classEditStatements,
 } from './class-edit-boundaries.js';
+import { AdtSafetyError } from './errors.js';
 import type { ClassStructure, MethodStructure } from './types.js';
 
 // Bare names and interface-qualified names, including a registered namespace.
@@ -161,6 +166,7 @@ function replacementStart(source: string, declarationRow: number, replacement: s
  * helper to ensure the result is activatable.
  */
 export function spliceClassDefinition(source: string, structure: ClassStructure, newDefBlock: string): string {
+  assertClassDefinitionReplacement(newDefBlock, structure.className);
   const r = structure.classDefinitionBlock;
   assertClassEditBoundary(source, r, structure.className, 'definition');
   return spliceLines(source, replacementStart(source, r.sr, newDefBlock), r.er, newDefBlock);
@@ -179,7 +185,9 @@ export function spliceMethodSignature(source: string, method: MethodStructure, n
   assertUnchainedDeclaration(source, method);
   assertMethodDeclarationBoundary(source, method.definition, method.name);
   const r = method.definition;
-  return spliceLines(source, replacementStart(source, r.sr, newSig), r.er, ensureClauseTerminator(newSig));
+  const replacement = ensureClauseTerminator(newSig);
+  assertMethodDeclarationReplacement(replacement, method.name);
+  return spliceLines(source, replacementStart(source, r.sr, newSig), r.er, replacement);
 }
 
 // ─── insertMethodPair: atomic DEFINITION + IMPLEMENTATION add ──────────
@@ -231,6 +239,7 @@ export function insertMethodPair(source: string, structure: ClassStructure, opts
   // Normalize the clause's terminating period up front (issue #536) so the
   // inserted-line count below and the splice both see the same text.
   const decl = ensureClauseTerminator(opts.decl);
+  assertMethodDeclarationReplacement(decl, opts.methodName);
 
   // Stage 1: insert METHODS clause in DEFINITION.
   let next = insertBeforeLine(source, anchor.afterLine + 1, decl);
@@ -353,7 +362,7 @@ function assertUnchainedDeclaration(source: string, method: MethodStructure): vo
   if (lines[0] !== undefined) lines[0] = lines[0].slice(sc);
   const declaration = stripDeclarationComments(lines.join('\n')).trim();
   if ([wholeLines, declaration].some((text) => /^(?:CLASS-METHODS|METHODS)\s*:/i.test(text))) {
-    throw new Error(
+    throw new AdtSafetyError(
       'Chained METHODS declarations cannot be edited individually. Use a complete class source update to preserve neighboring declarations.',
     );
   }
@@ -434,6 +443,7 @@ export interface MethodDiff {
  * check — only concrete methods that need a METHOD…ENDMETHOD block in IMPL.
  */
 export function diffMethodSets(structure: ClassStructure, newDefBlock: string): MethodDiff {
+  assertClassDefinitionReplacement(newDefBlock, structure.className);
   const oldNames = new Set(structure.methods.map((m) => m.name));
   const declared = parseDefinitionBlockDeclarations(newDefBlock);
   const declaredNames = new Set(declared.map((d) => d.name));
@@ -445,49 +455,38 @@ export function diffMethodSets(structure: ClassStructure, newDefBlock: string): 
 
 // ─── DEFINITION-block declaration parser ──────────────────────────────
 
-/**
- * Enumerate METHODS / CLASS-METHODS / EVENTS / INTERFACES / ALIASES
- * declarations in a NEW DEFINITION block string. Returns UPPERCASE names with
- * the abstract/event/interface/alias flags.
- *
- * Implementation: regex-scan with leading-comment stripping. We deliberately
- * avoid abaplint here — the fragment is a partial CLASS DEFINITION block and
- * abaplint requires a synthetic IMPLEMENTATION shell wrapper to parse it,
- * which obscures errors and adds complexity for no benefit. The regex handles
- * single-line and multi-line METHODS clauses (REDEFINITION, ABSTRACT keyword
- * detection, multi-line IMPORTING/EXPORTING tails) reliably for issue #303's
- * symmetry-check use case. Edge cases (e.g. METHODS keyword inside a string
- * literal) cannot occur in a valid DEFINITION block — there are no executable
- * statements there.
- */
+/** Enumerate native declarations, including every member of a METHODS chain. */
 export function parseDefinitionBlockDeclarations(defBlock: string): DeclaredMethod[] {
-  return parseWithRegex(defBlock);
-}
-
-function parseWithRegex(defBlock: string): DeclaredMethod[] {
   const out: DeclaredMethod[] = [];
-  // Strip block + line comments before scanning so commented-out METHODS don't count.
-  const stripped = stripDeclarationComments(defBlock);
-  // METHODS / CLASS-METHODS <name> — multi-line clauses span until the period.
-  // We only need the NAME, so the regex looks at the start of each clause.
-  const methodRe = new RegExp(`^[ \\t]*(CLASS-METHODS|METHODS)\\s+(${METHOD_NAME})(?=\\s|\\.)([^.]*)\\.`, 'gim');
-  for (const m of stripped.matchAll(methodRe)) {
-    const name = m[2]!.toUpperCase();
-    const tail = m[3] ?? '';
-    const isAbstract = /\bABSTRACT\b/i.test(tail);
-    out.push({ name, isAbstract, isEvent: false, isInterface: false, isAlias: false });
-  }
-  const eventRe = /^[ \t]*(CLASS-EVENTS|EVENTS)\s+([A-Z_][A-Z0-9_]*)/gim;
-  for (const m of stripped.matchAll(eventRe)) {
-    out.push({ name: m[2]!.toUpperCase(), isAbstract: false, isEvent: true, isInterface: false, isAlias: false });
-  }
-  const ifaceRe = /^[ \t]*INTERFACES\s+([A-Z_][A-Z0-9_]*)/gim;
-  for (const m of stripped.matchAll(ifaceRe)) {
-    out.push({ name: m[1]!.toUpperCase(), isAbstract: false, isEvent: false, isInterface: true, isAlias: false });
-  }
-  const aliasRe = /^[ \t]*ALIASES\s+([A-Z_][A-Z0-9_]*)/gim;
-  for (const m of stripped.matchAll(aliasRe)) {
-    out.push({ name: m[1]!.toUpperCase(), isAbstract: false, isEvent: false, isInterface: false, isAlias: true });
+  for (const statement of classEditStatements(defBlock)) {
+    // The lexer also preserves namespaced method identifiers unsupported by the AST grammar.
+    // This inventory counts declarations; the mutation-boundary guard still requires a parsed declaration.
+    const methodName = new RegExp(`^(?:CLASS-METHODS|METHODS)\\s+(${METHOD_NAME})(?=\\s|\\.)`, 'i').exec(
+      statement.concatTokens(),
+    )?.[1];
+    if (statement.get() instanceof Statements.MethodDef || methodName) {
+      const name =
+        statement.findFirstExpression(Expressions.MethodName)?.concatTokens().toUpperCase() ??
+        methodName?.toUpperCase();
+      if (name)
+        out.push({
+          name,
+          isAbstract: statement.getTokens().some((token) => token.getStr().toUpperCase() === 'ABSTRACT'),
+          isEvent: false,
+          isInterface: false,
+          isAlias: false,
+        });
+    } else {
+      const match = /^(CLASS-EVENTS|EVENTS|INTERFACES|ALIASES)\s+(\S+)/i.exec(statement.concatTokens());
+      if (match)
+        out.push({
+          name: match[2]!.replace(/\.$/, '').toUpperCase(),
+          isAbstract: false,
+          isEvent: /EVENTS/i.test(match[1]!),
+          isInterface: match[1]!.toUpperCase() === 'INTERFACES',
+          isAlias: match[1]!.toUpperCase() === 'ALIASES',
+        });
+    }
   }
   return out;
 }

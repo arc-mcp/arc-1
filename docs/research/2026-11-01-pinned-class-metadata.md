@@ -20,13 +20,15 @@ the pinned result retains its warnings. No new per-call quality bypass is admitt
 
 - Exactly one CLAS/OC root for the requested uppercase owner and the expected namespaces.
 - Only owner-relative main-source links; no source-version query, foreign origin or alternate
-  resource. A supplied native base may carry the matching SAP client and language only.
+  resource. A supplied native base may carry only SAP client and language parameters; the client is compared,
+  and the language value does not authorize a source range.
 - Complete global declaration and implementation inventories, names, visibility, static/instance,
   abstract/redefinition state and exact token ranges. Split CLAS/OO + CLAS/OM metadata is checked
   without permitting duplicate definitions or implementations.
 - Optional identifier links must select the actual class/method-name expression, including a name
-  on a later line of a chained declaration. Native block ranges end after the last non-punctuation
-  token, as observed on A4H 758. A different unverified range contract refuses.
+  on a later line of a chained declaration. Native block ranges end at the terminating period/comma token, including whitespace before it.
+  This corrects the first capture, whose punctuation directly followed the preceding token.
+  Split metadata is covered by authored offline cases; SAP 7.50 has not been qualified here.
 - The shared read parser's final result is checked again, so nested local-class metadata it ignores
   cannot overwrite an already verified global method. No returned URI is followed.
 
@@ -104,3 +106,56 @@ The class facet supplies native metadata; procedural unit editing supplies its e
 Legacy cache-error handling stays explicit for each caller. This does not yet admit pinned
 PROG/INCL edits or remove the remaining pinned CRUD orchestrator. All 11,733 unit tests
 (432 files) and three TypeScript projects passed after extraction.
+
+## Opus review at `aa4dfb14` and follow-up
+
+The [verbatim review](broader-pinned-pp-writes/claude-class-adapters-review-20261101.md) was produced
+by actual Claude Code `claude-opus-5-5` with launcher `--effort max`. Its SHA-256 is
+`69dc1f9ade2dc382551bd13a64bdf521321edde3bda68377384a6d42ef6fef41`. It found **2 Medium and
+5 Low** issues, no High, and explicitly kept this PR a draft. It independently passed 432 files /
+11,711 tests, 59 existing harness simulations, three TypeScript projects and size checks. The
+2,615-file snapshot was unchanged, including the author's verification after review. The report
+discloses its command/read deviations and lack of live evidence. It predates the whole-include
+convergence and shared procedural source lifecycle; neither is retroactively covered.
+
+Follow-up dispositions, to be reviewed again:
+
+1. Exact interface-qualified method names now receive the same cross-class ambiguity check as
+   bare names. A containing-class qualifier selects the intended body; duplicate exact bodies
+   also refuse. Parser and real pinned-handler regressions preserve the other class.
+2. Shared helpers validate replacement declarations against the selected name and replacement
+   definitions against exactly one owner block. Multiple declarations, renamed signatures,
+   neighboring classes and single-member declaration chains refuse. Method-set comparison now
+   counts every chained declaration. Legacy namespaced redefinitions retain their existing
+   syntax exception by validating the one lexed declaration with only its name normalized for
+   parsing; the actual submitted name/text is preserved. Malformed tails and extra statements
+   still refuse. Both route profiles have negative tests.
+3. Known boundary/chain refusals use `AdtSafetyError`; pinned callers receive the actual remedy.
+4. GET-only A4H captures of `CL_HTTP_CLIENT` and `CL_ABAP_ZIP` exposed classic syntax, whitespace
+   before punctuation and interface-body identifier links. Source-boundary parsing now uses the
+   newest normal ABAP dialect; configured deployment-language lint remains separate. Interface
+   bodies bind to the matching direct `INTERFACES` declaration and exact body, without following
+   a link to another source. They do not become editable `METHODS` declarations. Local replay
+   accepts 33 declared / 53 implemented methods and 7 / 7 respectively. Indirect interface
+   references not proven from the selected source and unsupported parser syntax still refuse.
+   This is author compatibility evidence, not a write or PP qualification; raw captures remain
+   private. The [read-only observation receipt](broader-pinned-pp-writes/class-shapes-readonly-20261101.json)
+   records hashes and before/after results. Older releases remain unqualified.
+5. Added public authored chain/interface fixtures and tests for chain insertion, positive
+   abstract/redefinition flags, a namespaced owner, no-op cleanup failure, real configured lint
+   refusal, actionable pinned refusals, XML size and parent-request recording on metadata saves.
+   Historical chain examples now use punctuation-start columns. These authored fixtures model
+   the observed shapes; they are not exported SAP source or additional native runs.
+6. Unchanged success/refusal results omit a transport selected during preflight. Confirmed saves
+   still report their recording request.
+7. The roadmap explicitly keeps shared-engine convergence pending. Language and historical
+   pending-review/run wording was corrected; whole-include quality-skip tests already passed in
+   the separate include-convergence follow-up.
+
+No new bytes are PP-qualified. Both Medium fixes and these compatibility changes require another
+immutable Opus review before the next live artifact is frozen.
+
+Author validation of the review fixes: **432 files / 11,783 tests**, all three TypeScript
+projects, build, lint, policy, strict documentation and file/schema budgets passed. The added
+tests run the shared single-target and pinned handlers; the existing qualification simulations
+still exercise their earlier harness, not the new metadata mutation scenarios.

@@ -3,6 +3,7 @@ import {
   assertClassEditBoundary,
   assertClassEndInsertionBoundary,
   assertMethodDeclarationBoundary,
+  assertMethodDeclarationReplacement,
   assertMethodImplementationBoundary,
   assertSectionHeaderBoundary,
 } from '../../../src/adt/class-edit-boundaries.js';
@@ -118,4 +119,13 @@ describe('whole-line class surgery boundaries', () => {
     expect(() => assertClassEditBoundary(source, range(1, 5), 'OTHER', 'definition')).toThrow('safely isolate');
     expect(() => assertClassEditBoundary(source, range(1, 9), 'ZBOUNDARY', 'definition')).toThrow('safely isolate');
   });
+});
+
+it.each([
+  'METHODS zif_service~/ns/run. METHODS other.',
+  'METHODS zif_service~/ns/run. ENDCLASS.',
+  'METHODS zif_service~/ns/run INVALID TAIL.',
+  'METHODS: zif_service~/ns/run REDEFINITION.',
+])('does not bypass declaration boundaries for a namespaced method: %s', (text) => {
+  expect(() => assertMethodDeclarationReplacement(text, 'ZIF_SERVICE~/NS/RUN')).toThrow('Replacement must contain');
 });

@@ -1,16 +1,6 @@
 /** Source-side inventory used to verify native class structure before pinned surgery. */
-import {
-  Comment,
-  Expressions,
-  MemoryFile,
-  type Nodes,
-  Objects,
-  Registry,
-  Statements,
-  Unknown,
-  Version,
-} from '@abaplint/core';
-import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
+import { Expressions, type Nodes, Statements, Unknown } from '@abaplint/core';
+import { parseClassSourceStatements } from './class-source-parser.js';
 import { AdtSafetyError } from './errors.js';
 
 export type SourceBlock = { first: Nodes.StatementNode; last: Nodes.StatementNode };
@@ -32,18 +22,10 @@ export const sourceMethodName = (s: Nodes.StatementNode) =>
   s.findFirstExpression(Expressions.MethodName)?.concatTokens().toUpperCase();
 
 export function classSourceEvidence(source: string, name: string) {
-  const registry = new Registry(getDefaultAbaplintConfig(Version.Cloud));
-  registry.addFile(new MemoryFile('zevidence.prog.abap', source));
-  registry.parse();
-  const object = registry.getFirstObject();
-  if (!(object instanceof Objects.Program)) refuseClassEvidence();
-  const statements =
-    object
-      .getMainABAPFile()
-      ?.getStatements()
-      .filter((s) => !(s.get() instanceof Comment)) ?? [];
+  const statements = parseClassSourceStatements(source);
   const methods = new Map<string, SourceMethod>();
   const bodies = new Map<string, SourceBlock>();
+  const interfaces = new Map<string, { declaration: Nodes.StatementNode; visibility: SourceMethod['visibility'] }>();
   let definition: SourceBlock | undefined, implementation: SourceBlock | undefined;
   let current: { first: Nodes.StatementNode; selected: boolean; definition: boolean } | undefined;
   let body: Nodes.StatementNode | undefined;
@@ -75,7 +57,11 @@ export function classSourceEvidence(source: string, name: string) {
       if (kind instanceof Statements.Public) visibility = 'public';
       else if (kind instanceof Statements.Protected) visibility = 'protected';
       else if (kind instanceof Statements.Private) visibility = 'private';
-      else if (kind instanceof Statements.MethodDef) {
+      else if (kind instanceof Statements.InterfaceDef) {
+        const interfaceName = s.findFirstExpression(Expressions.InterfaceName)?.concatTokens().toUpperCase();
+        if (!interfaceName || !visibility || interfaces.has(interfaceName)) refuseClassEvidence();
+        interfaces.set(interfaceName, { declaration: s, visibility });
+      } else if (kind instanceof Statements.MethodDef) {
         const method = sourceMethodName(s);
         if (!method || !visibility || methods.has(method)) refuseClassEvidence();
         methods.set(method, {
@@ -104,5 +90,5 @@ export function classSourceEvidence(source: string, name: string) {
     }
   }
   if (!definition || current || body) refuseClassEvidence();
-  return { definition, implementation, methods, bodies };
+  return { definition, implementation, methods, bodies, interfaces };
 }

@@ -35,6 +35,7 @@ export function pinnedFailure(
   } = {},
 ): ToolResult {
   const context = getCurrentContext();
+  const { transport, ...otherDetails } = details;
   return errorResult(
     toolJson({
       error: ['unchanged', 'creation-rejected', 'include-initialization-rejected', 'source-save-rejected'].includes(
@@ -56,7 +57,8 @@ export function pinnedFailure(
       state,
       phase,
       ...(error instanceof AdtApiError ? { statusCode: error.statusCode } : {}),
-      ...details,
+      ...otherDetails,
+      ...(state !== 'unchanged' && transport ? { transport } : {}),
       ...(cleanupFailed
         ? {
             cleanupFailed: true,

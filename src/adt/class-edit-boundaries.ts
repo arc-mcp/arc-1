@@ -1,10 +1,11 @@
 /** Prove that a whole-line class splice contains only the selected source construct. */
-import { Comment, MemoryFile, Objects, Registry, Statements, Version } from '@abaplint/core';
-import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
+import { type Nodes, Statements, Unknown } from '@abaplint/core';
+import { parseClassSourceStatements } from './class-source-parser.js';
+import { AdtSafetyError } from './errors.js';
 import type { LineRange } from './types.js';
 
 function refuse(): never {
-  throw new Error(
+  throw new AdtSafetyError(
     'Class surgery cannot safely isolate the selected source boundary. Read and update the complete editable source instead.',
   );
 }
@@ -19,17 +20,7 @@ function blockStatements(source: string, range: Pick<LineRange, 'sr' | 'er'>) {
     range.er > lines.length
   )
     refuse();
-  const registry = new Registry(getDefaultAbaplintConfig(Version.Cloud));
-  registry.addFile(new MemoryFile('zboundary.prog.abap', lines.slice(range.sr - 1, range.er).join('\n')));
-  registry.parse();
-  const object = registry.getFirstObject();
-  if (!(object instanceof Objects.Program)) refuse();
-  return (
-    object
-      .getMainABAPFile()
-      ?.getStatements()
-      .filter((s) => !(s.get() instanceof Comment)) ?? []
-  );
+  return parseClassSourceStatements(lines.slice(range.sr - 1, range.er).join('\n'));
 }
 
 export function assertClassEditBoundary(
@@ -57,6 +48,22 @@ export function assertClassEditBoundary(
     refuse();
 }
 
+/** The grammar cannot name a namespaced RHS of an interface redefinition; validate its tail separately. */
+function isMethodDeclaration(statement: Nodes.StatementNode): boolean {
+  if (statement.get() instanceof Statements.MethodDef) return true;
+  if (!(statement.get() instanceof Unknown)) return false;
+  const tokens = statement.getTokens();
+  if (
+    !/^(?:CLASS-)?METHODS$/i.test(tokens[0]?.getStr() ?? '') ||
+    !/^(?:\/[A-Z0-9_]+\/)?[A-Z_][A-Z0-9_]*~\/[A-Z0-9_]+\/[A-Z_][A-Z0-9_]*$/i.test(tokens[1]?.getStr() ?? '')
+  )
+    return false;
+  const normalized = parseClassSourceStatements(
+    tokens.map((token, index) => (index === 1 ? 'zboundary_method' : token.getStr())).join(' '),
+  );
+  return normalized.length === 1 && normalized[0]?.get() instanceof Statements.MethodDef;
+}
+
 export function assertMethodDeclarationBoundary(
   source: string,
   range: LineRange,
@@ -67,8 +74,8 @@ export function assertMethodDeclarationBoundary(
   const only = insertionAfterChain ? statements.at(-1) : statements[0];
   const actualName = only?.concatTokens().match(/^(?:CLASS-)?METHODS\s+([^\s.]+)/i)?.[1];
   if (
-    (!insertionAfterChain && statements.length !== 1) ||
-    !statements.every((s) => s.get() instanceof Statements.MethodDef) ||
+    (!insertionAfterChain && (statements.length !== 1 || only?.getColon() !== undefined)) ||
+    !statements.every(isMethodDeclaration) ||
     only?.getLastToken().getStr() !== '.' ||
     actualName?.toUpperCase() !== name.toUpperCase()
   )
@@ -109,4 +116,28 @@ export function assertSectionHeaderBoundary(source: string, row: number, visibil
       .join(' ') !== `${visibility.toUpperCase()} SECTION .`
   )
     refuse();
+}
+
+/** Parse declarations using the same ABAP lexer, including chained statements. */
+export function classEditStatements(source: string): Nodes.StatementNode[] {
+  if (!source.trim()) return [];
+  return blockStatements(source, { sr: 1, er: source.split(/\r?\n/).length });
+}
+
+export function assertClassDefinitionReplacement(source: string, name: string): void {
+  try {
+    assertClassEditBoundary(source, { sr: 1, sc: 0, er: source.split(/\r?\n/).length, ec: 0 }, name, 'definition');
+  } catch {
+    throw new AdtSafetyError(`Replacement must contain only the selected CLASS ${name} DEFINITION...ENDCLASS block.`);
+  }
+}
+
+export function assertMethodDeclarationReplacement(source: string, name: string): void {
+  try {
+    assertMethodDeclarationBoundary(source, { sr: 1, sc: 0, er: source.split(/\r?\n/).length, ec: 0 }, name);
+  } catch {
+    throw new AdtSafetyError(
+      `Replacement must contain exactly one unchained METHODS or CLASS-METHODS declaration for ${name}.`,
+    );
+  }
 }

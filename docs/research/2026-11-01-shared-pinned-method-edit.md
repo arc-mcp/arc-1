@@ -118,8 +118,8 @@ cover those shapes. The declaration-chain opener check is not a substitute for t
 
 Author validation of this follow-up passed **428 files / 11,572 tests**, all three typecheck
 projects, build, lint, strict docs, file/schema budgets and all **59 offline qualification
-simulations**. It adds 15 regressions without a new admitted action. Follow-up Opus review and a
-fresh artifact-bound PP run remain required.
+simulations**. It adds 15 regressions without a new admitted action. At that checkpoint, follow-up Opus review and a fresh artifact-bound PP run were required;
+the later reviews and revision-bound run are recorded below. New adapter bytes remain unqualified.
 
 
 ## Opus review at `771aff1c6`

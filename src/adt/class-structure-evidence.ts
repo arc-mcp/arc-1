@@ -23,12 +23,10 @@ function elements(value: unknown): Element[] {
 }
 function sameRange(actual: LineRange, first: Nodes.StatementNode, last = first): void {
   const start = first.getFirstToken().getStart();
-  // Native ranges end after the last non-period/comma token (A4H 758); punctuation is excluded.
-  const tokens = last.getTokens();
-  const end = tokens
-    .filter((t) => !['.', ','].includes(t.getStr()))
-    .at(-1)
-    ?.getEnd();
+  // Native blocks end at the terminating period/comma token, including whitespace before it.
+  const terminal = last.getLastToken();
+  if (!['.', ','].includes(terminal.getStr())) refuseClassEvidence();
+  const end = terminal.getStart();
   if (
     !end ||
     actual.sr !== start.getRow() ||
@@ -112,11 +110,13 @@ export function verifiedClassStructure(xml: string, source: string, name: string
     key: string,
     expectedName: string,
     header: Nodes.StatementNode | undefined,
+    interfaceReference = false,
   ) {
     const value = found.get(key);
     if (!value) return;
-    const identifier =
-      header?.findFirstExpression(Expressions.MethodName) ?? header?.findFirstExpression(Expressions.ClassName);
+    const identifier = interfaceReference
+      ? header?.findFirstExpression(Expressions.InterfaceName)
+      : (header?.findFirstExpression(Expressions.MethodName) ?? header?.findFirstExpression(Expressions.ClassName));
     if (!identifier) refuseClassEvidence();
     const start = identifier.getFirstToken().getStart(),
       end = identifier.getLastToken().getEnd();
@@ -168,7 +168,20 @@ export function verifiedClassStructure(xml: string, source: string, name: string
       sameRange(implementation, body.first, body.last);
       implementations.add(method);
     }
-    verifyIdentifier(found, 'definitionIdentifier', method, expected?.declaration);
+    if (expected) verifyIdentifier(found, 'definitionIdentifier', method, expected.declaration);
+    else {
+      const interfaceName = method.split('~')[0]!;
+      const reference = method.includes('~') ? evidence.interfaces.get(interfaceName) : undefined;
+      if (
+        !reference ||
+        child['@_visibility'] !== reference.visibility ||
+        !['instance', 'static'].includes(String(child['@_level'])) ||
+        child['@_abstract'] === 'true' ||
+        child['@_redefinition'] === 'true'
+      )
+        refuseClassEvidence();
+      verifyIdentifier(found, 'definitionIdentifier', interfaceName, reference.declaration, true);
+    }
     verifyIdentifier(found, 'implementationIdentifier', method, body?.first);
   }
   if (declarations.size !== evidence.methods.size || implementations.size !== evidence.bodies.size)

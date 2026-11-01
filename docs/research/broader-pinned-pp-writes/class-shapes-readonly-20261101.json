@@ -1,0 +1,39 @@
+{
+  "recordedAt": "2026-11-01T17:54:21.235Z",
+  "target": "A4H/001",
+  "scope": "Author GET-only compatibility observation and offline replay; no mutation or PP qualification",
+  "observations": [
+    {
+      "name": "CL_HTTP_CLIENT",
+      "capturedAt": "2026-11-01T17:37:41.605Z",
+      "sourceSha256": "a5d14c4537cda52b9d80f8a871ec772742b570e8e0c5561746c29dbce59abfbb",
+      "xmlSha256": "dfd1f33d53dcf1ba54a71d8a04ad199bc412eb0a8749e12fb8f78a930402f6d3",
+      "initialValidatorResult": "refused",
+      "afterLocalReplay": "accepted",
+      "declaredMethods": 33,
+      "implementedMethods": 53
+    },
+    {
+      "name": "CL_ABAP_ZIP",
+      "capturedAt": "2026-11-01T17:37:41.995Z",
+      "sourceSha256": "04ef70b0e881eb1491118bd850467a37163cc8cbcb85e2fc3a06b7bd4208932a",
+      "xmlSha256": "5ccce5629b5c370386f7d77ae1d71532fb5ad22e426d6aacbca04eb6d4b20705",
+      "initialValidatorResult": "refused",
+      "afterLocalReplay": "accepted",
+      "declaredMethods": 7,
+      "implementedMethods": 7
+    }
+  ],
+  "validatorFiles": {
+    "src/adt/class-source-parser.ts": "af1bf863b6b70018ffab1e8bc9c2e7775264bb964401b9aac2449ebb59141151",
+    "src/adt/class-source-evidence.ts": "ed450f6b79ec47f27f8ba002b50aea96d80928ecb77bf8470eeb158869bfc7df",
+    "src/adt/class-structure-evidence.ts": "505253e085bbc39893cd35fe41d10c7332584f2313117e6f9ab68a00b6d8403a",
+    "src/adt/xml-parser.ts": "1c87225f0ebd2cdc35e71e3f18907a84ae0b5ae0ce7d14b5694641c9394799c0"
+  },
+  "limits": [
+    "Raw SAP source/XML withheld; independent reviewer cannot recompute native capture hashes.",
+    "Authored public fixtures model these shapes but are not additional native captures.",
+    "No SAP 7.50 run, writes, locks, activation or temporary role/configuration changes were performed.",
+    "Newest normal ABAP grammar is used for boundary evidence; deployment-language lint retains its existing separate settings."
+  ]
+}

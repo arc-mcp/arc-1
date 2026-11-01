@@ -52,8 +52,8 @@ interface Faults {
   unlockFailure?: boolean;
   closeFailure?: boolean;
 }
-function backend(local = 'lcl_worker', faults: Faults = {}) {
-  const originals = new Map(includes.map((kind) => [kind, source(local)]));
+function backend(local = 'lcl_worker', faults: Faults = {}, initial = source(local)) {
+  const originals = new Map(includes.map((kind) => [kind, initial]));
   const stored = new Map(originals);
   const requests: { path: string; method: string; locked: boolean; headers: Record<string, string> }[] = [];
   let locked = false,
@@ -260,4 +260,33 @@ it('refuses a present include without the selected method, without initializing 
   expect(state.stored.get('implementations')).toBe('* Empty existing include\n');
   expect(state.requests.filter((r) => r.path.includes('/includes/') && r.method !== 'GET')).toHaveLength(0);
   expect(state.requests.filter((r) => r.path.includes('_action=UNLOCK'))).toHaveLength(1);
+});
+
+it('refuses an ambiguous interface-qualified include method before saving', async () => {
+  const initial = source('lcl_worker').replaceAll('METHOD run.', 'METHOD lif_x~run.');
+  const state = backend('lcl_worker', {}, initial);
+  const { result } = await invoke({
+    include: 'implementations',
+    method: 'lif_x~run',
+    expectedSourceHash: sourceHash(initial),
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toContain('Ambiguous');
+  expect(result.content[0].text).toContain('lcl_worker~lif_x~run');
+  expect(state.requests.some((r) => r.method === 'PUT')).toBe(false);
+  expect(state.requests.some((r) => r.path.includes('_action=UNLOCK'))).toBe(true);
+});
+it('edits a doubly qualified include method without changing the other class', async () => {
+  const initial = source('lcl_worker').replaceAll('METHOD run.', 'METHOD lif_x~run.');
+  const state = backend('lcl_worker', {}, initial);
+  const { result, body } = await invoke({
+    include: 'implementations',
+    method: 'lcl_neighbor~lif_x~run',
+    expectedSourceHash: sourceHash(initial),
+  });
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(body.state).toBe('saved-inactive');
+  expect(state.stored.get('implementations')!.replaceAll('\r\n', '\n')).toBe(
+    initial.replace('DATA(value) = 88.', 'DATA(value) = 2.').trimEnd(),
+  );
 });

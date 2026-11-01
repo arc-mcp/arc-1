@@ -23,8 +23,8 @@ const method: MethodStructure = {
   level: 'static',
   abstract: false,
   constructor: false,
-  definition: { sr: 3, sc: 4, er: 5, ec: 13 },
-  implementation: { sr: 11, sc: 2, er: 12, ec: 12 },
+  definition: { sr: 3, sc: 4, er: 5, ec: 12 },
+  implementation: { sr: 11, sc: 2, er: 12, ec: 11 },
 };
 const edits = {
   signature: (value: string, target = method) => spliceMethodSignature(value, target, 'CLASS-METHODS second.'),
@@ -51,8 +51,8 @@ describe('individual edits of native chained method declarations', () => {
         edit(source, {
           ...method,
           name: 'FIRST',
-          definition: { sr: 3, sc: 4, er: 4, ec: 12 },
-          implementation: { sr: 9, sc: 2, er: 10, ec: 12 },
+          definition: { sr: 3, sc: 4, er: 4, ec: 11 },
+          implementation: { sr: 9, sc: 2, er: 10, ec: 11 },
         }),
       ).toThrow('Chained METHODS declarations');
     });
@@ -71,8 +71,8 @@ describe('individual edits of native chained method declarations', () => {
       expect(() =>
         edit(shared, {
           ...method,
-          definition: { sr: 2, sc: shared.split('\n')[1]!.indexOf('CLASS-METHODS'), er: 4, ec: 13 },
-          implementation: { sr: 10, sc: 2, er: 11, ec: 12 },
+          definition: { sr: 2, sc: shared.split('\n')[1]!.indexOf('CLASS-METHODS'), er: 4, ec: 12 },
+          implementation: { sr: 10, sc: 2, er: 11, ec: 11 },
         }),
       ).toThrow('Chained METHODS declarations');
     });

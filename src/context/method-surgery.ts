@@ -426,8 +426,8 @@ function listMethodsRegex(source: string, className: string): MethodListResult {
  * Extract a single method's implementation from a class.
  *
  * Lookup order:
- * 1. **Cross-class ambiguity guard** — if the caller passed a bare name (no `~`)
- *    and multiple methods with that name exist in different containing local
+ * 1. **Cross-class ambiguity guard** — if multiple exact matches (including
+ *    interface-qualified names) exist in different containing local
  *    classes, error with a list of qualified candidates. Prevents silent
  *    first-match wins on CCIMP sources.
  * 2. **Exact match** — `m.name === methodName`. Catches both unique bare names
@@ -472,34 +472,43 @@ export function extractMethod(
   const hasTilde = methodName.includes('~');
 
   // ── Step 1: cross-class ambiguity guard ──
-  // If caller passed bare "approve_project" and the source has BOTH
+  // Exact interface-qualified names can also occur in multiple local classes.
+  // If caller passed "approve_project" and the source has BOTH
   //   CLASS lhc_project IMPLEMENTATION. METHOD approve_project. ENDMETHOD.
   //   CLASS lhc_task IMPLEMENTATION.    METHOD approve_project. ENDMETHOD.
   // …then `find()` would silently pick whichever appears first in source order.
   // Detect the multi-class match early and ask the caller to qualify.
-  if (!hasTilde) {
-    const exactCandidates = listing.methods.filter((m) => m.name.toUpperCase() === upperName);
-    if (exactCandidates.length > 1) {
-      const distinctClasses = Array.from(
-        new Set(exactCandidates.map((c) => (c.containingClass ?? '').trim()).filter((c) => c.length > 0)),
-      );
-      if (distinctClasses.length > 1) {
-        const qualified = distinctClasses.map((cls) => `${cls}~${methodName}`).join(', ');
-        return {
-          className,
-          methodName,
-          methodSource: '',
-          bodySource: '',
-          startLine: 0,
-          endLine: 0,
-          success: false,
-          error:
-            `Ambiguous method name "${methodName}" in ${className}. ` +
-            `Multiple local classes define it: ${distinctClasses.join(', ')}. ` +
-            `Use a qualified name like "${qualified.split(', ')[0]}".`,
-        };
-      }
+  const exactCandidates = listing.methods.filter((m) => m.name.toUpperCase() === upperName);
+  if (exactCandidates.length > 1) {
+    const distinctClasses = Array.from(
+      new Set(exactCandidates.map((c) => (c.containingClass ?? '').trim()).filter((c) => c.length > 0)),
+    );
+    if (distinctClasses.length > 1) {
+      const qualified = distinctClasses.map((cls) => `${cls}~${methodName}`).join(', ');
+      return {
+        className,
+        methodName,
+        methodSource: '',
+        bodySource: '',
+        startLine: 0,
+        endLine: 0,
+        success: false,
+        error:
+          `Ambiguous method name "${methodName}" in ${className}. ` +
+          `Multiple local classes define it: ${distinctClasses.join(', ')}. ` +
+          `Use a qualified name like "${qualified.split(', ')[0]}".`,
+      };
     }
+    return {
+      className,
+      methodName,
+      methodSource: '',
+      bodySource: '',
+      startLine: 0,
+      endLine: 0,
+      success: false,
+      error: `Ambiguous method name "${methodName}" in ${className}. Multiple implementations match; read and update the complete editable source to resolve the duplicate.`,
+    };
   }
 
   // ── Step 2: exact match ──

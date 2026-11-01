@@ -243,7 +243,8 @@ durable before its read rejects. Additional controls exercise stale refusals wit
 wrong refusal state and contradictory save evidence. A resolved lifecycle with failed unlock now
 must fail native cleanup while preserving the cleanup flags. The blank route test pins the actual
 source-validation message. The mock matches the observed three initial includes and stripped
-terminal newlines. These are offline checks; the complete include PP run remains pending.
+terminal newlines. These were offline checks; the complete include PP run was pending at that checkpoint.
+The later revision-bound run and its explicit evidence limits are recorded above.
 
 Current `main` was integrated at `c8a0c9c27`, retaining both instructions in the sole textual conflict.
 That exact tree passed 422 files / 11,474 tests, 55 simulations, typechecks, build, lint, strict docs and
@@ -253,7 +254,8 @@ whole-PR acceptance. Temporary BTP IAM/XSUAA rollback was still pending at that 
 Author validation of the diagnostic follow-up passed **422 files / 11,478 tests**, all three
 typecheck projects, **59 offline simulations** (20 formatter and 39 deletion, including 22 include
 scenarios), lint, strict documentation and file/schema budgets. No production `src/` changes were
-made after the `main` integration. Follow-up Opus review and the next live qualification remain pending.
+made after the `main` integration. At that checkpoint, follow-up Opus review and live qualification were pending. The later
+reviews and successful revision-bound run are recorded in this dossier; newer adapters still need qualification.
 
 ## Integration review and follow-up dispositions
 

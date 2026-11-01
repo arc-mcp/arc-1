@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { requestContext } from '../../../src/server/context.js';
-import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
@@ -35,6 +35,7 @@ let stored = source,
   metadata = xml,
   locked = false,
   saved = false;
+let transportable = false;
 let fault = '',
   cancel: AbortController | undefined;
 beforeEach(() => {
@@ -46,18 +47,23 @@ beforeEach(() => {
   locked = false;
   saved = false;
   fault = '';
+  transportable = false;
   cancel = undefined;
   mockFetch.mockImplementation(async (url, init: any = {}) => {
     const uri = new URL(String(url)),
-      path = uri.pathname,
+      path = uri.pathname.toLowerCase(),
       method = init.method ?? 'GET';
     requests.push({ path: path + uri.search, method, locked, body: String(init.body ?? '') });
     if (method === 'HEAD') return mockResponse(200, '', { 'x-csrf-token': 'token' });
     if (uri.searchParams.get('_action') === 'LOCK') {
       locked = true;
-      return mockResponse(200, '<DATA><LOCK_HANDLE>owner-lock</LOCK_HANDLE><IS_LOCAL>X</IS_LOCAL></DATA>', {
-        'set-cookie': 'sap-contextid=owned; Path=/',
-      });
+      return mockResponse(
+        200,
+        `<DATA><LOCK_HANDLE>owner-lock</LOCK_HANDLE><CORRNR>${transportable ? 'A4HK900002' : ''}</CORRNR><IS_LOCAL>${transportable ? '' : 'X'}</IS_LOCAL></DATA>`,
+        {
+          'set-cookie': 'sap-contextid=owned; Path=/',
+        },
+      );
     }
     if (uri.searchParams.get('_action') === 'UNLOCK') {
       locked = false;
@@ -67,12 +73,17 @@ beforeEach(() => {
     if (path === owner && method === 'GET')
       return mockResponse(
         200,
-        `<class:abapClass xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="${fault === 'package' && locked ? 'ZFOREIGN' : '$TMP'}"/></class:abapClass>`,
+        `<class:abapClass xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="${fault === 'package' && locked ? 'ZFOREIGN' : transportable ? 'ZTEAM' : '$TMP'}"/></class:abapClass>`,
       );
     if (path.includes('transportchecks'))
       return mockResponse(
         200,
-        `<DATA><DEVCLASS>$TMP</DEVCLASS><DLVUNIT>LOCAL</DLVUNIT><OPERATION/><RESULT>S</RESULT><RECORDING>${fault === 'recording' && locked ? 'X' : ''}</RECORDING></DATA>`,
+        `<DATA><DEVCLASS>${transportable ? 'ZTEAM' : '$TMP'}</DEVCLASS><DLVUNIT>${transportable ? 'HOME' : 'LOCAL'}</DLVUNIT><OPERATION/><RESULT>S</RESULT><RECORDING>${transportable || (fault === 'recording' && locked) ? 'X' : ''}</RECORDING></DATA>`,
+      );
+    if (path.includes('transportrequests'))
+      return mockResponse(
+        200,
+        '<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900001" tm:type="K" tm:status="D"><tm:task tm:number="A4HK900002" tm:status="D"/></tm:request></tm:root>',
       );
     if (path === `${owner}/objectstructure`) {
       expect(locked).toBe(true);
@@ -107,7 +118,11 @@ const inputs: Record<string, Record<string, unknown>> = {
   delete_method: { method: 'SELECTED' },
   change_method_visibility: { method: 'SELECTED', visibility: 'private' },
 };
-async function invoke(action = 'edit_method_signature', extra: Record<string, unknown> = {}, settings = config) {
+async function invoke(
+  action = 'edit_method_signature',
+  extra: Record<string, unknown> = {},
+  settings: ServerConfig = config,
+) {
   const result = await handleToolCall(
     new AdtClient({ baseUrl: 'http://sap:8000', client: '001', safety: { ...defaultSafetyConfig(), ...settings } }),
     settings,
@@ -243,3 +258,157 @@ it.each([{ include: 'definitions' }, { type: 'INTF' }, { lintBeforeWrite: false 
     expect(requests).toHaveLength(0);
   },
 );
+
+for (const pinned of [true, false]) {
+  it.each([
+    ['edit_method_signature', { source: 'METHODS renamed.' }],
+    ['edit_method_signature', { source: 'METHODS selected.\nMETHODS neighbor.' }],
+    ['edit_method_signature', { source: '" removed' }],
+    ['edit_method_signature', { source: 'METHODS selected.\nENDCLASS.\nCLASS lcl_x DEFINITION.\nPUBLIC SECTION.' }],
+    ['edit_method_signature', { source: 'METHODS: selected.' }],
+    ['add_method', { method: 'METHODS added. METHODS other.' }],
+    ['add_method', { method: 'METHODS added.\nENDCLASS.\nCLASS lcl_x DEFINITION.\nPUBLIC SECTION.' }],
+    [
+      'edit_class_definition',
+      { source: String(inputs.edit_class_definition!.source).replace('zcl_proof', 'zcl_foreign') },
+    ],
+    [
+      'edit_class_definition',
+      { source: String(inputs.edit_class_definition!.source) + '\nCLASS lcl_x DEFINITION.\nENDCLASS.' },
+    ],
+  ])(
+    `${pinned ? 'pinned' : 'single-target'} %s refuses replacement outside the selected construct`,
+    async (action, extra) => {
+      const settings = pinned
+        ? config
+        : {
+            ...config,
+            multiTargetEndpoints: false,
+            multiTargetWrite: undefined,
+            targetId: undefined,
+            ppEnabled: false,
+            ppStrict: false,
+          };
+      const { result } = await invoke(action as string, extra as Record<string, unknown>, settings);
+      expect(result.isError, result.content[0].text).toBe(true);
+      expect(result.content[0].text).toContain('Replacement must contain');
+      expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+      expect(locked).toBe(false);
+    },
+  );
+}
+it.each(['unlock', 'close'])('reports %s failure after a verified visibility no-op', async (value) => {
+  fault = value;
+  const { result, body } = await invoke('change_method_visibility', { visibility: 'public' });
+  expect(result.isError).toBe(true);
+  expect(body.state).toBe('unchanged');
+  expect(body.retryable).toBe(false);
+  expect(body.phase).toBe(value === 'unlock' ? 'unlock' : 'session-close');
+  expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+});
+
+const chainSource = readFileSync(new URL('../../fixtures/class-surgery/pinned-chain.abap', import.meta.url), 'utf8');
+const chainXml = readFileSync(new URL('../../fixtures/class-surgery/pinned-chain.xml', import.meta.url), 'utf8');
+it('adds after a fully verified chain while preserving all original declarations and bodies', async () => {
+  stored = chainSource;
+  metadata = chainXml;
+  const { result } = await invoke('add_method', { expectedSourceHash: sourceHash(chainSource) });
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(stored).toBe(
+    chainSource
+      .replace('      neighbor.\n', '      neighbor.\nMETHODS added.\n')
+      .replace(
+        '  METHOD neighbor.\n  ENDMETHOD.\nENDCLASS.',
+        '  METHOD neighbor.\n  ENDMETHOD.\n\n  METHOD added.\n  ENDMETHOD.\nENDCLASS.',
+      ),
+  );
+});
+it('returns the actionable chain refusal on the pinned route', async () => {
+  stored = chainSource;
+  metadata = chainXml;
+  const { result } = await invoke('edit_method_signature', { expectedSourceHash: sourceHash(chainSource) });
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toContain('Chained METHODS declarations');
+  expect(result.content[0].text).toContain('complete class source update');
+  expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+});
+it('blocks invalid replacement syntax with real configured lint, then unlocks', async () => {
+  const lint = vi.spyOn(quality, 'runPreWriteLint');
+  const { result } = await invoke(
+    'edit_class_definition',
+    {
+      source: String(inputs.edit_class_definition!.source).replace(
+        'PUBLIC SECTION.',
+        'PUBLIC SECTION.\n DATA broken TYPE .',
+      ),
+    },
+    { ...config, lintBeforeWrite: true },
+  );
+  expect(lint.mock.results[0]?.value.blocked).toBe(true);
+  expect(result.isError).toBe(true);
+  expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+  expect(locked).toBe(false);
+});
+const transportSettings = {
+  ...config,
+  allowedPackages: ['$TMP', 'ZTEAM'],
+  multiTargetWrite: {
+    ...config.multiTargetWrite,
+    allowedPackages: ['$TMP', 'ZTEAM'],
+    allowedTransports: ['A4HK900001'],
+    serverAllowedTransports: ['A4HK900001'],
+  },
+};
+it('records a metadata source save on the verified parent request', async () => {
+  transportable = true;
+  const { result, body } = await invoke('edit_method_signature', { transport: 'A4HK900002' }, transportSettings);
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(requests.filter((r) => r.method === 'PUT')).toHaveLength(1);
+  expect(requests.find((r) => r.method === 'PUT')!.path).toContain('corrNr=A4HK900001');
+  expect(body.transport).toBe('A4HK900001');
+});
+it.each(['no-op', 'refusal'])('omits a selected transport from an unchanged %s result', async (outcome) => {
+  transportable = true;
+  if (outcome === 'refusal') fault = 'metadata';
+  const { result, body } = await invoke(
+    'change_method_visibility',
+    { visibility: 'public', transport: 'A4HK900002' },
+    transportSettings,
+  );
+  expect(!!result.isError).toBe(outcome === 'refusal');
+  expect(body.state).toBe('unchanged');
+  expect(body).not.toHaveProperty('transport');
+  expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+});
+
+it('retains all methods when replacing an ordinary definition with a chain', async () => {
+  const definition = chainSource.slice(0, chainSource.indexOf('CLASS zcl_proof IMPLEMENTATION.'));
+  const { result } = await invoke('edit_class_definition', { source: definition });
+  expect(result.isError, result.content[0].text).toBeUndefined();
+  expect(stored).toBe(chainSource);
+});
+it('counts a newly added chained method before refusing an orphan declaration', async () => {
+  const definition = chainSource
+    .slice(0, chainSource.indexOf('CLASS zcl_proof IMPLEMENTATION.'))
+    .replace('      neighbor.', '      neighbor,\n      added.');
+  const { result } = await invoke('edit_class_definition', { source: definition });
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toContain('ADDED');
+  expect(result.content[0].text).toContain('no matching');
+  expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+});
+
+it('explains a shared-line declaration refusal on the pinned route', async () => {
+  stored = source
+    .replace('    METHODS selected.', '    METHODS selected. METHODS neighbor.')
+    .replace('    METHODS neighbor.\n', '\n');
+  metadata = xml
+    .replace('start=5,4;end=5,20', 'start=3,22;end=3,38')
+    .replace('visibility="private"', 'visibility="public"');
+  const { result } = await invoke('edit_method_signature', { expectedSourceHash: sourceHash(stored) });
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toContain('safely isolate the selected source boundary');
+  expect(result.content[0].text).toContain('complete editable source');
+  expect(requests.some((r) => r.method === 'PUT')).toBe(false);
+  expect(locked).toBe(false);
+});

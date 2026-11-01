@@ -48,7 +48,7 @@ export async function handlePinnedClassSurgery(
         sourceHash: state.sourceHash,
         ...(state.include ? { include: state.include } : {}),
         ...(state.includeInitialized !== undefined ? { initialized: state.includeInitialized } : {}),
-        ...(state.recording?.request ? { transport: state.recording.request } : {}),
+        ...(state.state !== 'unchanged' && state.recording?.request ? { transport: state.recording.request } : {}),
         ...(state.warnings ? { warnings: state.warnings } : {}),
         next: state.unchangedConfirmed
           ? 'The method already has the requested visibility; no source was saved.'

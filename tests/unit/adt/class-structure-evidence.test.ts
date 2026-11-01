@@ -100,3 +100,72 @@ describe('pinned native class structure evidence', () => {
     ).toThrow();
   });
 });
+
+const shape = (name: string, extension: string) =>
+  readFileSync(new URL(`../../fixtures/class-surgery/pinned-${name}.${extension}`, import.meta.url), 'utf8');
+it('binds every member of an authored chain fixture using punctuation-start coordinates', () => {
+  const result = verify(shape('chain', 'xml'), shape('chain', 'abap'));
+  expect(result.methods.map((method) => [method.name, method.definition])).toEqual([
+    ['SELECTED', { sr: 3, sc: 4, er: 4, ec: 14 }],
+    ['NEIGHBOR', { sr: 3, sc: 4, er: 5, ec: 14 }],
+  ]);
+});
+it('binds an interface body identifier to its local INTERFACES declaration without treating it as METHODS', () => {
+  const result = verify(shape('interface', 'xml'), shape('interface', 'abap'));
+  expect(result.methods.map((method) => method.name)).toEqual(['SELECTED']);
+});
+it.each([
+  ['foreign interface name', (x: string) => x.replace('LIF_X~RUN', 'LIF_Y~RUN')],
+  ['wrong interface identifier', (x: string) => x.replace('start=5,15;end=5,20', 'start=3,12;end=3,20')],
+  [
+    'foreign interface source',
+    (x: string) => x.replace('./source/main#start=5,15', '../interfaces/lif_x/source/main#start=5,15'),
+  ],
+  ['wrong interface visibility', (x: string) => x.replace('visibility="private"', 'visibility="public"')],
+] as const)('refuses %s on an interface-supplied body', (_label, change) => {
+  expect(() => verify(change(shape('interface', 'xml')), shape('interface', 'abap'))).toThrow();
+});
+it('uses the actual period position when a declaration has whitespace before it', () => {
+  const text = source.replace('METHODS selected.', 'METHODS selected .');
+  expect(verify(xml.replace('start=3,4;end=3,20', 'start=3,4;end=3,21'), text).methods).toHaveLength(2);
+  expect(() => verify(xml, text)).toThrow();
+});
+it('supports ordinary on-premises declarations without imposing the Cloud syntax dialect', () => {
+  const text = source.replace('METHODS selected.', 'METHODS selected EXPORTING value TYPE any.');
+  const x = xml.replace('start=3,4;end=3,20', 'start=3,4;end=3,45');
+  expect(verify(x, text).methods[0]?.name).toBe('SELECTED');
+});
+it('validates a namespaced class without changing native identifier columns', () => {
+  const text = source.replaceAll('zcl_proof', '/nsp/demo');
+  const x = xml.replaceAll('ZCL_PROOF', '/NSP/DEMO').replaceAll('zcl_proof', '%2fnsp%2fdemo');
+  expect(verifiedClassStructure(x, text, '/NSP/DEMO', '/sap/bc/adt/oo/classes/%2fnsp%2fdemo', '001').className).toBe(
+    '/NSP/DEMO',
+  );
+});
+it('accepts a concrete redefinition and checks the true flag', () => {
+  const text = source.replace('METHODS selected.', 'METHODS selected REDEFINITION.');
+  const x = xml
+    .replace('adtcore:name="SELECTED"', 'adtcore:name="SELECTED" redefinition="true"')
+    .replace('start=3,4;end=3,20', 'start=3,4;end=3,33');
+  expect(verify(x, text).methods[0]?.redefinition).toBe(true);
+});
+it('accepts an abstract declaration with no implementation and checks the true flag', () => {
+  const text = source
+    .replace('CLASS zcl_proof DEFINITION.', 'CLASS zcl_proof DEFINITION ABSTRACT.')
+    .replace('METHODS selected.', 'METHODS selected ABSTRACT.')
+    .replace('  METHOD selected.\n  ENDMETHOD.\n', '');
+  const child = selected
+    .replace('adtcore:name="SELECTED"', 'adtcore:name="SELECTED" abstract="true"')
+    .replace(/<atom:link rel="[^\n]*\/implementation[^\n]*\n/g, '')
+    .replace('start=3,4;end=3,20', 'start=3,4;end=3,29');
+  const x = xml
+    .replace(selected, child)
+    .replace('end=12,8', 'end=10,8')
+    .replace('start=10,2;end=11,11', 'start=8,2;end=9,11');
+  const method = verify(x, text).methods[0];
+  expect(method?.abstract).toBe(true);
+  expect(method?.implementation).toBeUndefined();
+});
+it('refuses metadata exceeding the bounded XML size', () => {
+  expect(() => verify(xml.replace('>', '>' + ' '.repeat(1024 * 1024)))).toThrow();
+});
