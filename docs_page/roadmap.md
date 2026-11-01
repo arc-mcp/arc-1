@@ -1097,7 +1097,7 @@ current-user identity, and bounded output; no RFC or executed ABAP fallback in c
 
 **Remaining gap.** `TABLE_CONTENTS` sends `sqlFilter` as a bare condition to the DDIC data preview.
 The tested 758 and 816 systems refuse these bodies with "Only SELECT statement is allowed";
-ARC-1 points callers to `TABLE_QUERY` `where`. The documented 750 test system has no data-preview
+ARC-1 points callers to `TABLE_QUERY` `where`. The documented 750 test system returns 404 for both data-preview
 collections, so it cannot settle compatibility on other 750 systems. The DDIC
 preview does accept a full `SELECT`, but on 816 it runs whatever table that statement names and
 ignores `ddicEntityName`, so wrapping the condition into a `SELECT` would turn TABLE_CONTENTS into
@@ -1105,7 +1105,8 @@ free SQL outside the data-source analyzer and the `allowFreeSQL` gate.
 
 **Resume with.** A deprecation path, or a named preview-enabled target that accepts a condition-only
 body. Any retained support needs evidence that the body cannot select another table or bypass the
-free-SQL gate. Do not build a `SELECT` from caller text for the DDIC preview.
+free-SQL gate. Check the SELECT prefix guard with Unicode case folding too. Do not build a
+`SELECT` from caller text for the DDIC preview.
 
 <a id="feat-36"></a>
 ### FEAT-36 — Type information
