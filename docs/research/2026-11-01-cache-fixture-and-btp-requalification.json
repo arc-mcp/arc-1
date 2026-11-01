@@ -1551,7 +1551,7 @@
     "qualificationLimits": [
       "Direct OAuth checks are not deployed CF/PP/Cloud Connector checks",
       "Positive interfaces and exhaustive indexes remain unqualified",
-      "FUNC/FUGR enhancement provider was not advertised on this target",
+      "FUNC provider not advertised; FUGR advertised identity relation returned zero identities, elements relation not advertised on units read, sources incomplete at request limit with three omitted sources; none establishes absence",
       "Remote source denials remain terminal; unsupported and partial statuses do not establish absence or runtime applicability"
     ]
   },
@@ -1559,5 +1559,16 @@
   "whereUsedChanged": false,
   "roadmapImpact": "No roadmap impact; FEAT-03 enhancement authoring unchanged",
   "mergeDependency": "https://github.com/arc-mcp/arc-1/pull/1146",
-  "mergedByThisWork": false
+  "mergedByThisWork": false,
+  "claudeCodeFinalConfirmation": {
+    "base": "234c2b26d9622930150678d025f043d5aaff15ed",
+    "head": "1aa19c0784b52e1079752b02fef00d4dd24ef012",
+    "tree": "7c7e4f78e02b103a0b9c65b3b5c0e14f2543eb2f",
+    "patchSha256": "53301274c0c060ae3c4b3bc3af86ce61a89f975a0bab796033043e2231eb9627",
+    "testPatchSha256": "e34a566844a5125b83343a74ffb1574b572d7de0e7e80b07cbd4fce28fae47ce",
+    "turns": 26,
+    "durationMs": 112650,
+    "result": "**P3: the BTP write-up says the FUNC/FUGR extension provider was not advertised, but its own FUGR summary evidence says otherwise.**\n- **Location:** `docs/research/2026-11-01-cache-fixture-and-btp-requalification.md:68-70` and `docs/research/2026-11-01-cache-fixture-and-btp-requalification.json:1554`.\n- **Contradicting evidence:**\n  - The FUGR `SRFC` summary (JSON `:1481-1499`) has `source_plugins` as `status: \"returned\"`, `direct_identities`, zero identities, 2 sends and no issues. `src/adt/source-plugin-discovery.ts:121-146` only produces that reason when the identity relation is present, so that relation was advertised.\n  - The FUGR sources case (JSON `:1518-1523`) is `incomplete` with `request_limit`, not `not_advertised`.\n  - Only the two FUNC rows are `not_advertised`.\n- **Consequence:** a reader would think FUGR had no provider on BTP. In fact, FUGR summary got a valid empty result from the identity relation, and the sources traversal hit its request budget with 3 sources omitted. This isn't a client regression, because the code keeps the identity and elements relations separate.\n- **Fix:** change both statements to say:\n  - FUNC was not advertised.\n  - The FUGR identity relation returned zero identities, which does not establish absence.\n  - The FUGR elements relation was not advertised on the units read, and sources stopped incomplete at the request limit.\n\nNo other actionable findings:\n- **Documentation repair:** it is accurate. The report fixture gates 11 tests and the class fixture gates 1, of 15 total. The E2E row matches the `tests/e2e/saptransport.e2e.test.ts:433` template, using the doc's existing `NO_FIXTURE` shorthand for the constant's text. `scripts/ci/summarize-skips.mjs:76-78` matches both fixture names.\n- **Code changes:** the diff touches only docs, research files and `tests/integration/cache.integration.test.ts`, with nothing under `src/`.\n- **Client behaviour:** the class test contract and recorded cache evidence don't hide a client regression. `tests/unit/cache/caching-layer.test.ts:57` covers replacement of a changed body on HTTP 200.\n\nThis was a read-only review, so I did not recompute either SHA-256 or run anything. The pass counts and CI results are as you reported them.",
+    "triage": "One P3 FUGR coverage reporting overstatement corrected in prose and qualificationLimits. Raw provider observations unchanged. No other actionable findings."
+  }
 }

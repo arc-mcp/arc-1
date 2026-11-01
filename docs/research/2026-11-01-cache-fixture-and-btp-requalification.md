@@ -65,9 +65,11 @@ combined runtime:
   eight rendered source bodies. Unsupported interface results, incomplete summaries
   and source denials remain explicit rather than being treated as global absence.
 - **2 FUNC/FUGR cases passed** through public read dispatch with read-only scopes.
-  They preserve the legacy base and respect optional budgets. The extension provider
-  was not advertised on this target; these cases do not claim positive plug-in
-  discovery or execution.
+  They preserve the legacy base and respect optional budgets. FUNC's provider was
+  not advertised. FUGR's advertised identity relation returned zero identities;
+  that does not establish absence. Its elements relation was not advertised on the
+  units read, and sources stopped incomplete at the 20-send limit with three
+  sources omitted. These cases do not claim positive plug-in discovery or execution.
 
 That is **9 BTP cases passed / 0 failed / 0 skipped**, plus two on-prem cases in the
 mixed BDEF invocation. These are direct HTTPS/OAuth checks, not deployed
@@ -88,6 +90,10 @@ and checked against the staged/committed test patch.
 Production `src/` remains unchanged from `a2a86b74a`, `92ca5bb41` and `234c2b26d`:
 `5f8058ccc1b685e0875113e5a9f820d99f47cb234d4f8f822a5475ab661cf664`.
 The previous final runtime review and BDEF-assertion confirmation remain applicable.
+A subsequent final confirmation found one P3 reporting overstatement about FUGR;
+the prose and qualification limit now distinguish its advertised identity relation
+from the unadvertised elements relation and incomplete source traversal. The
+original raw observations remain unchanged.
 Evidence retains statuses, source/ETag hashes and bounded provider metadata, without
 credentials, tokens, raw ETags or ABAP source bodies. Wire `if-none-match` values in
 the JSON are SHA-256 digests.
