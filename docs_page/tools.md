@@ -530,7 +530,8 @@ server errors, authorization, throttling and network failures do not authorize i
 one exact active revision (`00000`) with matching REPS/include identity and canonical content URI;
 missing active entries never select a historical or inactive version. The source is returned with
 `enhancementInclude` provenance and a `note`; technology, description, package, enhanced object and
-hook positions remain unavailable. `SAPRead(type="INCL")` applies the same checks when a generated
+hook positions remain unavailable. The fallback omits `switchSupported`.
+`SAPRead(type="INCL")` applies the same checks when a generated
 include's direct read is unavailable, prefixes source with provenance and preserves draft warnings.
 An explicit inactive include read is not served from revisions. Both routes obey the INCL,
 VERSIONS and VERSION_SOURCE deny rules in addition to the requested read action.
@@ -539,7 +540,8 @@ integration when the error identifies an unavailable ADT route. Only BAdI implem
 are writable ([BAdI implementation writes](#badi-implementation-writes-enho)); ENHO source filtering
 (`grep`, method or line selection) is not supported.
 
-ENHO preserves SAP's unversioned developer view: omit `version` or use `auto`.
+Native ENHO reads use SAP's unversioned developer view: omit `version` or use `auto`.
+The revision fallback is active-only and does not check for pending ENHO drafts.
 Explicit `active`/`inactive` selection is refused because its behavior is not verified
 for these resources. Metadata and source are separate reads, not an atomic snapshot.
 

@@ -102,6 +102,8 @@ describe('SAPRead ENHO: source plug-ins via the enhancement include (SAP_BASIS 7
       },
     });
     expect(data.note).toContain('enhancement include');
+    expect(data).not.toHaveProperty('switchSupported');
+    expect(data.note).not.toContain('this SAP release');
     expect(calls).toEqual([
       `/sap/bc/adt/enhancements/enhoxhb/${name}`,
       '/sap/bc/adt/repository/informationsystem/search',
@@ -222,7 +224,8 @@ describe('SAPRead INCL on an enhancement include', () => {
     );
     expect(result.isError).toBeUndefined();
     expect(result.content[0]?.text).toContain('LAST ACTIVATED');
-    expect(result.content[0]?.text).toContain('Source read from revision 00000');
+    expect(result.content[0]?.text).toContain('Source read from active revision 00000');
+    expect(result.content[0]?.text).toContain('the direct include read failed.');
   });
   it('reuses fallback source for context-bound discovery without retrying its failed source route', async () => {
     const calls = setup({ context: true });
@@ -264,7 +267,8 @@ describe('SAPRead INCL on an enhancement include', () => {
     const calls = setup();
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'INCL', name: include });
     expect(result.isError, result.content[0]?.text).toBeUndefined();
-    expect(result.content[0]?.text).toContain('Source read from revision 00000');
+    expect(result.content[0]?.text).toContain('Source read from active revision 00000');
+    expect(result.content[0]?.text).toContain('the direct include read failed.');
     expect(result.content[0]?.text).toContain('transport A4HK900123');
     expect(result.content[0]?.text).toContain(source);
     expect(calls).toEqual([`${includeBase}/source/main`, `${includeBase}/source/main/versions`, contentPath('00000')]);
@@ -279,7 +283,8 @@ describe('SAPRead INCL on an enhancement include', () => {
     });
     expect(result.isError, result.content[0]?.text).toBeUndefined();
     expect(result.content[0]?.text).toContain('BKNA1-INDTYP');
-    expect(result.content[0]?.text).toContain('Source read from revision 00000');
+    expect(result.content[0]?.text).toContain('Source read from active revision 00000');
+    expect(result.content[0]?.text).toContain('the direct include read failed.');
   });
 
   it('leaves ordinary includes and inactive reads on the direct route', async () => {

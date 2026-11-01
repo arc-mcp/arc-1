@@ -132,5 +132,5 @@ export function enhancementIncludeReferences(source: string): string[] {
 /** One-line provenance note for callers that return plain source text. */
 export function describeEnhancementIncludeRevision(read: EnhancementIncludeRevision): string {
   const transport = read.revision.transport ? `, transport ${read.revision.transport}` : '';
-  return `Source read from revision ${read.revision.id} (${read.revision.timestamp}${transport}) of enhancement include ${read.include}; the direct include read is not served on this SAP release.`;
+  return `Source read from active revision ${read.revision.id} (${read.revision.timestamp}${transport}) of enhancement include ${read.include}; the direct include read failed.`;
 }

@@ -1188,7 +1188,7 @@ export interface EnhancementImplementationInfo {
   description: string;
   package: string;
   technology: string;
-  switchSupported: boolean;
+  switchSupported?: boolean;
   badiImplementations: Array<{
     name: string;
     shortText: string;
