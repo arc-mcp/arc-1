@@ -379,9 +379,10 @@ Connector resource mappings.
 | `--feature-hana` | `SAP_FEATURE_HANA` | `auto` | Report HANA availability in system features. |
 
 `auto` probes one endpoint per feature. HTTP 502/503/504 leaves availability unknown; it is not
-cached as proof that a feature exists. Responses 2xx and legacy 400/405/500 count as presence;
+cached as proof that a feature exists. Responses 2xx and legacy unlisted errors (including 400/405/429/500) count as presence;
 401/403/404 count as unavailable. On single-target `/mcp`, inspect the cached result using
-`SAPManage` with `action: "features"`. Discovered targets apply additional
+`SAPManage` with `action: "features"`. After a startup outage, use `action: "probe"` or restart
+to refresh the result. Discovered targets apply additional
 [authentication controls](multi-target-administration.md#basic-shared-identity-controls);
 `SAPManage` is not part of their tool surface.
 

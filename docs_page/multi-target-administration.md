@@ -303,6 +303,7 @@ target even if another feature probe is denied. Entirely inconclusive probes rep
 A gateway failure blocking release detection also keeps the probe retryable, even if discovery
 works. Other partial probes can finish with unknown features or metadata. Discovered-target
 feature probes do not wait to replay a 503 within the call; 429 and DB-session recovery remain.
+A completed partial probe does not automatically recheck unknown capabilities; restart to refresh them.
 Source search disabled by SAP (`SADT_REST 020` or `SRIS_SEARCH 006`) returns object-search guidance
 without repeating the failing search. After Basis enables it, restart ARC-1 to refresh the target's
 capabilities. Multi-target endpoints do not expose `SAPManage probe`.

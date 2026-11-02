@@ -20,7 +20,7 @@ const { AdtApiError } = await import('../../../src/adt/errors.js');
 const { AdtHttpClient } = await import('../../../src/adt/http.js');
 const featureProbeModule = await import('../../../src/adt/features.js');
 const { featuresOff } = await import('../handlers/handler-test-config.js');
-const { getCachedFeatures, resetCachedFeatures, setCachedFeatures } = await import(
+const { getCachedFeatures, hasCompletedFeatureProbe, resetCachedFeatures, setCachedFeatures } = await import(
   '../../../src/handlers/feature-cache.js'
 );
 const { canonicalDestinationUrl, opaqueDestinationValue } = await import(
@@ -378,7 +378,6 @@ describe('multi-target principal-propagation retry', () => {
     };
     const call = requestHandler(server);
     await call(request, { authInfo: READ_AUTH });
-    const { hasCompletedFeatureProbe } = await import('../../../src/handlers/feature-cache.js');
     expect(getCachedFeatures('A4H/100')?.discoveryMap?.has('/sap/bc/adt/oo/classes')).toBe(true);
     expect(hasCompletedFeatureProbe('A4H/100')).toBe(status === 403);
     expect(getCachedFeatures('A4H/100')).not.toHaveProperty('releaseProbePending');

@@ -380,7 +380,7 @@ export function detectSystemType(
 /**
  * Probe text search (source_code) availability with a real request.
  *
- * Unlike HEAD-based feature probes, this does a real GET to detect auth,
+ * Unlike GET-based feature probes, this does a real GET to detect auth,
  * SICF, and framework errors that HEAD doesn't surface.
  *
  * It hits the dedicated `textsearch/support` sub-resource rather than running
@@ -538,7 +538,7 @@ async function probeTransportAccess(
  *
  * Decision table:
  * - **2xx** → endpoint exists and we got a clean response → available.
- * - **400, 405, 500** → retain availability evidence for compatibility. Some registered
+ * - **400, 405, 500 and other unlisted errors (including 429)** → retain availability evidence. Some registered
  *   SAP collections reject a bare GET with these statuses (e.g. `/ddic/ddl/sources`).
  * - **401** → request was rejected by ICM/SICF before authorization could even run.
  *   This carries NO signal about endpoint existence — could be missing creds, expired

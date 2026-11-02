@@ -27,8 +27,14 @@ const featureProbeModule = await import('../../../src/adt/features.js');
 const { AdtApiError, AdtNetworkError } = await import('../../../src/adt/errors.js');
 const { AdtHttpClient } = await import('../../../src/adt/http.js');
 const { featuresOff } = await import('../handlers/handler-test-config.js');
-const { getCachedDiscovery, getCachedFeatures, resetCachedFeatures, setCachedDiscovery, setCachedFeatures } =
-  await import('../../../src/handlers/feature-cache.js');
+const {
+  getCachedDiscovery,
+  getCachedFeatures,
+  hasCompletedFeatureProbe,
+  resetCachedFeatures,
+  setCachedDiscovery,
+  setCachedFeatures,
+} = await import('../../../src/handlers/feature-cache.js');
 const { canonicalDestinationUrl, opaqueDestinationValue } = await import(
   '../../../src/server/destination-discovery.js'
 );
@@ -769,7 +775,6 @@ describe('multi-target shared Basic authentication', () => {
       expect(first.isError).not.toBe(true);
       expect(getCachedFeatures(target.target)?.abapRelease).toBeUndefined();
       expect(getCachedFeatures(target.target)).toMatchObject({ systemType: 'onprem', systemTypeSource: 'config' });
-      const { hasCompletedFeatureProbe } = await import('../../../src/handlers/feature-cache.js');
       expect(hasCompletedFeatureProbe(target.target)).toBe(status < 500);
       recovered = true;
       await call(toolRequest('pinned'), { authInfo: READ_AUTH });
