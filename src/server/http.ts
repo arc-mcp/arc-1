@@ -36,7 +36,7 @@ import { expandScopes, hasRequiredScope } from '../authz/policy.js';
 import { API_KEY_PROFILES } from './config.js';
 import { generateRequestId, requestContext } from './context.js';
 import type { DestinationRegistry, TargetDescriptor } from './destination-registry.js';
-import { createHttpJsonParser } from './http-request-body.js';
+import { createHttpJsonParser, handleHttpBodyParseError } from './http-request-body.js';
 import { authLibLogger, logger } from './logger.js';
 import { isTargetGranted, type MultiTargetAuthorizationMode } from './multi-target-authorization.js';
 import { auditTargetGrantDenial } from './multi-target-authorization-audit.js';
@@ -393,7 +393,8 @@ export async function startHttpServer(
   });
 
   app.use(createHttpJsonParser(config.maxHttpRequestBytes));
-  app.use(express.urlencoded({ extended: false }));
+  app.use(express.urlencoded({ extended: false, inflate: false }));
+  app.use(handleHttpBodyParseError);
   if (mcpRateLimitEnabled) {
     // One middleware instance means one MemoryStore and therefore one per-IP
     // bucket across single-target, pinned, aggregate, and Copilot routes.

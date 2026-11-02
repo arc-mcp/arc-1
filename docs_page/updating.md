@@ -1,5 +1,13 @@
 # Updating ARC-1
 
+## Next release — HTTP request validation
+
+JSON and form bodies must now be uncompressed, including authenticated MCP and OAuth
+requests. Compressed bodies previously accepted by the HTTP framework now return
+**415**. Disable request compression in custom clients or gateways before upgrading.
+This tightens HTTP input validation; MCP methods, tool schemas and OAuth fields are unchanged.
+Response compression and outbound SAP data-preview compression are separate.
+
 ## v1.5.0 — upgrade checks
 
 Start with the [1.5.0 upgrade checklist](release-notes.md#150-upgrade-checklist).
