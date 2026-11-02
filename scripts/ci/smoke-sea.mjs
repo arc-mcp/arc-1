@@ -45,7 +45,7 @@ if (versionRun.status !== 0) fail(`--version failed (exit ${versionRun.status}):
 try {
   console.log(`ok  embedded Node ${parseSeaVersionOutput(versionRun.stdout, version)}`);
 } catch (err) {
-  fail(err.message);
+  fail(`${err.message}\n--version stdout:\n${versionRun.stdout}`);
 }
 console.log(`ok  --version ${version}`);
 
