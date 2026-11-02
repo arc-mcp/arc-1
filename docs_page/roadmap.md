@@ -1285,7 +1285,8 @@ plugin loading in a SEA before claiming support.
 
 **Why it remains.** SAP ref. 137800 calls for outage protection. ARC-1 has HTTP timeouts, bounded
 retry paths and concurrency admission, but no built-in circuit breaker; ordinary semaphore waits
-lack a queue deadline. A semaphore does not suppress repeated calls to an unavailable backend.
+lack a queue deadline. Entirely inconclusive feature probes, including HTTP 502/503/504, repeat on
+later calls to that target. Neither those probes nor a semaphore suppress outage traffic.
 See the [current gap assessment](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-21-sap-api-policy-custom-mcp.md).
 
 **Resume with.** Define transient-failure classification, target isolation, recovery probes, queue

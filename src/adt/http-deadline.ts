@@ -21,6 +21,8 @@ export interface AdtRequestOptions extends RequestDeadlineOptions {
   responseBudget?: DataResponseBudget;
   /** Disable availability/DB-session replays when a mutation may already have completed. */
   retryTransientErrors?: boolean;
+  /** Disable only 503 replay; retain rate-limit and DB-session recovery. */
+  retryUnavailable?: boolean;
   /** Optional request-local SAP send allowance; CSRF and retries share the same counter. */
   attemptBudget?: RequestAttemptBudget;
   /** Internal control requests need headers only; do not buffer their bodies through Connectivity. */

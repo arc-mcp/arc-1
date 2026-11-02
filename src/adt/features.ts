@@ -13,8 +13,8 @@
  * returns 404 (endpoint doesn't exist), the feature is gracefully
  * disabled. This prevents errors when connecting to older SAP systems.
  *
- * Probe endpoints are lightweight HEAD requests — they don't fetch data,
- * just check if the endpoint exists (returns 200 or 404).
+ * Probes inspect GET responses; some supported collections reject a bare GET.
+ * Gateway failures do not establish whether a capability exists.
  */
 
 import { Version } from '@abaplint/core';
@@ -51,6 +51,8 @@ const PROBES: FeatureProbe[] = [
   },
 ];
 
+const AVAILABILITY_FAILURE_STATUSES = new Set([502, 503, 504]);
+
 /** Per-feature probe outcome — `available` plus an optional human-readable reason. */
 interface ProbeOutcome {
   available: boolean;
@@ -84,13 +86,13 @@ function resolveFeature(mode: FeatureMode, probeOutcome: ProbeOutcome, id: strin
  * Probe all features and return resolved status.
  *
  * Runs all probes in parallel for speed.
- * Each probe is a HEAD request — if it returns 2xx, the feature exists.
- * 404 or network error means the feature is not available.
+ * Gateway, authentication and network failures can leave availability undetermined.
  */
 export async function probeFeatures(
   client: AdtHttpClient,
   config: FeatureConfig,
   systemTypeOverride?: string,
+  request?: AdtRequestOptions,
 ): Promise<ResolvedFeatures> {
   const modeMap: Record<string, FeatureMode> = {
     hana: config.hana,
@@ -112,7 +114,7 @@ export async function probeFeatures(
     Promise.all(
       probesToRun.map(async (probe) => {
         try {
-          await client.get(probe.endpoint, undefined, { probe: true });
+          await client.get(probe.endpoint, undefined, { ...request, probe: true });
           return classifyFeatureProbeStatus(probe.id, 200);
         } catch (err) {
           if (err instanceof AdtApiError) {
@@ -129,10 +131,10 @@ export async function probeFeatures(
         }
       }),
     ),
-    detectSystemFromComponents(client),
-    probeTextSearch(client),
-    probeAuthorization(client),
-    fetchDiscoveryDocument(client),
+    detectSystemFromComponents(client, request),
+    probeTextSearch(client, request),
+    probeAuthorization(client, request),
+    fetchDiscoveryDocument(client, request),
   ]);
 
   const { map: discoveryMap, nhiPresent: discoveryNhiPresent } = discoveryResult;
@@ -173,9 +175,11 @@ export async function probeFeatures(
   const resolved = result as unknown as ResolvedFeatures;
   // Prefer SAP_BASIS from installed components. If that feed does not expose a
   // release, fall back to the ADT syntax configuration metadata.
-  const abapRelease = systemDetection.abapRelease ?? (await detectReleaseFromSyntaxConfigurations(client));
+  const abapRelease = systemDetection.abapRelease ?? (await detectReleaseFromSyntaxConfigurations(client, request));
   if (abapRelease) {
     resolved.abapRelease = abapRelease;
+  } else if (systemDetection.releaseProbePending) {
+    resolved.releaseProbePending = true;
   }
   // Apply system type: manual override takes precedence over auto-detection
   if (systemTypeOverride && systemTypeOverride !== 'auto') {
@@ -256,6 +260,7 @@ interface SystemDetection {
   abapRelease?: string;
   systemType?: SystemType;
   hasHana?: boolean;
+  releaseProbePending?: boolean;
 }
 
 /**
@@ -286,8 +291,10 @@ async function detectSystemFromComponents(
       systemType,
       hasHana: detectHanaFromComponents(components),
     };
-  } catch {
-    return {};
+  } catch (err) {
+    return err instanceof AdtApiError && AVAILABILITY_FAILURE_STATUSES.has(err.statusCode)
+      ? { releaseProbePending: true }
+      : {};
   }
 }
 
@@ -382,9 +389,10 @@ export function detectSystemType(
  * a search that legitimately found nothing. The `db` selector is part of the
  * advertised support template; an explicit empty value asks about source search.
  */
-export async function probeTextSearch(client: AdtHttpClient): Promise<TextSearchStatus> {
+export async function probeTextSearch(client: AdtHttpClient, request?: AdtRequestOptions): Promise<TextSearchStatus> {
   try {
     await client.get('/sap/bc/adt/repository/informationsystem/textsearch/support?db=', undefined, {
+      ...request,
       probe: true,
     });
     return { available: true };
@@ -468,8 +476,11 @@ export function classifyTextSearchError(statusCode: number, responseBody?: strin
  *
  * Does NOT probe write operations (too risky — would modify state).
  */
-export async function probeAuthorization(client: AdtHttpClient): Promise<AuthProbeResult> {
-  const [searchResult, transportResult] = await Promise.all([probeSearchAccess(client), probeTransportAccess(client)]);
+export async function probeAuthorization(client: AdtHttpClient, request?: AdtRequestOptions): Promise<AuthProbeResult> {
+  const [searchResult, transportResult] = await Promise.all([
+    probeSearchAccess(client, request),
+    probeTransportAccess(client, request),
+  ]);
 
   return {
     searchAccess: searchResult.available,
@@ -479,12 +490,15 @@ export async function probeAuthorization(client: AdtHttpClient): Promise<AuthPro
   };
 }
 
-async function probeSearchAccess(client: AdtHttpClient): Promise<{ available: boolean; reason?: string }> {
+async function probeSearchAccess(
+  client: AdtHttpClient,
+  request?: AdtRequestOptions,
+): Promise<{ available: boolean; reason?: string }> {
   try {
     const resp = await client.get(
       '/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=CL_ABAP_*&maxResults=1',
       undefined,
-      { probe: true },
+      { ...request, probe: true },
     );
     if (resp.statusCode < 400) {
       return { available: true };
@@ -498,9 +512,15 @@ async function probeSearchAccess(client: AdtHttpClient): Promise<{ available: bo
   }
 }
 
-async function probeTransportAccess(client: AdtHttpClient): Promise<{ available: boolean; reason?: string }> {
+async function probeTransportAccess(
+  client: AdtHttpClient,
+  request?: AdtRequestOptions,
+): Promise<{ available: boolean; reason?: string }> {
   try {
-    const resp = await client.get('/sap/bc/adt/cts/transportrequests?user=__PROBE__', undefined, { probe: true });
+    const resp = await client.get('/sap/bc/adt/cts/transportrequests?user=__PROBE__', undefined, {
+      ...request,
+      probe: true,
+    });
     if (resp.statusCode < 400) {
       return { available: true };
     }
@@ -518,9 +538,8 @@ async function probeTransportAccess(client: AdtHttpClient): Promise<{ available:
  *
  * Decision table:
  * - **2xx** → endpoint exists and we got a clean response → available.
- * - **400, 405, 500, other 4xx/5xx** → endpoint exists; SAP returned a request-shape /
- *   server error after dispatching to the handler → available. (Some collection endpoints
- *   intentionally return 400 without query params, e.g. `/ddic/ddl/sources`.)
+ * - **400, 405, 500** → retain availability evidence for compatibility. Some registered
+ *   SAP collections reject a bare GET with these statuses (e.g. `/ddic/ddl/sources`).
  * - **401** → request was rejected by ICM/SICF before authorization could even run.
  *   This carries NO signal about endpoint existence — could be missing creds, expired
  *   session, wrong client, etc. Reporting `available: true` here would be a lie on
@@ -529,6 +548,7 @@ async function probeTransportAccess(client: AdtHttpClient): Promise<{ available:
  *   From the caller's perspective the feature is unusable, so report unavailable —
  *   matches `classifyAuthProbeError` semantics for textSearch / authProbe.
  * - **404** → ICF service not activated, endpoint not registered → unavailable.
+ * - **502, 503, 504** → availability is undetermined; do not cache as positive evidence.
  *
  * Exported for testing.
  */
@@ -548,7 +568,14 @@ export function classifyFeatureProbeStatus(
   if (statusCode === 404) {
     return { id, available: false, reason: 'endpoint not found (404) — ICF service not activated' };
   }
-  // 400 / 405 / 4xx / 5xx other than auth/missing → endpoint exists, request was dispatched.
+  if (AVAILABILITY_FAILURE_STATUSES.has(statusCode)) {
+    return {
+      id,
+      available: false,
+      reason: `gateway or availability failure (${statusCode}) — cannot determine availability`,
+    };
+  }
+  // Preserve the compatibility assumption for other request-shape/server errors.
   return { id, available: true };
 }
 

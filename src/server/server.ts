@@ -469,7 +469,8 @@ export async function probeClientFeatures(
   fc.transport = config.featureTransport as 'auto' | 'on' | 'off';
   fc.ui5repo = config.featureUi5Repo as 'auto' | 'on' | 'off';
   fc.flp = config.featureFlp as 'auto' | 'on' | 'off';
-  const features = await probeFeatures(client.http, fc, config.systemType);
+  const request = { retryUnavailable: !config.targetId };
+  const features = await probeFeatures(client.http, fc, config.systemType, request);
   // Log authorization probe results
   if (features.authProbe) {
     const ap = features.authProbe;

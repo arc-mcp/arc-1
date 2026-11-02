@@ -2375,6 +2375,13 @@ describe('AdtHttpClient', () => {
       await expect(client.get('/sap/bc/adt/programs/programs/ZHELLO/source/main')).rejects.toThrow(AdtApiError);
     });
 
+    it('can disable 503 replay during CSRF bootstrap without sending a second request', async () => {
+      mockFetch.mockResolvedValue(mockResponse(503, 'Service unavailable', { 'retry-after': '60' }));
+      const client = new AdtHttpClient(getDefaultConfig());
+      await expect(client.fetchCsrfToken({ retryUnavailable: false })).rejects.toMatchObject({ statusCode: 503 });
+      expect(mockFetch).toHaveBeenCalledOnce();
+    });
+
     it('retries HEAD on 503', async () => {
       mockFetch
         .mockResolvedValueOnce(mockResponse(503, 'Service Unavailable'))

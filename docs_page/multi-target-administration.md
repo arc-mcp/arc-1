@@ -299,7 +299,10 @@ public alias, and policy fingerprint with the startup snapshot. A mismatch retur
 `TARGET_CONFIG_CHANGED` until restart. PP additionally validates the current user JWT with the
 Connectivity service on every call. Failed PP or per-user SAP access is not cached, so mapping and
 authorization repairs can be retried immediately. Confirmed backend capabilities are retained per
-target even if another feature probe is denied; entirely inconclusive probes remain retryable.
+target even if another feature probe is denied. Entirely inconclusive probes repeat on later calls.
+A gateway failure blocking release detection also keeps the probe retryable, even if discovery
+works. Other partial probes can finish with unknown features or metadata. Discovered-target
+feature probes do not wait to replay a 503 within the call; 429 and DB-session recovery remain.
 Source search disabled by SAP (`SADT_REST 020` or `SRIS_SEARCH 006`) returns object-search guidance
 without repeating the failing search. After Basis enables it, restart ARC-1 to refresh the target's
 capabilities. Multi-target endpoints do not expose `SAPManage probe`.

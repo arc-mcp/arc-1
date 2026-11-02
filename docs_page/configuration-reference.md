@@ -378,8 +378,9 @@ Connector resource mappings.
 | `--feature-transport` | `SAP_FEATURE_TRANSPORT` | `auto` | CTS transport endpoints. Required for `SAPTransport` (even reads). |
 | `--feature-hana` | `SAP_FEATURE_HANA` | `auto` | Report HANA availability in system features. |
 
-`auto` probes one specific endpoint per feature and classifies the response: 2xx/400/405/5xx →
-available; 401/403/404 → unavailable. On single-target `/mcp`, inspect the cached result using
+`auto` probes one endpoint per feature. HTTP 502/503/504 leaves availability unknown; it is not
+cached as proof that a feature exists. Responses 2xx and legacy 400/405/500 count as presence;
+401/403/404 count as unavailable. On single-target `/mcp`, inspect the cached result using
 `SAPManage` with `action: "features"`. Discovered targets apply additional
 [authentication controls](multi-target-administration.md#basic-shared-identity-controls);
 `SAPManage` is not part of their tool surface.
