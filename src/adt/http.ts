@@ -630,7 +630,7 @@ export class AdtHttpClient {
       // Handle 503 Service Unavailable — ICM thread/MPI exhaustion or WP overload.
       // Legacy retries remain the default; ambiguous mutations can disable transient replay.
       // Retry happens INSIDE the semaphore slot to avoid increasing load on an overloaded system.
-      if (response.status === 503 && retryTransientErrors) {
+      if (response.status === 503 && retryTransientErrors && options?.retryUnavailable !== false) {
         const { delayMs: jitterMs, source } = parseRetryAfter(
           response.headers.get('retry-after'),
           1000 + Math.random() * 1000,
@@ -1097,7 +1097,7 @@ export class AdtHttpClient {
       let response = await probe('HEAD');
 
       // Retry once on 503 — ICM may be temporarily overloaded (thread/MPI exhaustion).
-      if (response.status === 503 && options?.retryTransientErrors !== false) {
+      if (response.status === 503 && options?.retryTransientErrors !== false && options?.retryUnavailable !== false) {
         const jitterMs = 1000 + Math.random() * 1000;
         logger.emitAudit({
           timestamp: new Date().toISOString(),

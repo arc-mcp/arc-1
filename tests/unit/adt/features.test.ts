@@ -987,6 +987,14 @@ describe('Feature Detection', () => {
       expect(r.reason).toMatch(/endpoint not found \(404\)/);
     });
 
+    it.each([502, 503, 504])('leaves HTTP %i inconclusive instead of advertising availability', (status) => {
+      expect(classifyFeatureProbeStatus('rap', status)).toEqual({
+        id: 'rap',
+        available: false,
+        reason: expect.stringMatching(new RegExp(`\\(${status}\\).*cannot determine availability`)),
+      });
+    });
+
     it('returns available=true on 400 / 405 / 500 (endpoint exists, request rejected)', () => {
       // 400 = e.g. /ddic/ddl/sources without query params; 405 = wrong method;
       // 500 = backend error from a registered endpoint. All three confirm endpoint presence.

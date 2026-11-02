@@ -73,6 +73,8 @@ export interface ResolvedFeatures {
   flp: FeatureStatus;
   /** Detected SAP_BASIS release (e.g. "750", "757"). Populated during probe. */
   abapRelease?: string;
+  /** A gateway failure blocked release detection; keep a fresh full probe retryable. Never cached. */
+  releaseProbePending?: boolean;
   /** Detected system type: 'btp' (SAP_CLOUD component present) or 'onprem'. */
   systemType?: SystemType;
   /** Whether the probe detected the type or applied an explicit configuration override. */
