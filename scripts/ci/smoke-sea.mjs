@@ -2,7 +2,7 @@
 /**
  * Smoke test for a built ARC-1 single executable:  node scripts/ci/smoke-sea.mjs <path-to-exe>
  *
- * Verifies --version, a full MCP stdio handshake + tools/list, and that the persistent SQLite
+ * Verifies the embedded patched Node runtime, --version, a full MCP handshake + tools/list, and that the SQLite
  * cache opens through the node:sqlite fallback (the native better-sqlite3 addon is not embedded).
  */
 import { spawn, spawnSync } from 'node:child_process';

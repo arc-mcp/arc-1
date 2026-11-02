@@ -1,4 +1,5 @@
 /** Patched Node floors for standalone builds; each supported line needs a native build/smoke qualification. */
+// https://nodejs.org/en/blog/vulnerability/october-2026-security-releases
 const MIN_VERSIONS = { 22: [23, 4], 24: [22, 1], 26: [12, 1] };
 export const SEA_NODE_VERSION_PREFIX = 'ARC1_NODE_VERSION=';
 
