@@ -309,7 +309,7 @@ change response compression or outbound `SAP_GZIP_DATAPREVIEW_BODY`.
 Before parsing, a JSON request reserves its `Content-Length`, capped at the configured
 limit. Unknown lengths reserve the full limit. Only reservations above 100 KiB count
 toward a shared 32 MiB budget; excess requests receive **503** with `Retry-After`.
-Small declared bodies remain available. Admission runs first, so a chunked encoded
+Small declared bodies remain available. Admission runs first, so a chunked or large encoded
 request can receive 503 while capacity is full, before its encoding is rejected.
 
 Reservations end on response completion or disconnect. A disconnected tool may
