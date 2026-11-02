@@ -23,7 +23,7 @@ describe('BTP UI AppRouter config', () => {
 
     // Preserve the existing supported Node floor when removing the decoder bridge.
     expect(packageJson.engines.node).toBe('^22.12.0 || ^24.0.0');
-    expect(packageJson.dependencies['@sap/approuter']).toBe('23.3.0');
+    expect(packageJson.dependencies['@sap/approuter']).toBe('23.4.0');
     expect(packageJson.overrides).toMatchObject({
       '@sap/logging': '9.2.3',
       axios: '1.20.0',
