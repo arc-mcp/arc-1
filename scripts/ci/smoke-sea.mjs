@@ -6,10 +6,11 @@
  * cache opens through the node:sqlite fallback (the native better-sqlite3 addon is not embedded).
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseSeaVersionOutput, SEA_NODE_VERSION_PREFIX } from '../sea/runtime-policy.mjs';
 
 const exe = resolve(process.argv[2] ?? '');
 if (!process.argv[2] || !existsSync(exe)) {
@@ -25,9 +26,26 @@ function fail(message) {
   process.exit(1);
 }
 
-const versionRun = spawnSync(exe, ['--version'], { encoding: 'utf8', timeout: TIMEOUT_MS });
-if (versionRun.status !== 0 || versionRun.stdout.trim() !== version) {
-  fail(`--version expected "${version}", got "${versionRun.stdout.trim()}" (exit ${versionRun.status})`);
+// Only the --version child receives the probe; MCP stdout must remain JSON-RPC only.
+const probeDir = mkdtempSync(join(tmpdir(), 'arc1-sea-runtime-'));
+const probePath = join(probeDir, 'runtime probe.cjs');
+let versionRun;
+try {
+  writeFileSync(probePath, `process.stdout.write(${JSON.stringify(SEA_NODE_VERSION_PREFIX)} + process.versions.node + '\\n');`);
+  const requireOption = `--require ${JSON.stringify(probePath.replaceAll('\\', '/'))}`;
+  versionRun = spawnSync(exe, ['--version'], {
+    encoding: 'utf8',
+    timeout: TIMEOUT_MS,
+    env: { ...process.env, NODE_OPTIONS: [process.env.NODE_OPTIONS, requireOption].filter(Boolean).join(' ') },
+  });
+} finally {
+  rmSync(probeDir, { recursive: true, force: true });
+}
+if (versionRun.status !== 0) fail(`--version failed (exit ${versionRun.status}): ${versionRun.stderr}`);
+try {
+  console.log(`ok  embedded Node ${parseSeaVersionOutput(versionRun.stdout, version)}`);
+} catch (err) {
+  fail(err.message);
 }
 console.log(`ok  --version ${version}`);
 

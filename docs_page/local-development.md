@@ -76,6 +76,11 @@ The npm package installs several thousand files that antivirus scanners inspect 
 
 Build one yourself with `npm run build && npm run build:sea` (current platform only; output in `dist-sea/`), then check it with `npm run test:sea-smoke -- dist-sea/<file>`.
 
+Self-builds require Node **22.23.4+**, **24.22.1+** or **26.12.1+** on those major lines.
+CI uses the latest Node 22 patch. Build and smoke checks reject older runtimes; the smoke log
+reports the Node version inside the executable. Updating Node on your computer does not update
+a downloaded executable: replace the executable to update its bundled runtime.
+
 #### Windows setup and updates
 
 1. **Download** the Windows x64 `.exe` and `SHA256SUMS.txt` from the **same [official release](https://github.com/arc-mcp/arc-1/releases)**.
