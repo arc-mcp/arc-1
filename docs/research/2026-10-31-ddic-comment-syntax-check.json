@@ -1,0 +1,164 @@
+{
+  "target": "a4h",
+  "release": "758",
+  "checkedAt": "2026-10-31T21:15:47.664Z",
+  "object": "DDTEST_STRU_INCLUDE",
+  "method": "read-only inline ADT checkrun; stored object unchanged",
+  "sourceSha256": "4f302e88484df2127855176e78f6c2fa882ba7ed208daf54fa0ee6c56e56f8f7",
+  "rows": [
+    {
+      "label": "original",
+      "hasErrors": false,
+      "messages": [],
+      "checked": true
+    },
+    {
+      "label": "invalid_control",
+      "hasErrors": true,
+      "messages": [
+        {
+          "severity": "error",
+          "text": "Unexpected character \"!\"",
+          "line": 4,
+          "column": 0,
+          "uri": "/sap/bc/adt/ddic/structures/ddtest_stru_include/source/main#start=4,0;end=4,1"
+        },
+        {
+          "severity": "error",
+          "text": "Unexpected character \"!\"",
+          "line": 4,
+          "column": 8,
+          "uri": "/sap/bc/adt/ddic/structures/ddtest_stru_include/source/main#start=4,8;end=4,9"
+        },
+        {
+          "severity": "error",
+          "text": "Unexpected token \"!\". Expected was \"@\" or \"INCLUDE\" or \"KEY\"",
+          "line": 4,
+          "column": 0,
+          "uri": "/sap/bc/adt/ddic/structures/ddtest_stru_include/source/main#start=4,0;end=4,1"
+        },
+        {
+          "severity": "info",
+          "text": "Identifiers containing special characters must be written in \"quotes\"",
+          "line": 4,
+          "column": 0,
+          "uri": "/sap/bc/adt/ddic/structures/ddtest_stru_include/source/main#start=4,0;end=4,1",
+          "t100": {
+            "id": "SBD_MESSAGES",
+            "number": "034"
+          }
+        }
+      ],
+      "checked": true
+    },
+    {
+      "label": "slash_line",
+      "hasErrors": true,
+      "messages": [
+        {
+          "severity": "error",
+          "text": "Unclosed literal",
+          "line": 4,
+          "column": 6,
+          "uri": "/sap/bc/adt/ddic/structures/ddtest_stru_include/source/main#start=4,6;end=4,8"
+        },
+        {
+          "severity": "error",
+          "text": "Unexpected token \"/\". Expected was \":\"",
+          "line": 4,
+          "column": 1,
+          "uri": "/sap/bc/adt/ddic/structures/ddtest_stru_include/source/main#start=4,1;end=4,2"
+        }
+      ],
+      "checked": true
+    },
+    {
+      "label": "nested_single_close",
+      "hasErrors": true,
+      "messages": [
+        {
+          "severity": "error",
+          "text": "Unexpected token \"*\". Expected was \":\"",
+          "line": 4,
+          "column": 1,
+          "uri": "/sap/bc/adt/ddic/structures/ddtest_stru_include/source/main#start=4,1;end=4,2"
+        },
+        {
+          "severity": "info",
+          "text": "Identifiers containing special characters must be written in \"quotes\"",
+          "line": 4,
+          "column": 1,
+          "uri": "/sap/bc/adt/ddic/structures/ddtest_stru_include/source/main#start=4,1;end=4,2",
+          "t100": {
+            "id": "SBD_MESSAGES",
+            "number": "034"
+          }
+        }
+      ],
+      "checked": true
+    },
+    {
+      "label": "nested_double_close",
+      "hasErrors": true,
+      "messages": [
+        {
+          "severity": "error",
+          "text": "Unexpected token \"*\". Expected was \":\"",
+          "line": 4,
+          "column": 1,
+          "uri": "/sap/bc/adt/ddic/structures/ddtest_stru_include/source/main#start=4,1;end=4,2"
+        },
+        {
+          "severity": "info",
+          "text": "Identifiers containing special characters must be written in \"quotes\"",
+          "line": 4,
+          "column": 1,
+          "uri": "/sap/bc/adt/ddic/structures/ddtest_stru_include/source/main#start=4,1;end=4,2",
+          "t100": {
+            "id": "SBD_MESSAGES",
+            "number": "034"
+          }
+        }
+      ],
+      "checked": true
+    },
+    {
+      "label": "dash_apostrophe",
+      "hasErrors": true,
+      "messages": [
+        {
+          "severity": "error",
+          "text": "Unexpected character \"-\"",
+          "line": 4,
+          "column": 0,
+          "uri": "/sap/bc/adt/ddic/structures/ddtest_stru_include/source/main#start=4,0;end=4,1"
+        },
+        {
+          "severity": "error",
+          "text": "Unexpected character \"-\"",
+          "line": 4,
+          "column": 1,
+          "uri": "/sap/bc/adt/ddic/structures/ddtest_stru_include/source/main#start=4,1;end=4,2"
+        },
+        {
+          "severity": "error",
+          "text": "Unclosed literal",
+          "line": 4,
+          "column": 6,
+          "uri": "/sap/bc/adt/ddic/structures/ddtest_stru_include/source/main#start=4,6;end=4,8"
+        },
+        {
+          "severity": "error",
+          "text": "Unexpected token \"-\". Expected was \"@\" or \"INCLUDE\" or \"KEY\"",
+          "line": 4,
+          "column": 0,
+          "uri": "/sap/bc/adt/ddic/structures/ddtest_stru_include/source/main#start=4,0;end=4,1"
+        }
+      ],
+      "checked": true
+    }
+  ],
+  "storedSourceUnchanged": true,
+  "qualified": false,
+  "reason": "The slash-comment control was rejected too; inline checkrun cannot qualify DDIC source comment grammar on this target."
+}

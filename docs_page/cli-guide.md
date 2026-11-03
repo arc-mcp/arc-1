@@ -101,6 +101,9 @@ The generic `call` command preserves MCP semantics. Its `--output json` value is
 `content[0].text`. Ordinary successful tool calls exit `0` even if their domain payload
 contains test failures, ATC findings, or a non-empty diff.
 
+Dump lists can append a history-window or authorization note in text mode. For scripts, use
+`--output json` and parse the list from `content[0].text`; later blocks contain the note.
+
 The headless quality actions `SAPDiagnose.atc_ci` and `SAPDiagnose.unittest_ci`
 also evaluate their CI outcome: `status: "completed"` with `fail: false` exits `0`;
 `fail: true`, tool errors, or missing/malformed/incomplete outcome fields exit `1`.
@@ -109,6 +112,8 @@ does not change MCP `isError`. ATC uses the requested severity threshold. AUnit 
 or empty evidence always fails. Use `includeReportXml:true` to request bounded XML
 reports; the default response contains summaries and result paths. These actions
 require explicit packages/packageTrees and normal ADT access; they are single-target only.
+`atc_ci` needs the BTP ABAP Environment; on-premise it is refused before any SAP request,
+so use `arc1 atc DEVC <package>` there.
 
 ```bash
 arc1 call SAPDiagnose --json '{"action":"atc_ci","packages":["ZFOO"]}' --output json

@@ -15,7 +15,7 @@ import { acceptFallback } from './accept-fallback.js';
 import { connectivityProxyResponse, prepareBoundedResponse } from './bounded-response.js';
 import { resolveCookies } from './cookies.js';
 import { isCollectionListed, resolveAcceptType, resolveContentType } from './discovery.js';
-import { AdtApiError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
+import { AdtApiError, AdtCsrfBootstrapError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
 import {
   type AdtRequestOptions,
   awaitWithinRequestBudget,
@@ -226,6 +226,16 @@ export class AdtHttpClient {
   /** True once ADT discovery has been loaded — lets callers distinguish "capability absent" from "unknown". */
   hasDiscoveryData(): boolean {
     return this.discoveryMap.size > 0;
+  }
+
+  /** Exact collection presence; no Accept entries still means present. Undefined means discovery is unknown. */
+  hasDiscoveryCollection(path: string): boolean | undefined {
+    return this.hasDiscoveryData() ? this.discoveryMap.has(path) : undefined;
+  }
+
+  /** Requested SAP language; the response may still contain fallback translations. */
+  get language(): string | undefined {
+    return this.config.language;
   }
 
   /** The Accept media type ADT discovery advertises for a collection path, or undefined. Used for capability gating. */
@@ -625,7 +635,7 @@ export class AdtHttpClient {
       // Handle 503 Service Unavailable — ICM thread/MPI exhaustion or WP overload.
       // Legacy retries remain the default; ambiguous mutations can disable transient replay.
       // Retry happens INSIDE the semaphore slot to avoid increasing load on an overloaded system.
-      if (response.status === 503 && retryTransientErrors) {
+      if (response.status === 503 && retryTransientErrors && options?.retryUnavailable !== false) {
         const { delayMs: jitterMs, source } = parseRetryAfter(
           response.headers.get('retry-after'),
           1000 + Math.random() * 1000,
@@ -1080,7 +1090,9 @@ export class AdtHttpClient {
         // Check login pages, but preserve the header-only legacy discovery fallback.
         this.handleResponse(response.status, response.headers, await response.text(), path, false);
       }
-      // Only headers are needed; release GET bodies before a fallback or return.
+      // Optional analyses account for control bodies in the same streamed allowance.
+      if (options?.responseBudget?.countAllResponses && !response.bodyUsed) await response.arrayBuffer();
+      // Other callers need headers only; release GET bodies before a fallback or return.
       if (!response.bodyUsed) await response.body?.cancel();
       return response;
     };
@@ -1090,7 +1102,7 @@ export class AdtHttpClient {
       let response = await probe('HEAD');
 
       // Retry once on 503 — ICM may be temporarily overloaded (thread/MPI exhaustion).
-      if (response.status === 503) {
+      if (response.status === 503 && options?.retryTransientErrors !== false && options?.retryUnavailable !== false) {
         const jitterMs = 1000 + Math.random() * 1000;
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -1146,7 +1158,7 @@ export class AdtHttpClient {
             path,
           );
         }
-        throw new AdtApiError(`No CSRF token in response (HTTP ${response.status})`, response.status, path);
+        throw new AdtCsrfBootstrapError(`No CSRF token in response (HTTP ${response.status})`, response.status, path);
       }
 
       return path;

@@ -1,0 +1,122 @@
+{
+  "checkedAt": "2026-11-01T13:54:30.461565+00:00",
+  "previousHead": "feb0e4e2899e7e07edf120494c87dfe57438d01e",
+  "incorporatedMain": "8b795daad8c086fe6f3ac9999208b61ffd151916",
+  "classPr": "https://github.com/arc-mcp/arc-1/pull/1146",
+  "classPrState": "MERGED",
+  "targetPr": "https://github.com/arc-mcp/arc-1/pull/1145",
+  "targetPrMustRemainOpen": true,
+  "runtimeSourceSha256": "5f8058ccc1b685e0875113e5a9f820d99f47cb234d4f8f822a5475ab661cf664",
+  "runtimeChangedByMaintenance": false,
+  "conflictsResolved": 21,
+  "resolution": "Retain BDEF/hardening/schema changes and shared standard/hyperfocused native guard; take upstream five denial cases and latest class documentation/evidence; exact active generated revision docs preserved.",
+  "upstreamBlobEqualityVerified": true,
+  "reviewedPatchesMatchIndex": true,
+  "validation": {
+    "node": "24.11.1",
+    "unitFiles": 419,
+    "unitTestsPassed": 11330,
+    "maxWorkers": 4,
+    "upstreamNewCases": 5,
+    "additionalDirectBoundaryCases": 4,
+    "focusedTestsPassed": 100,
+    "gates": [
+      "typecheck",
+      "lint",
+      "validate:policy",
+      "build",
+      "check:sizes"
+    ],
+    "mutation": {
+      "isolatedSourceOnly": true,
+      "guardsRemoved": 2,
+      "failedNewTests": 4,
+      "unexpectedResolutionForAllFour": true,
+      "productionSourceUntouched": true
+    }
+  },
+  "priorCi": {
+    "run": "https://github.com/arc-mcp/arc-1/actions/runs/41307042748",
+    "head": "feb0e4e2899e7e07edf120494c87dfe57438d01e",
+    "integration": {
+      "numPassedTests": 281,
+      "numFailedTests": 1,
+      "numPendingTests": 117
+    },
+    "e2e": {
+      "numPassedTests": 160,
+      "numFailedTests": 0,
+      "numPendingTests": 11
+    },
+    "integrationArtifact": 13084197726,
+    "e2eArtifact": 13086016013,
+    "soleFailure": "where-used-details.integration.test.ts, issue1057; native200ordinary/scoped contain root/scaffolding but omit consumer",
+    "retryStarted": false,
+    "retryRejectedWhileWorkflowActive": true,
+    "whereUsedChanged": false
+  },
+  "retainedLiveQualification": {
+    "sourceIdentical": true,
+    "btp920CasesPassed": 9,
+    "a4h758CacheCasesPassed": 15,
+    "a4h816CacheCasesPassed": 15,
+    "evidence": "2026-11-01-cache-fixture-and-btp-requalification.json",
+    "newLiveExecutionAfterMaintenance": false,
+    "reason": "No production source/config change; identical-runtime live results remain applicable. Fresh CI will qualify the new commit and tests.",
+    "gaps": [
+      "DeployedCF/principal propagation/Cloud Connector",
+      "Positive interface extensions",
+      "Exhaustive indexes/runtime applicability"
+    ]
+  },
+  "reviews": [
+    {
+      "previousHead": "feb0e4e2899e7e07edf120494c87dfe57438d01e",
+      "main": "8b795daad8c086fe6f3ac9999208b61ffd151916",
+      "tree": "906ec102734727c1c2fdccea74d9ef1c922be755",
+      "mergePatchSha256": "ede6ba1b9160c195c46d12105f29e23c9b6dcac112919fee9d4d5398b0be178b",
+      "mainRuntimePatchSha256": "376ea2c3a3cbef53ab794be8c392470b103a7861688aa5f38c8584e311d71d3e",
+      "sourceSha256": "5f8058ccc1b685e0875113e5a9f820d99f47cb234d4f8f822a5475ab661cf664",
+      "scope": "arc1-bdef-post-1146-review",
+      "outcome": "No actionable findings",
+      "result": "**No actionable findings.** This was a static review only: I ran nothing and did not recompute the `src` hash. The full local gates and fresh CI are still pending, so they remain the open evidence for the five new cases.\n\n## What I checked\n- **Upstream `src` fixes:** `review-main-runtime.diff` removes only a few kinds of line from main's `src`:\n  - main's local class guard, replaced in place at `src/adt/class-extensions.ts:115`\n  - the older DDIC scan and output-count lines\n  - the imports, signatures and schema description those changes touch\n  - the CLAS and source-plugin branches in `extension-read.ts`, which were only reordered\n\n  The summary path's `return` became `break` at `src/adt/source-plugin-discovery.ts:146`, so unadvertised summaries now get a provider status. The staged delta touches no `src` file, which fits your unchanged-hash claim.\n- **Denial guard:** the shared predicate at `src/adt/repository-relations.ts:22` covers everything main's guard did, plus `SAP.navigate`. The denial runs before any hidden read and keeps the same `denied` status and reason, so independent hooks still run and the session doesn't stop. The sink checks at lines 193-194 are still called from `validateRoot` and the POST path.\n- **New tests:** all five cases should pass against this logic when traced by hand:\n  - CLAS and INTF make no requests when denied.\n  - Exact, glob and tool-wide denials don't match the `SAP.navigate` check by accident, and each makes 2 GETs in both modes.\n  - The expected counts of 7 nodes and 8 sources in sources mode, and 2 nodes and 0 sources in summary mode, hold.\n- **Weakened tests:** none found in the upstream-to-branch test delta for source plug-ins or extension input. The 750 test now runs in both modes and still asserts 4 sources in sources mode. The cache integration rewrite is the earlier fixture repair, which I didn't re-audit.\n- **Evidence:** the `main-integration-replay.json` hunk only adds lines, with one new `mcp` key, and its structure stays valid. `native-denial-replay.json` has 8 denied results, 4 on each target, which fits the README's description.\n- **Docs:**\n  - Both new links to the requalification report resolve.\n  - \"Nine fresh BTP cases\" matches the report's 2 + 5 + 2.\n  - \"Five regression cases\" matches the two `it.each` blocks.\n  - The ENHO section of `docs_page/tools.md` matches `enhancementSourceUnavailable`, the checks in `readEnhancementIncludeRevision` and the INCL path at `src/handlers/read.ts:716-735`.\n  - The README keeps class-only results separate from the combined runtime.\n\n## What I couldn't verify\n- **Comparison with main:** the snapshot has no copy of main and no docs diff against it. I couldn't confirm that the tests are verbatim from main, that `main-integration-replay.json` is byte-for-byte upstream's, or that no upstream docs were dropped.\n- **Evidence hashes:** the runtime fingerprints in the replay JSONs weren't recomputed.\n\n## Noted, no action needed\n- **Sink guard coverage:** no test exercises `assertActionAllowed` directly. Denial tests stop at the provider guards, so removing the sink checks wouldn't fail any test I could find. This gap predates the merge and doesn't change current behaviour.\n- **Dated report wording:** three dated reports still describe #1146 as pending, and the new links lead readers to one of them (`2026-11-01-cache-fixture-and-btp-requalification.md:102`). They are point-in-time records, so I left them as you asked.",
+      "toolCalls": 47,
+      "tools": [
+        "Glob",
+        "Grep",
+        "Read"
+      ],
+      "outsideSnapshot": 0,
+      "run": {
+        "subtype": "success",
+        "is_error": false,
+        "num_turns": 48,
+        "duration_ms": 158829
+      }
+    },
+    {
+      "baseTree": "906ec102734727c1c2fdccea74d9ef1c922be755",
+      "tree": "52903ef1243dae4bff922a6a324a2f6a9e69d8d0",
+      "patchSha256": "84698261e476edebb458b7bf410f3d85ea02c4e175c4808cd7914b35bd6b9449",
+      "scope": "arc1-bdef-native-sink-review",
+      "outcome": "No actionable findings",
+      "result": "No actionable findings.\n\nI reviewed this by reading the code only. I didn't run anything, so the 100 passing tests and the mutation result are as you reported them. The full local gates were still running as of your message.\n\nThe four tests at `tests/unit/adt/repository-relations.test.ts:159` and `:166` are correct and exercise both boundaries:\n\n- **Each deny pattern tests its own branch:** `SAPNavigate.relations` matches only the first check in `nativeRelationActionDenied` (`src/adt/repository-relations.ts:24`), and `SAP.navigate` only the second (`:25`). `isActionDenied` compares the tool name exactly, so neither pattern can match the other's check.\n- **Nothing else can produce the expected error:** `AdtSafetyError` comes from `assertActionAllowed` here. In `src/adt/safety.ts`, `denyActions` appears only in the config defaults, the merge logic and the summary output, so `checkOperation` doesn't read it. It therefore can't stand in for the guard.\n- **Root boundary:** `validateRoot('CLAS', \u2026)` takes the `path` route, so it makes one metadata GET with no `quickSearch` call. The mock satisfies the name, type, version and package checks, so without the guard the call resolves.\n- **POST boundary:** `root` passes the URI rebuild check at `:321-322`. Both XML mocks match their requested context and root, and the relation shape passes `normalizeRelationNetwork`.\n- **Both POST paths are checked:** `lookup` and `lookupExtending` are awaited one after the other, so a bypass added to either one fails the test. This also covers `lookupExtending`, which your mutation run couldn't reach because the test stops at the first failed assertion on `lookup`. Reading its mock confirms it would also resolve without the guard.\n- **Setup change:** adding `denyActions` to `setup` defaults to `[]`, the same value as `defaultSafetyConfig()`, so the existing tests behave as before.",
+      "toolCalls": 15,
+      "tools": [
+        "Glob",
+        "Grep",
+        "Read"
+      ],
+      "outsideSnapshot": 0,
+      "run": {
+        "subtype": "success",
+        "is_error": false,
+        "num_turns": 16,
+        "duration_ms": 46403
+      }
+    }
+  ],
+  "roadmapImpact": "No roadmap impact; FEAT-03 authoring unchanged",
+  "freshCi": "pending new commit; no result claimed in advance",
+  "mergedPr1145": false
+}

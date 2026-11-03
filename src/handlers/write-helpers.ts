@@ -936,14 +936,19 @@ export async function enforceAllowedPackageForObjectUrl(
   objectUrl: string,
   label: string,
   accept?: string,
-  options?: import('../adt/http.js').AdtRequestOptions,
+  options?: import('../adt/http.js').AdtRequestOptions & { includeGroupHint?: boolean },
 ): Promise<string | undefined> {
   if (client.safety.allowedPackages.length === 0 && !client.safety.multiTargetWrite) return undefined;
-  const pkg = await client.resolveObjectPackage(objectUrl, accept, options);
+  const { includeGroupHint, ...requestOptions } = options ?? {};
+  const pkg = await client.resolveObjectPackage(objectUrl, accept, options ? requestOptions : undefined);
   if (!pkg) {
+    const hint =
+      includeGroupHint && objectUrl.startsWith('/sap/bc/adt/programs/includes/')
+        ? ' For a function-group include, pass group=<FUGR> to SAPWrite or SAPActivate.'
+        : '';
     throw new AdtSafetyError(
       `${label} blocked: ARC-1 could not determine the object's package from ADT metadata ` +
-        `(no adtcore:packageRef/containerRef). Fail-closed because allowedPackages is restricted.`,
+        `(no adtcore:packageRef/containerRef). Fail-closed: cannot authorize this operation without a verified package.${hint}`,
     );
   }
   await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
@@ -1245,16 +1250,30 @@ export function runPreWriteLint(
 
     if (!result.pass) {
       const errorLines = result.errors.map((e) => `  Line ${e.line}: [${e.rule}] ${e.message}`).join('\n');
+      const parserRules = ['parser_error', 'cds_parser_error', 'structure'];
+      const hasParserFindings = result.errors.some((e) => parserRules.includes(e.rule));
+      const hasOtherFindings = result.errors.some((e) => !parserRules.includes(e.rule));
+      const parserAdvice = hasParserFindings
+        ? 'Parser findings can mean invalid source, a mismatched lint syntax (see SAPLint action="list_rules"), ' +
+          'or grammar abaplint does not support. For an existing object, check the proposed source with ' +
+          `SAPRead(type="SYNTAX", objectType=${JSON.stringify(type)}, name=${JSON.stringify(name)}, source=<full source>). ` +
+          'Correct what SAP rejects; do not rewrite statements SAP accepts just to satisfy abaplint. '
+        : 'Correct genuine errors; check the target SAP release and lint configuration if a finding looks wrong. ';
+      const fixAdvice = hasOtherFindings
+        ? `Use SAPLint action="lint_and_fix" for fixable ${hasParserFindings ? 'non-parser ' : ''}findings. `
+        : '';
+      const overrideAdvice = config.multiTargetWrite
+        ? 'ask the administrator to review the configured lint policy.'
+        : 'use lintBeforeWrite=false to skip this check for this call.';
       return {
         blocked: true,
         result: errorResult(
           `Pre-write lint check failed for ${type} ${name} (abaplint syntax ${JSON.stringify(result.syntaxVersion)}). ` +
-            `Fix these errors before writing:\n${errorLines}\n\n` +
-            'For parser/version findings, check SAPLint action="list_rules" and the target SAP release before ' +
-            'changing valid source. Use SAPLint action="lint_and_fix" for fixable findings, or ' +
-            (config.multiTargetWrite
-              ? 'ask the administrator to review the configured lint policy if the finding is incompatible with this target.'
-              : 'lintBeforeWrite=false to skip this check for this call.'),
+            `Review these findings before writing:\n${errorLines}\n\n` +
+            parserAdvice +
+            fixAdvice +
+            (hasParserFindings ? 'If SAP confirms the proposed source is valid, ' : 'For a verified false positive, ') +
+            overrideAdvice,
         ),
       };
     }

@@ -58,6 +58,25 @@ afterEach(() => {
 });
 
 describe('CLI runtime', () => {
+  it.each(['TABL', 'TABL/DS', 'CLAS', 'DDLS'])('keeps flat %s exports free of extension context', async (type) => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const dispatch = vi.fn(async (_client, _config, _tool, args) => {
+      expect(args.format).toBe('text');
+      expect(args.extensions).toBe(type === 'DDLS' ? undefined : 'none');
+      return successfulToolResult('raw source');
+    });
+    const dependencies = directDependencies(resolved({ url: 'https://sap.example.test' }), {
+      dispatchToolCall: dispatch,
+    });
+    for (const command of [
+      ['source', type, 'ZROOT'],
+      ['read', type, 'ZROOT', '--flat'],
+    ]) {
+      log.mockClear();
+      expect(await main(command, dependencies)).toBe(0);
+      expect(log.mock.calls).toEqual([['raw source']]);
+    }
+  });
   it.each(['text', 'json'] as const)(
     'keeps CLI source/search exports unchanged with IDE env opt-in (output=%s)',
     async (output) => {

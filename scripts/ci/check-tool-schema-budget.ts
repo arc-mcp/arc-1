@@ -197,7 +197,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // The read wire ceiling is unchanged; source-window growth is recorded above.
       schemaTokenEstimate: 12_000,
       descriptionTokenEstimate: 8_800,
-      descriptionCount: 192, // +1: explicit direct package scope (#1065).
+      descriptionCount: 195, // Combined DDIC extension controls and own-method signature selector.
       maxTotalWireBytes: READ_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -224,7 +224,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       descriptionTokenEstimate: 12_800,
       // Includes expectedSourceHash (#853) and SAPRead.source (#855).
       // LONG_TEXT adds eight field descriptions; shorter existing guidance preserves byte/token ceilings.
-      descriptionCount: 293, // +1: explicit direct package scope (#1065).
+      descriptionCount: 296, // Combined DDIC extension controls and own-method signature selector.
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: 23_550,
     },
@@ -241,7 +241,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Combined relations + bounded ATC objects[]; retain a tighter BTP token ratchet.
       schemaTokenEstimate: 17_650,
       descriptionTokenEstimate: 12_200,
-      descriptionCount: 279, // +1: explicit direct package scope (#1065).
+      descriptionCount: 282, // Combined DDIC extension controls and own-method signature selector.
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -269,7 +269,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       schemaTokenEstimate: 12_000,
       descriptionTokenEstimate: 8_800,
-      descriptionCount: 192, // +1: explicit direct package scope (#1065).
+      descriptionCount: 195, // Combined DDIC extension controls and own-method signature selector.
       maxTotalWireBytes: READ_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -282,7 +282,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       schemaTokenEstimate: 18_750,
       descriptionTokenEstimate: 12_800,
-      descriptionCount: 293, // +1: explicit direct package scope (#1065).
+      descriptionCount: 296, // Combined DDIC extension controls and own-method signature selector.
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: 23_550,
     },
@@ -295,7 +295,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       schemaTokenEstimate: 17_650,
       descriptionTokenEstimate: 12_200,
-      descriptionCount: 279, // +1: explicit direct package scope (#1065).
+      descriptionCount: 282, // Combined DDIC extension controls and own-method signature selector.
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },

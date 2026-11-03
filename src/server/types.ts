@@ -47,7 +47,7 @@ export interface ServerConfig {
   // --- MCP Transport ---
   transport: TransportType;
   httpAddr: string;
-  /** Maximum decompressed JSON request bytes on MCP HTTP routes. */
+  /** Maximum uncompressed JSON request bytes on MCP HTTP routes. */
   maxHttpRequestBytes: number;
   serverName: string;
   /** Human-readable single-target label prepended to model-facing MCP instructions. */

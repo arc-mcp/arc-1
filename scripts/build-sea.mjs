@@ -19,6 +19,9 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { inject } from 'postject';
+import { assertSeaNodeVersion } from './sea/runtime-policy.mjs';
+
+assertSeaNodeVersion(process.versions.node);
 
 const SENTINEL_FUSE = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
