@@ -106,7 +106,7 @@ sequence.
 | [FEAT-70](#feat-70) | Additional table technical settings | P3 | S | Needs research | Object coverage |
 | [FEAT-72](#feat-72) | CDS index objects | P3 | M | Blocked | Object coverage |
 | [FEAT-73](#feat-73) | Additional server-driven object types | P3 | S | Needs research | Object coverage |
-| [FEAT-97](#feat-97) | Value helps and wider release coverage for API packages | P3 | S | Needs research | Object coverage |
+| [FEAT-100](#feat-100) | Value helps and wider release coverage for API packages | P3 | S | Needs research | Object coverage |
 | [FEAT-78](#feat-78) | Table type access type and keys | P2 | M | Needs research | Object coverage |
 | [FEAT-09](#feat-09) | Cross Trace result reader | P2 | M | Needs research | Diagnostics |
 | [FEAT-69](#feat-69) | Wider syntax-batch qualification | P3 | S | Needs research | Diagnostics |
@@ -929,7 +929,7 @@ activation and read-back evidence for each remaining type. Measure schema cost a
 independently; do not infer their create subtype or source format from the family.
 
 <a id="feat-97"></a>
-### FEAT-97 — Value helps and wider release coverage for API packages
+### FEAT-100 — Value helps and wider release coverage for API packages
 
 - **Priority / effort / status:** P3 / S / Needs research
 - **Category:** Object coverage
