@@ -928,7 +928,7 @@ is a reference for researching the remaining candidates, not a guarantee they sh
 activation and read-back evidence for each remaining type. Measure schema cost and add candidates
 independently; do not infer their create subtype or source format from the family.
 
-<a id="feat-96"></a>
+<a id="feat-99"></a>
 ### FEAT-99 — Schema check for further JSON server-driven types
 
 - **Priority / effort / status:** P3 / S / Needs research
