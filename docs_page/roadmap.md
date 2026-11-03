@@ -928,7 +928,7 @@ is a reference for researching the remaining candidates, not a guarantee they sh
 activation and read-back evidence for each remaining type. Measure schema cost and add candidates
 independently; do not infer their create subtype or source format from the family.
 
-<a id="feat-97"></a>
+<a id="feat-100"></a>
 ### FEAT-100 — Value helps and wider release coverage for API packages
 
 - **Priority / effort / status:** P3 / S / Needs research
