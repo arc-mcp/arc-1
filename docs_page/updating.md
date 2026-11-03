@@ -2,6 +2,9 @@
 
 ## v1.10.0 — HTTP request validation
 
+MCP POST requests must contain JSON with `Content-Type: application/json`.
+Requests without a parsed body now return **415**, including bodyless POSTs.
+
 JSON and form bodies must now be uncompressed, including authenticated MCP and OAuth
 requests. Compressed bodies previously accepted by the HTTP framework now return
 **415**. Disable request compression in custom clients or gateways before upgrading.

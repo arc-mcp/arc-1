@@ -301,6 +301,10 @@ ARC-1 also sets standard browser security headers (HSTS, CSP, X-Frame-Options, C
 
 ### HTTP request bodies
 
+MCP POST requests require an `application/json` body parsed within ARC-1's configured
+limits. Requests without a parsed body return JSON **415**. Send a non-empty JSON
+message and a standard `Content-Type` header.
+
 JSON and form request bodies must be **uncompressed**, including authenticated MCP and
 public OAuth requests. Unsupported `Content-Encoding` returns JSON **415** with
 `Accept-Encoding: identity`; send plain JSON or form fields instead. This does not

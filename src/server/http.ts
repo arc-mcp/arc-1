@@ -188,6 +188,16 @@ export function applySecurityMiddleware(app: express.Application, allowedOrigins
  * StreamableHTTPServerTransport.handleRequest().
  */
 async function serveMcpRequest(serverFactory: () => McpServer, req: Request, res: Response): Promise<void> {
+  // POST bodies must have passed ARC-1's parser and admission limits.
+  // An undefined body would let the SDK read the stream under its own limits.
+  if (req.method === 'POST' && req.body === undefined) {
+    res.status(415).json({
+      jsonrpc: '2.0',
+      error: { code: -32000, message: 'Unsupported Media Type: POST requires an application/json body' },
+      id: null,
+    });
+    return;
+  }
   try {
     const server = serverFactory();
     const transport = new StreamableHTTPServerTransport({
