@@ -21,6 +21,8 @@ export interface AdtRequestOptions extends RequestDeadlineOptions {
   responseBudget?: DataResponseBudget;
   /** Disable availability/DB-session replays when a mutation may already have completed. */
   retryTransientErrors?: boolean;
+  /** Disable only 503 replay; retain rate-limit and DB-session recovery. */
+  retryUnavailable?: boolean;
   /** Optional request-local SAP send allowance; CSRF and retries share the same counter. */
   attemptBudget?: RequestAttemptBudget;
   /** Internal control requests need headers only; do not buffer their bodies through Connectivity. */
@@ -30,6 +32,7 @@ export interface AdtRequestOptions extends RequestDeadlineOptions {
 /** Keep request cancellation/deadline controls while excluding result-data accounting from CSRF bootstrap. */
 export function withoutResponseBudget(options?: AdtRequestOptions): AdtRequestOptions | undefined {
   if (!options) return options;
+  if (options.responseBudget?.countAllResponses) return { ...options, discardResponseBody: false };
   const { responseBudget: _responseBudget, ...rest } = options;
   return options.attemptBudget ? { ...rest, discardResponseBody: true } : rest;
 }

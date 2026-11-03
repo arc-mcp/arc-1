@@ -293,7 +293,7 @@ describe('request-scoped Eclipse links over real pinned/aggregate HTTP routing',
       await rpc(
         token,
         'tools/call',
-        { name: 'SAPRead', arguments: { type: 'CLAS', name, ...(pinned ? {} : { target }) } },
+        { name: 'SAPRead', arguments: { type: 'CLAS', extensions: 'none', name, ...(pinned ? {} : { target }) } },
         pinned ? `/${target}/mcp` : '/multi/mcp',
         headers,
       ),
@@ -363,7 +363,7 @@ describe('request-scoped Eclipse links over real pinned/aggregate HTTP routing',
       );
       await listen();
       const token = auth === 'jwt' ? addUser([]) : 'single-viewer-key-for-test';
-      const params = { name: 'SAPRead', arguments: { type: 'CLAS', name: 'CL_ABAP_TYPEDESCR' } };
+      const params = { name: 'SAPRead', arguments: { type: 'CLAS', extensions: 'none', name: 'CL_ABAP_TYPEDESCR' } };
       const denied = await rpc(undefined, 'tools/call', params, '/mcp', preference);
       expect(denied.status).toBe(401);
       expect(denied.text).not.toMatch(/vscode:|adt:/);
@@ -408,7 +408,10 @@ describe('request-scoped Eclipse links over real pinned/aggregate HTTP routing',
       return server;
     }, config);
     await listen();
-    const params = { name: 'SAPRead', arguments: { type: 'CLAS', name: 'CL_ABAP_TYPEDESCR', version: 'active' } };
+    const params = {
+      name: 'SAPRead',
+      arguments: { type: 'CLAS', extensions: 'none', name: 'CL_ABAP_TYPEDESCR', version: 'active' },
+    };
     const revalidated = `[cached:revalidated]\n${SOURCE}`;
     for (const [user, enabled, source] of [
       ['alice', true, SOURCE],
@@ -449,7 +452,7 @@ describe('request-scoped Eclipse links over real pinned/aggregate HTTP routing',
         method: 'tools/call',
         params: {
           name: 'SAPRead',
-          arguments: { type: 'CLAS', name: 'CL_ABAP_TYPEDESCR' },
+          arguments: { type: 'CLAS', extensions: 'none', name: 'CL_ABAP_TYPEDESCR' },
         },
       });
       const response = await new Promise<{ status: number; text: string }>((resolve, reject) => {
@@ -523,7 +526,12 @@ describe('request-scoped Eclipse links over real pinned/aggregate HTTP routing',
         'tools/call',
         {
           name: 'SAPRead',
-          arguments: { type: 'CLAS', name: 'CL_ABAP_TYPEDESCR', ...(pinned ? {} : { target: 'A4H/000' }) },
+          arguments: {
+            type: 'CLAS',
+            extensions: 'none',
+            name: 'CL_ABAP_TYPEDESCR',
+            ...(pinned ? {} : { target: 'A4H/000' }),
+          },
           // Synthetic tool metadata: real captures did not send clientInfo on legacy tools/call.
           _meta: {
             'io.modelcontextprotocol/clientInfo': { name: 'Visual Studio Code', version: '1.142.0' },
@@ -574,7 +582,12 @@ describe('request-scoped Eclipse links over real pinned/aggregate HTTP routing',
         'tools/call',
         {
           name: 'SAPRead',
-          arguments: { type: 'CLAS', name: 'CL_ABAP_TYPEDESCR', ...(pinned ? {} : { target: 'A4H/001' }) },
+          arguments: {
+            type: 'CLAS',
+            extensions: 'none',
+            name: 'CL_ABAP_TYPEDESCR',
+            ...(pinned ? {} : { target: 'A4H/001' }),
+          },
         },
         pinned ? '/A4H/001/mcp' : '/multi/mcp',
         preference,
@@ -588,7 +601,12 @@ describe('request-scoped Eclipse links over real pinned/aggregate HTTP routing',
         'tools/call',
         {
           name: 'SAPRead',
-          arguments: { type: 'CLAS', name: 'CL_ABAP_TYPEDESCR', ...(pinned ? {} : { target: 'A4H/000' }) },
+          arguments: {
+            type: 'CLAS',
+            extensions: 'none',
+            name: 'CL_ABAP_TYPEDESCR',
+            ...(pinned ? {} : { target: 'A4H/000' }),
+          },
         },
         pinned ? '/A4H/000/mcp' : '/multi/mcp',
         preference,

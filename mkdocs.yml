@@ -50,6 +50,9 @@ nav:
   - Home: index.md
   - Newsletter: newsletter.md
   - Quickstart: quickstart.md
+  - Security:
+      - Security Review: security.md
+      - Hardening Guide: security-guide.md
   - Agent Plugin: agent-plugin.md
   - Install in Claude: install-in-claude.md
   - Deployment:
@@ -94,7 +97,6 @@ nav:
       - Configuration Precedence: configuration-precedence.md
       - SAP API Policy & Architecture: sap-api-policy-and-architecture.md
       - vs SAP ABAP MCP Server: arc-1-vs-sap-abap-mcp-server.md
-      - Security: security-guide.md
       - Operations:
           - Overview: operations.md
           - Log Analysis: log-analysis.md

@@ -1,6 +1,6 @@
 {
   "name": "arc-1",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "mcpName": "io.github.arc-mcp/arc-1",
   "description": "ARC-1 — MCP Server for SAP ABAP Systems",
   "author": "Marian Zeis",
@@ -108,12 +108,12 @@
     "audit:ci": "audit-ci --config audit-ci.json"
   },
   "dependencies": {
-    "@abaplint/core": "^2.120.86",
+    "@abaplint/core": "^2.120.92",
     "@arc-mcp/xsuaa-auth": "^1.2.0",
-    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@sap-cloud-sdk/connectivity": "^4.9.1",
     "@sap/xsenv": "^6.2.2",
-    "@sap/xssec": "^4.15.0",
+    "@sap/xssec": "^4.16.0",
     "ajv": "^8.18.0",
     "better-sqlite3": "^13.0.3",
     "commander": "^15.0.0",
@@ -121,10 +121,10 @@
     "diff": "^9.0.0",
     "dotenv": "^18.0.9",
     "express": "^5.3.0",
-    "express-rate-limit": "^8.7.1",
+    "express-rate-limit": "^8.7.2",
     "fast-xml-parser": "^5.11.2",
     "helmet": "^8.3.0",
-    "jose": "^6.2.13",
+    "jose": "^6.2.14",
     "on-headers": "^1.1.0",
     "rate-limiter-flexible": "^11.2.3",
     "undici": "^8.12.3",
@@ -140,7 +140,7 @@
     "*.{ts,js,json}": "biome check --write --no-errors-on-unmatched"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.2",
+    "@biomejs/biome": "^2.6.4",
     "@types/better-sqlite3": "^9.6.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

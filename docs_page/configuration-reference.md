@@ -52,7 +52,7 @@ The bare minimum needed to reach a SAP system. None of these affect what tool ca
 | `--gzip-datapreview-body` | `SAP_GZIP_DATAPREVIEW_BODY` | `false` | Compatibility fallback for a reverse proxy/WAF that falsely blocks legitimate SQL-shaped request bodies. When explicitly enabled, gzip-encodes only non-empty POST bodies on the exact ADT collection paths `/sap/bc/adt/datapreview/freestyle` and `/sap/bc/adt/datapreview/ddic`, and sends `Content-Encoding: gzip`. Request decompression is verified on SAP_BASIS 758 and 816; the available 750 test system advertises but does not bind data preview, so validate with one query after enabling on another release. ARC-1 never enables or retries with gzip automatically. This does not enable data preview/free SQL or bypass ARC-1 scopes/SAP authorization, but it can make these bodies opaque to a WAF that scans raw bytes; prefer an approved, narrowly scoped gateway rule exclusion and enable this only with the security owner's approval. In multi-target mode this is one global server policy and therefore applies to every destination. |
 | `--system-type` | `SAP_SYSTEM_TYPE` | `auto` | Forces ARC-1's release/feature gating to behave as if the target is `btp` (Steampunk/Public Cloud) or `onprem`. `auto` (default) lets ARC-1 detect via probes. Override when auto-detection is wrong (e.g. mirrored systems). |
 | `--user-agent` | `SAP_USER_AGENT` | `arc-1/<version>` | Outbound SAP HTTP User-Agent, including CSRF bootstrap and stateful/proxy requests. Optional deployment identifier; printable ASCII, at most 256 characters, surrounding spaces trimmed. Unset/empty uses the default. No caller identity is added. Applies to every destination in multi-target mode. |
-| `--abap-release` | `SAP_ABAP_RELEASE` | — | Manual `SAP_BASIS` release override for local tooling that needs a release number (e.g. abaplint's syntax-feature gating). Examples: `758` for S/4HANA 2023, `816` for ABAP Platform 2025 (SAP renumbered 75x→8xx). ARC-1's runtime probe still wins when available — this is the fallback. |
+| `--abap-release` | `SAP_ABAP_RELEASE` | — | Manual `SAP_BASIS` release override for local tooling that needs a release number (e.g. abaplint's syntax-feature gating, release-aware error hints and the dump-list window note). Examples: `758` for S/4HANA 2023, `816` for ABAP Platform 2025 (SAP renumbered 75x→8xx). ARC-1's runtime probe still wins when available — this is the fallback. Multi-target dump lists ignore this global override and resolve SAP_BASIS for the selected target. |
 
 For SAP ICM request logs, the Basis team can include `%{user-agent}i` in an existing
 [HTTP logging format](https://help.sap.com/saphelp_em92/helpdata/en/48/442541e0804bb8e10000000a42189b/content.htm).
@@ -276,7 +276,7 @@ How ARC-1 itself listens for MCP traffic.
 | `--server-name` | `ARC1_SERVER_NAME` | `arc-1` | Server name advertised in the MCP `initialize` handshake. Give each direct-connect instance a unique name when running several ARC-1 instances so clients can derive a target-specific tool prefix without numeric collision suffixes. |
 | `--system-label` | `ARC1_SYSTEM_LABEL` | empty | Optional human-readable label of the connected SAP system (for example `ERP production (read-only)`). It is normalized to one line, limited to 160 characters, and prepended to the single-target MCP instructions so a model can distinguish instances even when a client replaces the handshake name with an opaque connector ID. Ignored in multi-target mode, whose target-aware instructions remain authoritative. |
 | `--http-addr` | `ARC1_HTTP_ADDR` / `SAP_HTTP_ADDR` | `0.0.0.0:8080` | Bind address for HTTP streamable. Use `127.0.0.1:3000` to restrict to localhost. `SAP_HTTP_ADDR` is the legacy fallback name. |
-| `--max-http-request-bytes` | `ARC1_MAX_HTTP_REQUEST_BYTES` | `102400` (100 KiB) | Maximum decompressed MCP JSON body, including Copilot's `/authorize` alias; integer 1–16777216 (16 MiB). Oversized bodies return JSON 413. Other JSON/form endpoints retain 100 KiB. See [HTTP request bodies](#http-request-bodies) for admission and memory limits. |
+| `--max-http-request-bytes` | `ARC1_MAX_HTTP_REQUEST_BYTES` | `102400` (100 KiB) | Maximum uncompressed MCP JSON body, including Copilot's `/authorize` alias; integer 1–16777216 (16 MiB). Oversized bodies return JSON 413. Other JSON/form endpoints retain 100 KiB. See [HTTP request bodies](#http-request-bodies) for admission and memory limits. |
 | `--port` | `ARC1_PORT` | `8080` | Simpler alternative when only the port needs to change. Wins over `ARC1_HTTP_ADDR`'s port if both are set. Valid range `1–65535`. |
 | `--ui[=MODE]` | `ARC1_UI` | `off` | Experimental read-only browser console. `off` disables it. `local` starts a loopback sidecar UI at `ARC1_UI_ADDR` for stdio/Claude-style local use. `web` mounts `/ui` and `/ui/api/*` on the HTTP server and requires an admin API key, OIDC, or XSUAA auth. `true` maps to `local` for stdio and `web` for HTTP. |
 | `--ui-addr` / `--ui-port` | `ARC1_UI_ADDR` / `ARC1_UI_PORT` | `127.0.0.1:8711` | Bind address for `ARC1_UI=local`. Local mode must stay on loopback; use `ARC1_UI=web` with `SAP_TRANSPORT=http-streamable` for Docker or CF exposure. |
@@ -301,11 +301,20 @@ ARC-1 also sets standard browser security headers (HSTS, CSP, X-Frame-Options, C
 
 ### HTTP request bodies
 
-Before parsing, a request reserves its uncompressed `Content-Length`, capped at the
-configured limit. Unknown or compressed lengths reserve the full limit. Only
-reservations above 100 KiB count toward a shared 32 MiB budget; excess requests
-receive 503 with `Retry-After`. Small requests with an uncompressed declared length
-remain available; small chunked or compressed requests can still exhaust capacity.
+MCP POST requests require an `application/json` body parsed within ARC-1's configured
+limits. Requests without a parsed body return JSON **415**. Send a non-empty JSON
+message and a standard `Content-Type` header.
+
+JSON and form request bodies must be **uncompressed**, including authenticated MCP and
+public OAuth requests. Unsupported `Content-Encoding` returns JSON **415** with
+`Accept-Encoding: identity`; send plain JSON or form fields instead. This does not
+change response compression or outbound `SAP_GZIP_DATAPREVIEW_BODY`.
+
+Before parsing, a JSON request reserves its `Content-Length`, capped at the configured
+limit. Unknown lengths reserve the full limit. Only reservations above 100 KiB count
+toward a shared 32 MiB budget; excess requests receive **503** with `Retry-After`.
+Small declared bodies remain available. Admission runs first, so a chunked or large encoded
+request can receive 503 while capacity is full, before its encoding is rejected.
 
 Reservations end on response completion or disconnect. A disconnected tool may
 retain its input until dispatch completes, so this is an admission limit, not a
@@ -378,9 +387,11 @@ Connector resource mappings.
 | `--feature-transport` | `SAP_FEATURE_TRANSPORT` | `auto` | CTS transport endpoints. Required for `SAPTransport` (even reads). |
 | `--feature-hana` | `SAP_FEATURE_HANA` | `auto` | Report HANA availability in system features. |
 
-`auto` probes one specific endpoint per feature and classifies the response: 2xx/400/405/5xx →
-available; 401/403/404 → unavailable. On single-target `/mcp`, inspect the cached result using
-`SAPManage` with `action: "features"`. Discovered targets apply additional
+`auto` probes one endpoint per feature. HTTP 502/503/504 leaves availability unknown; it is not
+cached as proof that a feature exists. Responses 2xx and legacy unlisted errors (including 400/405/429/500) count as presence;
+401/403/404 count as unavailable. On single-target `/mcp`, inspect the cached result using
+`SAPManage` with `action: "features"`. After a startup outage, use `action: "probe"` or restart
+to refresh the result. Discovered targets apply additional
 [authentication controls](multi-target-administration.md#basic-shared-identity-controls);
 `SAPManage` is not part of their tool surface.
 
@@ -409,6 +420,14 @@ Optional pre-write validation layers and tool/schema selection.
 | `--check-before-write` | `SAP_CHECK_BEFORE_WRITE` | `false` | See [Authorization and safety](#authorization-and-safety) — adds a server-side ADT syntax check round-trip before save. Different layer from `lint-before-write` (this hits SAP, lint runs locally). |
 | `--tool-mode` | `ARC1_TOOL_MODE` | `standard` | `standard` exposes the 12 intent-based tools (schema payload guarded by CI budgets). `hyperfocused` exposes a single universal `sap` tool (~200 tokens) that dispatches everything internally. Use `hyperfocused` for severely token-constrained LLM clients (e.g. GPT-4o-mini, Copilot Studio). |
 | `--schema-nullable-optionals` | `ARC1_SCHEMA_NULLABLE_OPTIONALS` | `auto` | Controls whether optional `SAPWrite` JSON Schema fields are emitted as nullable unions (`type: ["string","null"]`). `auto` currently resolves to `off` and logs MCP client info for future allow-listing. `off` keeps the portable plain schema required by clients that reject unions (GitHub Copilot IDEs, Gemini CLI, Cursor/Foundry-style converters). `on` is an explicit compatibility escape hatch for OpenAI/Azure strict-mode function schemas that need nullable optionals to avoid fabricated enum values ([#360](https://github.com/arc-mcp/arc-1/issues/360)). Use `on` only after testing the target client accepts nullable unions; it can break clients affected by [#520](https://github.com/arc-mcp/arc-1/issues/520). |
+
+Parser findings can also reflect unsupported abaplint grammar. For an existing object, check the full
+proposed source with `SAPRead(type="SYNTAX", objectType, name, source)` before changing SAP-accepted code.
+For a confirmed parser gap, standard writes can use `lintBeforeWrite=false` for one call; pinned writes
+require an administrator's lint-policy review. To make just `parser_error` advisory, an administrator
+can put `{"rules":{"parser_error":{"severity":"Warning"}}}` in the JSON file `SAP_ABAPLINT_CONFIG` points
+to. That file must be present in the deployed app. This is instance-wide and does not relax structural
+parser errors. `SAP_CHECK_BEFORE_WRITE` remains non-blocking feedback.
 
 ---
 

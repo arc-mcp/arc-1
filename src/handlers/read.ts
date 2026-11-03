@@ -1,3 +1,4 @@
+import { appendReadExtensions, EXTENSION_READ_TYPES } from './extension-read.js';
 /**
  * SAPRead handler — read ABAP source + DDIC metadata, version/draft resolution, grep, table
  * preview. Exports version helpers shared with the write handler.
@@ -7,12 +8,19 @@ import { resolveBspNameAndPath } from '../adt/bsp-path.js';
 import type { AdtClient, SourceReadResult, TextElementPart } from '../adt/client.js';
 import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import { decodeKtdText, formatKtdNodeIndex, formatKtdShortTexts, KTD_META_MARKER } from '../adt/ddic-xml.js';
-import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '../adt/errors.js';
+import {
+  describeEnhancementIncludeRevision,
+  isEnhancementIncludeName,
+  readEnhancementIncludeRevision,
+} from '../adt/enhancement-include.js';
+import { enhancementSourceUnavailable } from '../adt/enhancements.js';
+import { AdtApiError, extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
 import { internalOperationDenial, internalOperationWarning } from '../adt/internal-data-operations.js';
 import { getLockObject } from '../adt/lock-object.js';
 import { describePackageListing } from '../adt/package-contents.js';
+import { RevisionHistoryError } from '../adt/revision-feed.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
 import {
   ensureServerDrivenSupport,
@@ -29,6 +37,7 @@ import type { CachingLayer } from '../cache/caching-layer.js';
 import { extractCdsElements } from '../context/cds-deps.js';
 import { grepSource, grepSourceBlocks } from '../context/grep.js';
 import { readLineRange } from '../context/line-range.js';
+import { extractOwnMethodSignature } from '../context/method-signature.js';
 import { extractMethod, formatMethodListing, listMethods } from '../context/method-surgery.js';
 import { isActionDenied } from '../server/deny-actions.js';
 import { logger } from '../server/logger.js';
@@ -43,6 +52,8 @@ import {
   normalizeObjectType,
   objectUrlForType,
 } from './object-types.js';
+import { readMethodOptionError } from './read-method-options.js';
+import { handleSearchHelp } from './search-help.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { handleSyntaxCheck } from './syntax.js';
 
@@ -195,9 +206,39 @@ export async function handleSAPRead(
   cacheSecurity: CacheSecurityContext,
   minimalErrors: boolean,
 ): Promise<ToolResult> {
+  const captured: { version: SourceVersion; source?: string; group?: string } = { version: 'active' };
+  const base = await handleSAPReadBase(client, args, cachingLayer, cacheSecurity, minimalErrors, captured);
+  const type = normalizeObjectType(String(args.type ?? ''));
+  if (
+    !EXTENSION_READ_TYPES.has(type) ||
+    args.action ||
+    (args.include && ['indexes', 'text_symbols'].includes(String(args.include).toLowerCase()))
+  )
+    return base;
+  return appendReadExtensions(
+    client,
+    { ...args, type, ...(captured.group ? { group: captured.group } : {}) },
+    base,
+    captured.version,
+    captured.source,
+  );
+}
+
+async function handleSAPReadBase(
+  client: AdtClient,
+  args: Record<string, unknown>,
+  cachingLayer: CachingLayer | undefined,
+  cacheSecurity: CacheSecurityContext,
+  minimalErrors: boolean,
+  extensionBase: { version: SourceVersion; source?: string; group?: string },
+): Promise<ToolResult> {
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
   const requestedVersion = (args.version ?? 'active') as RequestedSourceVersion;
+  const methodError = readMethodOptionError(args, type);
+  if (methodError) return errorResult(methodError);
+
+  if (type === 'SHLP') return handleSearchHelp(client, args);
 
   const hasLineRange = args.lineStart !== undefined || args.lineEnd !== undefined;
   if (hasLineRange) {
@@ -341,6 +382,7 @@ export async function handleSAPRead(
     requestedVersion,
     cacheSecurity,
   );
+  extensionBase.version = effectiveVersion;
   const versionWarning = sourceVersionWarning(effectiveVersion, draft);
 
   // Helper: get source with cache support, returns cache hit status
@@ -352,9 +394,11 @@ export async function handleSAPRead(
   ): Promise<{ source: string; cacheHit: boolean; revalidated: boolean }> => {
     if (!cachingLayer) {
       const result = await fetcher(undefined);
+      extensionBase.source = result.source;
       return { source: result.source, cacheHit: false, revalidated: false };
     }
     const { source, hit, revalidated } = await cachingLayer.getSource(objType, objName, fetcher, { version });
+    extensionBase.source = source;
     return { source, cacheHit: hit, revalidated };
   };
 
@@ -460,6 +504,7 @@ export async function handleSAPRead(
         const probedAbapRelease = getCachedFeatures()?.abapRelease;
         const abaplintVer = probedAbapRelease ? mapSapReleaseToAbaplintVersion(probedAbapRelease) : undefined;
         // MethodInfo is a structural superset of grepSource's MethodRange — pass through directly.
+        extensionBase.source = clasSource;
         const listing = listMethods(clasSource, name, abaplintVer);
         const g = grepSource(clasSource, String(args.grep), listing.success ? { methods: listing.methods } : undefined);
         return g.invalidPattern
@@ -507,8 +552,20 @@ export async function handleSAPRead(
             )
           ).source;
         }
+        extensionBase.source = methodSource;
         const probedAbapRelease = getCachedFeatures()?.abapRelease;
         const abaplintVer = probedAbapRelease ? mapSapReleaseToAbaplintVersion(probedAbapRelease) : undefined;
+        if (args.methodView === 'signature') {
+          const result = extractOwnMethodSignature(methodSource, name, methodParam, abaplintVer);
+          if (!result.success) return errorResult(result.error);
+          const { success: _success, ...declaration } = result;
+          return cachedJsonResult(
+            toolJson({ className: name, scope: 'own-declaration', ...declaration }),
+            false,
+            false,
+            versionWarning,
+          );
+        }
         if (methodParam === '*') {
           const listing = listMethods(methodSource, name, abaplintVer);
           return textResult(formatMethodListing(listing));
@@ -535,6 +592,10 @@ export async function handleSAPRead(
         const includeResult = hasLineRange
           ? await client.getClassInclude(name, String(args.include).toLowerCase(), { version: effectiveVersion })
           : await client.getClass(name, args.include as string | undefined, { version: effectiveVersion });
+        extensionBase.source = includeResult.source;
+        // getClass(include) labels its legacy output; the discovery scanner needs the raw selected body.
+        const heading = `=== ${String(args.include).trim().toLowerCase()} ===\n`;
+        if (extensionBase.source.startsWith(heading)) extensionBase.source = extensionBase.source.slice(heading.length);
         return cachedTextResult(includeResult.source, false, false, versionWarning);
       } catch (err) {
         if (hasLineRange && isNotFoundError(err))
@@ -565,6 +626,7 @@ export async function handleSAPRead(
         }
         group = resolved;
       }
+      extensionBase.group = group;
       const { source, cacheHit, revalidated } = await cachedGet('FUNC', name, effectiveVersion, (ifNoneMatch) =>
         client.getFunction(group, name, { ifNoneMatch, version: effectiveVersion }),
       );
@@ -646,9 +708,32 @@ export async function handleSAPRead(
       if (args.expand_includes === true) {
         return readExpandedSource(client, 'INCL', name, grepArg, expandedVersions, versionWarning);
       }
-      const { source, cacheHit, revalidated } = await cachedGet('INCL', name, effectiveVersion, (ifNoneMatch) =>
-        client.getInclude(name, { ifNoneMatch, version: effectiveVersion }),
-      );
+      let read: Awaited<ReturnType<typeof cachedGet>>;
+      try {
+        read = await cachedGet('INCL', name, effectiveVersion, (ifNoneMatch) =>
+          client.getInclude(name, { ifNoneMatch, version: effectiveVersion }),
+        );
+      } catch (error) {
+        // Enhancement includes (`<implementation>=…=E`) are not served by /source/main on SAP_BASIS 750;
+        // their revision feed still lists the active version. Drafts cannot be read from there.
+        if (
+          effectiveVersion === 'inactive' ||
+          !isEnhancementIncludeName(name) ||
+          !enhancementSourceUnavailable(error, getCachedFeatures()?.abapRelease)
+        )
+          throw error;
+        const fallback = await readEnhancementIncludeRevision(client, name).catch((inner: unknown) => {
+          if (inner instanceof RevisionHistoryError) return undefined;
+          if (inner instanceof AdtApiError && [400, 404, 500].includes(inner.statusCode)) return undefined;
+          throw inner;
+        });
+        if (!fallback) throw error;
+        extensionBase.source = fallback.source;
+        const note = [versionWarning, describeEnhancementIncludeRevision(fallback)].filter(Boolean).join('\n');
+        if (args.grep) return grepText(fallback.source, note);
+        return cachedTextResult(fallback.source, false, false, note);
+      }
+      const { source, cacheHit, revalidated } = read;
       if (args.grep) return grepText(source, includeSearchHint(name, source));
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
@@ -684,6 +769,7 @@ export async function handleSAPRead(
       const { source, cacheHit, revalidated } = await cachedGet('BDEF', name, effectiveVersion, (ifNoneMatch) =>
         client.getBdef(name, { ifNoneMatch, version: effectiveVersion }),
       );
+      extensionBase.source = source;
       if (args.grep) return grepText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
@@ -761,6 +847,7 @@ export async function handleSAPRead(
       const { source, cacheHit, revalidated } = await cachedGet('TABL', name, effectiveVersion, (ifNoneMatch) =>
         client.getTabl(name, { ifNoneMatch, version: effectiveVersion }),
       );
+      extensionBase.source = source;
       if (args.grep) return grepText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
@@ -815,7 +902,7 @@ export async function handleSAPRead(
           'ENHO does not support explicit version selection. Omit version or use "auto" for SAP\'s developer view.',
         );
       }
-      const enhancement = await client.getEnhancementImplementation(name);
+      const enhancement = await client.getEnhancementImplementation(name, getCachedFeatures()?.abapRelease);
       return textResult(toolJson(enhancement));
     }
     case 'VERSIONS': {

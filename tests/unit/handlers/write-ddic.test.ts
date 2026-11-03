@@ -654,7 +654,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(result.isError).toBe(true);
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('Created SKTD ZTR_C_PAYMENT_VALUE_DATE');
-      expect(text).toContain('documentation body was NOT written');
+      expect(text).toContain('documentation write state is unconfirmed');
       expect(text).toContain('verify it with SAPRead');
       expect(text).toContain('action="update"');
       expect(calls.some((call) => call.method === 'PUT')).toBe(false);
@@ -698,7 +698,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(result.isError).toBe(true);
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('Created SKTD ZTR_C_PAYMENT_VALUE_DATE');
-      expect(text).toContain('documentation body was NOT written');
+      expect(text).toContain('documentation write state is unconfirmed');
       expect(text).toContain('verify it with SAPRead');
       expect(text).toContain('action="update"');
       expect(calls.some((call) => call.method === 'PUT')).toBe(true);

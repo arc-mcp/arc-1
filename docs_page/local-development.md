@@ -22,7 +22,7 @@ npx arc-1@latest --url https://your-sap-host:44300 \
 
 npx downloads on first run and caches. `@latest` follows the npm latest tag, which can advance across minor or major releases. Best for trying things out.
 
-Slow startup on Windows? Try the [single-file executable](#windows-setup-and-updates).
+Slow startup on Windows? Try the [single-file executable](#windows-setup-and-updates). Claude Code users can also [allow more startup time](#claude-code-startup-timeout).
 
 ### npm install -g (faster startup)
 
@@ -75,6 +75,11 @@ The npm package installs several thousand files that antivirus scanners inspect 
 - **Updating** — download and verify the new file; there is no built-in auto-update. See the [Windows steps](#windows-setup-and-updates) below.
 
 Build one yourself with `npm run build && npm run build:sea` (current platform only; output in `dist-sea/`), then check it with `npm run test:sea-smoke -- dist-sea/<file>`.
+
+Self-builds require Node **22.23.4+**, **24.22.1+** or **26.12.1+** on those major lines.
+CI uses the latest Node 22 patch. Build and smoke checks reject older runtimes; the smoke log
+reports the Node version inside the executable. Updating Node on your computer does not update
+a downloaded executable: replace the executable to update its bundled runtime.
 
 #### Windows setup and updates
 
@@ -235,6 +240,19 @@ To keep the same local setup but allow SQL + named table preview while staying r
 ### Claude Code
 
 Project-scoped: create `.mcp.json` in the repo root with the same shape as above. User-scoped: `~/.claude.json` with a `mcpServers` block.
+
+#### Claude Code startup timeout
+
+For slow Windows starts, prefer the [executable](#windows-setup-and-updates) or install with npm ahead of time. The npm/npx package is unchanged; a new `@latest` release can require another download/install on first start.
+
+If Claude Code still times out during startup, allow up to three minutes by running this in PowerShell **before launching Claude Code**:
+
+```powershell
+$env:MCP_TIMEOUT = "180000"
+claude
+```
+
+This applies to Claude Code in that terminal session. Put it in Claude Code's environment, not ARC-1's `.env` or MCP server `env` block. It changes the startup deadline, not tool-call timeouts or startup speed. Claude Code currently documents a 30-second default; see its [environment-variable reference](https://code.claude.com/docs/en/env-vars).
 
 ### Cursor
 

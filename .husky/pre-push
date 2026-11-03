@@ -1,0 +1,7 @@
+# Match pre-commit's Node setup for pushes from GUI clients.
+[ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"
+[ -s "$HOME/.local/share/fnm/fnm_multishells" ] && eval "$(fnm env)"
+
+npm run check:sizes &&
+  npm run validate:policy &&
+  npm run typecheck

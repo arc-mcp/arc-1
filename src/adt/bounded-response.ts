@@ -68,13 +68,14 @@ export async function capResponseBody(response: Response, budget: DataResponseBu
   }
 
   const reader = responseBody.getReader();
-  const reservation = response.ok ? budget.createReservation() : undefined;
+  const reservation = response.ok || budget.countAllResponses ? budget.createReservation() : undefined;
   let seenBytes = 0;
   let settled = false;
   const release = () => {
     if (settled) return;
     settled = true;
-    reservation?.release();
+    if (budget.countAllResponses) reservation?.commit();
+    else reservation?.release();
   };
 
   const cappedBody = new ReadableStream<Uint8Array>({

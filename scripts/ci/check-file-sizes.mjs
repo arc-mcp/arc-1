@@ -43,8 +43,8 @@ const BUDGETS = {
   // +4: parent function group for SAPTransport check/history.
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
   // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
-  'src/handlers/tools.ts': 1775, // -1: shorter SAPWrite description text (SMBC writes).
-  'src/handlers/schemas.ts': 1573, // +31: direct package inputs and mode validation (#1065).
+  'src/handlers/tools.ts': 1785, // Combined SHLP/extension guidance and own-method signature selector.
+  'src/handlers/schemas.ts': 1567, // +8 for single-object ATC URL refusal (#1136); keep the guard beside batch validation.
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
@@ -85,13 +85,13 @@ const BUDGETS = {
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
   // +3: classify caller cancellation before generic network wrapping (#1045).
-  'src/adt/http.ts': 1563, // Scoped no-replay options and bounded, observable owning-session cleanup (#1080).
+  'src/adt/http.ts': 1566, // Combined metadata discovery/language access and optional-analysis CSRF accounting.
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1477, // Exhaustive lock-holder parsing extracted to transport-locks.ts (#1080).
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed
   // XSUAA startup from main.
   // PP pool wiring and secret-free reuse audit status; logic lives in per-user-transport.ts (#1085).
-  'src/server/server.ts': 1496,
+  'src/server/server.ts': 1497,
 };
 
 const DEFAULT_SRC = 1500;

@@ -65,7 +65,8 @@ export function hasCompletedFeatureProbe(destination?: string): boolean {
 
 /** Config-only probes stay retryable; safe partial facts do not imply every feature is known. */
 export function cacheProbedFeatures(features: ResolvedFeatures, perUser: boolean, destination?: string): void {
-  if (cacheFeatureEvidence(features, perUser, destination)) storeFor(destination).probeComplete = true;
+  if (cacheFeatureEvidence(features, perUser, destination) && !features.releaseProbePending)
+    storeFor(destination).probeComplete = true;
 }
 
 /** Share safe facts and report whether they can complete this identity's full probe. */
@@ -75,6 +76,7 @@ export function cacheFeatureEvidence(
   destination?: string,
 ): boolean {
   const evidence = { ...features };
+  delete evidence.releaseProbePending;
   const authFailure = /(authorization|auth failure|forbidden|\b401\b|\b403\b)/i;
   for (const key of FEATURE_KEYS) {
     const status = evidence[key];

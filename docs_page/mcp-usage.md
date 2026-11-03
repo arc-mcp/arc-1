@@ -63,7 +63,7 @@ SELECT carrid, COUNT(*) as cnt FROM sflight GROUP BY carrid ORDER BY cnt DESC
 | COMPONENTS | **Y** | Installed software components |
 | MSAG | **Y** | Message class texts (canonical TADIR R3TR type; deprecated alias: `MESSAGES`) |
 | TEXT_ELEMENTS | **Y** | Program, class, or function-group text elements (`objectType`) |
-| VARIANTS | **Y** | Program variants |
+| VARIANTS | Limited | No tested release serves the resource; SAP_BASIS 750, 758 and 816 return an error |
 
 For saved SO10 and business-document SAPscript texts, use `SAPQuery(action="long_text")`.
 It requires `SAP_ALLOW_DATA_PREVIEW=true` and `data` scope. See the

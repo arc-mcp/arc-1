@@ -7,7 +7,7 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
-const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
+const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 const { multiTargetToolDefinitions } = await import('../../../src/server/multi-target-tools.js');
 const schema = readFileSync(new URL('../../fixtures/xml/dumps-schema-758.xml', import.meta.url), 'utf8');
 const reader = { token: 'test', clientId: 'reader', scopes: ['read'] };
@@ -27,6 +27,9 @@ const feed = (data: typeof rows, padding = '') =>
 beforeEach(() => {
   vi.restoreAllMocks();
   resetCachedFeatures();
+  // A known release keeps these tests on the list's own requests; dump-list-window.test.ts covers the
+  // release read for an unknown release.
+  setCachedFeatures({ abapRelease: '758' });
   mockFetch.mockReset();
   mockFetch.mockImplementation(async (url) =>
     mockResponse(200, new URL(String(url)).pathname === '/sap/bc/adt/feeds' ? schema : '<feed/>'),

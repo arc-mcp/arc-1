@@ -6,6 +6,47 @@ one ADT resource. There is no public slash alias. Only BAdI implementations (`EN
 are writable: `SAPWrite type="ENHO"` takes SAPRead's JSON (see
 [the write contract](../../2026-10-07-enho-xhb-write-contract.md)).
 
+## Source-code plug-ins on SAP_BASIS 750 (2026-10-28)
+
+Observed read-only on a customer ECC 6.0 EhP8 system (SAP_BASIS 750 SP23, Oracle) through
+ARC-1 1.9.0 with principal propagation, for a customer hook implementation (`ENHHEADER`
+tool type `HOOK_IMPL`):
+
+| Request | Result |
+|---|---|
+| Repository search, `objectType=ENHO` | every implementation is `ENHO/XH` with `/sap/bc/adt/enhancements/enhoxh/<name>`; the subtype is not visible |
+| `GET /enhancements/enhoxhb/<name>` | fails (not a BAdI implementation) |
+| `GET /enhancements/enhoxh/<name>` | HTTP 500 inside SAP |
+| `GET /programs/includes/<name>=…=E/source/main` | HTTP 500 |
+| `GET /programs/includes/<name>=…=E/source/main/versions` | Atom feed; the active version is revision `00000` with author, timestamp and transport |
+| `GET …/versions/<timestamp>/00000/content` | the complete `ENHANCEMENT 1 … ENDENHANCEMENT` block |
+
+The include name is the implementation name padded with `=` to 30 characters plus `E`
+(`ENHNAME` is CHAR 30); `D010INC` lists that include under the enhanced program, and
+`ENHOBJ` names the enhanced program (`PROG`/`REPS`). The same system holds 118 hook
+implementations, 76 BAdI implementations and 4 class enhancements in the customer
+namespace. ARC-1 therefore reads the active revision of the enhancement include after the
+generic route fails (see "Routing and payload").
+
+Verified with that fallback on the matching development system (same release) through
+the MCP transport with principal propagation: customer hook implementations with one and
+several `ENHANCEMENT` blocks, an SAP-delivered namespaced implementation
+(`/NS/NAME====E`, author `SAP`), a revision with transport and title, `SAPRead INCL` with
+and without `grep`, a BAdI implementation still served by `enhoxh` with its unchanged
+payload, an unknown name (404 after `enhoxhb`, no fallback), and `version="inactive"`
+(no fallback). A class enhancement (`CLASENH`) is served by the same include route; its
+source holds the generated local interfaces and an `INCLUDE <name>=…=EIMP`, which is why the
+fallback leaves `technology` empty instead of guessing.
+
+Observed on SAP_BASIS 758 SP04 (BW/4HANA development system, same build, principal
+propagation): hook implementations keep their `enhoxhh` metadata, hook positions and source
+(payload unchanged before and after); BAdI implementations keep the `enhoxhb` payload; class
+enhancements, which fail at `enhoxh` with HTTP 500 on 758 as well, are now served through the
+include route (`ENHANCEMENT` blocks with the generated local interface and
+`INCLUDE <name>=…=EIMP` / `…EM001` references); `SAPRead INCL` on an enhancement include fails
+directly with HTTP 500 on 758 too and is served from the revision feed. Not verified: reading
+the `EIMP`/`EM001` includes, inactive versions through the feed, and 816.
+
 ## Verified read routes (2026-10-01, issue #896)
 
 | Repository subtype | Collection / Accept | Observed behavior |
@@ -24,9 +65,21 @@ The original BAdI GET remains first, preserving its one-request success path and
 JSON shape. Only HTTP 400/404/500 triggers one bounded repository search. ARC-1
 requires a unique recognized subtype for the exact name. SAP 750 decorates search
 names with a display label, so an exact relative URI matching the constructed,
-known object path also qualifies. ARC-1 never follows a returned URI, probes all
-collections, or retries with another identity. Unknown or ambiguous results keep
+known object path also qualifies. Subtype reads construct known endpoints; revision fallback
+follows only a validated same-include active content link. ARC-1 does not probe all
+collections or retry with another identity. Unknown or ambiguous results keep
 the original failure; denied searches and source errors propagate.
+
+When the generic XH read has a qualified source-unavailable failure, ARC-1 reads the enhancement include's
+revision feed and returns the active revision's content as `source` with
+`enhancementInclude` and a `note`; a feed that is missing, empty or invalid keeps the
+original SAP error, which then lists the include route among the attempted routes.
+Content reads denied by SAP propagate unchanged.
+
+The current guard accepts 404, typed `ExceptionResourceReadFailure` 500s, and only the observed
+750 unsupported-technology / 758 null-reference 500 bodies when the matching release is probed.
+Arbitrary 400/500, authentication, throttling and network failures never authorize revision fallback.
+Unqualified generated references such as EIMP are counted as missing sources, without fetching them.
 
 XHH returns `source`, `enhancedObject` and `hookImplementations` in addition to the
 common metadata. Hook entries retain IDs, spots, programs, methods, overwrite
