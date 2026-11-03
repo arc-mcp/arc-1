@@ -208,7 +208,7 @@ When deploying ARC-1 behind a reverse proxy (nginx, HAProxy, Traefik, etc.) outs
 | **Proxy headers** | Forward `Host`, `X-Real-IP`, and `X-Forwarded-For` to ARC-1 for accurate logging. |
 | **Health check** | Expose `/health` without authentication for load balancer probes. |
 | **Timeouts** | Set proxy read/write timeouts to at least 120 seconds. Some ADT operations (activation, unit tests) can take 30-60 seconds. |
-| **Request size** | MCP JSON bodies default to **100 KiB**. Administrators can set `ARC1_MAX_HTTP_REQUEST_BYTES` up to 16 MiB; raising only the proxy limit has no effect. Oversized requests return 413. Align proxy limits and timeouts, and review the [request admission and memory guidance](configuration-reference.md#http-request-bodies) before raising the limit. |
+| **Request size** | MCP JSON bodies default to **100 KiB**. Administrators can set `ARC1_MAX_HTTP_REQUEST_BYTES` up to 16 MiB; raising only the proxy limit has no effect. Oversized requests return 413. Compressed JSON/form bodies return 415; disable request compression in clients and gateways. Align proxy limits and timeouts, and review the [request admission and memory guidance](configuration-reference.md#http-request-bodies) before raising the limit. |
 
 Example nginx configuration is provided in the [API Key Setup](api-key-setup.md#behind-a-reverse-proxy-nginx) guide.
 
