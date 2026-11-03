@@ -224,7 +224,7 @@ ENDCLASS.`;
     const result = extractMethod(SIMPLE_CLASS, 'zcl_order', 'nonexistent');
     expect(result.success).toBe(false);
     expect(result.error).toContain('not found');
-    expect(result.error).toContain('get_id'); // Should list available methods
+    expect(result.error).toContain('method="*"'); // Explicit inventory follow-up instead of an unbounded list
   });
 
   it('matches case-insensitively', () => {

@@ -1,0 +1,886 @@
+{
+  "checkedAt": "2026-10-31T21:20:00.674Z",
+  "target": "a4h",
+  "observations": [
+    {
+      "unit": {
+        "type": "INCL",
+        "name": "ENH_PROG_INCL_IMPLICIT_OPT",
+        "enhancementContext": {
+          "type": "PROG",
+          "name": "PROG_ENH_SUBOBJ_CHECK"
+        }
+      },
+      "mode": "automatic",
+      "basePreserved": true,
+      "baseSha256": "2e7a7b087e79f32865f5c2788c94c4ef6dafc9bf52ed03d922dfaa82e697cda9",
+      "summary": {
+        "root": {
+          "type": "INCL",
+          "name": "ENH_PROG_INCL_IMPLICIT_OPT",
+          "version": "active"
+        },
+        "context": {
+          "type": "PROG",
+          "name": "PROG_ENH_SUBOBJ_CHECK"
+        },
+        "scope": "INCL ENH_PROG_INCL_IMPLICIT_OPT full root source (context=PROG PROG_ENH_SUBOBJ_CHECK)",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "selected_source",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "selected_source_only; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "ENH_SUBOBJ_INCL_IMPLICIT_END",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 4276,
+          "elapsedMs": 212
+        },
+        "issues": []
+      },
+      "sourceBlocks": []
+    },
+    {
+      "unit": {
+        "type": "INCL",
+        "name": "ENH_PROG_INCL_IMPLICIT_OPT",
+        "enhancementContext": {
+          "type": "PROG",
+          "name": "PROG_ENH_SUBOBJ_CHECK"
+        }
+      },
+      "mode": "summary",
+      "basePreserved": true,
+      "baseSha256": "2e7a7b087e79f32865f5c2788c94c4ef6dafc9bf52ed03d922dfaa82e697cda9",
+      "summary": {
+        "root": {
+          "type": "INCL",
+          "name": "ENH_PROG_INCL_IMPLICIT_OPT",
+          "version": "active"
+        },
+        "context": {
+          "type": "PROG",
+          "name": "PROG_ENH_SUBOBJ_CHECK"
+        },
+        "scope": "INCL ENH_PROG_INCL_IMPLICIT_OPT full root source (context=PROG PROG_ENH_SUBOBJ_CHECK)",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "selected_source",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "selected_source_only; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "ENH_SUBOBJ_INCL_IMPLICIT_END",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 4276,
+          "elapsedMs": 183
+        },
+        "issues": []
+      },
+      "sourceBlocks": []
+    },
+    {
+      "unit": {
+        "type": "INCL",
+        "name": "ENH_PROG_INCL_IMPLICIT_OPT",
+        "enhancementContext": {
+          "type": "PROG",
+          "name": "PROG_ENH_SUBOBJ_CHECK"
+        }
+      },
+      "mode": "sources",
+      "basePreserved": true,
+      "baseSha256": "2e7a7b087e79f32865f5c2788c94c4ef6dafc9bf52ed03d922dfaa82e697cda9",
+      "summary": {
+        "root": {
+          "type": "INCL",
+          "name": "ENH_PROG_INCL_IMPLICIT_OPT",
+          "version": "active"
+        },
+        "context": {
+          "type": "PROG",
+          "name": "PROG_ENH_SUBOBJ_CHECK"
+        },
+        "scope": "INCL ENH_PROG_INCL_IMPLICIT_OPT full root source (context=PROG PROG_ENH_SUBOBJ_CHECK)",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "ENH_SUBOBJ_INCL_IMPLICIT_END",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 4276,
+          "elapsedMs": 263
+        },
+        "issues": []
+      },
+      "sourceBlocks": [
+        {
+          "label": "[extension source ENHO/XHH ENH_SUBOBJ_INCL_IMPLICIT_END version=active representation=rendered_plugin_source provider=source_plugins]",
+          "sha256": "7e61dfb2c9bb46b067f5ee61dd6cc629d851099acec88daf106a01bde85f91bb"
+        }
+      ]
+    },
+    {
+      "unit": {
+        "type": "INCL",
+        "name": "LSEEF_ADT_TEST_AUNIT_FUGR1U01",
+        "enhancementContext": {
+          "type": "FUGR",
+          "name": "SEEF_ADT_TEST_AUNIT_FUGR1"
+        }
+      },
+      "mode": "automatic",
+      "basePreserved": true,
+      "baseSha256": "b89f450eb2510e6367da7984503955eb2362c8573185616e7e8c1964f81f7426",
+      "summary": {
+        "root": {
+          "type": "INCL",
+          "name": "LSEEF_ADT_TEST_AUNIT_FUGR1U01",
+          "version": "active"
+        },
+        "context": {
+          "type": "FUGR",
+          "name": "SEEF_ADT_TEST_AUNIT_FUGR1"
+        },
+        "scope": "INCL LSEEF_ADT_TEST_AUNIT_FUGR1U01 full root source (context=FUGR SEEF_ADT_TEST_AUNIT_FUGR1)",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "selected_source",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "selected_source_only; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "SEEF_ADT_TEST_ENHO_FUGR1",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin",
+            "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 4232,
+          "elapsedMs": 182
+        },
+        "issues": []
+      },
+      "sourceBlocks": []
+    },
+    {
+      "unit": {
+        "type": "INCL",
+        "name": "LSEEF_ADT_TEST_AUNIT_FUGR1U01",
+        "enhancementContext": {
+          "type": "FUGR",
+          "name": "SEEF_ADT_TEST_AUNIT_FUGR1"
+        }
+      },
+      "mode": "summary",
+      "basePreserved": true,
+      "baseSha256": "b89f450eb2510e6367da7984503955eb2362c8573185616e7e8c1964f81f7426",
+      "summary": {
+        "root": {
+          "type": "INCL",
+          "name": "LSEEF_ADT_TEST_AUNIT_FUGR1U01",
+          "version": "active"
+        },
+        "context": {
+          "type": "FUGR",
+          "name": "SEEF_ADT_TEST_AUNIT_FUGR1"
+        },
+        "scope": "INCL LSEEF_ADT_TEST_AUNIT_FUGR1U01 full root source (context=FUGR SEEF_ADT_TEST_AUNIT_FUGR1)",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "selected_source",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "selected_source_only; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "SEEF_ADT_TEST_ENHO_FUGR1",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin",
+            "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 4232,
+          "elapsedMs": 186
+        },
+        "issues": []
+      },
+      "sourceBlocks": []
+    },
+    {
+      "unit": {
+        "type": "INCL",
+        "name": "LSEEF_ADT_TEST_AUNIT_FUGR1U01",
+        "enhancementContext": {
+          "type": "FUGR",
+          "name": "SEEF_ADT_TEST_AUNIT_FUGR1"
+        }
+      },
+      "mode": "sources",
+      "basePreserved": true,
+      "baseSha256": "b89f450eb2510e6367da7984503955eb2362c8573185616e7e8c1964f81f7426",
+      "summary": {
+        "root": {
+          "type": "INCL",
+          "name": "LSEEF_ADT_TEST_AUNIT_FUGR1U01",
+          "version": "active"
+        },
+        "context": {
+          "type": "FUGR",
+          "name": "SEEF_ADT_TEST_AUNIT_FUGR1"
+        },
+        "scope": "INCL LSEEF_ADT_TEST_AUNIT_FUGR1U01 full root source (context=FUGR SEEF_ADT_TEST_AUNIT_FUGR1)",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "SEEF_ADT_TEST_ENHO_FUGR1",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin",
+            "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 4232,
+          "elapsedMs": 179
+        },
+        "issues": []
+      },
+      "sourceBlocks": [
+        {
+          "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_FUGR1 version=active representation=rendered_plugin_source provider=source_plugins]",
+          "sha256": "e037bbe318abe90298da163367b6928c074fcd87893d6f1cfc4f03bb4ff0adf7"
+        }
+      ]
+    },
+    {
+      "unit": {
+        "type": "FUNC",
+        "name": "SAPBC_GLOBAL_CANCEL_UPDATE",
+        "group": "SAPBC_GLOBAL_FIS"
+      },
+      "mode": "automatic",
+      "basePreserved": true,
+      "baseSha256": "fa7b51a848c460412cd9e6a01c37c77a6817360642a28d97c096ea41a1afeb7b",
+      "summary": {
+        "root": {
+          "type": "FUNC",
+          "name": "SAPBC_GLOBAL_CANCEL_UPDATE",
+          "version": "active"
+        },
+        "scope": "FUNC SAPBC_GLOBAL_CANCEL_UPDATE selected function (group=SAPBC_GLOBAL_FIS)",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "selected_source",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "selected_source_only; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "/SMFND/DEMO_DEL_BOOKING",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 4306,
+          "elapsedMs": 241
+        },
+        "issues": []
+      },
+      "sourceBlocks": []
+    },
+    {
+      "unit": {
+        "type": "FUNC",
+        "name": "SAPBC_GLOBAL_CANCEL_UPDATE",
+        "group": "SAPBC_GLOBAL_FIS"
+      },
+      "mode": "summary",
+      "basePreserved": true,
+      "baseSha256": "fa7b51a848c460412cd9e6a01c37c77a6817360642a28d97c096ea41a1afeb7b",
+      "summary": {
+        "root": {
+          "type": "FUNC",
+          "name": "SAPBC_GLOBAL_CANCEL_UPDATE",
+          "version": "active"
+        },
+        "scope": "FUNC SAPBC_GLOBAL_CANCEL_UPDATE selected function (group=SAPBC_GLOBAL_FIS)",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "selected_source",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "selected_source_only; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "/SMFND/DEMO_DEL_BOOKING",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 4306,
+          "elapsedMs": 247
+        },
+        "issues": []
+      },
+      "sourceBlocks": []
+    },
+    {
+      "unit": {
+        "type": "FUNC",
+        "name": "SAPBC_GLOBAL_CANCEL_UPDATE",
+        "group": "SAPBC_GLOBAL_FIS"
+      },
+      "mode": "sources",
+      "basePreserved": true,
+      "baseSha256": "fa7b51a848c460412cd9e6a01c37c77a6817360642a28d97c096ea41a1afeb7b",
+      "summary": {
+        "root": {
+          "type": "FUNC",
+          "name": "SAPBC_GLOBAL_CANCEL_UPDATE",
+          "version": "active"
+        },
+        "scope": "FUNC SAPBC_GLOBAL_CANCEL_UPDATE selected function (group=SAPBC_GLOBAL_FIS)",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "/SMFND/DEMO_DEL_BOOKING",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 4306,
+          "elapsedMs": 323
+        },
+        "issues": []
+      },
+      "sourceBlocks": [
+        {
+          "label": "[extension source ENHO/XHH /SMFND/DEMO_DEL_BOOKING version=active representation=rendered_plugin_source provider=source_plugins]",
+          "sha256": "4317ed5e7a29e23511b628f63386f3407e28582068ad57aff0728e46753fa8e8"
+        }
+      ]
+    },
+    {
+      "unit": {
+        "type": "FUNC",
+        "name": "BDS_CONNECTION_CREATE",
+        "group": "BDS_CONNECTIONS"
+      },
+      "mode": "automatic",
+      "basePreserved": true,
+      "baseSha256": "702cf838a74f3d343cc4b085f4416566a70b8d4a552d5b51fc43e19bc6e58dca",
+      "summary": {
+        "root": {
+          "type": "FUNC",
+          "name": "BDS_CONNECTION_CREATE",
+          "version": "active"
+        },
+        "scope": "FUNC BDS_CONNECTION_CREATE selected function (group=BDS_CONNECTIONS)",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "selected_source",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "selected_source_only; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "/MFND/CORE_UPD_BDS_CONNECTION",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 4236,
+          "elapsedMs": 196
+        },
+        "issues": []
+      },
+      "sourceBlocks": []
+    },
+    {
+      "unit": {
+        "type": "FUNC",
+        "name": "BDS_CONNECTION_CREATE",
+        "group": "BDS_CONNECTIONS"
+      },
+      "mode": "summary",
+      "basePreserved": true,
+      "baseSha256": "702cf838a74f3d343cc4b085f4416566a70b8d4a552d5b51fc43e19bc6e58dca",
+      "summary": {
+        "root": {
+          "type": "FUNC",
+          "name": "BDS_CONNECTION_CREATE",
+          "version": "active"
+        },
+        "scope": "FUNC BDS_CONNECTION_CREATE selected function (group=BDS_CONNECTIONS)",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "selected_source",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "selected_source_only; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "/MFND/CORE_UPD_BDS_CONNECTION",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 4236,
+          "elapsedMs": 208
+        },
+        "issues": []
+      },
+      "sourceBlocks": []
+    },
+    {
+      "unit": {
+        "type": "FUNC",
+        "name": "BDS_CONNECTION_CREATE",
+        "group": "BDS_CONNECTIONS"
+      },
+      "mode": "sources",
+      "basePreserved": true,
+      "baseSha256": "702cf838a74f3d343cc4b085f4416566a70b8d4a552d5b51fc43e19bc6e58dca",
+      "summary": {
+        "root": {
+          "type": "FUNC",
+          "name": "BDS_CONNECTION_CREATE",
+          "version": "active"
+        },
+        "scope": "FUNC BDS_CONNECTION_CREATE selected function (group=BDS_CONNECTIONS)",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "/MFND/CORE_UPD_BDS_CONNECTION",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 4236,
+          "elapsedMs": 269
+        },
+        "issues": []
+      },
+      "sourceBlocks": [
+        {
+          "label": "[extension source ENHO/XHH /MFND/CORE_UPD_BDS_CONNECTION version=active representation=rendered_plugin_source provider=source_plugins]",
+          "sha256": "e0bf13c0f72559c3d258880cca9c45180c7675995335c7dfab0e3f9ac1d0d2ce"
+        }
+      ]
+    },
+    {
+      "unit": {
+        "type": "FUGR",
+        "name": "SEEF_ADT_TEST_AUNIT_FUGR1"
+      },
+      "mode": "automatic",
+      "basePreserved": true,
+      "baseSha256": "1790d0935871164e16e63f58e70f3c5116f117971d75d8e3492906a3d9ef0554",
+      "summary": {
+        "root": {
+          "type": "FUGR",
+          "name": "SEEF_ADT_TEST_AUNIT_FUGR1",
+          "version": "active"
+        },
+        "scope": "FUGR SEEF_ADT_TEST_AUNIT_FUGR1 full root source",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "HOOK_IMPL outer/specific identities; nested expansion not performed",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "SEEF_ADT_TEST_ENHO_FUGR1",
+            "version": "provider_current",
+            "provider": "source_plugins",
+            "family": "source_plugin",
+            "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {},
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 4583,
+          "elapsedMs": 161
+        },
+        "issues": []
+      },
+      "sourceBlocks": []
+    },
+    {
+      "unit": {
+        "type": "FUGR",
+        "name": "SEEF_ADT_TEST_AUNIT_FUGR1"
+      },
+      "mode": "summary",
+      "basePreserved": true,
+      "baseSha256": "1790d0935871164e16e63f58e70f3c5116f117971d75d8e3492906a3d9ef0554",
+      "summary": {
+        "root": {
+          "type": "FUGR",
+          "name": "SEEF_ADT_TEST_AUNIT_FUGR1",
+          "version": "active"
+        },
+        "scope": "FUGR SEEF_ADT_TEST_AUNIT_FUGR1 full root source",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "direct_identities",
+            "version": "provider_current",
+            "nested": "not_expanded",
+            "reason": "HOOK_IMPL outer/specific identities; nested expansion not performed",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "SEEF_ADT_TEST_ENHO_FUGR1",
+            "version": "provider_current",
+            "provider": "source_plugins",
+            "family": "source_plugin",
+            "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {},
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 4583,
+          "elapsedMs": 142
+        },
+        "issues": []
+      },
+      "sourceBlocks": []
+    },
+    {
+      "unit": {
+        "type": "FUGR",
+        "name": "SEEF_ADT_TEST_AUNIT_FUGR1"
+      },
+      "mode": "sources",
+      "basePreserved": true,
+      "baseSha256": "1790d0935871164e16e63f58e70f3c5116f117971d75d8e3492906a3d9ef0554",
+      "summary": {
+        "root": {
+          "type": "FUGR",
+          "name": "SEEF_ADT_TEST_AUNIT_FUGR1",
+          "version": "active"
+        },
+        "scope": "FUGR SEEF_ADT_TEST_AUNIT_FUGR1 full root source",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "incomplete",
+            "coverage": "bounded_traversal",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "request_limit",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XHH",
+            "name": "SEEF_ADT_TEST_ENHO_FUGR1",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin",
+            "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+          },
+          {
+            "type": "ENHO/XHH",
+            "name": "SEEF_ADT_TEST_ENHO_FUGR1_R",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin",
+            "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+          },
+          {
+            "type": "ENHO/XHH",
+            "name": "SEEF_ADT_TEST_ENHO_FUGR1_RR",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin",
+            "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {
+          "nodes": 0,
+          "sources": 1,
+          "requests": 1
+        },
+        "consumed": {
+          "sends": 20,
+          "responseBytes": 29711,
+          "elapsedMs": 1667
+        },
+        "issues": [
+          "source_unit_unreadable:INCL:seef_adt_test_aunit_include_3:read_failed",
+          "request_limit"
+        ]
+      },
+      "sourceBlocks": [
+        {
+          "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_FUGR1 version=active representation=rendered_plugin_source provider=source_plugins]",
+          "sha256": "05c7cda9e4640ee78edf28710b13c9b144befd7807af0754127c9f01e464610b"
+        },
+        {
+          "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_FUGR1 version=active representation=rendered_plugin_source provider=source_plugins]",
+          "sha256": "79b74316a210ecb86e7dc305e9705e183469c94e6a13b575bf8f33c870f36220"
+        },
+        {
+          "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_FUGR1_R version=active representation=rendered_plugin_source provider=source_plugins]",
+          "sha256": "6d6b8d035070c45d216d3803f6cd96f74017610294668d368372c0c3d3751de7"
+        },
+        {
+          "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_FUGR1_RR version=active representation=rendered_plugin_source provider=source_plugins]",
+          "sha256": "b5dbff87f9c22cee034809f70ef510deab618e6ebbe87dc824e82ea6922ab2ae"
+        },
+        {
+          "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_FUGR1 version=active representation=rendered_plugin_source provider=source_plugins]",
+          "sha256": "e037bbe318abe90298da163367b6928c074fcd87893d6f1cfc4f03bb4ff0adf7"
+        }
+      ]
+    }
+  ]
+}

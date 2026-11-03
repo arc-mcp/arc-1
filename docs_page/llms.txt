@@ -3,6 +3,11 @@
 > Use the documentation from the source revision used to build the deployed artifact.
 > The website and raw source below follow main and may describe unreleased changes.
 
+## Security review
+
+- [Security Review](https://docs.arc-1-mcp.com/security/): where data goes, whose permissions apply, what the customer decides, and a copyable decision record.
+- [Hardening Guide](https://docs.arc-1-mcp.com/security-guide/): operator configuration, dependency and release verification, and incident response.
+
 ## SAP BTP setup and administration
 
 - [BTP Start Here](https://docs.arc-1-mcp.com/btp-overview/): choose the topology, then follow its deployment or administration links.

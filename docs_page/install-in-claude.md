@@ -85,6 +85,8 @@ Claude Code prompts for your SAP connection when the plugin is enabled (password
 starts the `arc-1` MCP server via `npx`, and loads the skills namespaced as `/arc-1:<skill>` — e.g.
 `/arc-1:generate-rap-service`. Manage it with `/plugin`; run `/reload-plugins` after an update.
 
+If the first `npx` startup times out, see [Claude Code startup timeout](local-development.md#claude-code-startup-timeout).
+
 ??? tip "Just the server, or just the skills"
     - **Only the MCP server** (no skills, no plugin): `claude mcp add arc-1 --env SAP_URL=… --env
       SAP_USER=… --env SAP_PASSWORD=… -- npx -y arc-1@latest` — see the

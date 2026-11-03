@@ -68,6 +68,8 @@ export interface FeedQueryOptions {
 
 export interface ListDumpsOptions extends FeedQueryOptions {
   filters?: FeedFilter[];
+  /** Receives the first page's raw feed, whose `atom:updated` is the clock SAP bounded the list with. */
+  onFirstPage?: (body: string) => void;
 }
 
 export interface ListSystemMessagesOptions extends FeedQueryOptions {}
@@ -191,7 +193,7 @@ export function sapStampToDate(stamp: string): Date {
  * understood here has to fail rather than silently widen the query. Date-only is one of the
  * forms SAP drops, hence the pad to midnight.
  */
-function normalizeFeedTimestamp(value: string | undefined, field: string): string | undefined {
+export function normalizeFeedTimestamp(value: string | undefined, field: string): string | undefined {
   const raw = String(value ?? '').trim();
   if (!raw) return undefined;
 
@@ -252,7 +254,7 @@ export async function listDumps(
     const path = `/sap/bc/adt/runtime/dumps${queryString}`;
     const headers = { Accept: 'application/atom+xml;type=feed' };
     const resp = request ? await http.get(path, headers, request) : await http.get(path, headers);
-
+    if (page === 0) options?.onFirstPage?.(resp.body);
     const entries = parseDumpList(resp.body);
     const before = byId.size;
     for (const entry of entries) byId.set(entry.id, entry);

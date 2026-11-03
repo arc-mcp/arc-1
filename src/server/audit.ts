@@ -86,6 +86,16 @@ export interface DataResponseLimitedEvent extends AuditEventBase {
   queueWaitMs: number;
 }
 
+/** Optional extension discovery, with no source, response or authentication bodies. */
+export interface ExtensionDiscoveryEvent extends AuditEventBase {
+  event: 'extension_discovery';
+  providers: Array<{ id: string; status: string }>;
+  nodes: number;
+  sources: number;
+  omissions: Partial<Record<string, number>>;
+  consumed: { sends: number; responseBytes: number; elapsedMs: number };
+}
+
 /** One CSRF probe response; an unsuccessful probe can be followed by a successful fallback. */
 export interface HttpCsrfFetchEvent extends AuditEventBase {
   event: 'http_csrf_fetch';
@@ -304,6 +314,7 @@ export interface McpRateLimitedEvent extends AuditEventBase {
 
 /** Discriminated union of all audit events */
 export type AuditEvent =
+  | ExtensionDiscoveryEvent
   | DataSourcePolicyDecisionEvent
   | ToolCallStartEvent
   | ToolCallEndEvent

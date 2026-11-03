@@ -8,7 +8,7 @@ import { getCurrentContext } from '../../server/context.js';
 import { objectUrlForType } from '../object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from '../shared.js';
 import { enforceAllowedPackageForObjectUrl } from '../write-helpers.js';
-import { pinnedFailure } from './pinned.js';
+import { pinnedFailure } from './pinned-result.js';
 
 export function validatePinnedActivationReferences(
   owner: string,

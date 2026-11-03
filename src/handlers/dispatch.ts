@@ -219,6 +219,9 @@ function buildBaseErrorMessage(
   if (err instanceof AdtResponseLimitError && err.endpointFamily === 'package-browser') {
     return `${message} Narrow with an advertised objectType or a smaller package. maxResults only caps returned entries, not SAP's response size. No listing was returned.`;
   }
+  if (err instanceof AdtResponseLimitError && err.endpointFamily === 'search-help-metadata') {
+    return `${message} SHLP metadata cannot be narrowed or paged here. Inspect the search help in SAP. No partial metadata was returned.`;
+  }
   if (err instanceof AdtResponseLimitError) {
     const mebibytes = err.limitBytes / (1024 * 1024);
     const displayLimit = Number.isInteger(mebibytes) ? `${mebibytes} MiB` : `${err.limitBytes}-byte`;
@@ -292,6 +295,7 @@ function buildBaseErrorMessage(
     }
 
     if (err.isNotFound) {
+      if (err.creationOutcome === 'confirmed') return enriched;
       if (err.resourceExistenceAfterDelete === 'exists') {
         return (
           `${enriched}\n\n` +
@@ -328,6 +332,14 @@ function buildBaseErrorMessage(
     }
     if (tool === 'SAPRead' && argType === 'TABLE_CONTENTS' && err.statusCode === 400) {
       const combined = `${err.message}\n${err.responseBody ?? ''}`;
+      // 758 and 816 answer every condition-only body this way, so the sqlFilter shape hint below
+      // would send the caller round in circles.
+      if (/only select statement is allowed/i.test(combined)) {
+        return (
+          `${enriched}\n\nHint: this SAP system's DDIC data preview does not accept a TABLE_CONTENTS sqlFilter. ` +
+          `Use type="TABLE_QUERY" with where=[{"field":"MANDT","op":"=","value":"100"}] instead.`
+        );
+      }
       if (hasSqlParserSignature(combined)) {
         return (
           `${enriched}\n\nHint: TABLE_CONTENTS sqlFilter must be a condition expression only ` +
@@ -692,7 +704,13 @@ export function getToolRegistry(): ToolRegistry {
       : handleSAPNavigate(ctx.client, ctx.args, ctx.config.minimalErrors),
   );
   reg('SAPLint', (ctx) => handleSAPLint(ctx.client, ctx.args, ctx.config));
-  reg('SAPDiagnose', (ctx) => handleSAPDiagnose(ctx.client, ctx.args, ctx.config.minimalErrors));
+  reg('SAPDiagnose', (ctx) =>
+    handleSAPDiagnose(ctx.client, ctx.args, ctx.config.minimalErrors, {
+      configuredAbapRelease:
+        ctx.config.multiTargetEndpoints || ctx.config.targetId ? undefined : ctx.config.abapRelease,
+      configuredSystemType: ctx.config.systemType === 'auto' ? undefined : ctx.config.systemType,
+    }),
+  );
   reg('SAPTransport', (ctx) => handleSAPTransport(ctx.client, ctx.args, ctx.config));
   reg('SAPGit', (ctx) => handleSAPGit(ctx.client, ctx.args, ctx.authInfo));
   reg('SAPContext', (ctx) => handleSAPContext(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity));

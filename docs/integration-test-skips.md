@@ -120,7 +120,8 @@ On **SAP_BASIS < 7.51** the ADT REST handler `CL_REST_HTTP_HANDLER` does not hon
 
 | Skip message fragment | Affected tests | Fix |
 |---|---|---|
-| `NO_FIXTURE (ZCL_ARC1_TEST) — run npm run test:e2e once to seed` | `cache.integration.test.ts` most source-cache tests (11 tests) | Run `npm run test:e2e` once against the target system |
+| `NO_FIXTURE (ZARC1_TEST_REPORT) — run npm run test:e2e once to seed` | `cache.integration.test.ts` report source-cache tests (11 tests) | Run `npm run test:e2e` once against the target system |
+| `NO_FIXTURE (ZCL_ARC1_TEST)` | `cache.integration.test.ts` class conditional-read test (1 test) | Run `npm run test:e2e` once against the target system |
 
 **When to investigate:** Seeing this after `npm run test:e2e` succeeded is a fixture-sync bug.
 
@@ -171,7 +172,7 @@ E2E's fixture sync (`tests/e2e/sync-fixtures.ts`) seeds managed Z-namespace pers
 
 | Skip message fragment | Root cause | Typical on |
 |---|---|---|
-| `NO_FIXTURE (ZCL_ARC1_TEST) — run npm run test:e2e once to seed` | Fixture not materialized on target system | Fresh SAP box, systems where sync was skipped |
+| `NO_FIXTURE: ZCL_ARC1_TEST not found — run npm run test:e2e:fixtures first` | Fixture not materialized on target system | Fresh SAP box, systems where sync was skipped |
 | `NO_FIXTURE (ZI_ARC1_I33_ROOT) — fixture sync skipped this object` | DDLS create failed during sync (likely lock-handle 423 on 7.50) | NW 7.50 trial |
 | `NO_FIXTURE (/DMO/CL_FLIGHT_LEGACY) — S/4 Flight Reference Scenario, not on this release` | Upstream S/4 demo content not shipped on plain NetWeaver | Plain NW, BTP ABAP |
 

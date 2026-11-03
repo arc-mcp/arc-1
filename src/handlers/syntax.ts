@@ -3,7 +3,7 @@ import { syntaxCheck } from '../adt/devtools.js';
 import { AdtApiError } from '../adt/errors.js';
 import { syntaxCheckBatch } from '../adt/syntax-batch.js';
 import type { SyntaxCheckResult } from '../adt/types.js';
-import { normalizeObjectType, objectUrlForType } from './object-types.js';
+import { functionModuleObjectUrl, normalizeObjectType, objectUrlForType } from './object-types.js';
 import { type ToolResult, textResult, toolJson } from './shared.js';
 
 /** Shared wire and result contract for both syntax-check entry points. */
@@ -26,9 +26,30 @@ export async function handleSyntaxCheck(client: AdtClient, args: Record<string, 
   }
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
-  let objectUrl = objectUrlForType(type, name);
   const version = args.version === 'inactive' ? 'inactive' : args.version === 'active' ? 'active' : undefined;
   const content = typeof args.source === 'string' ? (args.source as string) : undefined;
+  let objectUrl: string;
+  if (type === 'FUNC') {
+    // SAP 758 silently checks stored code instead of a supplied artifact containing these lines.
+    if (content !== undefined && /^\s*\*"/m.test(content)) {
+      return notChecked(
+        { hasErrors: false, messages: [], checked: false },
+        'SAP GUI-style *" comment lines can make SAP ignore supplied FUNC source',
+        'Read FUNC source through SAPRead and edit its ADT-style FUNCTION header; remove SAP GUI-style *" lines before checking.',
+      );
+    }
+    const group = await client.resolveFunctionGroup(name);
+    if (!group) {
+      return notChecked(
+        { hasErrors: false, messages: [], checked: false },
+        `The parent function group for FUNC ${name} could not be resolved by the bounded search`,
+        'Use SAPSearch to identify the parent, or check the stored function group with type="FUGR".',
+      );
+    }
+    objectUrl = functionModuleObjectUrl(group, name);
+  } else {
+    objectUrl = objectUrlForType(type, name);
+  }
   let absent = (type === 'TABL' || content !== undefined) && (await isConfirmedAbsent(client, objectUrl));
   // TABL aliases include structures. Resolve their actual root for stored and unsaved checks;
   // only a 404 permits the fallback, and fresh metadata avoids retaining an obsolete type route.
@@ -72,7 +93,11 @@ async function isConfirmedAbsent(client: AdtClient, objectUrl: string): Promise<
   }
 }
 
-function notChecked(result: SyntaxCheckResult, statusText: string | undefined): ToolResult {
+function notChecked(
+  result: SyntaxCheckResult,
+  statusText: string | undefined,
+  advice = 'Verify the object type and name; create the object only if it does not exist (SAPWrite action="create"), then re-run the syntax check.',
+): ToolResult {
   return textResult(
     toolJson({
       ...result,
@@ -81,7 +106,7 @@ function notChecked(result: SyntaxCheckResult, statusText: string | undefined): 
       messages: [
         {
           severity: 'error',
-          text: `Not checked — ${(statusText || 'SAP did not process this check').replace(/\.$/, '')}. The source was NOT validated. Verify the object type and name; create the object only if it does not exist (SAPWrite action="create"), then re-run the syntax check.`,
+          text: `Not checked — ${(statusText || 'SAP did not process this check').replace(/\.$/, '')}. The source was NOT validated. ${advice}`,
           line: 0,
           column: 0,
         },

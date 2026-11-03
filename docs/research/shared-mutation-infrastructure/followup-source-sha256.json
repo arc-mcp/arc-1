@@ -1,0 +1,7 @@
+{
+  "src/adt/crud.ts": "63eecf3bff5802b3cc66b59c0b3dfcd79d8c38e35b53f140691acf6d44e908f1",
+  "src/adt/mutation-http.ts": "3b8eff277145ded817398687284afaac5edd27eb9da4b538465bbbce266fef40",
+  "tests/unit/adt/mutation-isolation.test.ts": "7b89643049aaf63e50853959cf93261d4448a2458fc75b82c4ce9dbdb025c9a3",
+  "tests/unit/adt/mutation-lifecycle.test.ts": "13ddd95e350c9dca4b92c444e3e5960cc023d713c09d049c036a2965f70bb4cc",
+  "tests/unit/handlers/pinned-write-isolation.test.ts": "410e04276fb5f0a2b62bdb94e2bd6017373a91937c63f749b178a679dc3a1542"
+}
