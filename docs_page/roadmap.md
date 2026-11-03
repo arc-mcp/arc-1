@@ -92,7 +92,7 @@ sequence.
 | [COMPAT-22](#compat-22) | Integration Suite remote MCP gateway validation | P2 | M | Needs research | Compatibility |
 | [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
 | [FEAT-85](#feat-85) | Set the ABAP language version of packages and objects | P1 | M | Needs research | ABAP authoring |
-| [FEAT-95](#feat-95) | Further SAP object generators | P2 | S each | Contributor-driven | ABAP authoring |
+| [FEAT-98](#feat-98) | Further SAP object generators | P2 | S each | Contributor-driven | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
 | [FEAT-21](#feat-21) | ABAP F1 documentation | P3 | S | Needs research | Developer workflow |
 | [FEAT-92](#feat-92) | Function-group include expansion on the program walker | P2 | S | Ready | Developer workflow |
@@ -668,7 +668,7 @@ object types expose `adtcore:abapLanguageVersion` as writable, and refuse a clas
 Cloud package before any write.
 
 <a id="feat-95"></a>
-### FEAT-95 — Further SAP object generators
+### FEAT-98 — Further SAP object generators
 
 - **Priority / effort / status:** P2 / S each / Contributor-driven
 - **Category:** ABAP authoring
