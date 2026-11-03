@@ -667,7 +667,7 @@ Eclipse (`docs/research/2026-10-07-enho-xhb-write-contract.md`).
 object types expose `adtcore:abapLanguageVersion` as writable, and refuse a classic version in an ABAP
 Cloud package before any write.
 
-<a id="feat-95"></a>
+<a id="feat-98"></a>
 ### FEAT-98 — Further SAP object generators
 
 - **Priority / effort / status:** P2 / S each / Contributor-driven
