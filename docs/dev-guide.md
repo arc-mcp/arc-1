@@ -460,6 +460,36 @@ passed subsequent checks; the SAP-internal cause remains inferred. See the
   with flake telemetry (H2), a parallel read-only e2e project (F2), and a cross-run flake-aggregation
   workflow (H3). The plan rates these measure-first / conditional on the F1 numbers.
 
+### Where-used CI containment (#1057)
+
+The required integration test reads the existing E2E pair `ZIF_ARC1_TEST` → `ZCL_ARC1_TEST`.
+It requires matching active source, the `$TMP` consumer, exact package filtering and a native
+method-relative snippet. SQL enrichment and writes are disabled. Missing or changed fixtures
+**fail**; the test never repairs, activates or skips them.
+
+The pair must already be provisioned through the existing E2E setup. A unit pin protects its source
+and fixture-registry entries before CI can reach SAP. Editing the pair, manually rebuilding it or
+running `test:e2e:fixtures:clean` requires coordinated requalification; E2E sync can recreate drifted
+objects. Keep the source pin unchanged until that requalification is complete.
+
+```bash
+npm run test:integration -- tests/integration/where-used-details.integration.test.ts
+npm run test:integration:where-used-diagnostic
+```
+
+The second command runs the original class-to-class create → activate → query → delete test.
+CI runs it separately after required integration, within the same SAP concurrency slot, with a
+five-minute limit. Only the diagnostic and its summary are non-blocking. Its JSON, log and
+failure-only `where-used-diagnostics.json` remain separate files in `test-results-integration`;
+required counts and skip telemetry are preserved. Inspect reported cleanup errors and any
+remaining owned `ZAR1018_ROOT*` / `ZAR1018_USE*` classes manually.
+
+This contains CI disruption from [#1057](https://github.com/arc-mcp/arc-1/issues/1057), not SAP's
+indexing problem. The required fixture covers an interface/implementer relationship; the diagnostic
+retains class-to-class coverage. An isolated diagnostic pass does not reproduce the original
+full-suite context or close the issue. Empty results do not prove an object is unused. Resume
+backend investigation when SM21/SBGRFCMON or SAP support provides new evidence.
+
 ## Dump feed filters
 
 `feed-schema.ts` reads only the fixed dumps schema, compiles bounded flat AND conditions and

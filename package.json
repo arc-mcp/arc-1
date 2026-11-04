@@ -55,6 +55,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration:where-used-diagnostic": "vitest run --config vitest.where-used-diagnostic.config.ts",
     "test:integration:slow": "vitest run --config vitest.integration.slow.config.ts",
     "test:integration:btp": "vitest run --config vitest.integration.config.ts tests/integration/btp-abap.integration.test.ts",
     "test:integration:btp:smoke": "vitest run --config vitest.integration.config.ts tests/integration/btp-abap.smoke.integration.test.ts",
