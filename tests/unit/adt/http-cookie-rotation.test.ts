@@ -137,7 +137,13 @@ describe('cookie-file rotation during CSRF bootstrap (#1186)', () => {
   it('drops the previous live cookie, context and token together when the file changes', async () => {
     const client = createClient();
     const ordinaryReply = reply;
+    let rejectBootstrap = true;
     reply = (req, res) => {
+      if (rejectBootstrap && req.url?.includes('/discovery')) {
+        res.setHeader('Content-Type', 'application/xml');
+        res.end(opaqueBody);
+        return;
+      }
       if (!req.url?.startsWith('/seed')) return ordinaryReply(req, res);
       res.setHeader('X-CSRF-Token', 'old-token');
       res.setHeader('Set-Cookie', [`${sessionCookie}=old-live-session; Path=/`, 'sap-contextid=old-context; Path=/']);
@@ -146,13 +152,15 @@ describe('cookie-file rotation during CSRF bootstrap (#1186)', () => {
     await client.get('/seed');
     replaceCookies({ [sessionCookie]: 'rotated-session' });
 
-    await client.fetchCsrfToken();
+    await expect(client.fetchCsrfToken()).rejects.toBeInstanceOf(AdtCsrfBootstrapError);
+    rejectBootstrap = false;
     await client.post(readPath, '<read/>');
+    expect(requests.slice(1).map(({ method }) => method)).toEqual(['HEAD', 'GET', 'GET', 'HEAD', 'POST']);
     for (const { headers } of requests.slice(1)) {
       expect(headers.cookie).toBe(`${sessionCookie}=rotated-session`);
       expect(JSON.stringify(headers)).not.toMatch(/old-(?:token|context|live-session)/);
     }
-    expect(requests[2]?.headers['x-csrf-token']).toBe('rotated-token');
+    expect(requests.at(-1)?.headers['x-csrf-token']).toBe('rotated-token');
   });
 
   it.each(['missing', 'empty'])(
