@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { globSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -92,6 +93,15 @@ describe('where-used CI containment', () => {
       expect(upload.with.path).toContain(`test-results/${file}`);
     }
   });
+  it('checks the fixture pin before the manual slow workflow can reach SAP or sync fixtures', () => {
+    const slowWorkflow = parse(readFileSync(join(root, '.github/workflows/sap-slow-tests.yml'), 'utf8'));
+    const slowSteps = slowWorkflow.jobs['sap-slow'].steps as Array<Record<string, any>>;
+    const pin = slowSteps.find((step) => step.name === 'Where-used fixture pin (#1057)')!;
+    expect(pin).toBeDefined();
+    expect(pin.run).toBe('npx vitest run tests/unit/workflows/where-used-containment.test.ts');
+    expect(pin.if).toBeUndefined();
+    expect(pin['continue-on-error']).toBeUndefined();
+    expect(slowSteps.indexOf(pin)).toBeGreaterThan(slowSteps.findIndex((step) => step.name === 'Install dependencies'));
+    expect(slowSteps.indexOf(pin)).toBeLessThan(slowSteps.findIndex((step) => step.id === 'sap_auth'));
+  });
 });
-
-import { createHash } from 'node:crypto';

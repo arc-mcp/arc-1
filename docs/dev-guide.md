@@ -470,7 +470,9 @@ method-relative snippet. SQL enrichment and writes are disabled. Missing or chan
 The pair must already be provisioned through the existing E2E setup. A unit pin protects its source
 and fixture-registry entries before CI can reach SAP. Editing the pair, manually rebuilding it or
 running `test:e2e:fixtures:clean` requires coordinated requalification; E2E sync can recreate drifted
-objects. Keep the source pin unchanged until that requalification is complete.
+objects. Changes to source-read formatting or sync normalization also need requalification. Keep the
+source pin unchanged until requalification is complete. Both normal CI and the manual slow workflow
+check the pin before SAP access.
 
 ```bash
 npm run test:integration -- tests/integration/where-used-details.integration.test.ts
