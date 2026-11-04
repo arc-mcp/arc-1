@@ -13,7 +13,7 @@ import { logger } from '../server/logger.js';
 import { traceHeaders } from '../server/trace-context.js';
 import { acceptFallback } from './accept-fallback.js';
 import { connectivityProxyResponse, prepareBoundedResponse } from './bounded-response.js';
-import { resolveCookies } from './cookies.js';
+import { loadCookiesFromFile, parseCookieString } from './cookies.js';
 import { resolveAcceptType, resolveContentType } from './discovery.js';
 import { AdtApiError, AdtCsrfBootstrapError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
 import {
@@ -116,7 +116,7 @@ export interface AdtHttpConfig {
   /** Gzip non-empty data-preview POST bodies for approved WAF compatibility. */
   gzipDataPreviewBody?: boolean;
   cookies?: Record<string, string>;
-  /** Path to cookie file — enables hot-reload on stale auth */
+  /** Cookie file re-read during auth recovery and before CSRF bootstrap outside a live stateful context. */
   cookieFile?: string;
   /** Inline cookie string — stored for config awareness (no hot-reload) */
   cookieString?: string;
@@ -1055,9 +1055,11 @@ export class AdtHttpClient {
       headers['SAP-Connectivity-Authentication'] = this.config.sapConnectivityAuth;
     }
 
-    // Lazy cookie reload (same guard as request()) — re-read cookie file
-    // before CSRF fetch so a hot-reloaded cookie is used immediately.
-    if (this.cookiesCleared && this.isCookieAuthMode()) {
+    // A tokenless 200 need not be a recognized auth failure. Check the file on bootstrap,
+    // but keep a locked operation's owning session through refresh, unlock and close.
+    const context = this.cookieJar.get('sap-contextid');
+    const liveStatefulContext = this.config.sessionType === 'stateful' && !!context && context !== '0';
+    if ((this.config.cookieFile && !liveStatefulContext) || (this.cookiesCleared && this.isCookieAuthMode())) {
       this.reloadCookiesFromSource();
     }
 
@@ -1179,25 +1181,10 @@ export class AdtHttpClient {
   }
 
   /**
-   * Mark stale cookies for hot-reload on the next request.
-   *
-   * Clears EVERY in-memory copy of the failed session: `config.cookies` (the
-   * static set seeded from cookieFile/cookieString at construction), `cookieJar`
-   * (cookies harvested from prior responses, including the 401/HTML-login
-   * response that just triggered this call), and `csrfToken` (bound to the
-   * dead session).
-   *
-   * Without clearing the jar, the next request's cookie-header build path
-   * (`config.cookies` + `cookieJar`) would re-emit the stale Set-Cookie values
-   * harvested from the failed response — overriding the fresh `config.cookies`
-   * we'll repopulate via `reloadCookiesFromSource()`. The jar therefore must
-   * not survive the reload boundary.
-   *
-   * Called from THREE paths: persistent 401 in `request()` retry, HTML-login
-   * fallback in `handleResponse()`, and CSRF 401 in `fetchCsrfToken()`. Also
-   * exposed publicly via `markCookiesStale()` so the startup auth preflight
-   * can propagate "the cookies you started the process with are dead" state
-   * to the long-lived runtime client.
+   * Clear configured cookies and all session state after an authentication failure.
+   * The jar must be cleared too: its server-assigned values override a refreshed file.
+   * The next request reloads credentials through cookiesCleared. markCookiesStale()
+   * also uses this to propagate a startup failure to the long-lived runtime client.
    */
   private clearCookiesAndMark(): void {
     this.config.cookies = {};
@@ -1219,23 +1206,33 @@ export class AdtHttpClient {
   }
 
   /**
-   * Re-read cookies from the original source (file or string).
-   * Called lazily on the NEXT request after a 401 cleared stale cookies.
+   * Re-read a cookie file for auth recovery or CSRF bootstrap; replace session state only on a change.
    */
   private reloadCookiesFromSource(): void {
     this.cookiesCleared = false;
-    if (!this.config.cookieFile && this.config.cookieString) {
-      logger.warn('SAP_COOKIE_STRING cannot be refreshed without restart. Use SAP_COOKIE_FILE for automatic reload.');
+    if (!this.config.cookieFile) {
+      if (this.config.cookieString) {
+        logger.warn('SAP_COOKIE_STRING cannot be refreshed without restart. Use SAP_COOKIE_FILE for automatic reload.');
+      }
       return;
     }
     try {
-      const fresh = resolveCookies(this.config.cookieFile, this.config.cookieString);
-      if (fresh && Object.keys(fresh).length > 0) {
-        this.config.cookies = fresh;
-        logger.info('Reloaded cookies from file', { cookieCount: Object.keys(fresh).length });
-      } else {
+      const fileCookies = loadCookiesFromFile(this.config.cookieFile);
+      if (Object.keys(fileCookies).length === 0) {
         logger.warn('Cookie reload returned empty result');
+        return;
       }
+      const fresh = { ...fileCookies, ...parseCookieString(this.config.cookieString ?? '') };
+      const current = this.config.cookies ?? {};
+      if (
+        Object.keys(fresh).length === Object.keys(current).length &&
+        Object.entries(fresh).every(([name, value]) => current[name] === value)
+      ) {
+        return;
+      }
+      this.resetSession();
+      this.config.cookies = fresh;
+      logger.info('Reloaded cookies from file', { cookieCount: Object.keys(fresh).length });
     } catch (err) {
       logger.warn('Failed to reload cookies from source', {
         error: err instanceof Error ? err.message : String(err),
