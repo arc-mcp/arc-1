@@ -392,12 +392,14 @@ catalog rows automatically. See the
 - **Category:** Compatibility
 
 **Remaining gap.** Explicit `packageScope=direct` now provides bounded native
-contents on verified 750 SP02 and 758 SP02 contracts. Native 740 SP04, BTP ABAP,
-and an existing empty package remain unverified; empty trees deliberately return
-an ambiguous-result error. Indexed search and write-package authorization remain
-separate.
+contents on verified 750 SP02 and 758 SP02 contracts. On a 740 SP04 system with
+`abapfs_extensions` installed, a reporter
+[confirmed exact package contents on ARC-1 1.10.0](https://github.com/arc-mcp/arc-1/issues/1063#issuecomment-6643061484);
+the raw 740 root/expansion contract remains uncaptured. Native BTP ABAP and an
+existing empty package remain unverified; empty trees deliberately return an
+ambiguous-result error. Indexed search and write-package authorization remain separate.
 
-**Resume with.** Sanitized native root/expansion evidence on those releases, or
+**Resume with.** Sanitized 740/BTP native root/expansion evidence, or
 independent proof distinguishing an empty package from a missing/inaccessible
 one. Preserve direct scope, client budgets and unknown completeness; no automatic
 search/RFC/helper fallback. See [#1065](https://github.com/arc-mcp/arc-1/issues/1065),

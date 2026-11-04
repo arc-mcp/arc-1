@@ -10,11 +10,15 @@ resolves the API, multi-folder expansion and bounded-load questions. It implemen
 explicit direct mode; ambiguous empty trees remain errors. The original research
 and deferral below are retained as the evidence trail.
 
+**Native follow-up, 4 November 2026:** the reporter
+[confirmed exact direct package contents on 740 SP04 with ARC-1 1.10.0](https://github.com/arc-mcp/arc-1/issues/1063#issuecomment-6643061484).
+Their system includes `abapfs_extensions`. This confirms the reported use case;
+raw 740 root/expansion responses remain uncaptured.
 
 Defer the implementation; keep the current refusal when discovery lacks package-filtered quick search. A native
 **direct-contents** browser is feasible, but it must be an explicit mode with bounded
 client work and honest completeness. It cannot silently replace descendant-inclusive
-indexed search. Native 740 SP04 remains untested.
+indexed search. Native 740 SP04 was not available for this original research.
 
 ## Read-only evidence, 22 October 2026
 
