@@ -310,6 +310,7 @@ and [its contract](docs/plans/xsuaa-target-authorization.md); [ADR-0010](docs/ad
 | BTP auth / Destination Service | `src/adt/oauth.ts` (browser OAuth) + `src/server/server.ts` (`buildAdtConfig` per-user destination) + `@arc-mcp/xsuaa-auth` dep |
 | AFF schema / validation | `src/aff/schemas/` + `src/aff/validator.ts` / `src/handlers/write/create.ts` (create/batch_create paths) |
 | CI coverage / reliability reporting | `scripts/ci/coverage-summary.mjs`, `scripts/ci/collect-test-reliability.mjs`, `.github/workflows/test.yml` |
+| Where-used CI / #1057 | `tests/integration/where-used-details.integration.test.ts`, `tests/unit/workflows/where-used-containment.test.ts`, `vitest.where-used-diagnostic.config.ts` — required native reads use the pinned E2E interface/class pair; fresh-activation diagnostics are separately non-blocking. Limits: `docs/dev-guide.md#where-used-ci-containment-1057`. |
 
 ## Architecture: Request Flow
 

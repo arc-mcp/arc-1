@@ -260,6 +260,30 @@ jobs:
           TEST_SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
           TEST_SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
 
+      - name: Fresh-activation where-used diagnostic (non-blocking; #1057)
+        id: where_used_diagnostic
+        if: ${{ !cancelled() && steps.sap_auth.outputs.auth_ok == 'true' }}
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          mkdir -p test-results
+          npm run test:integration:where-used-diagnostic 2>&1 | tee test-results/where-used-fresh-activation.log
+        env:
+          TEST_SAP_URL: ${{ secrets.TEST_SAP_URL }}
+          TEST_SAP_USER: ${{ secrets.TEST_SAP_USER }}
+          TEST_SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
+          TEST_SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+          TEST_SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
+
+      - name: Fresh-activation diagnostic outcome
+        id: where_used_summary
+        if: ${{ !cancelled() && steps.sap_auth.outputs.auth_ok == 'true' }}
+        continue-on-error: true
+        run: node scripts/ci/where-used-diagnostic-summary.mjs
+        env:
+          DIAGNOSTIC_OUTCOME: ${{ steps.where_used_diagnostic.outcome }}
+
       - name: Upload integration test results
         if: always() && steps.current.outputs.current == 'true'
         uses: actions/upload-artifact@v7
@@ -269,6 +293,8 @@ jobs:
             test-results/integration.json
             test-results/integration-skips.ndjson
             test-results/where-used-diagnostics.json
+            test-results/where-used-fresh-activation.json
+            test-results/where-used-fresh-activation.log
           retention-days: 7
           if-no-files-found: warn
 
