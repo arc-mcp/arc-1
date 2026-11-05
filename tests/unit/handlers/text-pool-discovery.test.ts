@@ -1,16 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
-import { createClient, mockFetch } from './setup-undici-mock.js';
+import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { parseDiscoveryDocument } = await import('../../../src/adt/xml-parser.js');
 const { requestContext } = await import('../../../src/server/context.js');
+const { fetchDiscoveryDocument } = await import('../../../src/adt/discovery.js');
 const LOCK =
   '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>OWNER</LOCK_HANDLE><CORRNR>DEVK900001</CORRNR></DATA></asx:values></asx:abap>';
 // Synthetic minimal shape from #1189's report, not a captured native document.
 const LEGACY_DISCOVERY =
   '<app:service xmlns:app="http://www.w3.org/2007/app"><app:workspace><app:collection href="/sap/bc/adt/programs/programs"/><app:collection href="/sap/bc/adt/functions/groups"/></app:workspace></app:service>';
+const ESR_DISCOVERY =
+  '<app:service xmlns:app="http://www.w3.org/2007/app"><app:workspace><app:collection href="/sap/bc/esproxy/types"/></app:workspace></app:service>';
+
+function contextClient() {
+  return new AdtClient({
+    baseUrl: 'http://sap:8000',
+    username: 'admin',
+    password: 'secret',
+    client: '800',
+    language: 'EN',
+    safety: unrestrictedSafetyConfig(),
+  });
+}
 const collection = (type: string) => `/sap/bc/adt/textelements/${type === 'PROG' ? 'programs' : 'functiongroups'}`;
 const calls = () => mockFetch.mock.calls as [string, RequestInit][];
 const discovery = (path: string, mime?: string, owner?: string) =>
@@ -48,7 +63,10 @@ describe('text-pool discovery before owner deletion (#1189)', () => {
     mockFetch.mockImplementation((url: string) => {
       if (new URL(url).pathname === '/sap/bc/adt/discovery')
         return Promise.resolve(
-          mockResponse(200, LEGACY_DISCOVERY, { 'content-type': 'application/atomsvc+xml', 'x-csrf-token': 'T' }),
+          mockResponse(200, new URL(url).search ? ESR_DISCOVERY : LEGACY_DISCOVERY, {
+            'content-type': 'application/atomsvc+xml',
+            'x-csrf-token': 'T',
+          }),
         );
       if (String(url).includes('/textelements/'))
         return Promise.resolve(mockResponse(200, '', { 'content-type': 'text/html' }));
@@ -56,7 +74,7 @@ describe('text-pool discovery before owner deletion (#1189)', () => {
         mockResponse(200, String(url).includes('_action=LOCK') ? LOCK : '', { 'x-csrf-token': 'T' }),
       );
     });
-    const client = createClient();
+    const client = contextClient();
     const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', { action: 'delete', type, name: 'ZTEST' });
     expect(result.isError).toBeUndefined();
     const ownerLock = calls().findIndex(([url]) => String(url).includes('_action=LOCK'));
@@ -68,6 +86,31 @@ describe('text-pool discovery before owner deletion (#1189)', () => {
     expect(deletion).toBeGreaterThan(discovery);
     expect(calls().some(([url]) => String(url).includes('/textelements/'))).toBe(false);
     expect(client.http.hasDiscoveryData()).toBe(false);
+  });
+
+  it('uses a startup-loaded no-Accept catalog for legacy deletion', async () => {
+    mockDelete('');
+    const backend = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: string, init: RequestInit) => {
+      if (new URL(url).pathname === '/sap/bc/adt/discovery')
+        return Promise.resolve(mockResponse(200, new URL(url).search ? ESR_DISCOVERY : LEGACY_DISCOVERY));
+      return backend(url, init);
+    });
+    const client = contextClient();
+    const { map } = await fetchDiscoveryDocument(client.http);
+    expect(map.has('/sap/bc/adt/programs/programs')).toBe(true);
+    client.http.setDiscoveryMap(map);
+    const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'delete',
+      type: 'PROG',
+      name: 'ZTEST',
+    });
+    expect(result.isError).toBeUndefined();
+    expect(
+      calls().filter(([url, init]) => new URL(url).pathname === '/sap/bc/adt/discovery' && init.method === 'GET'),
+    ).toHaveLength(1);
+    expect(calls().some(([url]) => String(url).includes('/textelements/'))).toBe(false);
+    expect(calls().filter(([, init]) => init.method === 'DELETE')).toHaveLength(1);
   });
 
   it.each(['PROG', 'FUGR'])('retains the %s draft guard when discovery lists the pool without Accept', async (type) => {

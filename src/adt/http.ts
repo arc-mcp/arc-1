@@ -535,9 +535,11 @@ export class AdtHttpClient {
       headers['SAP-Connectivity-Authentication'] = this.config.sapConnectivityAuth;
     }
     // Quick-fix lookup includes queries (#993); old revision feeds append source paths to them. Use context headers.
+    // Legacy discovery is query-sensitive too (#1189); retain its explicit SAML URL bypass.
     const sapContextInHeaders =
       (method === 'POST' && path.startsWith('/sap/bc/adt/quickfixes/proposals/')) ||
-      (method === 'GET' && /^\/sap\/bc\/adt\/[^?#]+\/versions$/.test(path));
+      (method === 'GET' && /^\/sap\/bc\/adt\/[^?#]+\/versions$/.test(path)) ||
+      (method === 'GET' && path === '/sap/bc/adt/discovery' && !this.config.disableSaml);
     if (sapContextInHeaders) {
       if (this.config.client) headers['sap-client'] = this.config.client;
       if (this.config.language) headers['sap-language'] = this.config.language;

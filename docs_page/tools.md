@@ -1513,6 +1513,8 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
 - **Discovery-gated.** CLAS symbols were verified on 758, 816 and BTP ABAP; PROG/FUGR are
   on-prem object types. The service is absent
   on the tested NW 7.50 system. Collection presence does not require an advertised Accept type.
+  Legacy discovery catalog reads use client/language headers. With `SAP_DISABLE_SAML=true`, ARC-1 keeps
+  the existing URL bypass; query-sensitive 7.40 discovery remains unsupported in that mode.
   When discovery is loaded, ARC-1 reports an unavailable service
   without calling the broken legacy endpoint. Without discovery, SAP's actual error surfaces.
 - **Reads:** `objectType` defaults to `PROG`; use `CLAS` or `FUGR` explicitly for those objects.
