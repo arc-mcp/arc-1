@@ -289,3 +289,36 @@ it.each(['GET', 'POST'] as const)(
     expect(reads).toBe(2);
   },
 );
+
+it('revalidates at consume before charging child and parent, preserving refusal ordering', () => {
+  const parent = new RequestAttemptBudget(1);
+  let allowed = true,
+    validations = 0;
+  const child = new RequestAttemptBudget(3, {
+    parent,
+    validate: () => {
+      validations++;
+      if (!allowed) throw new Error('policy changed');
+    },
+  });
+  child.consume();
+  expect([validations, child.used, parent.used]).toEqual([1, 1, 1]);
+  expect(() => child.consume()).toThrow(AdtRequestBudgetError);
+  expect([validations, child.used, parent.used]).toEqual([2, 2, 1]);
+  allowed = false;
+  expect(() => child.consume()).toThrow('policy changed');
+  expect([validations, child.used, parent.used]).toEqual([3, 2, 1]);
+});
+it('revalidates an exhausted child without charging the parent again', () => {
+  const parent = new RequestAttemptBudget(3);
+  let validations = 0;
+  const child = new RequestAttemptBudget(1, {
+    parent,
+    validate: () => {
+      validations++;
+    },
+  });
+  child.consume();
+  expect(() => child.consume()).toThrow(AdtRequestBudgetError);
+  expect([validations, child.used, parent.used]).toEqual([2, 1, 1]);
+});

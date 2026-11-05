@@ -1,12 +1,10 @@
 /** Internal native-governed profile selected by authenticated pinned dispatch or bound qualification. */
 import type { AdtClient } from '../adt/client.js';
-import { DataResponseBudget } from '../adt/data-result-context.js';
 import { AdtSafetyError } from '../adt/errors.js';
-import { assertMutationContext, type PinnedMutationContext, pinnedMutationContext } from '../adt/mutation-context.js';
+import { assertMutationContext, type PinnedMutationContext } from '../adt/mutation-context.js';
 import { assertManagedProfileInput } from '../adt/pinned-managed-resources.js';
 import { createPinnedPackage, type PinnedPackageCreateInput, pinnedPackageSelection } from '../adt/pinned-package.js';
 import { createPinnedLocalRootProfile } from '../adt/pinned-package-root-profile.js';
-import { RequestAttemptBudget } from '../adt/request-attempt-budget.js';
 import { checkOperation, isPackageAllowed, OperationType } from '../adt/safety.js';
 import { hasRequiredScope } from '../authz/policy.js';
 import { getCurrentContext } from '../server/context.js';
@@ -14,22 +12,8 @@ import { isActionDenied } from '../server/deny-actions.js';
 import { TARGET_ID_PATTERN } from '../server/multi-target-identity.js';
 import { pinnedWriteEnabled } from '../server/multi-target-write-surface.js';
 import type { ServerConfig } from '../server/types.js';
-import { pinnedOperationResult } from './pinned-operation.js';
+import { pinnedOperationResult, revalidatedPinnedContext } from './pinned-operation.js';
 import type { ToolResult } from './shared.js';
-
-class RootCreateAttempts extends RequestAttemptBudget {
-  constructor(
-    private readonly validate: () => void,
-    private readonly parent?: RequestAttemptBudget,
-  ) {
-    super(16);
-  }
-  override consume(): void {
-    this.validate();
-    super.consume();
-    this.parent?.consume();
-  }
-}
 
 export async function executePrivatePinnedLocalRootCreate(
   client: AdtClient,
@@ -81,25 +65,12 @@ export async function executePrivatePinnedLocalRootCreate(
         throw new AdtSafetyError('The server configuration must authorize the actual future root name.');
     };
     validate();
-    if (context.requestPolicy.deadline > Date.now() + 60_000)
-      throw new AdtSafetyError('Private LOCAL root creation requires a deadline of at most one minute.');
-    const responseBudget =
-      context.requestPolicy.responseBudget ?? new DataResponseBudget(4 * 1024 * 1024, 'package-root', true);
-    if (!responseBudget.countAllResponses || responseBudget.limitBytes > 4 * 1024 * 1024)
-      throw new AdtSafetyError('Private LOCAL root creation requires an all-response allowance of at most 4 MiB.');
     let assertProfile = validate;
-    const scoped = pinnedMutationContext(
-      client.safety,
-      {
-        deadline: context.requestPolicy.deadline,
-        signal:
-          request?.signal && request.signal !== context.requestPolicy.signal
-            ? AbortSignal.any([request.signal, ...(context.requestPolicy.signal ? [context.requestPolicy.signal] : [])])
-            : context.requestPolicy.signal,
-        responseBudget,
-        attemptBudget: new RootCreateAttempts(() => assertProfile(), context.requestPolicy.attemptBudget),
-      },
-      context.cleanup,
+    const scoped = revalidatedPinnedContext(
+      client,
+      context,
+      { timeoutMs: 60000, responseMiB: 4, attempts: 16, label: 'LOCAL root creation', resource: 'package-root' },
+      () => assertProfile(),
     );
     const profile = createPinnedLocalRootProfile(client, scoped, selected.name, coverage, validate);
     assertProfile = profile.assert;

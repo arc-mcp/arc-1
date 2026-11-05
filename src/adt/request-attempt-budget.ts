@@ -44,12 +44,17 @@ export class RequestAttemptBudget {
   used = 0;
   /** Unresolved auth evidence; only a validated native expansion may clear it after retry recovery. */
   authorizationFailureObserved = false;
-  constructor(readonly limit: number) {
+  constructor(
+    readonly limit: number,
+    readonly revalidation?: { validate: () => void; parent?: RequestAttemptBudget },
+  ) {
     if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError('Request limit must be a positive integer.');
   }
   consume(): void {
+    this.revalidation?.validate();
     if (this.used >= this.limit) throw new AdtRequestBudgetError(this.limit);
     this.used++;
+    this.revalidation?.parent?.consume();
   }
   /** Transport handoff, not native success. CSRF/bootstrap reports its own actual HTTP method. */
   dispatched?: (method: string) => void;

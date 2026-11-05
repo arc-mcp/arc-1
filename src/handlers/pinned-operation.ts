@@ -63,6 +63,44 @@ export function pinnedOperationContext(
   );
 }
 
+/** Derive a guarded allowance without renewing the parent deadline, cancellation or owning cleanup. */
+export function revalidatedPinnedContext(
+  client: AdtClient,
+  context: PinnedMutationContext,
+  limits: { timeoutMs: 60_000 | 300_000; responseMiB: 4 | 8; attempts: 16 | 32 | 128; label: string; resource: string },
+  validate: () => void,
+): PinnedMutationContext {
+  assertMutationContext(client.safety, context);
+  if (context.requestPolicy.deadline > Date.now() + limits.timeoutMs)
+    throw new AdtSafetyError(
+      `Private ${limits.label} requires a deadline of at most ${limits.timeoutMs === 60_000 ? 'one minute' : 'five minutes'}.`,
+    );
+  const responseBudget =
+    context.requestPolicy.responseBudget ??
+    new DataResponseBudget(limits.responseMiB * 1024 * 1024, limits.resource, true);
+  if (!responseBudget.countAllResponses || responseBudget.limitBytes > limits.responseMiB * 1024 * 1024)
+    throw new AdtSafetyError(
+      `Private ${limits.label} requires an all-response allowance of at most ${limits.responseMiB} MiB.`,
+    );
+  const signal = getCurrentContext()?.signal;
+  return pinnedMutationContext(
+    client.safety,
+    {
+      deadline: context.requestPolicy.deadline,
+      signal:
+        signal && signal !== context.requestPolicy.signal
+          ? AbortSignal.any([signal, ...(context.requestPolicy.signal ? [context.requestPolicy.signal] : [])])
+          : context.requestPolicy.signal,
+      responseBudget,
+      attemptBudget: new RequestAttemptBudget(limits.attempts, {
+        validate,
+        parent: context.requestPolicy.attemptBudget,
+      }),
+    },
+    context.cleanup,
+  );
+}
+
 /**
  * Internal runtime boundary shared by admitted dispatch and native qualification. Its registered
  * context and exact candidate input contract cannot be supplied by tool arguments.

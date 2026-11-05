@@ -1,10 +1,8 @@
 /** Internal native-governed profile selected by authenticated pinned dispatch or bound qualification. */
 import type { AdtClient } from '../adt/client.js';
-import { DataResponseBudget } from '../adt/data-result-context.js';
 import { AdtSafetyError } from '../adt/errors.js';
-import { assertMutationContext, type PinnedMutationContext, pinnedMutationContext } from '../adt/mutation-context.js';
+import { assertMutationContext, type PinnedMutationContext } from '../adt/mutation-context.js';
 import { executePinnedPublication } from '../adt/pinned-publication.js';
-import { RequestAttemptBudget } from '../adt/request-attempt-budget.js';
 import { nativeGovernedPublicationRecording } from '../adt/service-publication.js';
 import { hasRequiredScope } from '../authz/policy.js';
 import { getCurrentContext } from '../server/context.js';
@@ -12,24 +10,9 @@ import { isActionDenied } from '../server/deny-actions.js';
 import { TARGET_ID_PATTERN } from '../server/multi-target-identity.js';
 import { pinnedWriteEnabled } from '../server/multi-target-write-surface.js';
 import type { ServerConfig } from '../server/types.js';
-import { pinnedOperationResult } from './pinned-operation.js';
+import { pinnedOperationResult, revalidatedPinnedContext } from './pinned-operation.js';
 import { publicationClientResult } from './pinned-publication-result.js';
 import type { ToolResult } from './shared.js';
-
-/** Runs at the existing direct/Connectivity send boundary, after queue and authentication awaits. */
-class PublicationAttempts extends RequestAttemptBudget {
-  constructor(
-    private readonly validate: () => void,
-    private readonly parent?: RequestAttemptBudget,
-  ) {
-    super(128);
-  }
-  override consume(): void {
-    this.validate();
-    super.consume();
-    this.parent?.consume();
-  }
-}
 
 export async function executePrivatePinnedNativeGovernedPublication(
   client: AdtClient,
@@ -78,25 +61,12 @@ export async function executePrivatePinnedNativeGovernedPublication(
         );
     };
     validate();
-    if (context.requestPolicy.deadline > Date.now() + 300_000)
-      throw new AdtSafetyError('Private publication requires a deadline of at most five minutes.');
-    const responseBudget =
-      context.requestPolicy.responseBudget ?? new DataResponseBudget(4 * 1024 * 1024, 'publication', true);
-    if (!responseBudget.countAllResponses || responseBudget.limitBytes > 4 * 1024 * 1024)
-      throw new AdtSafetyError('Private publication requires an all-response allowance of at most 4 MiB.');
     let assertRecording = validate;
-    const scoped = pinnedMutationContext(
-      client.safety,
-      {
-        deadline: context.requestPolicy.deadline,
-        signal:
-          request?.signal && request.signal !== context.requestPolicy.signal
-            ? AbortSignal.any([request.signal, ...(context.requestPolicy.signal ? [context.requestPolicy.signal] : [])])
-            : context.requestPolicy.signal,
-        responseBudget,
-        attemptBudget: new PublicationAttempts(() => assertRecording(), context.requestPolicy.attemptBudget),
-      },
-      context.cleanup,
+    const scoped = revalidatedPinnedContext(
+      client,
+      context,
+      { timeoutMs: 300000, responseMiB: 4, attempts: 128, label: 'publication', resource: 'publication' },
+      () => assertRecording(),
     );
     const recording = nativeGovernedPublicationRecording(client.safety, scoped, coverage, validate);
     assertRecording = recording.assert;
