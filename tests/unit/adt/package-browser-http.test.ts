@@ -50,11 +50,11 @@ describe.each([false, true])('direct package transport, Connectivity proxy=%s', 
       credentials.push({ cookie: req.headers.cookie, token: req.headers['x-csrf-token'] });
       if (path === '/sap/bc/adt/core/discovery') {
         res.setHeader('content-type', 'text/html');
-        res.setHeader('set-cookie', 'SAP_SESSIONID=first; Path=/');
+        res.setHeader('set-cookie', 'SAP_SESSIONID=first; Path=/; Secure; HttpOnly');
         res.end();
       } else if (path === '/sap/bc/adt/discovery') {
         res.setHeader('x-csrf-token', 'TOKEN');
-        res.setHeader('set-cookie', 'SAP_EXTRA=second; Path=/');
+        res.setHeader('set-cookie', 'SAP_EXTRA=second; Path=/; Secure; HttpOnly');
         res.end('<service/>');
       } else {
         res.end(++reads === 1 ? root : expanded);
