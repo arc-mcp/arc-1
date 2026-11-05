@@ -28,7 +28,7 @@ import { logger } from '../server/logger.js';
 import { postCreate } from './create-request.js';
 import { lockObject, unlockObject } from './crud.js';
 import { fetchDiscoveryDocument, resolveAcceptType } from './discovery.js';
-import { AdtApiError, AdtError } from './errors.js';
+import { AdtApiError, AdtError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { parseTableIndexName, TABLE_INDEX_COLLECTION, tableIndexParentUrl } from './table-index.js';
@@ -353,6 +353,26 @@ export async function ensureServerDrivenSupport(
   return (resolveAcceptType(map, entry.href) ?? '').includes(entry.discoveryMarker);
 }
 
+/** Pinned adapters refuse an unknown capability instead of inferring availability from a later 404. */
+export async function requireServerDrivenSupport(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  code: string,
+): Promise<void> {
+  const entry = sdoEntry(code);
+  let accept: string | undefined;
+  if (http.hasDiscoveryData()) accept = http.discoveryAcceptFor(entry.href);
+  else {
+    checkOperation(safety, OperationType.Read, 'FetchDiscovery');
+    const { map } = await fetchDiscoveryDocument(http);
+    if (map.size === 0)
+      throw new AdtSafetyError(`${code} availability could not be established. No request was changed.`);
+    accept = resolveAcceptType(map, entry.href);
+  }
+  if (!(accept ?? '').includes(entry.discoveryMarker))
+    throw new AdtSafetyError(serverDrivenUnavailableMessage('SAPWrite', code));
+}
+
 /** Shared "this release does not have this type" message for the three SDO entry points. */
 export function serverDrivenUnavailableMessage(tool: string, code: string): string {
   return (
@@ -529,7 +549,7 @@ export async function updateServerDrivenObjectSource(
 }
 
 /** Check only when advertised; older targets still receive the post-delete absence check. */
-async function checkServerDrivenDeletion(
+export async function checkServerDrivenDeletion(
   http: AdtHttpClient,
   safety: SafetyConfig,
   objUrl: string,

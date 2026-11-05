@@ -18,6 +18,7 @@ import { SAPDIAGNOSE_ADDITIONAL_INPUTS } from './diagnose-fields.js';
 import { dumpFiltersJson } from './dump-filter-inputs.js';
 import * as FuncProcessing from './function-processing.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
+import { pinnedNativeToolFields, SOURCE_HASH_TOOL_FIELDS } from './native-write-fields.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import { createQueryDefinition } from './query-tool.js';
 import { addLiveRelationsDefinition } from './relation-tool.js';
@@ -490,7 +491,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['text', 'structured', 'editable'],
             description:
-              'Default text. structured: CLAS metadata+includes (omit method), DEVC {objects,listing}, diff JSON. editable: fresh {source,sourceHash} for guarded SAPWrite; omit version/method/grep, select CLAS include.',
+              'Default text. structured: CLAS metadata+includes, DEVC {objects,listing}, diff JSON. editable: fresh source/sourceHash; native DDIC/SRVB/ENHO/SKTD/server-driven metadataXml/metadataHash and nativeVersion. Omit version/method/grep. Hashes do not grant write support.',
           },
           version: {
             type: 'string',
@@ -616,7 +617,7 @@ export function getToolDefinitions(
               (btp ? '' : 'edit_unit replaces a FORM/MODULE in PROG/INCL; add_unit appends one at EOF. ') +
               'batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. ' +
               'Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; ' +
-              'add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); ' +
+              'add_method inserts a METHODS clause plus an empty IMPL stub (an ABSTRACT clause skips the stub; an explicit abstract flag must agree); ' +
               'edit_method_signature rewrites one METHODS clause and leaves the body alone; ' +
               'change_method_visibility moves a method to another section and preserves its body; ' +
               'delete_method is destructive — it discards the body, so to re-section a method use change_method_visibility, never delete+add. ' +
@@ -638,11 +639,8 @@ export function getToolDefinitions(
               ? 'Object name.'
               : 'Object name (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).',
           },
-          expectedSourceHash: {
-            type: 'string',
-            description:
-              'SHA-256 from SAPRead(format=editable). Refuses changed source under the lock. Text-source update and class/procedural surgery only; whole addressed source/include, not just the edited unit. Omitted/blank: no cross-call protection.',
-          },
+          ...pinnedNativeToolFields(config, 'metadata'),
+          ...SOURCE_HASH_TOOL_FIELDS,
           source: {
             type: 'string',
             description: btp
@@ -653,7 +651,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: CLASS_WRITE_INCLUDES,
             description:
-              'CLAS-ONLY. Do NOT send unless type=CLAS AND action is update / edit_method / edit_class_definition. OMIT it entirely for every other type and for delete / batch_create / add_method / edit_method_signature / delete_method / change_method_visibility (those use /source/main). Targets a class-local include: definitions (CCDEF), implementations (CCIMP), macros, testclasses. edit_method auto-detects it from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses), so you rarely pass it; use include=testclasses to create a new local test class. Whole-include writes auto-create a missing include and produce an inactive draft (read with SAPRead version="inactive" before activation).',
+              'CLAS-ONLY. Do NOT send unless type=CLAS and action=update/edit_method/edit_class_definition. OMIT it entirely otherwise. Select definitions (CCDEF), implementations (CCIMP), macros or testclasses. edit_method auto-detects local includes from lhc_*/lcl_* (implementations) or ltc_* (testclasses). add_method/edit_method_signature/delete_method/change_method_visibility use /source/main. Whole-include update initializes missing includes and leaves an inactive draft; read SAPRead version="inactive" before activation. source="" plus expectedSourceHash clears an existing include; whitespace-only source is refused.',
           },
           ...(btp
             ? { textPart: { type: 'string', enum: ['symbols'] } }
@@ -687,7 +685,7 @@ export function getToolDefinitions(
           abstract: {
             type: 'boolean',
             description:
-              'For action=add_method: when true, only the METHODS clause is inserted into DEFINITION; no METHOD/ENDMETHOD stub is added to IMPLEMENTATION. Default false (concrete method — DEFINITION + IMPL stub written atomically).',
+              'For action=add_method: optional assertion that must match ABSTRACT in the METHODS clause. Abstractness is derived from that clause; only concrete methods receive an IMPLEMENTATION stub.',
           },
           bdefName: {
             type: 'string',
@@ -999,6 +997,7 @@ export function getToolDefinitions(
             description: 'Parent FUGR for FUNC or structural INCL.',
           },
           version: { type: 'string', description: 'Service version for publish/unpublish (default: "0001")' },
+          ...pinnedNativeToolFields(config, 'metadata'),
           service_type: {
             type: 'string',
             enum: ['odatav2', 'odatav4'],
@@ -1097,7 +1096,7 @@ export function getToolDefinitions(
         '- "lint_and_fix": lint + auto-fix fixable issues (keyword case, obsolete statements); returns fixed source.\n' +
         '- "list_rules": list rules + current config (no source).\n' +
         '- "format": pretty-print via SAP\'s ADT formatter (needs source).\n' +
-        '- "get_formatter_settings" / "set_formatter_settings": read/update the system\'s global PrettyPrinter (indentation bool, style keywordUpper|keywordLower|keywordAuto|none; set is blocked read-only).\n' +
+        '- "get_formatter_settings" / "set_formatter_settings": read/update the connected SAP user\'s PrettyPrinter settings for this system (indentation bool, style keywordUpper|keywordLower|keywordAuto|none; set is blocked read-only).\n' +
         'lint/lint_and_fix/list_rules run locally; format/*_formatter_settings call SAP. Syntax: SAPRead(type="SYNTAX"); ATC/unit tests: SAPDiagnose.',
       inputSchema: {
         type: 'object',
@@ -1508,6 +1507,7 @@ export function getToolDefinitions(
           type: 'string',
           description: 'Optional transport request (corrNr) for create_package, delete_package, or change_package.',
         },
+        ...pinnedNativeToolFields(config, 'owner'),
         objectUri: {
           type: 'string',
           description:

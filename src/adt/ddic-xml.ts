@@ -857,7 +857,12 @@ export function stripKtdMetaTrailer(markdown: string): string {
  * The returned XML is suitable for a PUT to the KTD object URL with
  * content-type `application/vnd.sap.adt.sktdv2+xml`.
  */
-export function rewriteKtdText(envelopeXml: string, markdown: string, report?: KtdWriteReport): string {
+export function rewriteKtdText(
+  envelopeXml: string,
+  markdown: string,
+  report?: KtdWriteReport,
+  native?: NativeKtdRewriteProfile,
+): string {
   const hasReadOnlyContext = markdown.split(/\r?\n/).includes(KTD_META_MARKER);
   markdown = stripKtdMetaTrailer(markdown);
   if (!markdown.trim()) {
@@ -866,11 +871,11 @@ export function rewriteKtdText(envelopeXml: string, markdown: string, report?: K
         'update; to clear one node, address it with "## <node id>" followed by an empty section.',
     );
   }
-  const elements = findKtdElements(envelopeXml);
-  const routes = ktdRoutes(envelopeXml, elements);
+  const elements = findKtdElements(envelopeXml, native);
+  const routes = ktdRoutes(envelopeXml, elements, native);
   assertWritableKtdRoutes(routes);
   const documented = elements.filter((element) => elementBase64(element.xml));
-  const root = rootKtdElement(envelopeXml, elements);
+  const root = rootKtdElement(envelopeXml, elements, native);
   const unaddressedTarget = documented.length <= 1 ? (documented[0] ?? root) : undefined;
   // A route-safe SAPRead prefixes one backslash to body H2s that would otherwise
   // be parsed as node boundaries. Its presence makes a lone root route unambiguous,
@@ -890,7 +895,7 @@ export function rewriteKtdText(envelopeXml: string, markdown: string, report?: K
       !hasReadOnlyContext &&
       !hasBodyRouteEscape &&
       root &&
-      root.id.toUpperCase() === envelopeKtdName(envelopeXml).toUpperCase() &&
+      root.id.toUpperCase() === envelopeKtdName(envelopeXml, native).toUpperCase() &&
       unaddressedTarget === root &&
       perElement.size === 1 &&
       perElement.has(root.id)
@@ -911,7 +916,7 @@ export function rewriteKtdText(envelopeXml: string, markdown: string, report?: K
   if (documented.length > 1) {
     const addressable = documented.map((element) => element.id).filter(Boolean);
     throw new Error(
-      `KTD documentation update addresses no node. "${envelopeKtdName(envelopeXml)}" documents ` +
+      `KTD documentation update addresses no node. "${envelopeKtdName(envelopeXml, native)}" documents ` +
         `${documented.length} nodes, so the body must address them with "## <node id>" headings. ` +
         `Documented node ids in the version this write would modify:\n${addressable.map((id) => `  ${id}`).join('\n')}`,
     );
@@ -938,6 +943,14 @@ export interface KtdShortText {
 /** Eclipse ADT applies this limit to its KTD short-text input widget. */
 export const KTD_SHORT_TEXT_MAX_LENGTH = 60;
 
+/** Parsed native semantics for structurally qualified lexical slots, in document order. */
+export interface NativeKtdRewriteProfile {
+  readonly kind: 'native';
+  readonly objectName: string;
+  readonly longTextWritable: readonly boolean[];
+  readonly shortTextObligations: readonly (string | undefined)[];
+}
+
 /**
  * Apply optional Markdown bodies and optional short texts to one server-provided envelope.
  * All mutations stay local until validation succeeds and the caller performs the PUT.
@@ -947,6 +960,7 @@ export function rewriteKtdDocument(
   markdown: string | undefined,
   shortTexts: KtdShortText[] | undefined,
   report?: KtdWriteReport,
+  native?: NativeKtdRewriteProfile,
 ): string {
   const assignments = shortTexts ?? [];
   if (markdown === undefined && assignments.length === 0) {
@@ -954,8 +968,8 @@ export function rewriteKtdDocument(
       'KTD documentation update has nothing to write: pass "source" (node bodies), "shortTexts", or both.',
     );
   }
-  const withBodies = markdown === undefined ? envelopeXml : rewriteKtdText(envelopeXml, markdown, report);
-  return assignments.length === 0 ? withBodies : rewriteKtdShortTexts(withBodies, assignments);
+  const withBodies = markdown === undefined ? envelopeXml : rewriteKtdText(envelopeXml, markdown, report, native);
+  return assignments.length === 0 ? withBodies : rewriteKtdShortTexts(withBodies, assignments, native);
 }
 
 /** One `<sktd:element>` block located inside a `<sktd:docu>` envelope. */
@@ -966,6 +980,8 @@ interface KtdElement {
   start: number;
   end: number;
   xml: string;
+  longTextWritable: boolean;
+  shortTextObligation: string | undefined;
 }
 
 /** Base64 payload currently held by an element, '' when it is empty or absent. */
@@ -987,6 +1003,18 @@ function canWriteKtdLongText(elementXml: string): boolean {
 const KTD_SHORT_TEXT_TAG = /<sktd:shortText\b[^>]*\/?>/;
 const KTD_SHORT_TEXT_VALUE = /\bsktd:text="([^"]*)"/;
 const KTD_SHORT_TEXT_OBLIGATION = /\bsktd:obligation="([^"]*)"/;
+const KTD_NATIVE_SHORT_TEXT_TAG = /<sktd:shortText(?=[\s/>])(?:[^"'<>]|"[^"]*"|'[^']*')*\/?>/;
+
+/** Locate a real attribute value, skipping complete quoted values that may contain decoy syntax. */
+function nativeKtdShortTextValue(tag: string): { start: number; end: number } | undefined {
+  for (const match of tag.matchAll(/([^\s="'<>/]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+    if (match[1] !== 'sktd:text') continue;
+    const value = match[2] ?? match[3];
+    const end = match.index + match[0].length - 1;
+    return { start: end - value.length, end };
+  }
+  return undefined;
+}
 
 /** Existing short texts, each labelled with a reference that resolves back to its node. */
 export function formatKtdShortTexts(envelopeXml: string): string {
@@ -1014,13 +1042,18 @@ export function formatKtdShortTexts(envelopeXml: string): string {
 }
 
 /** Validate all assignments, then splice only their existing short-text value attributes. */
-function rewriteKtdShortTexts(envelopeXml: string, assignments: KtdShortText[]): string {
-  const elements = findKtdElements(envelopeXml);
+function rewriteKtdShortTexts(
+  envelopeXml: string,
+  assignments: KtdShortText[],
+  native?: NativeKtdRewriteProfile,
+): string {
+  const elements = findKtdElements(envelopeXml, native);
   // The same resolver the "## " section headings use, so one spelling addresses a node
   // everywhere: exact id, case variant, or the node name the SAPRead index prints.
-  const routes = ktdRoutes(envelopeXml, elements);
+  const routes = ktdRoutes(envelopeXml, elements, native);
   assertWritableKtdRoutes(routes);
   const resolved = new Map<string, { element: KtdElement; text: string }>();
+  const tagPattern = native ? KTD_NATIVE_SHORT_TEXT_TAG : KTD_SHORT_TEXT_TAG;
 
   for (const assignment of assignments) {
     const requestedId = assignment.node.trim();
@@ -1038,13 +1071,13 @@ function rewriteKtdShortTexts(envelopeXml: string, assignments: KtdShortText[]):
           `${KTD_SHORT_TEXT_MAX_LENGTH}.`,
       );
     }
-    const tag = element.xml.match(KTD_SHORT_TEXT_TAG)?.[0];
-    if (!tag || !KTD_SHORT_TEXT_VALUE.test(tag)) {
+    const tag = element.xml.match(tagPattern)?.[0];
+    if (!tag || (native ? !nativeKtdShortTextValue(tag) : !KTD_SHORT_TEXT_VALUE.test(tag))) {
       throw new Error(
         `KTD node "${element.id}" has no writable <sktd:shortText sktd:text="…"> value; ARC-1 will not synthesize one.`,
       );
     }
-    const obligation = tag.match(KTD_SHORT_TEXT_OBLIGATION)?.[1]?.toLowerCase();
+    const obligation = element.shortTextObligation;
     if (obligation !== 'mandatory' && obligation !== 'optional') {
       throw new Error(
         `KTD node "${element.id}" does not take a writable short text ` +
@@ -1059,9 +1092,12 @@ function rewriteKtdShortTexts(envelopeXml: string, assignments: KtdShortText[]):
     (left, right) => right.element.start - left.element.start,
   )) {
     const encoded = text ? Buffer.from(text, 'utf-8').toString('base64') : '';
-    const replacement = element.xml.replace(KTD_SHORT_TEXT_TAG, (tag) =>
-      tag.replace(KTD_SHORT_TEXT_VALUE, `sktd:text="${encoded}"`),
-    );
+    const replacement = element.xml.replace(tagPattern, (tag) => {
+      if (!native) return tag.replace(KTD_SHORT_TEXT_VALUE, `sktd:text="${encoded}"`);
+      const value = nativeKtdShortTextValue(tag);
+      if (!value) throw new Error('Missing qualified KTD short-text value attribute.');
+      return tag.slice(0, value.start) + encoded + tag.slice(value.end);
+    });
     rewritten = rewritten.slice(0, element.start) + replacement + rewritten.slice(element.end);
   }
   return rewritten;
@@ -1073,8 +1109,12 @@ function rewriteKtdShortTexts(envelopeXml: string, assignments: KtdShortText[]):
  * object name from `<sktd:docu adtcore:name>`; when nothing matches, fall back to
  * document order, which is where an unaddressed body has always gone.
  */
-function rootKtdElement(envelopeXml: string, elements: KtdElement[]): KtdElement | undefined {
-  const name = envelopeKtdName(envelopeXml);
+function rootKtdElement(
+  envelopeXml: string,
+  elements: KtdElement[],
+  native?: NativeKtdRewriteProfile,
+): KtdElement | undefined {
+  const name = envelopeKtdName(envelopeXml, native);
   return (
     elements.find((element) => element.id === name) ??
     elements.find((element) => element.id.toUpperCase() === name.toUpperCase()) ??
@@ -1083,24 +1123,35 @@ function rootKtdElement(envelopeXml: string, elements: KtdElement[]): KtdElement
 }
 
 /** `<sktd:element>` blocks, paired or self-closing, in document order. */
-function findKtdElements(envelopeXml: string): KtdElement[] {
+function findKtdElements(envelopeXml: string, native?: NativeKtdRewriteProfile): KtdElement[] {
   const pattern = /<sktd:element\b(?:[^>]*\/>|[\s\S]*?<\/sktd:element>)/g;
   const elements: KtdElement[] = [];
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(envelopeXml)) !== null) {
     const xml = match[0];
+    const longTextWritable = native ? native.longTextWritable[elements.length] : canWriteKtdLongText(xml);
+    if (typeof longTextWritable !== 'boolean') throw new Error('Missing qualified KTD element writability.');
     elements.push({
       id: xml.match(/<sktd:id>([\s\S]*?)<\/sktd:id>/)?.[1]?.trim() ?? '',
       start: match.index,
       end: match.index + xml.length,
       xml,
+      longTextWritable,
+      shortTextObligation: native
+        ? native.shortTextObligations[elements.length]
+        : xml.match(KTD_SHORT_TEXT_TAG)?.[0].match(KTD_SHORT_TEXT_OBLIGATION)?.[1]?.toLowerCase(),
     });
   }
+  if (
+    native &&
+    (elements.length !== native.longTextWritable.length || elements.length !== native.shortTextObligations.length)
+  )
+    throw new Error('Qualified KTD element count does not match the lexical rewrite slots.');
   return elements;
 }
 
-function envelopeKtdName(envelopeXml: string): string {
-  return envelopeXml.match(/<sktd:docu\b[^>]*\badtcore:name="([^"]*)"/)?.[1] ?? 'this KTD';
+function envelopeKtdName(envelopeXml: string, native?: NativeKtdRewriteProfile): string {
+  return native?.objectName ?? envelopeXml.match(/<sktd:docu\b[^>]*\badtcore:name="([^"]*)"/)?.[1] ?? 'this KTD';
 }
 
 /** Everything a `## ` heading is resolved against. Built once per envelope. */
@@ -1136,7 +1187,7 @@ function ktdNodeNameSpellings(id: string): string[] {
   }
 }
 
-function ktdRoutes(envelopeXml: string, elements: KtdElement[]): KtdRoutes {
+function ktdRoutes(envelopeXml: string, elements: KtdElement[], native?: NativeKtdRewriteProfile): KtdRoutes {
   const byId = new Map<string, KtdElement>();
   const duplicateIds = new Set<string>();
   const byFoldedId = new Map<string, KtdElement[]>();
@@ -1159,7 +1210,7 @@ function ktdRoutes(envelopeXml: string, elements: KtdElement[]): KtdRoutes {
       if (dot > 0) qualifiers.add(spelling.slice(0, dot).toUpperCase());
     }
   }
-  const objectName = envelopeKtdName(envelopeXml);
+  const objectName = envelopeKtdName(envelopeXml, native);
   return {
     objectName,
     byId,
@@ -1383,7 +1434,7 @@ function setKtdElementText(element: KtdElement, markdown: string): string {
         `ARC-1 does not synthesize one.`,
     );
   }
-  if (!canWriteKtdLongText(element.xml)) {
+  if (!element.longTextWritable) {
     throw new Error(
       `KTD node "${element.id}" does not accept long-text documentation according to SAP's ` +
         'canHaveDocumentation/longTextObligation contract.',

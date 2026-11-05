@@ -4,6 +4,7 @@ import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { logger } from '../../../src/server/logger.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
+import { pinnedPublicAuth } from '../../helpers/pinned-public-auth.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
@@ -64,7 +65,7 @@ it('keeps concurrent pinned recording, save, result and audit evidence on their 
     const results = await Promise.all(
       ['first', 'second'].map(async (host) => {
         const policy = {
-          target: `${host}/001`,
+          target: `${host.toUpperCase()}/001`,
           enabled: true,
           allowedPackages: ['ZTEAM'],
           allowedTransports: [transport(host)],
@@ -72,6 +73,8 @@ it('keeps concurrent pinned recording, save, result and audit evidence on their 
         };
         const config = {
           ...DEFAULT_CONFIG,
+          client: '001',
+          multiTargetAuthorization: 'xsuaa-attribute' as const,
           targetId: policy.target,
           multiTargetEndpoints: true,
           multiTargetWrite: policy,
@@ -83,6 +86,7 @@ it('keeps concurrent pinned recording, save, result and audit evidence on their 
         };
         const client = new AdtClient({
           baseUrl: `https://${host}.example.com`,
+          client: '001',
           username: host,
           password: 'test',
           safety: { ...defaultSafetyConfig(), ...config },
@@ -99,7 +103,11 @@ it('keeps concurrent pinned recording, save, result and audit evidence on their 
             expectedSourceHash: sourceHash(initial),
             transport: transport(host),
           },
-          { token: 'test', clientId: host, scopes: ['read', 'write'], extra: { userName: host } },
+          {
+            ...pinnedPublicAuth(undefined, policy.target),
+            clientId: host,
+            extra: { ...pinnedPublicAuth(undefined, policy.target).extra, userName: host },
+          },
           undefined,
           undefined,
           true,
@@ -112,7 +120,7 @@ it('keeps concurrent pinned recording, save, result and audit evidence on their 
     );
     for (const [index, host] of ['first', 'second'].entries()) {
       expect(results[index]).toMatchObject({
-        target: `${host}/001`,
+        target: `${host.toUpperCase()}/001`,
         transport: transport(host),
         state: 'saved-inactive',
       });
@@ -130,7 +138,7 @@ it('keeps concurrent pinned recording, save, result and audit evidence on their 
         .map(([event]) => event)
         .filter((event) => event.event.startsWith('tool_call_') && event.requestId === `request-${host}`);
       expect(events).toHaveLength(2);
-      expect(events.every((event) => event.target === `${host}/001` && event.user === host)).toBe(true);
+      expect(events.every((event) => event.target === `${host.toUpperCase()}/001` && event.user === host)).toBe(true);
     }
   } finally {
     audit.mockRestore();

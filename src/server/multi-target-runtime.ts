@@ -117,6 +117,9 @@ export function buildMultiTargetConfig(
   return {
     ...buildReadOnlyRuntimeConfig(base, targetSafety(target, base.blockedDataSources), target),
     allowWrites: enabled,
+    // Private CTS adapters still require caller transports scope and explicit destination request policy.
+    // The public capability matrix remains the separate admission boundary.
+    allowTransportWrites: enabled && base.allowTransportWrites,
     allowedPackages: [...base.allowedPackages],
     allowedTransports: [], // Preserve multi-target transport reads; write policy carries the server ceiling.
     multiTargetWrite: Object.freeze({

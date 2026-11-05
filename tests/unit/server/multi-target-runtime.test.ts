@@ -1,5 +1,6 @@
 import type { Destination } from '@arc-mcp/xsuaa-auth/btp';
 import { describe, expect, it } from 'vitest';
+import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { canonicalDestinationUrl, opaqueDestinationValue } from '../../../src/server/destination-discovery.js';
 import { DestinationRegistry } from '../../../src/server/destination-registry.js';
 import {
@@ -8,6 +9,7 @@ import {
   TargetConfigChangedError,
   validateTargetDrift,
 } from '../../../src/server/multi-target-runtime.js';
+import { multiTargetToolDefinitions } from '../../../src/server/multi-target-tools.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 const rawUrl = 'http://a4h.internal:50000';
@@ -78,6 +80,21 @@ function destination(overrides: Record<string, unknown> = {}): Destination {
 }
 
 describe('multi-target runtime isolation', () => {
+  it('describes the trace-user requirement conditionally in Basic-only and mixed aggregate catalogs', () => {
+    const pp = registryTarget();
+    const basic = { ...pp, authentication: 'BasicAuthentication' as const };
+    for (const targets of [[basic], [basic, pp]]) {
+      const config = buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, targets);
+      const diagnose = multiTargetToolDefinitions(getToolDefinitions(config), config).find(
+        (tool) => tool.name === 'SAPDiagnose',
+      )!;
+      const properties = diagnose.inputSchema.properties as Record<string, { description: string }>;
+      expect(properties.traceUser.description).toContain('required on Principal Propagation targets');
+      expect(properties.traceUser.description).toContain('Basic targets retain their connected-user default');
+      expect(properties.traceUser.description).not.toContain('required here');
+    }
+  });
+
   it('takes the Eclipse SID only from the selected destination, never a route alias or global setting', () => {
     const target = { ...registryTarget(), target: 'A4H-2025/100' };
     const base = { ...DEFAULT_CONFIG, ideLinks: 'eclipse' as const, ideSystemId: 'DEV' };

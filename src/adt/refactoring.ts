@@ -12,7 +12,7 @@
  * Execute uses "unwrapped" XML (just genericRefactoring element).
  */
 
-import type { AdtHttpClient } from './http.js';
+import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { escapeXmlAttr } from './xml-parser.js';
 
@@ -135,13 +135,21 @@ export async function changePackage(
   http: AdtHttpClient,
   safety: SafetyConfig,
   params: ChangePackageParams,
+  /** A pinned adapter validates SAP's preview before the execute step; legacy callers pass nothing. */
+  afterPreview?: (preview: { body: string; transport?: string }) => Promise<void>,
+  requestOptions?: AdtRequestOptions,
 ): Promise<ChangePackageResult> {
   checkOperation(safety, OperationType.Update, 'ChangePackage');
 
   // Step 1: Preview
   const previewXml = buildPreviewXml(params);
-  const previewResp = await http.post(PREVIEW_URL, previewXml, 'application/*', { Accept: 'application/*' });
+  const post = (url: string, body: string) =>
+    requestOptions
+      ? http.post(url, body, 'application/*', { Accept: 'application/*' }, requestOptions)
+      : http.post(url, body, 'application/*', { Accept: 'application/*' });
+  const previewResp = await post(PREVIEW_URL, previewXml);
   const preview = parsePreviewResponse(previewResp.body);
+  await afterPreview?.({ body: previewResp.body, transport: preview.transport });
 
   // Merge transport: explicit param > preview response > empty
   const effectiveTransport = params.transport || preview.transport || '';
@@ -149,7 +157,7 @@ export async function changePackage(
 
   // Step 2: Execute
   const executeXml = buildExecuteXml(executeParams);
-  await http.post(EXECUTE_URL, executeXml, 'application/*', { Accept: 'application/*' });
+  await post(EXECUTE_URL, executeXml);
 
   return { transport: effectiveTransport || undefined };
 }

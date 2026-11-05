@@ -35,6 +35,40 @@ function property(tool: ToolDefinition, name: string): Record<string, unknown> {
   return ((tool.inputSchema.properties as Record<string, unknown>)[name] ?? {}) as Record<string, unknown>;
 }
 
+it('admits canonical function activation while requiring normalization of slash aliases', () => {
+  const writer = {
+    ...DEFAULT_CONFIG,
+    allowWrites: true,
+    multiTargetEndpoints: true,
+    ppEnabled: true,
+    ppStrict: true,
+    multiTargetWrite: {
+      enabled: true,
+      target: 'A4H/001',
+      allowedPackages: ['$TMP'],
+      allowedTransports: [],
+      serverAllowedTransports: [],
+    },
+  };
+  expect(
+    multiTargetInvocationDecision('SAPActivate', { type: 'CLAS', name: 'ZCLASS', action: 'activate' }, writer),
+  ).toBe('allowed');
+  for (const type of ['FUNC', 'FUGR'])
+    expect(multiTargetInvocationDecision('SAPActivate', { type, name: 'ZARC1_FN', action: 'activate' }, writer)).toBe(
+      'allowed',
+    );
+  expect(
+    multiTargetInvocationDecision(
+      'SAPActivate',
+      { type: 'INCL', name: 'LZARC1_FGTOP', group: 'ZARC1_FG', action: 'activate' },
+      writer,
+    ),
+  ).toBe('allowed');
+  expect(
+    multiTargetInvocationDecision('SAPActivate', { type: 'FUGR/FF', name: 'ZARC1_FN', action: 'activate' }, writer),
+  ).toBe('forbidden');
+});
+
 describe('multi-target tool surface', () => {
   it('narrows SAPQuery fields and guidance to the effective target data gates', () => {
     const both = { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true };

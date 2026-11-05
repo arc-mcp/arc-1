@@ -5,6 +5,9 @@ export default defineConfig({
     include: ['tests/unit/**/*.test.ts'],
     exclude: ['tests/integration/**'],
     testTimeout: 10000,
+    // Bound filesystem-heavy qualification tests on high-core hosts. This also caps
+    // ordinary test-file parallelism; explicit in-test race coverage stays unchanged.
+    maxWorkers: 2,
     // Ensure clean module state between tests
     isolate: true,
     // Keep supertest's requests on its own server (see the helper's comment).

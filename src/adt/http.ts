@@ -18,6 +18,7 @@ import { resolveAcceptType, resolveContentType } from './discovery.js';
 import { AdtApiError, AdtCsrfBootstrapError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
 import {
   type AdtRequestOptions,
+  type AdtSessionCleanup,
   awaitWithinRequestBudget,
   requestBudgetSignal,
   requestSignal,
@@ -28,7 +29,7 @@ import {
 import { parseRetryAfter } from './http-retry-after.js';
 import { prepareDataPreviewWireBody } from './http-wire-body.js';
 import { legacyContentHandlerFallback, rejectEmptyAdtHtmlResponse } from './legacy-content-handler.js';
-import { fetchWithAttemptBudget } from './request-attempt-budget.js';
+import { fetchWithAttemptBudget, recordSubmittedRequest } from './request-attempt-budget.js';
 import { hasSecuritySessionCookie, SecuritySessionGate } from './security-session-gate.js';
 import type { Semaphore } from './semaphore.js';
 import { resolveSapUserAgent } from './user-agent.js';
@@ -294,10 +295,7 @@ export class AdtHttpClient {
    * Creates a new client instance with the stateful session header,
    * shares the main client's request state, and closes the backend context.
    */
-  async withStatefulSession<T>(
-    fn: (client: AdtHttpClient) => Promise<T>,
-    cleanup?: { timeoutMs: number; noReplay: boolean; onClose: (closed: boolean | undefined) => void },
-  ): Promise<T> {
+  async withStatefulSession<T>(fn: (client: AdtHttpClient) => Promise<T>, cleanup?: AdtSessionCleanup): Promise<T> {
     const sessionConfig: AdtHttpConfig = {
       ...this.config,
       sessionType: 'stateful',
@@ -320,6 +318,7 @@ export class AdtHttpClient {
               deadline: Date.now() + cleanup.timeoutMs,
               retryTransientErrors: false,
               noReplay: cleanup.noReplay,
+              responseBudget: cleanup.responseBudget,
             }
           : undefined,
       );
@@ -335,7 +334,7 @@ export class AdtHttpClient {
   /** Close the SAP application context without changing the completed operation's result. */
   private async closeStatefulSession(options?: AdtRequestOptions): Promise<boolean | undefined> {
     const contextId = this.cookieJar.get('sap-contextid');
-    if (!contextId || contextId === '0') return;
+    if (!contextId || contextId === '0') return contextId === '0' ? true : undefined;
 
     // Eclipse ADT changes the same context to stateless while sending its dedicated close request.
     // This client belongs only to withStatefulSession(), so it is not reused after the transition.
@@ -1427,10 +1426,10 @@ export class AdtHttpClient {
           body,
           signal: requestSignal(options),
           // Automatic redirects would create uncounted sends outside the caller's allowance.
-          ...(options?.attemptBudget ? { redirect: 'manual' as const } : {}),
+          ...(options?.attemptBudget || options?.noReplay ? { redirect: 'manual' as const } : {}),
           ...(dispatcher ? { dispatcher } : {}),
         },
-        options?.attemptBudget,
+        options,
       )) as Response;
     }
     return response;
@@ -1481,7 +1480,9 @@ export class AdtHttpClient {
       Host: hostHeader,
       'Proxy-Authorization': proxyAuth,
     };
-    if (options?.responseBudget) {
+    const bounded = options?.responseBudget !== undefined;
+    const discard = options?.discardResponseBody;
+    if (bounded) {
       for (const key of Object.keys(proxyHeaders)) {
         if (key.toLowerCase() === 'accept-encoding') delete proxyHeaders[key];
       }
@@ -1494,15 +1495,17 @@ export class AdtHttpClient {
       proxyHeaders['SAP-Connectivity-SCC-Location_ID'] = proxy.locationId;
     }
 
-    // Streaming/discard adapters own their client and may close or destroy it.
+    // Closing switches this session to stateless: its bounded GET/HEAD still borrow the kept client.
     const reuseProxyClient =
-      this.reuseStatefulProxyClient && options?.responseBudget === undefined && !options?.discardResponseBody;
+      this.reuseStatefulProxyClient && !discard && (!bounded || this.config.sessionType === 'stateless');
     const client = reuseProxyClient ? (this.statefulProxyClient ??= new Client(proxyOrigin)) : new Client(proxyOrigin);
     let responseOwnsClient = false;
     try {
       const signal = requestSignal(options);
       options?.attemptBudget?.consume();
-      const resp = await client.request({
+      // Final synchronous proofs may cross the effective deadline before its abort timer runs.
+      throwIfRequestCancelled({ deadline: options?.deadline, signal });
+      const pending = client.request({
         method: method as Dispatcher.HttpMethod,
         // Full URL as path — standard HTTP proxy protocol
         path: url,
@@ -1514,16 +1517,10 @@ export class AdtHttpClient {
         ...(options?.fetchTimeoutMs === undefined ? {} : { headersTimeout: 0, bodyTimeout: 0 }),
       });
 
+      const resp = await recordSubmittedRequest(pending, options?.attemptBudget, method);
       const isNullBodyStatus = resp.statusCode === 204 || resp.statusCode === 205 || resp.statusCode === 304;
-      responseOwnsClient =
-        !!options?.discardResponseBody || (options?.responseBudget !== undefined && !isNullBodyStatus);
-      return await connectivityProxyResponse(
-        resp,
-        client,
-        signal,
-        options?.responseBudget !== undefined,
-        options?.discardResponseBody,
-      );
+      responseOwnsClient = !reuseProxyClient && (!!discard || (bounded && !isNullBodyStatus));
+      return await connectivityProxyResponse(resp, client, signal, bounded, discard, !reuseProxyClient);
     } finally {
       if (!reuseProxyClient && !responseOwnsClient) await client.close();
     }

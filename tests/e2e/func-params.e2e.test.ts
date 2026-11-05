@@ -52,6 +52,7 @@ describe('E2E FUNC structured-parameter lifecycle (issue #252)', () => {
   it('SAPWrite FUNC with structured parameters round-trips through MCP', async (ctx) => {
     const fugrName = uniqueName('ZARC1EP');
     const fmName = uniqueName('ZARC1EM');
+    let completed = false;
 
     const createFugr = await callTool(client, 'SAPWrite', {
       action: 'create',
@@ -137,8 +138,17 @@ describe('E2E FUNC structured-parameter lifecycle (issue #252)', () => {
           signature: { changing: { name: string }[] };
         };
         expect(rereadPayload.signature.changing[0]?.name).toBe('CV_FLAG');
+        completed = true;
       } finally {
-        await bestEffortDeleteFm(client, fugrName, fmName);
+        if (completed) {
+          const deletion = await callTool(client, 'SAPWrite', {
+            action: 'delete',
+            type: 'FUNC',
+            name: fmName,
+            group: fugrName,
+          });
+          expectToolSuccess(deletion);
+        } else await bestEffortDeleteFm(client, fugrName, fmName);
       }
     } finally {
       await bestEffortDeleteFugr(client, fugrName);

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects" xmlns:core="http://www.sap.com/adt/core">
+  <ioc:entry><ioc:object/><ioc:transport ioc:user="DEV" ioc:linked="false"><ioc:ref core:uri="/sap/bc/adt/cts/transportrequests/DEVK900003" core:type="/RQ" core:name="DEVK900003" core:description="Sanitized request heading"/></ioc:transport></ioc:entry>
+  <ioc:entry><ioc:object/><ioc:transport/></ioc:entry>
+  <ioc:entry><ioc:object ioc:user="DEV" ioc:deleted="false"><ioc:ref core:uri="/sap/bc/adt/oo/classes/zreview_unassigned" core:type="CLAS/OC" core:name="ZREVIEW_UNASSIGNED"/></ioc:object><ioc:transport/></ioc:entry>
+  <ioc:entry><ioc:object ioc:user="DEV" ioc:deleted="false"><ioc:ref core:uri="/sap/bc/adt/oo/classes/zreview_assigned/includes/definitions" core:type="CLAS/OCN/definitions" core:name="ZREVIEW_ASSIGNED" core:parentUri="/sap/bc/adt/oo/classes/zreview_assigned"/></ioc:object><ioc:transport ioc:user="DEV" ioc:linked="true"><ioc:ref core:uri="/sap/bc/adt/cts/transportrequests/DEVK900004" core:type="/RQ" core:name="DEVK900004" core:parentUri="/sap/bc/adt/cts/transportrequests/DEVK900003" core:description="Sanitized unrelated assignment"/></ioc:transport></ioc:entry>
+</ioc:inactiveObjects>

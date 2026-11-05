@@ -17,7 +17,7 @@ import { activate } from '../../src/adt/devtools.js';
 import { AdtApiError } from '../../src/adt/errors.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
 import { SkipReason, skipTest } from '../helpers/skip-policy.js';
-import { CrudRegistry, cleanupAll, generateUniqueName } from './crud-harness.js';
+import { CrudRegistry, cleanupAll, generateUniqueName, retryDelete } from './crud-harness.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
 
 const CT_FUGR = 'application/vnd.sap.adt.functions.groups.v3+xml';
@@ -74,6 +74,7 @@ describe('FUGR + FUNC lifecycle', () => {
     const fugrUrl = `/sap/bc/adt/functions/groups/${encodeURIComponent(fugrName.toLowerCase())}`;
     const fmUrl = `/sap/bc/adt/functions/groups/${encodeURIComponent(fugrName.toLowerCase())}/fmodules/${encodeURIComponent(fmName.toLowerCase())}`;
 
+    let completed = false;
     try {
       // Step 1: Create FUGR
       try {
@@ -138,8 +139,14 @@ describe('FUGR + FUNC lifecycle', () => {
       // Step 6: Verify the active source contains our update
       const active = await client.getFunction(fugrName, fmName);
       expect(active.source).toContain('Hello from ARC-1 integration test');
+      completed = true;
     } finally {
-      // Cleanup is handled by registry/cleanupAll in afterAll
+      if (completed) {
+        const deletion = await retryDelete(client.http, client.safety, fmUrl);
+        registry.remove(fmName); // Do not repeat a rejected DELETE during parent cleanup.
+        expect(deletion, 'Activated function-module deletion').toMatchObject({ success: true });
+      }
+      // The owned group and incomplete setup are still cleaned in afterAll.
     }
   });
 

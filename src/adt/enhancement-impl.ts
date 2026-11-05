@@ -140,13 +140,18 @@ export async function getBadiEnhancementImplementation(
 ): Promise<StoredBadiImplementation> {
   checkOperation(safety, OperationType.Read, 'GetEnhancementImplementation');
   const resp = await http.get(`${ENHO_XHB_COLLECTION}/${encodeURIComponent(name)}`, { Accept: ENHO_XHB_CONTENT_TYPE });
-  const doc = parseXml(resp.body);
-  const info: StoredBadiImplementation = withFilterConditions(doc, parseEnhancementImplementation(resp.body));
+  return parseStoredBadiImplementation(resp.body);
+}
+
+/** Same parser for a freshly read, already identity-verified document under a private lock. */
+export function parseStoredBadiImplementation(xml: string): StoredBadiImplementation {
+  const doc = parseXml(xml);
+  const info: StoredBadiImplementation = withFilterConditions(doc, parseEnhancementImplementation(xml));
   const spot = usageSpot(doc);
   if (spot) info.enhancementSpot = spot;
   const version = text(asRecord(doc.objectData)?.['@_abapLanguageVersion']);
   if (version) info.abapLanguageVersion = version;
-  info.preserved = preservedImplementations(resp.body, doc);
+  info.preserved = preservedImplementations(xml, doc);
   return info;
 }
 
@@ -371,11 +376,13 @@ async function readEnhancementSpot(
   http: AdtHttpClient,
   safety: SafetyConfig,
   spot: string,
+  validate?: (xml: string) => void,
 ): Promise<{ internal: boolean; badis: Map<string, Map<string, FilterDeclaration>> }> {
   checkOperation(safety, OperationType.Read, 'GetEnhancementSpot');
   const resp = await http.get(`/sap/bc/adt/enhancements/enhsxsb/${encodeURIComponent(spot.toLowerCase())}`, {
     Accept: ENHS_XSB_CONTENT_TYPE,
   });
+  validate?.(resp.body);
   const result = new Map<string, Map<string, FilterDeclaration>>();
   // A regex, not the parser: each filter's `<enhs:filterCheck>` is copied into the implementation as SAP wrote it.
   for (const badi of resp.body.matchAll(
@@ -419,19 +426,20 @@ export async function resolveBadiFilters(
   safety: SafetyConfig,
   definition: BadiImplementationDefinition,
   createName?: string,
+  validateSpot?: (xml: string) => void,
 ): Promise<BadiImplementationDefinition> {
   const spot = definition.enhancementSpot;
   const entries = definition.badiImplementations ?? [];
   const needTree = entries.filter((entry) => entry.filter && !entry.keepStoredFilter);
   const customerCreate = /^[ZY]/i.test(createName ?? '');
-  if (!spot || (!entries.length && !customerCreate)) return definition;
+  if (!spot || (!entries.length && !customerCreate && !validateSpot)) return definition;
   let badis = new Map<string, Map<string, FilterDeclaration>>();
   let internal = false;
   try {
-    ({ badis, internal } = await readEnhancementSpot(http, safety, spot));
+    ({ badis, internal } = await readEnhancementSpot(http, safety, spot, validateSpot));
   } catch (err) {
     if (err instanceof AdtApiError && err.statusCode === 404) throw invalid(`enhancement spot ${spot} does not exist.`);
-    if (needTree.length || customerCreate) throw err;
+    if (needTree.length || customerCreate || validateSpot) throw err;
   }
   if (internal && customerCreate) {
     throw invalid(

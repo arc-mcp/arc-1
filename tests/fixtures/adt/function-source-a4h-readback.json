@@ -1,0 +1,10 @@
+{
+  "system": "A4H/001",
+  "capturedAt": "2026-11-02",
+  "functionName": "ZARC1_NF_A89B1B693704A91A",
+  "requested": "FUNCTION ZARC1_NF_A89B1B693704A91A\n  IMPORTING\n    VALUE(IV_TEXT) TYPE STRING DEFAULT 'MiXeD'.\n  DATA(lv_text) = iv_text.\n  \" ARC1 native contract A89B1B693704A91A\nENDFUNCTION.\n",
+  "putResponse": "FUNCTION zarc1_nf_a89b1b693704a91a\r\n  IMPORTING\r\n    VALUE(iv_text) TYPE string DEFAULT 'MiXeD'.\r\n\r\n\r\n\r\n  DATA(lv_text) = iv_text.\r\n  \" ARC1 native contract A89B1B693704A91A\r\nENDFUNCTION.\r\n",
+  "readback": "FUNCTION zarc1_nf_a89b1b693704a91a\r\n  IMPORTING\r\n    VALUE(iv_text) TYPE string DEFAULT 'MiXeD'.\r\n\r\n\r\n\r\n  DATA(lv_text) = iv_text.\r\n  \" ARC1 native contract A89B1B693704A91A\r\nENDFUNCTION.",
+  "readbackSha256": "600d083dc08fd796b8f428977c1ceca3b03a039ca0ffdacbf7341c0a7e5c91db",
+  "note": "Owned temporary test source. HTTP PUT 200; original strict comparator refused added blank-line framing. Fixtures were individually removed after inspection. Not PP qualification."
+}

@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="utf-8"?><qf:proposalResult xmlns:qf="http://www.sap.com/adt/quickfixes"><deltas><unit><content>DATA lv_existing TYPE i.
+    DATA: lv_missing TYPE i.</content><adtcore:objectReference adtcore:uri="/sap/bc/adt/oo/classes/zcl_test/source/main#start=7,4;end=7,28" adtcore:type="CLAS/OC" adtcore:name="Insert variable definition" xmlns:adtcore="http://www.sap.com/adt/core"/></unit></deltas><variableSourceStates><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"/></variableSourceStates></qf:proposalResult>

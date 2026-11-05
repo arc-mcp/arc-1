@@ -712,8 +712,10 @@ describe('AdtApiError', () => {
     it('classifies enqueue errors for 423 (release unknown → combined guidance)', () => {
       const classification = classifySapDomainError(423, 'Lock handle invalid');
       expect(classification?.category).toBe('enqueue-error');
-      // First-line advice: retry (transient expiry is the common case).
-      expect(classification?.hint).toContain('Retry first');
+      // Inspect the state before another mutation, rather than assuming a transient expiry.
+      expect(classification?.hint).toContain('Inspect the current object state before retrying');
+      expect(classification?.hint).toContain('repeat the whole operation');
+      expect(classification?.hint).not.toContain('fresh lock');
       // Release unknown → still point at the real fix for < 7.51 systems
       // (abapfs_extensions) so the hint is actionable even without detection.
       expect(classification?.hint).toContain('abapfs_extensions');
@@ -735,7 +737,9 @@ describe('AdtApiError', () => {
         const classification = classifySapDomainError(423, 'x', undefined, release);
         expect(classification?.category).toBe('enqueue-error');
         expect(classification?.hint).not.toContain('abapfs_extensions');
-        expect(classification?.hint).toContain('Retry first');
+        expect(classification?.hint).toContain('Inspect the current object state before retrying');
+        expect(classification?.hint).toContain('repeat the whole operation');
+        expect(classification?.hint).not.toContain('fresh lock');
         expect(classification?.transaction).toBe('SM12');
       }
     });

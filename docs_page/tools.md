@@ -101,7 +101,7 @@ the complete inherited API.
 | `to` | string | No | For `action="diff"`: NEW side — defaults to `"inactive"`. Same accepted values as `from`. |
 | `fromLabel` | string | No | For `action="diff"`: optional display label for the OLD side in the summary and patch header, e.g. `DNT-6-6: Validate discounts (DS7K900123)`. Does not affect source resolution. |
 | `toLabel` | string | No | For `action="diff"`: optional display label for the NEW side in the summary and patch header, e.g. `active` or `inactive draft`. Does not affect source resolution. |
-| `format` | string | No | Output format: `"text"` (default), `"structured"`, or `"editable"` (fresh source + SHA-256 for guarded writes; see [Source preconditions](#source-preconditions)). For `action="diff"`, structured returns a machine-readable diff envelope; for ordinary reads, structured supports CLAS metadata and DEVC package listings (see below). |
+| `format` | string | No | Output format: `"text"` (default), `"structured"`, or `"editable"` (fresh source/native metadata and hashes; see [Source preconditions](#source-preconditions)). For `action="diff"`, structured returns a machine-readable diff envelope; for ordinary reads, structured supports CLAS metadata and DEVC package listings (see below). |
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. With `method=`, an explicit include selects that exact source (including `main`) before method extraction. For DDLS: `elements` (extract CDS view elements). For TEXT_ELEMENTS: `symbols`, `selections`, or `headings` — one part of the text pool; omit for the whole PROG/FUGR pool or CLAS symbols. |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `methodView` | string | No | `"signature"`: return one method declaration owned by the global CLAS MAIN source, including parameter and exception clauses. Requires a bare `method` name; omit for the existing implementation-body read. No `method="*"`, locals, interface-qualified or inherited signatures; only omitted/`main` include and plain text format. Incompatible with grep, ranges, diff and editable reads. |
@@ -684,7 +684,7 @@ keep their separate behavior.
 | `method` | string | No | For `edit_method`/`edit_method_signature`/`delete_method`/`change_method_visibility`: method NAME (e.g., `"get_name"`, `"zif_order~process"`, `"lhc_project~approve_project"`). For `add_method`: the full METHODS CLAUSE as ABAP source (e.g., `"METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string."`). |
 | `unit` | string | No | For on-prem `edit_unit`/`add_unit`: existing/new case-insensitive FORM or MODULE name (for example `"PROCESS_ORDERS"` or `"STATUS_0100"`). |
 | `visibility` | string | No | For `add_method`: target visibility section — `public` (default), `protected`, or `private`. For `change_method_visibility`: target visibility section (required). The section header must already exist in the DEFINITION block; if not, ARC-1 refuses with a hint to use `edit_class_definition` first. |
-| `abstract` | boolean | No | For `add_method`: when `true`, only the METHODS clause is inserted into DEFINITION — no `METHOD/ENDMETHOD` stub is added to IMPLEMENTATION. Default `false`. |
+| `abstract` | boolean | No | For `add_method`: optional assertion that must match ABSTRACT in the METHODS clause. The clause determines whether an implementation stub is needed. |
 | `bdefName` | string | No | For `scaffold_rap_handlers`: interface BDEF name used to derive required handler signatures. For `generate_behavior_implementation`: optional override; default discovery reads the class metadata's `<class:rootEntityRef>` to locate the BDEF automatically. |
 | `autoApply` | boolean | No | For `scaffold_rap_handlers`: when `true`, create missing `lhc_*` skeletons, inject missing signatures plus empty method stubs into the behavior pool, and write back. Not used by `generate_behavior_implementation` (which always applies; use `dryRun=true` there to preview). |
 | `targetAlias` | string | No | For `scaffold_rap_handlers` and `generate_behavior_implementation`: optional RAP entity alias filter (scaffold only one alias/handler class) |
@@ -1064,7 +1064,14 @@ SAPWrite({ action: "update", type: "INCL", name: "LZARC1_FGF01", group: "ZARC1_F
 
 Ordinary-group create/delete verified on NW 7.50 SP02 and S/4HANA 2023 (758). Namespaced create was reported working with the prefix fix on 752 SP06; namespaced delete is covered by regression tests, but still needs live verification in a writable customer namespace.
 
-**Robust to GPT/OpenAI optional-field "overpopulation" (issue #360).** GPT/OpenAI tool callers (especially under Structured Outputs / `strict` mode, the default for the Responses API) tend to over-populate optional fields — emitting `null` for every unused optional, blank strings, or stringified booleans like `"false"`. ARC-1 normalizes these before validation: `null` and empty/whitespace strings are treated as omitted (across every tool), and optional booleans accept real JSON booleans **and** `"true"/"false"/"1"/"0"/"yes"/"no"` (so `signExists="false"` is correctly stored as `false`, never inverted). Practical guidance for tool authors: **omit** optional fields you don't need rather than sending `""`/`null`; `include` is **CLAS-only** (for `update`/`edit_method`/`edit_class_definition`) and is ignored for other types/actions; `delete` needs only `type` and `name` (plus optional `transport`).
+**Robust to GPT/OpenAI optional-field "overpopulation" (issue #360).** GPT/OpenAI tool callers (especially under Structured Outputs / `strict` mode, the default for the Responses API) tend to over-populate optional fields — emitting `null` for every unused optional, blank strings, or stringified booleans like `"false"`. ARC-1 normalizes these before validation: `null` and empty/whitespace strings are treated as omitted (except the explicit clear operations below), and optional booleans accept real JSON booleans **and** `"true"/"false"/"1"/"0"/"yes"/"no"` (so `signExists="false"` is correctly stored as `false`, never inverted). Practical guidance for tool authors: **omit** optional fields you don't need rather than sending `""`/`null`; `include` is **CLAS-only** (for `update`/`edit_method`/`edit_class_definition`) and is ignored for other types/actions; `delete` needs only `type` and `name` (plus optional `transport`).
+
+**Clearing class-local includes:** For `SAPWrite(action="update", type="CLAS")`, select
+`definitions`, `implementations`, `macros` or `testclasses`. Read that include with
+`SAPRead(format="editable")`, then send exactly `source=""` and its `expectedSourceHash`.
+An empty value without a hash, or a whitespace-only value, is refused. The write leaves an
+inactive draft; whole-class activation also activates other pending include edits.
+`edit_text_symbols` separately accepts an empty source to clear its selected text-pool part.
 
 **Mixed-case object names rejected on create.** SAP TADIR is uppercase on every release; mixed-case names cause silent corruption (e.g., a DDLS named `Zc_MyView` registers as `ZC_MYVIEW` in TADIR but the source body keeps mixed case, confusing every downstream tool). `SAPWrite(action="create"\|"batch_create")` rejects mixed-case names pre-flight with an actionable error. The source code *inside* the object can still use mixed case (e.g., `define view entity Zc_MyView`); only the TADIR object name needs to be uppercase.
 
@@ -1234,7 +1241,7 @@ SAPWrite(action="edit_unit", type="PROG", name="ZREPORT", unit="process_data",
          source="FORM process_data. ... ENDFORM.", expectedSourceHash=H)
 ```
 
-Supported types: `PROG`, `INCL`, `CLAS`, `INTF`, `FUNC`, `DDLS`, `DCLS`, `BDEF`, `SRVD`, `DDLX`.
+The existing guarded text-source writes support `PROG`, `INCL`, `CLAS`, `INTF`, `FUNC`, `DDLS`, `DCLS`, `BDEF`, `SRVD`, `DDLX`.
 Supported actions: `update`, `edit_unit`, `add_unit`, and the CLAS surgery actions. For class-local methods,
 read the correct `include=implementations|testclasses|definitions|macros` and use that same include
 on the write (or the matching method prefix). The hash covers that entire include. For function-group
@@ -1247,6 +1254,55 @@ also refuses changes elsewhere in its containing source. Hashes compare exact UT
 including whitespace and line endings; they do not record edit history. A read does not hold a lock
 or reserve a version, and an identical source restored later has the same hash. A missing include
 cannot be initialized by a guarded write; its read/precondition must succeed first.
+
+#### Native metadata and server-driven editable reads
+
+The same `format="editable"` also reads `DOMA`, `DTEL`, `TTYP`, `ENQU`, `MSAG`, `TABL`,
+`TABL/DTT`, `TABL/DTI`, `SRVB`, `ENHO` (BADI_IMPL), `SKTD`/`KTD`, and the registered server-driven types. These are ordinary
+read-scope operations: they work with writes disabled and do not require write-package grants.
+SAP authorization still applies. A returned hash does not grant permission or imply write support.
+
+Use only `type`, `name`, and `format="editable"`; `force_refresh` is unnecessary because every
+read is fresh. Each result includes `type`, `name`, `objectUrl`, `package`, `metadataXml`,
+`metadataHash`, `metadataView`, and `nativeVersion`. `metadataXml` preserves the native document,
+including fields omitted by ordinary formatted reads. `metadataHash` uses the exact canonical
+comparison required by the corresponding private write adapter, rather than hashing formatted text.
+
+| Family | Requested metadata view | Additional result |
+| --- | --- | --- |
+| DOMA, DTEL, TTYP, ENQU, MSAG, TABL/DTT | Explicit inactive view | Metadata snapshot and hash |
+| TABL/DT or TABL/DS | Developer view; exact subtype resolved by native search | `source`, `sourceHash`, `sourceUrl`, `sourceFormat="text"`, `sourceView="developer"` |
+| TABL/DTI | Explicit inactive view; name `TABLE~INDEX` | Exact JSON source and hash; `sourceView="inactive"` |
+| Other registered server-driven types | Developer view | Exact JSON or text source and hash; `sourceView="developer"` |
+| SRVB | Developer view | Full native metadata hash and observed `inactiveAlternative` |
+| ENHO BADI_IMPL, SKTD/KTD | Developer view | Complete native document/hash, `nativeType` and observed `inactiveAlternative`; no separate source resource |
+
+The view fields describe what ARC-1 requested. `nativeVersion` reports what SAP returned in the
+metadata: `active`, `inactive`, or `new`. An inactive request may return active metadata; that is
+reported as active, never as a proven draft. The source view does not independently prove a source
+version. Source-backed snapshots compare complete native owner metadata before and after reading
+the source, including version and state alternatives. They do not hold a lock or provide an atomic
+snapshot; the writer must still re-read under its own lock.
+
+The call is bounded to 60 seconds, 16 HTTP attempts and 8 MiB of cumulative decoded response data.
+ENHO/SKTD use a tighter 1 MiB cumulative response cap. Native XML is limited to 1 MiB per document and source to 4 MiB. Identity/version mismatch,
+metadata drift, invalid JSON, read errors and bounds failures return an error without a usable hash.
+A 404 is not an empty snapshot. No collection fallback, activation, lock, PUT, POST or DELETE is
+performed by these read companions.
+
+ENHO/SKTD results preserve the complete native XML, including opaque fields, KTD node IDs,
+Base64 texts and short-text obligations. They do not decode or rewrite it. Ordinary formatted
+reads remain available for the JSON/Markdown editing representation. ENHO requires native
+BADI_IMPL technology; KTD currently requires a matching top-level DDLS, BDEF, SRVD, SRVB, DEVC
+or SMBC reference. Unknown parent/technology contracts are refused. No parent or enhancement
+spot is fetched merely to read this document, and no write-package permission is required.
+
+These additional preconditions currently support private adapter qualification. Public write
+admission is unchanged, and public `SAPWrite`/`SAPActivate` explicitly reject `expectedMetadataHash`
+instead of silently discarding it. Reuse a hash only for the same object, type and requested view;
+hashes are content preconditions, not identity credentials, and identical content can share a hash.
+Native saved/draft behavior, release coverage and two-user PP qualification for the private writers
+remain open. See the [editable-read evidence and limits](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-02-editable-native-read-companions.md).
 
 ### Procedural unit surgery
 
@@ -1296,6 +1352,15 @@ Event blocks such as `START-OF-SELECTION` and `AT SELECTION-SCREEN` are intentio
 
 Backing pattern for class surgery: lock the class → read fresh editable source and matching `/objectstructure` when needed → splice → PUT → unlock. These reads bypass source and inactive-list caches, preserving draft changes completed before the lock. No auto-activation. Caller runs `SAPActivate` next. For `edit_class_definition include=...`, ARC-1 whole-replaces the class-local include directly and auto-initializes a missing include under the same parent class lock before the PUT.
 
+Individual signature changes, deletion and visibility moves refuse a native range that opens with
+`METHODS:` or `CLASS-METHODS:`. A4H returns ranges that include earlier declarations in that chain.
+This guard covers the observed range shape; it does not validate every source/structure mismatch.
+Use a complete class source update for chains, preserving the other methods.
+
+Method body edits require one replacement block with the selected method's actual name. Body-only
+input preserves its opening and closing statements. An edit is refused if the selected whole-line
+range includes neighboring statements; separate those statements in a full source update first.
+
 #### `action="edit_class_definition"` — replace the DEFINITION block whole
 
 Without `include=`, send only the new global `CLASS … DEFINITION … ENDCLASS.` block (typical ~10–80 lines for a 20-method class). ARC-1 fetches the existing `/source/main`, splices the new DEFINITION over the existing one, and PUTs back. The IMPLEMENTATION block is preserved verbatim. If you include ABAP Doc (`"!`) directly above the new `CLASS` declaration, it replaces the attached old class documentation. Otherwise, existing class documentation is kept.
@@ -1306,8 +1371,10 @@ With `include=definitions|implementations|macros|testclasses`, send the full rep
 
 - Added concrete method without a matching `METHOD …. ENDMETHOD.` block in IMPLEMENTATION → "use `add_method`".
 - Removed method that still has an orphan METHOD/ENDMETHOD block in IMPLEMENTATION → "use `delete_method`".
+- Changing an existing method’s ABSTRACT status, or an existing interface’s ABSTRACT METHODS selection → use a complete source update that changes its implementation consistently.
+- Removing a direct interface declaration while a remaining interface-qualified body cannot be accounted for → preserve the declaration or use a complete source update. Composite interfaces can require that full update because ARC-1 cannot infer their inherited declarations locally.
 
-Exempted from the symmetry check (no IMPL needed): `ABSTRACT METHODS`, `EVENTS`, `INTERFACES`, `ALIASES`. For `include=` writes (CCDEF), the refuse-policy is skipped — cross-include validation is not performed; rely on `SAPActivate` to catch breaks.
+New abstract methods, events and aliases do not require method bodies. Interface declarations are not expanded into a complete inherited-method inventory; the interface preservation checks above still apply, and SAP activation checks the complete contract. For `include=` writes (CCDEF), the refuse-policy is skipped — cross-include validation is not performed; rely on `SAPActivate` to catch breaks.
 
 ```jsonc
 // Drop FINAL from a class without touching any method
@@ -1334,7 +1401,7 @@ Insert a METHODS clause AND an empty `METHOD <name>. ENDMETHOD.` stub in one PUT
 // → inserts METHODS greet ... in PUBLIC SECTION + empty METHOD greet. ENDMETHOD. in IMPLEMENTATION
 ```
 
-Pass `abstract: true` to skip the IMPLEMENTATION stub (for `METHODS x ABSTRACT.` in an abstract class).
+The METHODS clause determines abstractness: `METHODS x ABSTRACT.` creates no IMPLEMENTATION stub. An optional `abstract` flag must agree with that clause.
 
 For an inherited interface method, pass a redefinition clause such as
 `METHODS /IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM REDEFINITION.` (optionally
@@ -1353,7 +1420,7 @@ preserving existing code; `edit_method` can only replace a body that already exi
 
 #### `action="edit_method_signature"` — replace one METHODS clause
 
-One range replacement on a method's declaration. The IMPLEMENTATION block is untouched — any body incompatibility surfaces at `SAPActivate`, same as today's `edit_method` contract. Include ABAP Doc (`"!`) directly above the new `METHODS` clause to replace its attached documentation; omit it to keep the current documentation.
+One range replacement on a method's declaration. Changing ABSTRACT is refused because it also requires adding or removing an implementation; use a complete source update for that transition. The IMPLEMENTATION block is untouched — any body incompatibility surfaces at `SAPActivate`, same as today's `edit_method` contract. Include ABAP Doc (`"!`) directly above the new `METHODS` clause to replace its attached documentation; omit it to keep the current documentation.
 
 ```jsonc
 {
@@ -2392,9 +2459,11 @@ accepted. `format` and formatter-settings actions contact or modify SAP and rema
 - **`lint`** — Check ABAP source for issues. Returns errors and warnings with line/column positions.
 - **`lint_and_fix`** — Lint + auto-fix all fixable issues (keyword case, obsolete statements, etc.). Returns the fixed source code alongside remaining unfixable issues.
 - **`list_rules`** — List all available rules with current config (preset, enabled/disabled status, severity). No source needed.
-- **`format`** — Pretty-print ABAP source via SAP ADT PrettyPrinter using the SAP system's global formatter settings. Returns formatted source text.
-- **`get_formatter_settings`** — Read SAP global PrettyPrinter settings (indentation + keyword style).
-- **`set_formatter_settings`** — Update SAP global PrettyPrinter settings. Provide at least one of `indentation` or `style`. Requires `write` scope and `SAP_ALLOW_WRITES=true`.
+- **`format`** — Pretty-print ABAP source via SAP ADT PrettyPrinter using the connected SAP user's formatter settings for this system. Returns formatted source text.
+- **`get_formatter_settings`** — Read that user's PrettyPrinter settings (indentation + keyword style).
+- **`set_formatter_settings`** — Update that user's PrettyPrinter settings for this system. Provide at least one of `indentation` or `style`. Requires `write` scope and `SAP_ALLOW_WRITES=true`.
+
+SAP documents these options as [user-specific settings stored for the selected system connection](https://help.sap.com/docs/ABAP_PLATFORM_NEW/c238d694b825421f940829321ffa326a/81717979de0243658237fbe2be5a2c6e.html).
 
 **System-Aware Presets:**
 

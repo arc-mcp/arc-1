@@ -1,72 +1,41 @@
-/** Keep a class surgery's source, structure and write within one SAP lock. */
-import { lockObject, unlockObject, updateSource } from '../../adt/crud.js';
-import type { AdtHttpClient } from '../../adt/http.js';
+/** Class metadata facet over the shared source-edit lifecycle. */
+import { verifiedClassStructure } from '../../adt/class-structure-evidence.js';
+import { AdtSafetyError } from '../../adt/errors.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
-import { assertSourceHash } from '../../adt/source-precondition.js';
 import type { ClassStructure } from '../../adt/types.js';
 import { parseClassStructure } from '../../adt/xml-parser.js';
-import { logger } from '../../server/logger.js';
-import { getCachedFeatures } from '../feature-cache.js';
 import type { ToolResult } from '../shared.js';
 import type { SapWriteContext } from './context.js';
+import { pinnedSourceState } from './pinned-source-context.js';
+import { type SourceEdit, withSourceEdit } from './source-edit.js';
 
-interface ClassEdit {
-  http: AdtHttpClient;
-  read(url: string): Promise<string>;
+export interface ClassEdit extends SourceEdit {
   readMainAndStructure(): Promise<{ main: string; structure: ClassStructure }>;
-  save(url: string, source: string): Promise<void>;
 }
-
-export async function withClassEdit(
+export function withClassEdit(
   ctx: SapWriteContext,
   edit: (locked: ClassEdit) => Promise<ToolResult>,
 ): Promise<ToolResult> {
-  const { client, objectUrl, srcUrl, name, transport, invalidateWrittenObject } = ctx;
-  checkOperation(client.safety, OperationType.Update, 'EditClass');
-  return client.http.withStatefulSession(async (session) => {
-    const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
-    let writeAttempted = false;
-    const read = async (url: string, checkSource = true) => {
-      checkOperation(client.safety, OperationType.Read, 'GetSource');
-      // SAP returns the editable draft (active when none exists). Both endpoints must use
-      // this same selection under the lock; caches and inactive worklists can be stale.
-      const source = (await session.get(url, { 'Cache-Control': 'no-cache' })).body;
-      if (checkSource) assertSourceHash(source, ctx.args.expectedSourceHash as string | undefined, url);
-      return source;
-    };
-    try {
-      return await edit({
-        http: session,
-        read,
+  return withSourceEdit(
+    ctx,
+    (locked) =>
+      edit({
+        ...locked,
         async readMainAndStructure() {
-          const main = await read(srcUrl);
-          const structure = parseClassStructure(await read(`${objectUrl}/objectstructure`, false), name);
+          const state = ctx.mutationContext.mode === 'pinned-pp' ? pinnedSourceState(ctx) : undefined;
+          if (state?.include || ctx.type !== 'CLAS')
+            throw new AdtSafetyError('Native class metadata selects class main source only.');
+          const main = await locked.read(ctx.srcUrl);
+          if (state) state.phase = 'structure-read';
+          checkOperation(ctx.client.safety, OperationType.Read, 'GetClassStructure');
+          const metadata = await locked.http.get(`${ctx.objectUrl}/objectstructure`, { 'Cache-Control': 'no-cache' });
+          const structure = state
+            ? verifiedClassStructure(metadata.body, main, ctx.name, ctx.objectUrl, ctx.client.sapClient)
+            : parseClassStructure(metadata.body, ctx.name);
+          if (state) state.phase = 'edit-preparation';
           return { main, structure };
         },
-        async save(url, source) {
-          writeAttempted = true;
-          await updateSource(
-            session,
-            client.safety,
-            url,
-            source,
-            lock.lockHandle,
-            transport ?? (lock.corrNr || undefined),
-          );
-        },
-      });
-    } finally {
-      try {
-        await unlockObject(session, objectUrl, lock.lockHandle);
-      } finally {
-        if (writeAttempted) {
-          try {
-            invalidateWrittenObject('CLAS', name);
-          } catch {
-            logger.warn('Class surgery cache invalidation failed after a write attempt.');
-          }
-        }
-      }
-    }
-  });
+      }),
+    'warn',
+  );
 }

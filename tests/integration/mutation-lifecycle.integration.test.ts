@@ -2,9 +2,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AdtClient } from '../../src/adt/client.js';
 import { createObject, safeUpdateClassInclude, safeUpdateSource } from '../../src/adt/crud.js';
-import { activate } from '../../src/adt/devtools.js';
 import { sourceHash } from '../../src/adt/source-precondition.js';
 import { handlePinnedWrite } from '../../src/handlers/write/pinned.js';
+import { handlePinnedActivation } from '../../src/handlers/write/pinned-activation.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
 import { buildCreateXml, CrudRegistry, cleanupAll, generateUniqueName } from './crud-harness.js';
 import { getTestClient } from './helpers.js';
@@ -87,7 +87,9 @@ ENDCLASS.
     );
     expect(again.isError, JSON.stringify(again)).not.toBe(true);
     expect((await client.http.get(sourceUrl)).body).toContain('result = 3.');
-    expect((await activate(client.http, client.safety, owner)).success).toBe(true);
+    const activation = await handlePinnedActivation(pinned, { type: 'CLAS', name });
+    expect(activation.isError, JSON.stringify(activation)).not.toBe(true);
+    expect(JSON.parse(activation.content[0]!.text!).success).toBe(true);
     expect((await cleanupAll(client.http, client.safety, registry)).failed).toEqual([]);
     await expect(client.http.get(owner)).rejects.toMatchObject({ statusCode: 404 });
   }, 120_000);

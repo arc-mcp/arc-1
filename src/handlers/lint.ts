@@ -18,6 +18,7 @@ import {
 } from '../lint/config-builder.js';
 import { detectFilename, lintAbapSource, lintAndFix } from '../lint/lint.js';
 import type { ServerConfig } from '../server/types.js';
+import { handlePinnedFormatter } from './pinned-formatter.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { buildLintConfigOptions } from './write-helpers.js';
 
@@ -28,6 +29,12 @@ export async function handleSAPLint(
   config: ServerConfig,
 ): Promise<ToolResult> {
   const action = String(args.action ?? '');
+  if (
+    (config.targetId || config.multiTargetWrite || client.safety.multiTargetWrite) &&
+    ['format', 'get_formatter_settings', 'set_formatter_settings'].includes(action)
+  ) {
+    return handlePinnedFormatter(client, args, config);
+  }
   const ruleOverrides = args.rules as RuleOverrides | undefined;
   const configOptions = buildLintConfigOptions(config, ruleOverrides);
 

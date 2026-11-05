@@ -1,14 +1,13 @@
 /** SAPWrite action for surgical FORM/MODULE replacement and insertion in PROG and INCL sources. */
 
-import { lockObject, unlockObject, updateSource } from '../../adt/crud.js';
 import { ABAPLINT_MAX_RELEASE, mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
-import { assertSourceHash } from '../../adt/source-precondition.js';
 import { insertUnit, spliceUnit } from '../../context/unit-surgery.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
 import { runPreWriteLint, runPreWriteSyntaxCheck } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
+import { withSourceEdit } from './source-edit.js';
 
 export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult> {
   const {
@@ -18,12 +17,10 @@ export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult>
     type,
     name,
     source,
-    transport,
     lintOverride,
     checkOverride,
     objectUrl,
     srcUrl,
-    invalidateWrittenObject,
     enforcePackageForExistingObject,
   } = ctx;
   const action = String(args.action);
@@ -44,15 +41,10 @@ export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult>
   // Keep this fallback local: standalone lint and other write actions still use their defaults.
   const release = cachedFeatures?.abapRelease ?? config.abapRelease ?? String(ABAPLINT_MAX_RELEASE);
   const abaplintVersion = mapSapReleaseToAbaplintVersion(release);
-  return client.http.withStatefulSession(async (session) => {
-    const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', cachedFeatures?.abapRelease);
-    let writeAttempted = false;
-    try {
-      checkOperation(client.safety, OperationType.Read, 'GetSource');
-      // Omit version: SAP returns the editable draft, or active source when no draft exists.
-      // Read after locking, without source or inactive-list caches.
-      const currentSource = (await session.get(srcUrl, { 'Cache-Control': 'no-cache' })).body;
-      assertSourceHash(currentSource, args.expectedSourceHash as string | undefined, srcUrl);
+  return withSourceEdit(
+    ctx,
+    async (edit) => {
+      const currentSource = await edit.read(srcUrl);
       const spliced = adding
         ? insertUnit(currentSource, name, unit, source, abaplintVersion)
         : spliceUnit(currentSource, name, unit, source, abaplintVersion);
@@ -62,22 +54,15 @@ export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult>
       if (lint.blocked) return lint.result!;
 
       const checkNotes = await runPreWriteSyntaxCheck(
-        { http: session, safety: client.safety },
+        { http: edit.http, safety: client.safety },
         type,
         spliced.newSource,
         objectUrl,
         config,
         checkOverride,
       );
-      writeAttempted = true;
-      await updateSource(
-        session,
-        client.safety,
-        srcUrl,
-        spliced.newSource,
-        lock.lockHandle,
-        transport ?? (lock.corrNr || undefined),
-      );
+      const extras = [lint.warnings, checkNotes].filter(Boolean).join('\n\n');
+      await edit.save(srcUrl, spliced.newSource, extras);
       const kind = spliced.unit?.kind ?? 'unit';
       const group = String(args.group ?? '').trim();
       const activationHint =
@@ -85,15 +70,8 @@ export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult>
           ? ` Activate this structural include with SAPActivate(type="INCL", name="${name}", group="${group}").`
           : '';
       const message = `Successfully ${adding ? 'added' : 'updated'} ${kind} "${unit}" in ${type} ${name}.${activationHint}`;
-      const extras = [lint.warnings, checkNotes].filter(Boolean).join('\n\n');
       return extras ? textResult(`${message}\n\n${extras}`) : textResult(message);
-    } finally {
-      // Surface failed unlocks: SAP may still hold the lock after a successful write.
-      try {
-        await unlockObject(session, objectUrl, lock.lockHandle);
-      } finally {
-        if (writeAttempted) invalidateWrittenObject(type, name);
-      }
-    }
-  });
+    },
+    'throw',
+  );
 }

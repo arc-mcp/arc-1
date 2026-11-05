@@ -35,6 +35,7 @@ describe('additive XSUAA target-grant descriptor contract', () => {
       'MCPTargetReadAccess',
       'MCPAllTargetReadAccess',
       'MCPTargetDeveloper',
+      'MCPTargetTransportDeveloper',
     ]);
   });
 
@@ -67,6 +68,10 @@ describe('additive XSUAA target-grant descriptor contract', () => {
     });
     expect(templates.find((entry: { name: string }) => entry.name === 'MCPTargetDeveloper')).toMatchObject({
       'scope-references': ['$XSAPPNAME.read', '$XSAPPNAME.write'],
+      'attribute-references': ['arc1_targets', 'arc1_write_targets'],
+    });
+    expect(templates.find((entry: { name: string }) => entry.name === 'MCPTargetTransportDeveloper')).toMatchObject({
+      'scope-references': ['$XSAPPNAME.read', '$XSAPPNAME.write', '$XSAPPNAME.transports'],
       'attribute-references': ['arc1_targets', 'arc1_write_targets'],
     });
     expect(security).not.toHaveProperty('role-collections');

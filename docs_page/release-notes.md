@@ -22,6 +22,18 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
+## Upcoming — broader pinned PP writes (unreleased)
+
+[PR #1142](https://github.com/arc-mcp/arc-1/pull/1142) expands the explicit built-in write matrix for
+already opted-in pinned strict-PP connections. Final qualification and release acceptance remain
+pending; this entry does not announce a shipped release.
+
+| Change | Impact | Action |
+|---|---|---|
+| Broader built-in workflows | Repository, DDIC/RAP, deletion, package/API, CTS, trace and classic FLP adapters use explicit native resource policies. Git/plugins and aggregate/shared-Basic mutations remain excluded. | Review the [capability and backend limits](multi-target-writes.md) before upgrading; deny unwanted actions. No extra write-enable or acknowledgment switch is added. |
+| Transport and runtime scope | CTS management also needs the global transport switch and transports scope. Functional scopes merge across roles; trace/settings/FLP are not package-owned resources. | Check both request policies and role composition. FLP/V4 native-governed recording requires explicit `*` in both request lists. |
+| Upgrade and rollback | Existing opted-in writers may gain these capabilities; displayed/cached actions still cannot authorize a read-only destination. | Restart every instance after policy changes, obtain fresh authorization/catalogs, and retain matching artifact, MTA, destination and XSUAA configuration for rollback. Use explicit false MTA values to disable. |
+
 ## 1.10.0 — security fixes and SAP compatibility (2026-11-03)
 
 Replace standalone executables, review the [HTTP upgrade guidance](updating.md#v1100-http-request-validation),

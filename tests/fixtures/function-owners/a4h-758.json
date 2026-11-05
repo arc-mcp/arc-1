@@ -1,0 +1,67 @@
+{
+  "recordedAt": "2026-11-01T22:07:41.898Z",
+  "observations": [
+    {
+      "label": "group",
+      "path": "/sap/bc/adt/functions/groups/su_user",
+      "statusCode": 200,
+      "contentType": "application/vnd.sap.adt.functions.groups.v3+xml; charset=utf-8",
+      "bytes": 3357,
+      "sha256": "b692a6f68381918f98e21ff1959298195452247a6e9102a3ba005ecc8aa77679",
+      "qname": "group:abapFunctionGroup",
+      "metadataXml": "<group:abapFunctionGroup adtcore:name=\"SU_USER\" adtcore:type=\"FUGR/F\" adtcore:version=\"active\" xmlns:group=\"http://www.sap.com/adt/functions/groups\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\"><adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/susr\" adtcore:type=\"DEVC/K\" adtcore:name=\"SUSR\"></adtcore:packageRef></group:abapFunctionGroup>"
+    },
+    {
+      "label": "module",
+      "path": "/sap/bc/adt/functions/groups/su_user/fmodules/bapi_user_getlist",
+      "statusCode": 200,
+      "contentType": "application/vnd.sap.adt.functions.fmodules.v3+xml; charset=utf-8",
+      "bytes": 2639,
+      "sha256": "5393f7e288de773f2b7c33920e879acf6b2b3f636780d6c4e56ef88ccc09dfca",
+      "qname": "fmodule:abapFunctionModule",
+      "metadataXml": "<fmodule:abapFunctionModule adtcore:name=\"BAPI_USER_GETLIST\" adtcore:type=\"FUGR/FF\" adtcore:version=\"active\" xmlns:fmodule=\"http://www.sap.com/adt/functions/fmodules\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\"><adtcore:containerRef adtcore:uri=\"/sap/bc/adt/functions/groups/su_user\" adtcore:type=\"FUGR/F\" adtcore:name=\"SU_USER\" adtcore:packageName=\"SUSR\"></adtcore:containerRef></fmodule:abapFunctionModule>"
+    },
+    {
+      "label": "include",
+      "path": "/sap/bc/adt/functions/groups/su_user/includes/lsu_usertop",
+      "statusCode": 200,
+      "contentType": "application/vnd.sap.adt.functions.fincludes.v2+xml; charset=utf-8",
+      "bytes": 1919,
+      "sha256": "2b8d287b7c23cb5cdd8fb9e70013e28a33b212a003aa0f61e34d76896ca37cef",
+      "qname": "finclude:abapFunctionGroupInclude",
+      "metadataXml": "<finclude:abapFunctionGroupInclude adtcore:name=\"LSU_USERTOP\" adtcore:type=\"FUGR/I\" adtcore:version=\"active\" xmlns:finclude=\"http://www.sap.com/adt/functions/fincludes\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\"><adtcore:containerRef adtcore:uri=\"/sap/bc/adt/functions/groups/su_user\" adtcore:type=\"FUGR/F\" adtcore:name=\"SU_USER\" adtcore:packageName=\"SUSR\"></adtcore:containerRef></finclude:abapFunctionGroupInclude>"
+    },
+    {
+      "label": "namespaced-group",
+      "path": "/sap/bc/adt/functions/groups/%2Faif%2Fadv_msg_sum_ui",
+      "statusCode": 200,
+      "contentType": "application/vnd.sap.adt.functions.groups.v3+xml; charset=utf-8",
+      "bytes": 3514,
+      "sha256": "53f74ceeafc8dfe5a6235292d913d66def7a7da443b4a1c3edb4fc556d114d5d",
+      "qname": "group:abapFunctionGroup",
+      "metadataXml": "<group:abapFunctionGroup adtcore:name=\"/AIF/ADV_MSG_SUM_UI\" adtcore:type=\"FUGR/F\" adtcore:version=\"active\" xmlns:group=\"http://www.sap.com/adt/functions/groups\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\"><adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/%2faif%2finterface_monitor\" adtcore:type=\"DEVC/K\" adtcore:name=\"/AIF/INTERFACE_MONITOR\"></adtcore:packageRef></group:abapFunctionGroup>"
+    },
+    {
+      "label": "namespaced-include",
+      "path": "/sap/bc/adt/functions/groups/%2Faif%2Fadv_msg_sum_ui/includes/%2Faif%2Fladv_msg_sum_uif01",
+      "statusCode": 200,
+      "contentType": "application/vnd.sap.adt.functions.fincludes.v2+xml; charset=utf-8",
+      "bytes": 2054,
+      "sha256": "510f734b54cee1d6cecd6a4a95cba3f1d1177272a9f368b4020b10d0171bc722",
+      "qname": "finclude:abapFunctionGroupInclude",
+      "metadataXml": "<finclude:abapFunctionGroupInclude adtcore:name=\"/AIF/LADV_MSG_SUM_UIF01\" adtcore:type=\"FUGR/I\" adtcore:version=\"active\" xmlns:finclude=\"http://www.sap.com/adt/functions/fincludes\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\"><adtcore:containerRef adtcore:uri=\"/sap/bc/adt/functions/groups/%2faif%2fadv_msg_sum_ui\" adtcore:type=\"FUGR/F\" adtcore:name=\"/AIF/ADV_MSG_SUM_UI\" adtcore:packageName=\"/AIF/INTERFACE_MONITOR\"></adtcore:containerRef></finclude:abapFunctionGroupInclude>"
+    },
+    {
+      "label": "pool",
+      "path": "/sap/bc/adt/textelements/functiongroups/SU_USER?version=inactive",
+      "statusCode": 200,
+      "contentType": "application/vnd.sap.adt.textelements.v1+xml; charset=utf-8",
+      "bytes": 2625,
+      "sha256": "d89259da6ec584adef7f3847cc187e228158e641332810beb29c54b8dcb1048c",
+      "qname": "rept:textElement",
+      "metadataXml": "<rept:textElement adtcore:name=\"SU_USER\" adtcore:type=\"FUGR/PX\" adtcore:version=\"active\" xmlns:rept=\"http://www.sap.com/adt/textelements\" xmlns:adtcore=\"http://www.sap.com/adt/core\"><adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/susr\" adtcore:type=\"DEVC/K\" adtcore:name=\"SUSR\"></adtcore:packageRef></rept:textElement>"
+    }
+  ],
+  "system": "A4H/001, SAP_BASIS 758",
+  "projection": "GET-only native metadata. Original QNames, namespace bindings and retained identity/package/container values; unrelated metadata and authors omitted. Hashes cover the complete private response bodies. No mutation or PP qualification."
+}

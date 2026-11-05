@@ -1,9 +1,19 @@
 import { EventEmitter } from 'node:events';
+import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import express from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startHttpServer } from '../../../src/server/http.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+
+// This file tests HTTP metadata/challenges, not remote issuer discovery or JWT crypto.
+// Keep the real chained/API-key verifier and middleware; only this fixture's OIDC
+// verifier rejects its synthetic token without contacting an external issuer.
+const { verifyOidcToken } = vi.hoisted(() => ({ verifyOidcToken: vi.fn() }));
+vi.mock('@arc-mcp/xsuaa-auth', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@arc-mcp/xsuaa-auth')>();
+  return { ...original, createOidcVerifier: vi.fn(() => verifyOidcToken) };
+});
 
 const ISSUER = 'https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0';
 
@@ -46,6 +56,7 @@ describe('OIDC protected-resource metadata (RFC 9728)', () => {
   const originalPublicUrl = process.env.ARC1_PUBLIC_URL;
 
   beforeEach(() => {
+    verifyOidcToken.mockReset().mockRejectedValue(new InvalidTokenError('Synthetic invalid token'));
     process.env.ARC1_PUBLIC_URL = undefined as unknown as string;
   });
   afterEach(() => {
@@ -77,8 +88,11 @@ describe('OIDC protected-resource metadata (RFC 9728)', () => {
       'resource_metadata="https://arc1.example.com/.well-known/oauth-protected-resource/mcp"',
     );
 
+    expect(verifyOidcToken).not.toHaveBeenCalled();
+
     const bogus = await request(app).post('/mcp').set('Authorization', 'Bearer a.b.c').send({});
     expect(bogus.status).toBe(401);
+    expect(verifyOidcToken).toHaveBeenCalledExactlyOnceWith('a.b.c');
     expect(bogus.headers['www-authenticate']).toContain('resource_metadata=');
   });
 

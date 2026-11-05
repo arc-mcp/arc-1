@@ -5,6 +5,7 @@
  */
 
 import { postCreate } from './create-request.js';
+import type { DataResponseBudget } from './data-result-context.js';
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
@@ -22,7 +23,7 @@ interface ODataSingle<T> {
   d?: T;
 }
 
-interface FlpCatalogEntity {
+export interface FlpCatalogEntity {
   id?: string;
   domainId?: string;
   title?: string;
@@ -31,14 +32,14 @@ interface FlpCatalogEntity {
   chipCount?: string;
 }
 
-interface FlpGroupEntity {
+export interface FlpGroupEntity {
   id?: string;
   title?: string;
   catalogId?: string;
   layout?: string;
 }
 
-interface FlpTileEntity {
+export interface FlpTileEntity {
   pageId?: string;
   instanceId?: string;
   chipId?: string;
@@ -57,7 +58,7 @@ export interface FlpTileInput {
   info?: string;
 }
 
-function parseODataCollection<T>(body: string): T[] {
+export function parseODataCollection<T>(body: string): T[] {
   const data = JSON.parse(body) as ODataCollection<T>;
   const results = data.d?.results;
   if (!Array.isArray(results)) {
@@ -66,7 +67,7 @@ function parseODataCollection<T>(body: string): T[] {
   return results;
 }
 
-function parseODataSingle<T>(body: string): T {
+export function parseODataSingle<T>(body: string): T {
   const data = JSON.parse(body) as ODataSingle<T>;
   if (!data.d) {
     throw new Error('Unexpected OData response: missing "d" object');
@@ -74,7 +75,7 @@ function parseODataSingle<T>(body: string): T {
   return data.d;
 }
 
-function mapCatalog(entity: FlpCatalogEntity): FlpCatalog {
+export function mapCatalog(entity: FlpCatalogEntity): FlpCatalog {
   return {
     id: entity.id ?? '',
     domainId: entity.domainId ?? '',
@@ -85,7 +86,7 @@ function mapCatalog(entity: FlpCatalogEntity): FlpCatalog {
   };
 }
 
-function mapGroup(entity: FlpGroupEntity): FlpGroup {
+export function mapGroup(entity: FlpGroupEntity): FlpGroup {
   return {
     id: entity.id ?? '',
     title: entity.title ?? '',
@@ -94,7 +95,7 @@ function mapGroup(entity: FlpGroupEntity): FlpGroup {
   };
 }
 
-function mapTile(entity: FlpTileEntity): FlpTileInstance {
+export function mapTile(entity: FlpTileEntity): FlpTileInstance {
   return {
     pageId: entity.pageId ?? '',
     instanceId: entity.instanceId ?? '',
@@ -120,7 +121,7 @@ export function normalizeCatalogId(catalogId: string): string {
   return catalogId;
 }
 
-function buildTileConfiguration(tile: FlpTileInput): string {
+export function buildTileConfiguration(tile: FlpTileInput): string {
   const tileConfiguration: Record<string, unknown> = {
     id: tile.id,
     display_title_text: tile.title,
@@ -217,13 +218,26 @@ export async function listTiles(
 ): Promise<FlpTileInstance[]> {
   checkOperation(safety, OperationType.Read, 'ListFlpTiles');
 
-  const pageId = `X-SAP-UI2-CATALOGPAGE:${normalizeCatalogId(catalogId)}`;
-  const path =
-    `${FLP_SERVICE_PATH}/Pages('${encodeURIComponent(pageId)}')/PageChipInstances?` +
-    `$format=json&$top=${FLP_TILE_PAGE_SIZE}&$select=pageId,instanceId,chipId,title,configuration`;
-
-  const resp = await http.get(path, { Accept: 'application/json' });
+  const resp = await http.get(flpPageTilesPath(flpCatalogKey(catalogId)), { Accept: 'application/json' });
   return parseODataCollection<FlpTileEntity>(resp.body).map(mapTile);
+}
+
+export function flpCatalogKey(catalogId: string): string {
+  return `${CATALOG_PAGE_PREFIX}${normalizeCatalogId(catalogId)}`;
+}
+
+/** Navigation path shared by catalog pages and group pages; never add `$filter` here (see listTiles). */
+export function flpPageTilesPath(pageId: string): string {
+  return (
+    `${FLP_SERVICE_PATH}/Pages('${encodeURIComponent(pageId)}')/PageChipInstances?` +
+    `$format=json&$top=${FLP_TILE_PAGE_SIZE}&$select=pageId,instanceId,chipId,title,configuration`
+  );
+}
+
+/** Internal profile for bounded pinned creation; omitted keeps the legacy wire call unchanged. */
+export interface FlpCreateProfile {
+  kind: 'pinned-create-only';
+  responseBudget: DataResponseBudget;
 }
 
 export async function createCatalog(
@@ -231,13 +245,22 @@ export async function createCatalog(
   safety: SafetyConfig,
   domainId: string,
   title: string,
+  profile?: FlpCreateProfile,
 ): Promise<FlpCatalog> {
   checkOperation(safety, OperationType.Workflow, 'CreateFlpCatalog');
 
   const payload = JSON.stringify({ domainId, title, type: 'CATALOG_PAGE' });
-  const resp = await postCreate(http, `${FLP_SERVICE_PATH}/Catalogs`, payload, 'application/json', {
-    Accept: 'application/json',
-  });
+  const resp = await postCreate(
+    http,
+    `${FLP_SERVICE_PATH}/Catalogs`,
+    payload,
+    'application/json',
+    {
+      Accept: 'application/json',
+    },
+    profile ? { responseBudget: profile.responseBudget } : undefined,
+  );
+  profile?.responseBudget.assertSingleResponseBytes(Buffer.byteLength(resp.body, 'utf8'));
 
   return mapCatalog(parseODataSingle<FlpCatalogEntity>(resp.body));
 }
@@ -247,13 +270,22 @@ export async function createGroup(
   safety: SafetyConfig,
   id: string,
   title: string,
+  profile?: FlpCreateProfile,
 ): Promise<FlpGroup> {
   checkOperation(safety, OperationType.Workflow, 'CreateFlpGroup');
 
   const payload = JSON.stringify({ id, title, catalogId: '/UI2/FLPD_CATALOG', layout: '' });
-  const resp = await postCreate(http, `${FLP_SERVICE_PATH}/Pages`, payload, 'application/json', {
-    Accept: 'application/json',
-  });
+  const resp = await postCreate(
+    http,
+    `${FLP_SERVICE_PATH}/Pages`,
+    payload,
+    'application/json',
+    {
+      Accept: 'application/json',
+    },
+    profile ? { responseBudget: profile.responseBudget } : undefined,
+  );
+  profile?.responseBudget.assertSingleResponseBytes(Buffer.byteLength(resp.body, 'utf8'));
 
   return mapGroup(parseODataSingle<FlpGroupEntity>(resp.body));
 }

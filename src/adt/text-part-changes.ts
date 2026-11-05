@@ -19,6 +19,72 @@ function entries(part: TextElementPart, body: string): Map<string, { maintained:
   return result;
 }
 
+interface TextEntry {
+  value: string;
+  ddic: boolean;
+  maintained: boolean;
+  maxLength?: number;
+}
+/** Verification rejects ambiguous input instead of silently overwriting keys. */
+function comparableEntries(part: TextElementPart, body: string): Map<string, TextEntry> | undefined {
+  const result = new Map<string, TextEntry>();
+  let ddic = false,
+    maxLength: number | undefined;
+  for (const line of body.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    if (line.trim() === '@DDICReference') {
+      if (ddic) return undefined;
+      ddic = true;
+      continue;
+    }
+    const length = /^@MaxLength:(\d+)$/.exec(line.trim());
+    if (length) {
+      if (maxLength !== undefined || !Number.isSafeInteger(Number(length[1]))) return undefined;
+      maxLength = Number(length[1]);
+      continue;
+    }
+    const equals = line.indexOf('=');
+    if (equals < 1) return undefined;
+    // Native selection keys are padded; case is canonicalized by SAP. Preserve leading value spaces.
+    const key = line.slice(0, equals).trim().toUpperCase(),
+      value = line.slice(equals + 1).trimEnd();
+    if (!key || key.startsWith('@') || result.has(key)) return undefined;
+    result.set(key, {
+      value,
+      ddic,
+      maxLength,
+      maintained: value.trim() !== '' && (part !== 'selections' || value !== '?...'),
+    });
+    ddic = false;
+    maxLength = undefined;
+  }
+  return ddic || maxLength !== undefined ? undefined : result;
+}
+
+/** Reject inputs whose outcome cannot be verified before leaving a native inactive draft. */
+export function textPartIsVerifiable(part: TextElementPart, body: string): boolean {
+  return comparableEntries(part, body) !== undefined;
+}
+
+/** Verify whole-part semantics before activation. DDIC labels may resolve differently, but keys and reference markers must survive. */
+export function textPartMatchesRequest(part: TextElementPart, requested: string, stored: string): boolean {
+  const expected = comparableEntries(part, requested),
+    actual = comparableEntries(part, stored);
+  if (!expected || !actual) return false;
+  for (const [key, entry] of expected) {
+    const found = actual.get(key);
+    if (!found) {
+      if (entry.maintained || entry.ddic) return false;
+      continue;
+    }
+    if (entry.ddic !== found.ddic) return false;
+    if (!entry.ddic && (entry.maintained || found.maintained) && entry.value !== found.value) return false;
+    if (entry.maxLength !== undefined && entry.maxLength !== found.maxLength) return false;
+  }
+  for (const [key, entry] of actual) if (!expected.has(key) && (entry.maintained || entry.ddic)) return false;
+  return true;
+}
+
 /** Describe only losses confirmed by a native read after the PUT, while still locked. */
 export function textPartChanges(part: TextElementPart, before: string, after: string): string {
   const next = entries(part, after);

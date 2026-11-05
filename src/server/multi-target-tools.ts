@@ -1,4 +1,5 @@
-/** Stable read-only tool surface and target schema helpers for multi-target v1. */
+import { compactPinnedManagementFields } from './pinned-field-descriptions.js';
+/** Explicit read and pinned-mutation surfaces, plus target schema helpers. */
 
 import { isOperationAllowed, OperationType, type OperationTypeCode } from '../adt/safety.js';
 import { getActionPolicy, invocationPolicyKey } from '../authz/policy.js';
@@ -8,12 +9,14 @@ import type { TargetDescriptor } from './destination-registry.js';
 import { TARGET_CATALOG_MAX_OFFSET, TARGET_CATALOG_MAX_QUERY_LENGTH } from './multi-target-catalog.js';
 import { TARGET_ID_PATTERN } from './multi-target-identity.js';
 import {
-  PINNED_ACTIVATE_FIELDS,
-  PINNED_WRITE_ACTIONS,
-  PINNED_WRITE_FIELDS,
+  pinnedCompanionAllowed,
+  pinnedCompanionSurface,
   pinnedMutationAllowed,
-  pinnedWriteEnabled,
+  pinnedMutationSurface,
 } from './multi-target-write-surface.js';
+import { pinnedCompanionCapability, pinnedMutationCapability } from './pinned-mutation-capabilities.js';
+import { pinnedRuntimeDescription, pinnedRuntimeProperties } from './pinned-runtime-candidates.js';
+import { pinnedRepositoryDescription, projectPinnedRepositoryTool } from './pinned-tool-projection.js';
 import type { ServerConfig } from './types.js';
 
 export const MULTI_TARGET_TOOLS = new Set([
@@ -109,10 +112,12 @@ export function multiTargetInvocationDecision(
   args: Record<string, unknown>,
   config: ServerConfig,
 ): 'allowed' | 'target-policy-denied' | 'forbidden' {
-  if (toolName === 'SAPWrite' || toolName === 'SAPActivate')
+  const action = invocationPolicyKey(toolName, args) ?? (toolName === 'SAPActivate' ? 'activate' : undefined);
+  if (pinnedMutationCapability(toolName, action))
     return pinnedMutationAllowed(toolName, args, config) ? 'allowed' : 'forbidden';
+  if (pinnedCompanionCapability(toolName, action))
+    return pinnedCompanionAllowed(toolName, args, config) ? 'allowed' : 'forbidden';
   if (!MULTI_TARGET_TOOLS.has(toolName)) return 'forbidden';
-  const action = invocationPolicyKey(toolName, args);
   if (toolName === 'SAPQuery' && action === 'long_text' && config.systemType === 'btp') return 'forbidden';
   const actionRule = MULTI_TARGET_ACTION_RULES.get(toolName);
   if (actionRule && (!action || !actionRule.actions.has(action.toLowerCase()))) return 'forbidden';
@@ -127,65 +132,15 @@ export function multiTargetInvocationDecision(
 
 function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefinition | undefined {
   if (tool.name === 'SAPWrite' || tool.name === 'SAPActivate') {
-    if (!pinnedWriteEnabled(config)) return undefined;
-    const write = tool.name === 'SAPWrite';
-    const fields = write ? PINNED_WRITE_FIELDS : PINNED_ACTIVATE_FIELDS;
-    const properties = Object.fromEntries(
-      Object.entries(tool.inputSchema.properties as Record<string, unknown>).filter(([key]) => fields.has(key)),
-    );
-    return {
-      ...tool,
-      description: write
-        ? 'Create CLAS/INTF or update their main source on this pinned PP target. edit_method supports existing CLAS main methods. Updates require expectedSourceHash from SAPRead(format="editable"). Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate activates the complete owner, including existing inactive includes.'
-        : 'Activate one CLAS/INTF owner on this pinned PP target, including ALL its existing inactive drafts and includes. Additional owners are refused. This is not method-only activation.',
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
-      inputSchema: {
-        type: 'object',
-        properties: {
-          ...properties,
-          ...(write
-            ? {
-                name: {
-                  type: 'string',
-                  description: 'Uppercase CLAS/INTF owner name, at most 30 characters; optional registered namespace.',
-                },
-                source: {
-                  type: 'string',
-                  description:
-                    'Complete CLAS/INTF main source for create/update; an existing main method body or complete METHOD…ENDMETHOD block for edit_method.',
-                },
-                package: {
-                  type: 'string',
-                  description:
-                    'Required explicit package for create. Must match both server and destination policies. Omit for updates.',
-                },
-                transport: {
-                  type: 'string',
-                  description:
-                    'Required allowed Workbench request/task for transportable create. Existing objects may reuse their proven request. Omit for local objects; manage requests outside this connection.',
-                },
-                expectedSourceHash: {
-                  type: 'string',
-                  pattern: '^[a-f0-9]{64}$',
-                  description:
-                    'Required for update/edit_method: SHA-256 from SAPRead(format="editable") on this owner main source. Omit for create.',
-                },
-                method: {
-                  type: 'string',
-                  description:
-                    'Existing CLAS main-source method name, only for edit_method. Local-class/include methods are unavailable.',
-                },
-              }
-            : {}),
-          type: { type: 'string', enum: ['CLAS', 'INTF'] },
-          action: { type: 'string', enum: write ? [...PINNED_WRITE_ACTIONS] : ['activate'] },
-        },
-        required: write ? ['action', 'type', 'name', 'source'] : ['type', 'name'],
-        additionalProperties: false,
-      },
-    };
+    const surface = pinnedMutationSurface(tool.name, config);
+    if (!surface) return undefined;
+    return projectPinnedRepositoryTool(tool, surface);
   }
-  if (!MULTI_TARGET_TOOLS.has(tool.name)) return undefined;
+  const mutationSurface = pinnedMutationSurface(tool.name, config);
+  const companionSurface = pinnedCompanionSurface(tool.name, config);
+  const expandedFields = new Set([...(mutationSurface?.fields ?? []), ...(companionSurface?.fields ?? [])]);
+  const hasReaderSurface = MULTI_TARGET_TOOLS.has(tool.name);
+  if (!hasReaderSurface && !mutationSurface && !companionSurface) return undefined;
   const schema = tool.inputSchema;
   const properties = (schema.properties as Record<string, unknown> | undefined) ?? {};
   const field = tool.name === 'SAPRead' ? 'type' : 'action';
@@ -195,21 +150,44 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
   }
   const values = definition.enum
     .map(String)
-    .filter((value) => isMultiTargetInvocationAllowed(tool.name, { [field]: value }, config));
+    .filter(
+      (value) =>
+        mutationSurface?.actions.includes(value) ||
+        companionSurface?.actions.includes(value) ||
+        isMultiTargetInvocationAllowed(tool.name, { [field]: value }, config),
+    );
   if (values.length === 0) return undefined;
   const actionRule = MULTI_TARGET_ACTION_RULES.get(tool.name);
-  const prunedProperties = actionRule
-    ? Object.fromEntries(Object.entries(properties).filter(([name]) => !actionRule.omittedProperties.has(name)))
-    : properties;
+  const prunedProperties = Object.fromEntries(
+    Object.entries(properties).filter(([name]) =>
+      hasReaderSurface
+        ? !actionRule?.omittedProperties.has(name) || expandedFields.has(name)
+        : expandedFields.has(name),
+    ),
+  );
+  if (mutationSurface) compactPinnedManagementFields(tool.name, prunedProperties);
+  const mutates = values.some((value) => !!pinnedMutationCapability(tool.name, value));
   return pruneQueryDefinition(
     {
       ...tool,
-      annotations: { ...tool.annotations, readOnlyHint: true, destructiveHint: false },
+      description: pinnedRuntimeDescription(tool.name, values, tool.description),
+      annotations: {
+        ...tool.annotations,
+        readOnlyHint: !mutates,
+        destructiveHint: mutates,
+        ...(mutates ? { idempotentHint: false } : {}),
+      },
       inputSchema: {
         ...schema,
         properties: {
-          ...prunedProperties,
-          [field]: { ...definition, enum: values },
+          ...pinnedRuntimeProperties(tool.name, values, prunedProperties, config.ppEnabled),
+          [field]: {
+            ...definition,
+            ...(['SAPTransport', 'SAPManage'].includes(tool.name)
+              ? { description: 'Choose one listed action; see tool guidance and fields.' }
+              : {}),
+            enum: values,
+          },
         },
       },
     },
@@ -219,6 +197,29 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
 
 export function multiTargetToolDefinitions(tools: ToolDefinition[], config: ServerConfig): ToolDefinition[] {
   return tools.map((tool) => pruneDefinition(tool, config)).filter((tool): tool is ToolDefinition => !!tool);
+}
+
+/** Functional scope/action-denial pruning runs later; annotate only the actions that survived it. */
+export function finalizeMultiTargetToolAnnotations(tools: ToolDefinition[]): ToolDefinition[] {
+  return tools.map((tool) => {
+    const properties = tool.inputSchema.properties as Record<string, { enum?: unknown[] }> | undefined;
+    const actions = properties?.action?.enum;
+    if (!Array.isArray(actions)) return tool;
+    const mutates = actions.some((action) => !!pinnedMutationCapability(tool.name, action));
+    return {
+      ...tool,
+      description:
+        tool.name === 'SAPWrite' || tool.name === 'SAPActivate'
+          ? pinnedRepositoryDescription(tool.name, actions.map(String))
+          : pinnedRuntimeDescription(tool.name, actions.map(String), tool.description),
+      annotations: {
+        ...tool.annotations,
+        readOnlyHint: !mutates,
+        destructiveHint: mutates,
+        ...(mutates ? { idempotentHint: false } : {}),
+      },
+    };
+  });
 }
 
 function targetSchema(targets: readonly TargetDescriptor[]): Record<string, unknown> {

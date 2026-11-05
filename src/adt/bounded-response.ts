@@ -14,10 +14,15 @@ export async function prepareBoundedResponse(
   if (options?.attemptBudget && !options.discardResponseBody && [401, 403].includes(response.status)) {
     options.attemptBudget.authorizationFailureObserved = true;
   }
-  if (options?.attemptBudget && response.status >= 300 && response.status < 400 && response.status !== 304) {
+  if (
+    (options?.attemptBudget || options?.noReplay) &&
+    response.status >= 300 &&
+    response.status < 400 &&
+    response.status !== 304
+  ) {
     await response.body?.cancel();
     throw new AdtApiError(
-      'Redirects are not allowed during bounded SAP analysis.',
+      'Redirects are not allowed for bounded or non-replayable SAP requests.',
       response.status,
       new URL(url).pathname,
     );
@@ -123,7 +128,11 @@ function destroyProxyBody(body: Readable): void {
   body.on('error', () => {}).destroy();
 }
 
-function proxyResponseBody(body: Readable, client: Client, signal: AbortSignal): ReadableStream<Uint8Array> {
+function proxyResponseBody(
+  body: Readable,
+  client: Client | undefined,
+  signal: AbortSignal,
+): ReadableStream<Uint8Array> {
   // Do not bridge Undici's BodyReadable through Readable.toWeb(). Cancelling that
   // adapter closes its web-stream controller before Client.destroy() has drained
   // already-queued BodyReadable data, so a late data event can enqueue into the
@@ -157,12 +166,11 @@ function proxyResponseBody(body: Readable, client: Client, signal: AbortSignal):
     settled = true;
     signal.removeEventListener('abort', onAbort);
     if (error) {
-      // Stop the body, handling disposal errors even before the first read, then
-      // destroy its dedicated client with the original cause.
+      // Stop the body even before the first read. A borrowed session client belongs to its lifecycle.
       if (!body.destroyed) destroyProxyBody(body);
-      await client.destroy(error);
+      await client?.destroy(error);
     } else {
-      await client.close();
+      await client?.close();
     }
   };
 
@@ -209,13 +217,14 @@ function proxyResponseBody(body: Readable, client: Client, signal: AbortSignal):
   });
 }
 
-/** Convert one Connectivity response while preserving ownership of its short-lived client. */
+/** Convert a Connectivity response; borrowed clients stay with their owning session lifecycle. */
 export async function connectivityProxyResponse(
   response: ConnectivityProxyResponse,
   client: Client,
   signal: AbortSignal,
   bounded: boolean,
   headersOnly = false,
+  ownsClient = true,
 ): Promise<Response> {
   const headers = new Headers();
   for (const [key, value] of Object.entries(response.headers)) {
@@ -227,7 +236,7 @@ export async function connectivityProxyResponse(
     // CSRF GET fallback can return a large discovery document. It is not result data;
     // destroy its dedicated transport without ever buffering or decoding that body.
     destroyProxyBody(response.body);
-    await client.destroy();
+    if (ownsClient) await client.destroy();
     return new Response(null, { status: response.statusCode, headers });
   }
 
@@ -243,10 +252,10 @@ export async function connectivityProxyResponse(
   if (contentEncoding && contentEncoding !== 'identity') {
     const error = new Error(`Unexpected Content-Encoding '${contentEncoding}' on bounded proxy response.`);
     destroyProxyBody(response.body);
-    await client.destroy(error);
+    if (ownsClient) await client.destroy(error);
     throw error;
   }
-  return new Response(proxyResponseBody(response.body, client, signal), {
+  return new Response(proxyResponseBody(response.body, ownsClient ? client : undefined, signal), {
     status: response.statusCode,
     headers,
   });

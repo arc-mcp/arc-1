@@ -15,6 +15,7 @@ import {
   findMissingRapHandlerImplementationStubs,
   findMissingRapHandlerRequirements,
 } from '../../adt/rap-handlers.js';
+import { rapProfile } from '../../adt/rap-profile.js';
 import { classIncludeUrl } from '../object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from '../shared.js';
 import { mergePreWriteWarnings, type PreWriteLintResult, runPreWriteLint } from '../write-helpers.js';
@@ -23,6 +24,7 @@ import type { SapWriteContext } from './context.js';
 
 export async function writeActionScaffoldRapHandlers(ctx: SapWriteContext): Promise<ToolResult> {
   const { client, args, config, cachingLayer, type, name, lintOverride, srcUrl, enforcePackageForExistingObject } = ctx;
+  const profile = rapProfile(client);
   // What this action does:
   //   Given a behavior-pool class (ZBP_*) and its interface BDEF, inspect
   //   the class for every `lhc_<alias>` local handler class and make
@@ -59,17 +61,22 @@ export async function writeActionScaffoldRapHandlers(ctx: SapWriteContext): Prom
     session: AdtHttpClient,
     save?: (url: string, source: string) => Promise<void>,
   ): Promise<ToolResult> => {
-    const classStructured = await readRapClassSources(session, client.safety, name);
+    const classStructured = profile
+      ? await profile.sources(session)
+      : await readRapClassSources(session, client.safety, name);
     const classMainSource = classStructured.main;
     const classDefinitionsSource = classStructured.definitions ?? '';
     const classImplementationsSource = classStructured.implementations ?? '';
     const classCombinedSource = [classMainSource, classDefinitionsSource, classImplementationsSource]
       .filter(Boolean)
       .join('\n\n');
-    const bdefSource = cachingLayer
-      ? (await cachingLayer.getSource('BDEF', bdefName, (ifNoneMatch) => client.getBdef(bdefName, { ifNoneMatch })))
-          .source
-      : (await client.getBdef(bdefName)).source;
+    const bdefSource = profile
+      ? await profile.bdef(session, bdefName)
+      : cachingLayer
+        ? (await cachingLayer.getSource('BDEF', bdefName, (ifNoneMatch) => client.getBdef(bdefName, { ifNoneMatch })))
+            .source
+        : (await client.getBdef(bdefName)).source;
+    profile?.validateSources(bdefSource, classStructured, targetAlias);
 
     let requirements = extractRapHandlerRequirements(bdefSource);
     if (targetAlias) {
@@ -118,6 +125,7 @@ export async function writeActionScaffoldRapHandlers(ctx: SapWriteContext): Prom
       missing,
       missingImplementationStubs,
     );
+    profile?.validatePlan(scaffoldPlan);
 
     if (scaffoldPlan.changedSections.length === 0) {
       const unresolvedHandlerClasses = Array.from(
@@ -198,7 +206,7 @@ export async function writeActionScaffoldRapHandlers(ctx: SapWriteContext): Prom
   };
   if (!autoApply) return scaffold(client.http);
   // Even unchanged auto-apply calls need the lock to establish a current no-op.
-  return withClassEdit(ctx, ({ http, save }) => scaffold(http, save));
+  return profile ? profile.edit(scaffold) : withClassEdit(ctx, ({ http, save }) => scaffold(http, save));
 }
 
 export async function writeActionGenerateBehaviorImplementation(ctx: SapWriteContext): Promise<ToolResult> {

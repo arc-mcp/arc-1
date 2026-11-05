@@ -182,9 +182,10 @@ const PINNED_WRITE_CONFIG: ServerConfig = {
 // Dump filtering adds one described property; concise diagnostic wording retains all wire/token ceilings.
 export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
   {
+    // Broader pinned adapters add native metadata fields; descriptions are compacted, wire/token walls unchanged.
     name: 'multi-target-pinned-write', config: PINNED_WRITE_CONFIG, textSearchAvailable: true,
     definitions: multiTargetToolDefinitions(getToolDefinitions(PINNED_WRITE_CONFIG), PINNED_WRITE_CONFIG),
-    budget: { ...MULTI_TARGET_BUDGET, schemaTokenEstimate: 12_800, descriptionCount: 195, maxTotalWireBytes: READ_WIRE_WALL },
+    budget: { ...MULTI_TARGET_BUDGET, schemaTokenEstimate: 12_800, descriptionCount: 245, maxTotalWireBytes: READ_WIRE_WALL },
   },
   {
     name: 'standard-default',

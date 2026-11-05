@@ -5,7 +5,7 @@
  * MCP JSON-RPC stack against a real SAP system.
  *
  * Objects are transient: created with unique names and deleted in finally blocks.
- * Cleanup is best-effort to avoid masking test failures.
+ * Successful lifecycle tests assert module deletion; failed setup cleanup stays best-effort.
  */
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -54,6 +54,7 @@ describe('E2E FUGR + FUNC write lifecycle', () => {
   it('SAPWrite creates FUGR, creates FM, updates source, activates, deletes', async (ctx) => {
     const fugrName = uniqueName('ZARC1FG');
     const fmName = uniqueName('ZARC1FM');
+    let completed = false;
 
     // Step 1: Create FUGR
     const createFugrResult = await callTool(client, 'SAPWrite', {
@@ -115,8 +116,17 @@ describe('E2E FUGR + FUNC write lifecycle', () => {
         });
         const activeText = expectToolSuccess(readActiveResult);
         expect(activeText).toContain('Hello from ARC-1 E2E');
+        completed = true;
       } finally {
-        await bestEffortDeleteFm(client, fugrName, fmName);
+        if (completed) {
+          const deletion = await callTool(client, 'SAPWrite', {
+            action: 'delete',
+            type: 'FUNC',
+            name: fmName,
+            group: fugrName,
+          });
+          expectToolSuccess(deletion);
+        } else await bestEffortDeleteFm(client, fugrName, fmName);
       }
     } finally {
       await bestEffortDeleteFugr(client, fugrName);

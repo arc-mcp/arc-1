@@ -1,0 +1,28 @@
+{
+  "error": {
+    "code": "/UI2/FND/604",
+    "message": {
+      "lang": "en",
+      "value": "Resource Catalog not found"
+    },
+    "innererror": {
+      "application": {
+        "component_id": "CA-FLP-ABA",
+        "service_namespace": "/UI2/",
+        "service_id": "PAGE_BUILDER_CUST",
+        "service_version": "0001"
+      },
+      "errordetails": [
+        {
+          "ContentID": "",
+          "code": "/IWBEP/CX_MGW_BUSI_EXCEPTION",
+          "message": "Resource Catalog not found",
+          "propertyref": "",
+          "severity": "error",
+          "transition": false,
+          "target": ""
+        }
+      ]
+    }
+  }
+}

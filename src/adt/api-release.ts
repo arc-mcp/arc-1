@@ -1,5 +1,5 @@
 import { AdtApiError, AdtError } from './errors.js';
-import type { AdtHttpClient } from './http.js';
+import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import type { ApiReleaseContract, ApiReleaseStateInfo } from './types.js';
 import { parseXml } from './xml-parser.js';
 
@@ -185,10 +185,20 @@ export function buildApiReleasePutBody(
   );
 }
 
+/** Pinned adapters validate the fresh document and observe the submitted PUT; legacy callers pass nothing. */
+export interface ApiReleaseLifecycle {
+  beforeBuild: (currentXml: string) => void;
+  beforePut: (currentXml: string) => Promise<void>;
+  afterPut: (changed: boolean) => void;
+  validateReadback: (xml: string) => void;
+  requestOptions: AdtRequestOptions;
+}
+
 export async function setApiReleaseState(
   http: AdtHttpClient,
   objectUri: string,
   opts: { state?: string; contract?: string; transport?: string; visibility?: ApiReleaseVisibility },
+  lifecycle?: ApiReleaseLifecycle,
 ): Promise<ApiReleaseStateInfo & { changed: boolean }> {
   const state = (opts.state ?? 'RELEASED').toUpperCase();
   const contract = (opts.contract ?? 'C1').toUpperCase();
@@ -197,8 +207,14 @@ export async function setApiReleaseState(
   }
   const accept = 'application/vnd.sap.adt.apirelease.v10+xml';
   const encoded = encodeURIComponent(objectUri);
-  const current = await http.get(`/sap/bc/adt/apireleases/${encoded}`, { Accept: accept });
+  const get = () =>
+    lifecycle
+      ? http.get(`/sap/bc/adt/apireleases/${encoded}`, { Accept: accept }, lifecycle.requestOptions)
+      : http.get(`/sap/bc/adt/apireleases/${encoded}`, { Accept: accept });
+  const current = await get();
+  lifecycle?.beforeBuild(current.body);
   const body = buildApiReleasePutBody(current.body, contract, state, opts.visibility);
+  await lifecycle?.beforePut(current.body);
   const path = `/sap/bc/adt/apireleases/${encoded}/${contract.toLowerCase()}`;
   const expectedVisibility = {
     useInSAPCloudPlatform: /ars:useInSAPCloudPlatform="true"/.test(body),
@@ -206,9 +222,9 @@ export async function setApiReleaseState(
   };
   let changed = true;
   try {
-    await http.put(opts.transport ? `${path}?request=${encodeURIComponent(opts.transport)}` : path, body, accept, {
-      Accept: accept,
-    });
+    const writePath = opts.transport ? `${path}?request=${encodeURIComponent(opts.transport)}` : path;
+    if (lifecycle) await http.put(writePath, body, accept, { Accept: accept }, lifecycle.requestOptions);
+    else await http.put(writePath, body, accept, { Accept: accept });
   } catch (err) {
     // SAP returns 400 "No changes were made" when the contract is already in the requested state.
     // Treat that as an idempotent no-op (the desired state already holds — confirmed via read-back
@@ -223,6 +239,7 @@ export async function setApiReleaseState(
       throw err;
     }
   }
+  lifecycle?.afterPut(changed);
   // The PUT outcome stands: a read-back that cannot confirm it must not look like a refused request.
   const unconfirmed =
     `SAP ${changed ? 'accepted' : 'reported no change for'} the ${contract} ${state} request for ${objectUri}, ` +
@@ -230,7 +247,9 @@ export async function setApiReleaseState(
     'Read SAPRead(type="API_STATE") for this object before retrying or deleting it.';
   let confirmed: ApiReleaseStateInfo;
   try {
-    confirmed = parseApiReleaseState((await http.get(`/sap/bc/adt/apireleases/${encoded}`, { Accept: accept })).body);
+    const readback = await get();
+    lifecycle?.validateReadback(readback.body);
+    confirmed = parseApiReleaseState(readback.body);
   } catch (error) {
     if (error instanceof AdtError)
       error.extraHint = error.extraHint ? `${unconfirmed}\n${error.extraHint}` : unconfirmed;

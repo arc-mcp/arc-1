@@ -111,8 +111,9 @@ export async function handleSAPActivate(
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
   ppEnabled: boolean,
+  minimalErrors = false,
 ): Promise<ToolResult> {
-  if (client.safety.multiTargetWrite) return handlePinnedActivation(client, args);
+  if (client.safety.multiTargetWrite) return handlePinnedActivation(client, args, minimalErrors);
   const action = String(args.action ?? 'activate');
   const name = String(args.name ?? '');
   const version = String(args.version ?? '0001');

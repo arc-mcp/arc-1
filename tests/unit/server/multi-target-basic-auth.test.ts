@@ -774,11 +774,22 @@ describe('multi-target shared Basic authentication', () => {
       const first = await call(toolRequest('pinned'), { authInfo: READ_AUTH });
       expect(first.isError).not.toBe(true);
       expect(getCachedFeatures(target.target)?.abapRelease).toBeUndefined();
-      expect(getCachedFeatures(target.target)).toMatchObject({ systemType: 'onprem', systemTypeSource: 'config' });
+      expect(getCachedFeatures(target.target)?.systemType).toBeUndefined();
+      expect(getCachedFeatures(target.target)?.systemTypeSource).toBeUndefined();
       expect(hasCompletedFeatureProbe(target.target)).toBe(status < 500);
       recovered = true;
       await call(toolRequest('pinned'), { authInfo: READ_AUTH });
-      if (status >= 500) expect(getCachedFeatures(target.target)?.abapRelease).toBe('758');
+      if (status >= 500) {
+        expect(getCachedFeatures(target.target)).toMatchObject({
+          abapRelease: '758',
+          systemType: 'onprem',
+          systemTypeSource: 'probe',
+        });
+      } else {
+        expect(getCachedFeatures(target.target)?.abapRelease).toBeUndefined();
+        expect(getCachedFeatures(target.target)?.systemType).toBeUndefined();
+        expect(getCachedFeatures(target.target)?.systemTypeSource).toBeUndefined();
+      }
       expect(hasCompletedFeatureProbe(target.target)).toBe(true);
       await call(toolRequest('pinned'), { authInfo: READ_AUTH });
       expect(fullProbes).toBe(status >= 500 ? 2 : 1);

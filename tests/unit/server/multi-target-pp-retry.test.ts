@@ -328,13 +328,17 @@ describe('multi-target principal-propagation retry', () => {
         params: { name: 'SAPRead', arguments: { type: 'SYSTEM', target: 'A4H/100' } },
       };
       await call(request, { authInfo: READ_AUTH });
-      expect(getCachedFeatures('A4H/100')).toMatchObject({ systemType: 'onprem', gcts: { mode: 'off' } });
+      expect(getCachedFeatures('A4H/100')).toMatchObject({ gcts: { mode: 'off' } });
+      expect(getCachedFeatures('A4H/100')?.systemType).toBeUndefined();
+      expect(getCachedFeatures('A4H/100')?.systemTypeSource).toBeUndefined();
+      expect(getCachedFeatures('A4H/100')?.abapRelease).toBeUndefined();
       expect(getCachedFeatures('A4H/100')?.rap).toBeUndefined();
       recovered = true;
       await call(request, { authInfo: { ...READ_AUTH, extra: { userName: 'AUTHORIZED_USER' } } });
       expect(fullProbes).toBe(2);
       expect(getCachedFeatures('A4H/100')?.rap?.available).toBe(true);
       expect(getCachedFeatures('A4H/100')?.abapRelease).toBe('758');
+      expect(getCachedFeatures('A4H/100')).toMatchObject({ systemType: 'onprem', systemTypeSource: 'probe' });
       expect(getCachedFeatures('A4H/100')?.abapGit?.available).toBe(false);
       await call(request, { authInfo: READ_AUTH });
       expect(fullProbes).toBe(2);

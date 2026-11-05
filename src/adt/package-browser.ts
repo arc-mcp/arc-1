@@ -21,9 +21,11 @@ interface Folder {
   type: string;
   id: string;
 }
+/** An empty tree is not positive evidence: the package may equally be missing or inaccessible. */
+export class PackageTreeNoEvidenceError extends AdtError {}
 const invalid = () => new AdtError('Invalid native package-tree response; no listing was returned.');
 const ambiguous = () =>
-  new AdtError(
+  new PackageTreeNoEvidenceError(
     'SAP returned no package-tree evidence. The package may be empty, missing or inaccessible. ' +
       'Verify the exact package name in SAP ADT; this response cannot establish an empty package.',
   );

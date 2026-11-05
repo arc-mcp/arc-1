@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Synthetic owner rebinding of captured A4H/001 metadata; links and unrelated subpackage inventory removed. -->
+<pak:package adtcore:responsible="MARIAN" adtcore:masterLanguage="EN" adtcore:name="$NEW" adtcore:type="DEVC/K" adtcore:changedAt="1972-04-01T00:00:00Z" adtcore:version="active" adtcore:createdAt="1972-04-01T00:00:00Z" adtcore:changedBy="SAP" adtcore:createdBy="SAP" adtcore:description="Owned root" adtcore:descriptionTextLimit="60" adtcore:language="EN" xmlns:pak="http://www.sap.com/adt/packages" xmlns:adtcore="http://www.sap.com/adt/core">
+<pak:attributes pak:packageType="development" pak:isPackageTypeEditable="false" pak:isAddingObjectsAllowed="false" pak:isAddingObjectsAllowedEditable="true" pak:isEncapsulated="false" pak:isEncapsulationEditable="false" pak:isEncapsulationVisible="false" pak:recordChanges="false" pak:isRecordChangesEditable="false" pak:isSwitchVisible="false" pak:languageVersion="" pak:isLanguageVersionVisible="true" pak:isLanguageVersionEditable="true"/>
+<pak:superPackage/>
+<pak:applicationComponent pak:name="" pak:description="No application component assigned" pak:isVisible="true" pak:isEditable="false"/>
+<pak:transport>
+<pak:softwareComponent pak:name="LOCAL" pak:description="Local Developments (No Automatic Transport)" pak:isVisible="true" pak:isEditable="false"/>
+<pak:transportLayer pak:name="" pak:description="" pak:isVisible="false" pak:isEditable="false"/>
+</pak:transport>
+<pak:useAccesses pak:isVisible="false"/>
+<pak:packageInterfaces pak:isVisible="false"/>
+</pak:package>

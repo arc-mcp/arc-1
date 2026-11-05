@@ -19,6 +19,7 @@ import {
   type MessageClassCreateParams,
   normalizeAdtLanguage,
   normalizeAdtResponsible,
+  parseTableType,
   type ServiceBindingCreateParams,
 } from '../adt/ddic-xml.js';
 import { syntaxCheck } from '../adt/devtools.js';
@@ -38,6 +39,7 @@ import {
   LOCKOBJECT_CONTENT_TYPE,
   type LockObjectDefinition,
   mergeLockObjectDefinition,
+  parseLockObject,
   parseLockObjectDefinition,
 } from '../adt/lock-object.js';
 import { formatRapPreflightFindings, validateRapSource } from '../adt/rap-preflight.js';
@@ -54,7 +56,7 @@ import {
 } from '../adt/server-driven.js';
 import { tableIndexParentUrl } from '../adt/table-index.js';
 import type { ResolvedFeatures, SystemType } from '../adt/types.js';
-import { escapeXmlAttr } from '../adt/xml-parser.js';
+import { escapeXmlAttr, parseDataElementMetadata, parseDomainMetadata, parseMessageClass } from '../adt/xml-parser.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { LintConfigOptions, RuleOverrides } from '../lint/config-builder.js';
 import { validateBeforeWrite } from '../lint/lint.js';
@@ -278,9 +280,11 @@ export async function mergeMetadataWriteProperties(
   type: string,
   name: string,
   provided: Record<string, unknown>,
+  /** Pinned adapters merge the exact document already read under their lock. */
+  stored?: string,
 ): Promise<Record<string, unknown>> {
   if (type === 'MSAG') {
-    const existing = await client.getMessageClassInfo(name);
+    const existing = stored !== undefined ? parseMessageClass(stored) : await client.getMessageClassInfo(name);
     return {
       _description: existing.description,
       _package: existing.package,
@@ -288,7 +292,7 @@ export async function mergeMetadataWriteProperties(
     };
   }
   if (type === 'DOMA') {
-    const existing = await client.getDomain(name);
+    const existing = stored !== undefined ? parseDomainMetadata(stored) : await client.getDomain(name);
     return {
       _description: existing.description,
       _package: existing.package,
@@ -306,7 +310,7 @@ export async function mergeMetadataWriteProperties(
     };
   }
   if (type === 'DTEL') {
-    const existing = await client.getDataElement(name);
+    const existing = stored !== undefined ? parseDataElementMetadata(stored) : await client.getDataElement(name);
     const shortLabel = provided.shortLabel ?? existing.shortLabel;
     const mediumLabel = provided.mediumLabel ?? existing.mediumLabel;
     const longLabel = provided.longLabel ?? existing.longLabel;
@@ -348,7 +352,8 @@ export async function mergeMetadataWriteProperties(
   }
   if (type === 'ENQU') {
     // Merge over the developer view so consecutive unactivated edits accumulate.
-    const existing = await getLockObject(client.http, client.safety, name);
+    const existing =
+      stored !== undefined ? parseLockObject(stored) : await getLockObject(client.http, client.safety, name);
     const source = provided.lockObjectSource;
     const definition =
       source === undefined || source === null || String(source).trim() === ''
@@ -392,7 +397,9 @@ export async function mergeMetadataWriteProperties(
     };
   }
   if (type === 'TTYP') {
-    const existing = await client.getTableType(name).catch((err: unknown) => {
+    const read =
+      stored !== undefined ? Promise.resolve().then(() => parseTableType(stored)) : client.getTableType(name);
+    const existing = await read.catch((err: unknown) => {
       // SAP and transport failures are reported as they are; an unreadable shape has to say why the update stops.
       if (err instanceof AdtError) throw err;
       throw new Error(
@@ -951,7 +958,7 @@ export async function enforceAllowedPackageForObjectUrl(
         `(no adtcore:packageRef/containerRef). Fail-closed: cannot authorize this operation without a verified package.${hint}`,
     );
   }
-  await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
+  await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver(options));
   return pkg;
 }
 

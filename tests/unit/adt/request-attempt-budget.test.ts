@@ -12,6 +12,48 @@ import { Semaphore } from '../../../src/adt/semaphore.js';
 import { ReviewBudget } from '../../../src/adt/transport-review-budget.js';
 
 const servers: Server[] = [];
+describe.each([false, true])('direct no-replay requests with spare total allowance=%s', (bounded) => {
+  it.each(['POST', 'PUT', 'DELETE'] as const)('never internally replays %s on 421', async (method) => {
+    let mutationSends = 0;
+    const { client } = await setup(false, (req, res) => {
+      if (req.method === 'HEAD') res.setHeader('x-csrf-token', 'TEST');
+      else {
+        mutationSends++;
+        res.writeHead(mutationSends === 1 ? 421 : 200);
+      }
+      res.end('ok');
+    });
+    const options = {
+      noReplay: true,
+      deadline: Date.now() + 2000,
+      ...(bounded ? { attemptBudget: new RequestAttemptBudget(32) } : {}),
+    };
+    const call =
+      method === 'DELETE'
+        ? client.delete('/sap/bc/adt/test', undefined, options)
+        : method === 'PUT'
+          ? client.put('/sap/bc/adt/test', 'body', 'text/plain', undefined, options)
+          : client.post('/sap/bc/adt/test', 'body', 'text/plain', undefined, options);
+    await expect(call).rejects.toBeInstanceOf(AdtRequestBudgetError);
+    expect(mutationSends).toBe(1);
+  });
+});
+
+it('does not follow a no-replay DELETE redirect without an explicit total allowance', async () => {
+  const mutationPaths: string[] = [];
+  const { client } = await setup(false, (req, res) => {
+    if (req.method === 'HEAD') res.setHeader('x-csrf-token', 'TEST');
+    else {
+      mutationPaths.push(new URL(req.url!, 'http://local.test').pathname);
+      if (mutationPaths.length === 1) res.writeHead(302, { Location: '/unexpected' });
+    }
+    res.end('ok');
+  });
+  await expect(
+    client.delete('/sap/bc/adt/test', undefined, { noReplay: true, deadline: Date.now() + 2000 }),
+  ).rejects.toMatchObject({ statusCode: 302 });
+  expect(mutationPaths).toEqual(['/sap/bc/adt/test']);
+});
 describe('analysis deadline classification', () => {
   it('classifies only elapsed network failures with no cancellation or unresolved authorization', () => {
     const error = new AdtNetworkError('deadline');

@@ -8,7 +8,7 @@
  */
 
 import { deleteObject, lockObject } from '../../src/adt/crud.js';
-import { isNotFoundError } from '../../src/adt/errors.js';
+import { AdtApiError, extractExceptionType, isNotFoundError } from '../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../src/adt/http.js';
 import { checkOperation, OperationType, type SafetyConfig } from '../../src/adt/safety.js';
 import { RUN_ID } from '../helpers/run-id.js';
@@ -75,6 +75,7 @@ export interface RetryDeleteResult {
  * Covers lock conflicts, SAP work process exhaustion, and connectivity blips.
  */
 function isRetryableError(message: string): boolean {
+  if (/invalid[\s_-]*lock[\s_-]*handle|not locked/i.test(message)) return false;
   return /locked|enqueue|service cannot be reached|connection reset|ECONNRESET|socket hang up|timeout/i.test(message);
 }
 
@@ -99,7 +100,10 @@ export async function retryDelete(
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
 
-      if (!isRetryableError(message) || attempt === maxRetries) {
+      const invalidHandle =
+        err instanceof AdtApiError &&
+        extractExceptionType(err.responseBody ?? '') === 'ExceptionResourceInvalidLockHandle';
+      if (invalidHandle || !isRetryableError(message) || attempt === maxRetries) {
         return { success: false, attempts: attempt, lastError: message };
       }
 
