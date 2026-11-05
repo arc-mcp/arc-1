@@ -21,7 +21,7 @@ const { requestContext } = await import('../../../src/server/context.js');
 const { executePrivatePinnedNativeGovernedFlp: execute } = await import(
   '../../../src/handlers/pinned-flp-native-recording.js'
 );
-const { executePrivatePinnedFlp, handlePinnedFlp } = await import('../../../src/handlers/pinned-flp.js');
+const { handlePinnedFlp } = await import('../../../src/handlers/pinned-flp.js');
 const { createCatalog } = await import('../../../src/adt/flp.js');
 const { createNativeGovernedFlpRecording, assertFlpRecordingProfile } = await import('../../../src/adt/pinned-flp.js');
 
@@ -495,16 +495,6 @@ describe('compatibility and public closure', () => {
     const f = fixture();
     expect((await handlePinnedFlp(f.client, args, f.config)).isError).toBe(true);
     expect(sent).toHaveLength(0);
-  });
-  it('preserves the separate observation entry without asserting recording', async () => {
-    const f = fixture();
-    f.policy.allowedTransports = [];
-    f.policy.serverAllowedTransports = [];
-    successful();
-    const result = value(
-      await executePrivatePinnedFlp(f.client, args, f.config, f.context(), 'disposable-client-observation'),
-    );
-    expect(result).toMatchObject({ ok: true, recording: 'not-established' });
   });
   it('leaves ordinary single-target create payload and recording behavior unchanged', async () => {
     const f = fixture();

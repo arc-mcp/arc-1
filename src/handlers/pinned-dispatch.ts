@@ -137,14 +137,11 @@ export async function dispatchPinnedOperation(tool: string, ctx: ToolDispatchCon
       client,
       {
         action,
-        bindings: [
-          {
-            name: args.name,
-            version: args.version,
-            serviceType: args.service_type,
-            expectedMetadataHash: args.expectedMetadataHash,
-          },
-        ],
+
+        name: args.name,
+        version: args.version,
+        serviceType: args.service_type,
+        expectedMetadataHash: args.expectedMetadataHash,
       },
       config,
       context,

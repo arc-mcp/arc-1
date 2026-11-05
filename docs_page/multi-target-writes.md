@@ -264,17 +264,18 @@ custom plugins, arbitrary ABAP/RFC execution and installed helpers are not added
 
 API-state read/merge/write/readback has no qualified atomic compare-and-swap/lock contract; the
 expected state check does not eliminate concurrent edits. Ordinary SRVB CRUD requires
-unpublished/non-generated state. A separately reviewed internal V4
-parent-delete profile exists for source-bound qualification with both package policies and both
-request policies explicitly `*`; it sends one parent DELETE and no child/SRVD deletion. It has no
-public tool route. Parent typed absence and generated cleanup accepted-but-unverified are distinct.
+unpublished/non-generated state. Generated V4 parent cleanup is historical qualification work outside the current product build.
+Unfinished recovery retains its original frozen source and journals. Parent typed absence and
+generated cleanup accepted-but-unverified remain distinct.
 
 Publication submits the explicit authorized native job even if the initial getter appears to match.
 On-prem 758 platform evidence, exact owner/package/version and fresh full metadata remain required.
 The selected public profile lets SAP govern native recording under both explicit unrestricted
 request lists. It does not promise non-recording or return a verified CTS receipt. Native acknowledgement
 and branch-dependent getters do not prove every frontend/alias or cloud BAdI branch succeeded.
-A stronger internal non-recording profile remains separate and lacks a general configuration reader.
+The product has one native-governed executor for one V4 binding/version. The stronger
+non-recording alternative lacks a general native configuration reader and remains a historical gap;
+its speculative reader mode and private batches are not shipped.
 
 ## CTS management and source recording
 

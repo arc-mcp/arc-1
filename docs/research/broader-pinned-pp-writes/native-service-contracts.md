@@ -49,7 +49,12 @@ unknown, without replay or automatic CTS compensation.
 [Publication contract](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-v4-publication.md)
 and [recording corrections](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-publication-native-governed-corrections.md).
 
-Generated V4 parent deletion is a separate native investigation: exact parent provenance,
+The current product retains one single-binding native-governed executor. Private batches,
+qualification handlers and the speculative non-recording reader mode are retired. A general
+native non-recording configuration reader remains an unimplemented gap; historical evidence
+does not create a product guarantee.
+
+Generated V4 parent deletion is a historical native investigation outside the product build: exact parent provenance,
 publication/generated state and scope need proof. Generic repository DELETE is no substitute;
 parent absence does not prove all generated children absent. Private experiments do not broaden
 public admission; the [write guide](../../../docs_page/multi-target-writes.md) retains the

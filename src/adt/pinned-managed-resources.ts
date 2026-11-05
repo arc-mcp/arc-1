@@ -13,8 +13,7 @@ export type PinnedManagedProfileId =
   | 'binding-delete'
   | 'binding-activate'
   | 'binding-publish'
-  | 'binding-unpublish'
-  | 'binding-publication-batch';
+  | 'binding-unpublish';
 
 export interface PinnedManagedProfile {
   readonly id: PinnedManagedProfileId;
@@ -107,8 +106,6 @@ export const PINNED_MANAGED_PROFILES: readonly PinnedManagedProfile[] = Object.f
     'serviceType',
     'expectedMetadataHash',
   ]),
-  // No single-target batch action exists: a later public shape needs its own schema review.
-  row('binding-publication-batch', 'SAPActivate', 'publish_srvb', 'service-binding', ['action', 'bindings']),
 ]);
 
 /** A private profile rejects every unlisted field instead of silently dropping it. */

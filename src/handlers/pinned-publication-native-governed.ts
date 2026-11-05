@@ -3,7 +3,7 @@ import type { AdtClient } from '../adt/client.js';
 import { DataResponseBudget } from '../adt/data-result-context.js';
 import { AdtSafetyError } from '../adt/errors.js';
 import { assertMutationContext, type PinnedMutationContext, pinnedMutationContext } from '../adt/mutation-context.js';
-import { executePinnedPublicationBatch } from '../adt/pinned-publication.js';
+import { executePinnedPublication } from '../adt/pinned-publication.js';
 import { RequestAttemptBudget } from '../adt/request-attempt-budget.js';
 import { nativeGovernedPublicationRecording } from '../adt/service-publication.js';
 import { hasRequiredScope } from '../authz/policy.js';
@@ -101,10 +101,7 @@ export async function executePrivatePinnedNativeGovernedPublication(
     const recording = nativeGovernedPublicationRecording(client.safety, scoped, coverage, validate);
     assertRecording = recording.assert;
     return pinnedOperationResult(
-      publicationClientResult(
-        await executePinnedPublicationBatch(client, scoped, input, recording),
-        config.minimalErrors,
-      ),
+      publicationClientResult(await executePinnedPublication(client, scoped, input, recording), config.minimalErrors),
       { ...config, targetId: target },
       { action },
     );

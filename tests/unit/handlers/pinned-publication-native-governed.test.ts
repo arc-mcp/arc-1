@@ -22,8 +22,7 @@ const { requestContext } = await import('../../../src/server/context.js');
 const { executePrivatePinnedNativeGovernedPublication: execute } = await import(
   '../../../src/handlers/pinned-publication-native-governed.js'
 );
-const { executePinnedPublicationBatch } = await import('../../../src/adt/pinned-publication.js');
-const { handlePrivatePinnedPublication } = await import('../../../src/handlers/pinned-publication.js');
+const { executePinnedPublication } = await import('../../../src/adt/pinned-publication.js');
 const { parsePinnedBinding, pinnedBindingSelection } = await import('../../../src/adt/pinned-service-binding-owner.js');
 const { nativeGovernedPublicationRecording, assertPublicationRecording } = await import(
   '../../../src/adt/service-publication.js'
@@ -94,7 +93,7 @@ function fixture(useProxy = false, semaphore?: InstanceType<typeof Semaphore>) {
     serviceType: 'odatav4',
     expectedMetadataHash: parsePinnedBinding(documents.get(name)!, pinnedBindingSelection(name)).metadataHash,
   });
-  const input = (action = 'publish_srvb', names = ['ZBIND']) => ({ action, bindings: names.map(selected) });
+  const input = (action = 'publish_srvb') => ({ action, ...selected() });
   const context = (budget: Parameters<typeof pinnedMutationContext>[1] = { deadline: Date.now() + 300_000 }) =>
     pinnedMutationContext(client.safety, budget, { unlockFailed: false });
   return {
@@ -103,6 +102,7 @@ function fixture(useProxy = false, semaphore?: InstanceType<typeof Semaphore>) {
     policy,
     documents,
     input,
+    selected,
     context,
     provider: (value: () => Promise<string>) => {
       provider = value;
@@ -172,22 +172,7 @@ it.each([false, true])('uses the shared sender and bounded native-state semantic
   expect(attempts.used).toBe(sent.length);
   expect(f.client.safety.allowTransportWrites).toBe(false);
 });
-const profiles = (['native-governed', 'non-recording'] as const).flatMap((profile) =>
-  [false, true].map((useProxy) => ({ profile, useProxy })),
-);
-function runProfile(f: Fixture, profile: (typeof profiles)[number]['profile'], args = f.input()) {
-  if (profile === 'native-governed') return f.run(args);
-  return handlePrivatePinnedPublication(f.client, f.config, args, ['read', 'write'], async () => ({
-    contract: 'sap-basis-758-onprem-v4-local',
-    target: 'A4H/001',
-    client: '001',
-    principal: 'TEST_WRITER',
-    systemCloud: false,
-    userCloud: false,
-    clientCategory: 'T',
-    observedAt: Date.now(),
-  }));
-}
+const profiles = [false, true].map((useProxy) => ({ profile: 'native-governed' as const, useProxy }));
 it.each(
   profiles.flatMap((p) =>
     [false, true].flatMap((desired) =>
@@ -208,7 +193,7 @@ it.each(
       runtimePublished = desired;
       return undefined;
     });
-    const result = value(await runProfile(f, profile, f.input(desired ? 'publish_srvb' : 'unpublish_srvb')));
+    const result = value(await f.run(f.input(desired ? 'publish_srvb' : 'unpublish_srvb')));
     expect(result).toMatchObject({
       ok: outcome === 'ok',
       state: outcome === 'ok' ? 'complete' : 'incomplete',
@@ -233,58 +218,6 @@ it.each(
     expect(posts()).toHaveLength(1);
     expect(posts()[0].path).toContain(desired ? '/publishjobs?' : '/unpublishjobs?');
     if (outcome === 'ok') expect(runtimePublished).toBe(desired);
-  },
-);
-it.each(profiles.flatMap((p) => [false, true].map((minimalErrors) => ({ ...p, minimalErrors }))))(
-  '$profile retains partial evidence with minimalErrors=$minimalErrors (proxy=$useProxy)',
-  async ({ profile, useProxy, minimalErrors }) => {
-    const f = fixture(useProxy);
-    f.config.minimalErrors = minimalErrors;
-    for (const name of ['ZSECOND', 'ZTHIRD']) f.documents.set(name, xml.replaceAll('ZBIND', name));
-    route(f, (method, path) => {
-      if (method !== 'POST') return undefined;
-      const name = new URL(path, origin).searchParams.get('servicename')!;
-      const severity = name === 'ZBIND' ? 'OK' : 'ERROR';
-      if (severity === 'OK')
-        f.documents.set(name, f.documents.get(name)!.replace('srvb:published="false"', 'srvb:published="true"'));
-      return {
-        body: status(severity)
-          .replace('Done', `PRIVATE_SHORT_${severity}`)
-          .replace('<LONG_TEXT/>', `<LONG_TEXT>PRIVATE_LONG_${severity}</LONG_TEXT>`),
-      };
-    });
-    const result = await runProfile(f, profile, f.input('publish_srvb', ['ZBIND', 'ZSECOND', 'ZTHIRD']));
-    const parsed = value(result);
-    expect(result.isError).toBe(true);
-    expect(parsed).toMatchObject({
-      ok: false,
-      state: 'incomplete',
-      submitted: 2,
-      retryable: false,
-      atomic: false,
-      items: [
-        {
-          submitted: true,
-          state: profile === 'native-governed' ? 'native-state-observed' : 'confirmed',
-          nativeStatus: { severity: 'OK' },
-          observed: { published: true },
-        },
-        { submitted: true, state: 'native-failed', nativeStatus: { severity: 'ERROR' } },
-        { submitted: false, state: 'not-submitted' },
-      ],
-    });
-    expect(parsed.items[2]).not.toHaveProperty('nativeStatus');
-    for (const severity of ['OK', 'ERROR']) {
-      for (const part of ['SHORT', 'LONG'])
-        expect(JSON.stringify(result).includes(`PRIVATE_${part}_${severity}`)).toBe(!minimalErrors);
-    }
-    if (minimalErrors)
-      expect(parsed.items.slice(0, 2).map((item: any) => item.nativeStatus)).toEqual([
-        { severity: 'OK' },
-        { severity: 'ERROR' },
-      ]);
-    expect(posts()).toHaveLength(2);
-    expect(posts().some((r) => r.path.includes('ZTHIRD'))).toBe(false);
   },
 );
 const invalidPolicies: unknown[] = [
@@ -351,7 +284,7 @@ it('refuses foreign/shared invocation, forged contexts/profiles and profile reus
   const profile = nativeGovernedPublicationRecording(f.client.safety, ctx, f.config, () => {});
   expect(() => assertPublicationRecording(f.client.safety, ctx, { ...profile })).toThrow('profile');
   expect(() => assertPublicationRecording(f.client.safety, f.context(), profile)).toThrow('profile');
-  expect(await executePinnedPublicationBatch(f.client, ctx, f.input(), { ...profile })).toMatchObject({
+  expect(await executePinnedPublication(f.client, ctx, f.input(), { ...profile })).toMatchObject({
     ok: false,
     submitted: 0,
   });
@@ -363,24 +296,6 @@ it.each(['server', 'destination'])('preserves independent %s package checks', as
   if (side === 'server') f.client.safety.allowedPackages = ['ZOTHER'];
   else f.policy.allowedPackages = ['ZOTHER'];
   expect(value(await f.run())).toMatchObject({ ok: false, submitted: 0 });
-  expect(posts()).toHaveLength(0);
-});
-it('preauthorizes all owners and refuses duplicate, oversized or polluted batches', async () => {
-  const f = fixture();
-  route(f);
-  f.documents.set('ZSECOND', xml.replaceAll('ZBIND', 'ZSECOND').replaceAll('$TMP', 'ZDENIED'));
-  expect(value(await f.run(f.input('publish_srvb', ['ZBIND', 'ZSECOND'])))).toMatchObject({ ok: false, submitted: 0 });
-  const calls = sent.length;
-  for (const input of [
-    f.input('publish_srvb', ['ZBIND', 'ZBIND']),
-    { action: 'publish_srvb', bindings: Array(11).fill(f.input().bindings[0]) },
-    { ...f.input(), nativeGoverned: true },
-    { ...f.input(), transport: '*' },
-    { action: 'publish_srvb', bindings: [{ ...f.input().bindings[0], serviceType: 'odatav2' }] },
-  ]) {
-    expect(value(await f.run(input))).toMatchObject({ ok: false, submitted: 0 });
-  }
-  expect(sent).toHaveLength(calls);
   expect(posts()).toHaveLength(0);
 });
 it.each(['package', 'scope', 'inactive', 'hash'])('refuses %s native drift during final revalidation', async (kind) => {
@@ -452,19 +367,6 @@ it('leaves unbound/no-op native OK unverified when the getter does not change', 
     items: [{ state: 'acknowledged-unverified' }],
   });
   expect(posts()).toHaveLength(1);
-});
-it('keeps earlier observed state and unattempted owners after a later native failure', async () => {
-  const f = fixture();
-  for (const name of ['ZSECOND', 'ZTHIRD']) f.documents.set(name, xml.replaceAll('ZBIND', name));
-  route(f, (method, path) =>
-    method === 'POST' && path.includes('servicename=ZSECOND') ? { body: status('ERROR') } : undefined,
-  );
-  expect(value(await f.run(f.input('publish_srvb', ['ZBIND', 'ZSECOND', 'ZTHIRD'])))).toMatchObject({
-    ok: false,
-    submitted: 2,
-    items: [{ state: 'native-state-observed' }, { state: 'native-failed' }, { state: 'not-submitted' }],
-  });
-  expect(posts()).toHaveLength(2);
 });
 it.each([
   [false, 'allowedTransports'],
@@ -638,42 +540,12 @@ it('preserves acknowledged partial effects if policies change before readback', 
   });
   expect(posts()).toHaveLength(1);
 });
-it('keeps the distinct non-recording profile and generated-owner cleanup refusal', async () => {
-  const f = fixture();
-  route(f);
-  f.policy.allowedTransports = [];
-  f.policy.serverAllowedTransports = [];
-  const ctx = f.context({
-    deadline: Date.now() + 60_000,
-    responseBudget: new DataResponseBudget(4 * 1024 * 1024, 'test', true),
-  });
-  const reader = async () => ({
-    contract: 'sap-basis-758-onprem-v4-local' as const,
-    target: 'A4H/001',
-    client: '001',
-    principal: 'NATIVE_USER',
-    systemCloud: false,
-    userCloud: false,
-    clientCategory: 'T',
-    observedAt: Date.now(),
-  });
-  expect(await executePinnedPublicationBatch(f.client, ctx, f.input(), reader)).toMatchObject({
-    ok: true,
-    recording: 'native-onprem-local-no-recording',
-    items: [{ state: 'confirmed' }],
-  });
-  f.documents.set('ZBIND', xml);
-  const before = posts().length;
-  expect(await deletePinnedBinding(f.client, ctx, { name: 'ZBIND' })).toMatchObject({ ok: false });
-  expect(posts()).toHaveLength(before);
-});
 it('keeps public dispatch and low-level legacy pinned submission closed', async () => {
   const f = fixture();
   const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
   const { publishServiceBinding } = await import('../../../src/adt/service-publication.js');
   expect(
-    (await handleToolCall(f.client, f.config, 'SAPActivate', { action: 'publish_srvb', ...f.input().bindings[0] }))
-      .isError,
+    (await handleToolCall(f.client, f.config, 'SAPActivate', { action: 'publish_srvb', ...f.selected() })).isError,
   ).toBe(true);
   await expect(publishServiceBinding(f.client.http, f.client.safety, 'ZBIND', '0001', 'odatav4')).rejects.toThrow(
     'pinned mutation context',
@@ -771,7 +643,7 @@ it.each([false, true])(
     route(f);
     setCachedFeatures({ abapRelease: '758', systemType: 'onprem', systemTypeSource: 'probe' }, 'A4H/001');
     for (const action of ['publish_srvb', 'unpublish_srvb']) {
-      const { serviceType, ...binding } = f.input(action).bindings[0];
+      const { serviceType, ...binding } = f.selected();
       const result = await handleToolCall(
         f.client,
         f.config,
@@ -788,3 +660,42 @@ it.each([false, true])(
     expect(posts()).toHaveLength(2);
   },
 );
+
+it.each([[], [{}], [{}, {}], Array(11).fill({})])(
+  'rejects private publication batches before any native read: %j',
+  async (bindings) => {
+    const f = fixture();
+    route(f);
+    expect(value(await f.run({ action: 'publish_srvb', bindings }))).toMatchObject({ ok: false, submitted: 0 });
+    expect(sent).toHaveLength(0);
+  },
+);
+it.each([false, true])('preserves single-item native error evidence with minimalErrors=%s', async (minimalErrors) => {
+  const f = fixture();
+  f.config.minimalErrors = minimalErrors;
+  route(f, (method) =>
+    method === 'POST'
+      ? {
+          body: status('ERROR')
+            .replace('Done', 'PRIVATE_SHORT')
+            .replace('<LONG_TEXT/>', '<LONG_TEXT>PRIVATE_LONG</LONG_TEXT>'),
+        }
+      : undefined,
+  );
+  const result = await f.run();
+  const parsed = value(result);
+  expect(parsed).toMatchObject({
+    ok: false,
+    state: 'incomplete',
+    submitted: 1,
+    items: [{ state: 'native-failed', nativeStatus: { severity: 'ERROR' } }],
+  });
+  expect(JSON.stringify(result).includes('PRIVATE_')).toBe(!minimalErrors);
+  expect(posts()).toHaveLength(1);
+});
+it('retains ordinary generated-binding deletion refusal', async () => {
+  const f = fixture();
+  route(f);
+  expect(await deletePinnedBinding(f.client, f.context(), { name: 'ZBIND' })).toMatchObject({ ok: false });
+  expect(posts()).toHaveLength(0);
+});

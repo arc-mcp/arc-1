@@ -1,20 +1,19 @@
-import { beforeEach, expect, it, type Mock, vi } from 'vitest';
-import type { PublicationConfiguration, PublicationConfigurationReader } from '../../../src/adt/pinned-publication.js';
+import { beforeEach, expect, it, vi } from 'vitest';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient } from '../handlers/setup-undici-mock.js';
 import { bindingName, bindingXml, managedHarness } from './pinned-managed-harness.js';
 
-const { executePinnedPublicationBatch } = await import('../../../src/adt/pinned-publication.js');
+const { executePinnedPublication: executePublication } = await import('../../../src/adt/pinned-publication.js');
 const { parsePinnedBinding, pinnedBindingSelection } = await import('../../../src/adt/pinned-service-binding-owner.js');
 const { pinnedMutationContext } = await import('../../../src/adt/mutation-context.js');
 const { DataResponseBudget } = await import('../../../src/adt/data-result-context.js');
 const { publishServiceBinding, unpublishServiceBinding } = await import('../../../src/adt/service-publication.js');
-const { publicationProfile } = await import('../../../src/adt/service-publication.js');
+const { publicationProfile, nativeGovernedPublicationRecording } = await import(
+  '../../../src/adt/service-publication.js'
+);
 const { mutationClient } = await import('../../../src/adt/mutation-client.js');
-const { handlePrivatePinnedPublication } = await import('../../../src/handlers/pinned-publication.js');
-const { publicationClientResult } = await import('../../../src/handlers/pinned-publication-result.js');
 const { DEFAULT_CONFIG } = await import('../../../src/server/types.js');
-const { pinnedMutationAllowed } = await import('../../../src/server/multi-target-write-surface.js');
+const { publicationClientResult } = await import('../../../src/handlers/pinned-publication-result.js');
 
 const status = (severity = 'OK') =>
   `<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><SEVERITY>${severity}</SEVERITY><SHORT_TEXT>Done</SHORT_TEXT><LONG_TEXT/></DATA></asx:values></asx:abap>`;
@@ -23,7 +22,6 @@ let fault: ((method: string, path: string) => ReturnType<typeof mockResponse> | 
 let hook: ((method: string, path: string) => void) | undefined;
 let harness: ReturnType<typeof managedHarness>;
 let client: InstanceType<typeof AdtClient>;
-let reader: Mock<PublicationConfigurationReader>;
 const input = (name = bindingName, extra = {}) => ({
   name,
   version: '0001',
@@ -37,8 +35,15 @@ const context = (signal?: AbortSignal, limit = 4 * 1024 * 1024) =>
     { deadline: Date.now() + 30_000, signal, responseBudget: new DataResponseBudget(limit, 'publication-test', true) },
     { unlockFailed: false },
   );
-const call = (action = 'publish_srvb', bindings = [input()], read = reader) =>
-  executePinnedPublicationBatch(client, context(), { action, bindings }, read);
+const executePinnedPublication = (c: typeof client, ctx: ReturnType<typeof context>, raw: Record<string, unknown>) =>
+  executePublication(
+    c,
+    ctx,
+    raw,
+    nativeGovernedPublicationRecording(c.safety, ctx, { systemType: 'onprem', abapRelease: '758' }, () => {}),
+  );
+const call = (action = 'publish_srvb', selected = input()) =>
+  executePinnedPublication(client, context(), { action, ...selected });
 const posts = () => harness.calls.filter((r) => r.method === 'POST');
 const config = () => ({
   ...DEFAULT_CONFIG,
@@ -76,16 +81,10 @@ beforeEach(() => {
     }
   });
   client = new AdtClient({ client: '001', http: harness.client.http, safety: harness.client.safety });
-  reader = vi.fn(async () => ({
-    contract: 'sap-basis-758-onprem-v4-local' as const,
-    target: 'A4H/001',
-    client: '001',
-    principal: 'MARIAN',
-    systemCloud: false,
-    userCloud: false,
-    clientCategory: 'T',
-    observedAt: Date.now(),
-  }));
+  client = client.withSafety({
+    ...client.safety,
+    multiTargetWrite: { ...client.safety.multiTargetWrite!, allowedTransports: ['*'], serverAllowedTransports: ['*'] },
+  });
 });
 
 it('sends one exact V4 job with one reference, no replay/CTS/lock; preserves generated binding on unpublish', async () => {
@@ -94,7 +93,9 @@ it('sends one exact V4 job with one reference, no replay/CTS/lock; preserves gen
     expect(result, JSON.stringify(result)).toMatchObject({
       ok: true,
       submitted: 1,
-      items: [{ state: 'confirmed', observed: { published: action === 'publish_srvb', bindingCreated: true } }],
+      items: [
+        { state: 'native-state-observed', observed: { published: action === 'publish_srvb', bindingCreated: true } },
+      ],
     });
   }
   expect(posts()).toHaveLength(2);
@@ -105,11 +106,11 @@ it('sends one exact V4 job with one reference, no replay/CTS/lock; preserves gen
   expect(new Headers(posts()[0].headers).get('accept')).toBe('application/vnd.sap.as+xml');
   expect(harness.calls.every((r) => !/transport|LOCK|sessions/.test(r.path))).toBe(true);
 });
-it('submits unpublication even when the non-recording profile getter already reports false', async () => {
+it('submits unpublication even when the native-governed profile getter already reports false', async () => {
   expect(await call('unpublish_srvb')).toMatchObject({
     ok: true,
     submitted: 1,
-    items: [{ state: 'confirmed', observed: { published: false } }],
+    items: [{ state: 'native-state-observed', observed: { published: false } }],
   });
   expect(posts()).toHaveLength(1);
   expect(posts()[0].path).toContain('/unpublishjobs?');
@@ -149,37 +150,6 @@ it('projects native diagnostics only for the client, leaving the complete frozen
   });
   expect(publicationClientResult(raw, false)).toBe(raw);
   expect(posts()).toHaveLength(1);
-});
-it.each([
-  {},
-  { systemCloud: true },
-  { userCloud: true },
-  { clientCategory: 'C' },
-  { clientCategory: '' },
-  { target: 'OTHER/001' },
-  { client: '002' },
-  { principal: '' },
-  { observedAt: 0 },
-  { contract: 'cloud' },
-])('refuses invalid current-principal configuration %j', async (patch) => {
-  const base = await reader(client, context());
-  reader.mockResolvedValue((Object.keys(patch).length ? { ...base, ...patch } : undefined) as PublicationConfiguration);
-  expect(await call()).toMatchObject({ ok: false, submitted: 0 });
-  expect(posts()).toEqual([]);
-});
-it('requires a trusted reader; caller fields cannot create its authority', async () => {
-  expect(
-    await executePinnedPublicationBatch(client, context(), { action: 'publish_srvb', bindings: [input()] }),
-  ).toMatchObject({ ok: false, submitted: 0 });
-  expect(
-    await executePinnedPublicationBatch(
-      client,
-      context(),
-      { action: 'publish_srvb', bindings: [input()], qualified: true },
-      reader,
-    ),
-  ).toMatchObject({ ok: false });
-  expect(harness.calls).toEqual([]);
 });
 it.each([406, 415, 500])('never replays HTTP %s even when it names the legacy fallback MIME', async (code) => {
   fault = (method) => (method === 'POST' ? mockResponse(code, 'application/vnd.sap.as+xml') : undefined);
@@ -258,58 +228,8 @@ it.each(['hash', 'package', 'inactive', 'membership'])('refuses preflight %s dri
               : 'srvb:version="0000"',
       ),
   );
-  expect(await call('publish_srvb', [selected])).toMatchObject({ ok: false, submitted: 0 });
+  expect(await call('publish_srvb', selected)).toMatchObject({ ok: false, submitted: 0 });
   expect(posts()).toEqual([]);
-});
-it('preauthorizes the whole batch and deduplicates bindings across versions', async () => {
-  expect(await call('publish_srvb', [input(), input(bindingName, { version: '0002' })])).toMatchObject({
-    ok: false,
-    submitted: 0,
-  });
-  expect(harness.calls).toEqual([]);
-  documents.set('ZSECOND', bindingXml('active').replaceAll(bindingName, 'ZSECOND').replaceAll('$TMP', 'ZDENIED'));
-  expect(await call('publish_srvb', [input(), input('ZSECOND')])).toMatchObject({ ok: false, submitted: 0 });
-  expect(posts()).toEqual([]);
-});
-it('preserves the first confirmed outcome when a later owner drifts', async () => {
-  documents.set('ZSECOND', bindingXml('active').replaceAll(bindingName, 'ZSECOND'));
-  const selected = [input(), input('ZSECOND')];
-  hook = (method) => {
-    if (method === 'POST') documents.set('ZSECOND', documents.get('ZSECOND')!.replace('Service Binding', 'Changed'));
-  };
-  expect(await call('publish_srvb', selected)).toMatchObject({
-    ok: false,
-    submitted: 1,
-    items: [{ state: 'confirmed' }, { state: 'not-submitted' }],
-  });
-  expect(posts()).toHaveLength(1);
-});
-it('checks cancellation after asynchronous final qualification and bounds cumulative metadata', async () => {
-  const abort = new AbortController();
-  const base = await reader(client, context());
-  let count = 0;
-  reader.mockImplementation(async () => {
-    if (++count === 2) abort.abort();
-    return { ...base, observedAt: Date.now() };
-  });
-  expect(
-    await executePinnedPublicationBatch(
-      client,
-      context(abort.signal),
-      { action: 'publish_srvb', bindings: [input()] },
-      reader,
-    ),
-  ).toMatchObject({ ok: false, submitted: 0 });
-  expect(posts()).toEqual([]);
-  reader.mockResolvedValue({ ...base, observedAt: Date.now() });
-  expect(
-    await executePinnedPublicationBatch(
-      client,
-      context(undefined, 150),
-      { action: 'publish_srvb', bindings: [input()] },
-      reader,
-    ),
-  ).toMatchObject({ ok: false, submitted: 0 });
 });
 it('keeps both low-level legacy entrypoints closed on a pinned client', async () => {
   for (const send of [publishServiceBinding, unpublishServiceBinding])
@@ -338,50 +258,6 @@ it('rejects forged, mismatched and reused shared sender grants', async () => {
   await send(profile);
   await expect(send(profile)).rejects.toThrow('authority');
   expect(posts()).toHaveLength(1);
-});
-it('keeps public admission closed while private scopes, target and policy remain enforced', async () => {
-  expect(pinnedMutationAllowed('SAPActivate', { action: 'publish_srvb', ...input() }, config())).toBe(false);
-  for (const override of [
-    { allowWrites: false },
-    { ppStrict: false },
-    { ppEnabled: false },
-    { targetId: 'OTHER/001' },
-    { multiTargetEndpoints: false },
-    { multiTargetAuthorization: 'standard' as const },
-    { denyActions: ['SAPActivate.publish_srvb'] },
-  ]) {
-    const result = await handlePrivatePinnedPublication(
-      client,
-      { ...config(), ...override },
-      { action: 'publish_srvb', bindings: [input()] },
-      ['write'],
-      reader,
-    );
-    expect(result.isError).toBe(true);
-  }
-  expect(
-    (
-      await handlePrivatePinnedPublication(
-        client,
-        config(),
-        { action: 'publish_srvb', bindings: [input()] },
-        ['read'],
-        reader,
-      )
-    ).isError,
-  ).toBe(true);
-  expect(harness.calls).toEqual([]);
-  expect(
-    (
-      await handlePrivatePinnedPublication(
-        client,
-        config(),
-        { action: 'publish_srvb', bindings: [input()] },
-        ['write'],
-        reader,
-      )
-    ).isError,
-  ).toBeUndefined();
 });
 
 it('covers the entire active membership, including multiple services sharing the selector version', async () => {
@@ -419,28 +295,10 @@ it('allows a transportable package without transport-management scope or publica
   client = client.withSafety({
     ...client.safety,
     allowTransportWrites: false,
-    multiTargetWrite: { ...client.safety.multiTargetWrite!, allowedTransports: [], serverAllowedTransports: [] },
+    multiTargetWrite: { ...client.safety.multiTargetWrite!, allowedTransports: ['*'], serverAllowedTransports: ['*'] },
   });
-  expect(await call()).toMatchObject({ ok: true, recording: 'native-onprem-local-no-recording' });
+  expect(await call()).toMatchObject({ ok: true, recording: 'native-governed-unverified' });
   expect(harness.calls.some((r) => r.path.includes('/cts/'))).toBe(false);
-});
-it('does not continue after a later native failure and reports every selected item', async () => {
-  for (const name of ['ZSECOND', 'ZTHIRD']) documents.set(name, bindingXml('active').replaceAll(bindingName, name));
-  fault = (method, path) =>
-    method === 'POST' && path.includes('servicename=ZSECOND') ? mockResponse(200, status('ERROR')) : undefined;
-  expect(await call('publish_srvb', [input(), input('ZSECOND'), input('ZTHIRD')])).toMatchObject({
-    ok: false,
-    submitted: 2,
-    items: [{ state: 'confirmed' }, { state: 'native-failed' }, { state: 'not-submitted' }],
-  });
-  expect(posts()).toHaveLength(2);
-});
-it('rechecks native principal drift and deadline after asynchronous validation', async () => {
-  const base = await reader(client, context());
-  let n = 0;
-  reader.mockImplementation(async () => ({ ...base, principal: ++n === 1 ? 'MARIAN' : 'OTHER' }));
-  expect(await call()).toMatchObject({ ok: false, submitted: 0 });
-  expect(posts()).toEqual([]);
 });
 it('raw public dispatch refuses publication before credentials, qualification or SAP requests', async () => {
   const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
@@ -452,7 +310,6 @@ it('raw public dispatch refuses publication before credentials, qualification or
   });
   expect(result.isError).toBe(true);
   expect(harness.calls).toEqual([]);
-  expect(reader).not.toHaveBeenCalled();
 });
 
 it('consumes shared authority before an asynchronous concurrent submission can reuse it', async () => {
@@ -491,7 +348,7 @@ it('preserves a lost native response as submitted uncertainty without replay', a
   expect(await call()).toMatchObject({ ok: false, submitted: 1, items: [{ state: 'submitted-unconfirmed' }] });
   expect(posts()).toHaveLength(1);
 });
-it('does not renew configuration freshness during the last metadata awaits', async () => {
+it('does not renew membership freshness during the last metadata awaits', async () => {
   const time = Date.now();
   let reads = 0;
   const clock = vi.spyOn(Date, 'now').mockReturnValue(time);
@@ -503,16 +360,11 @@ it('does not renew configuration freshness during the last metadata awaits', asy
   hook = (method) => {
     if (method === 'GET' && ++reads === 4) clock.mockReturnValue(time + 31_000);
   };
-  const result = await executePinnedPublicationBatch(
-    client,
-    ctx,
-    { action: 'publish_srvb', bindings: [input()] },
-    reader,
-  );
+  const result = await executePinnedPublication(client, ctx, { action: 'publish_srvb', ...input() });
   expect(result).toMatchObject({
     ok: false,
     submitted: 0,
-    items: [{ state: 'not-submitted', message: 'Native configuration evidence expired during binding revalidation.' }],
+    items: [{ state: 'not-submitted', message: 'Native binding membership evidence expired during revalidation.' }],
   });
   expect(posts()).toEqual([]);
 });
@@ -537,7 +389,7 @@ it('finishes CSRF preparation before the last binding precondition check', async
     documents.set(bindingName, documents.get(bindingName)!.replace('Service Binding', 'Concurrent Binding'));
     return token;
   });
-  expect(await call('publish_srvb', [selected])).toMatchObject({
+  expect(await call('publish_srvb', selected)).toMatchObject({
     ok: false,
     submitted: 0,
     items: [{ state: 'not-submitted' }],
@@ -545,8 +397,8 @@ it('finishes CSRF preparation before the last binding precondition check', async
   expect(posts()).toEqual([]);
 });
 
-it.each([0, 2_000, 11_000, 31_000])(
-  'enforces configuration expiry through the real HTTP semaphore wait (%i ms)',
+it.each([0, 11_000, 31_000])(
+  'enforces membership expiry through the real HTTP semaphore wait (%i ms)',
   async (delay) => {
     const { Semaphore } = await import('../../../src/adt/semaphore.js');
     const { AdtHttpClient } = await import('../../../src/adt/http.js');
@@ -565,10 +417,6 @@ it.each([0, 2_000, 11_000, 31_000])(
       if (++runs === 4) await semaphore.acquire();
       return response;
     });
-    if (delay === 2_000) {
-      const sample = await reader(client, context());
-      reader.mockResolvedValue({ ...sample, observedAt: time - 29_000 });
-    }
     const ctx = pinnedMutationContext(
       client.safety,
       {
@@ -577,7 +425,7 @@ it.each([0, 2_000, 11_000, 31_000])(
       },
       { unlockFailed: false },
     );
-    const pending = executePinnedPublicationBatch(client, ctx, { action: 'publish_srvb', bindings: [input()] }, reader);
+    const pending = executePinnedPublication(client, ctx, { action: 'publish_srvb', ...input() });
     for (let i = 0; i < 100 && semaphore.waiting === 0; i++) await new Promise((resolve) => setTimeout(resolve, 1));
     expect(semaphore.waiting).toBe(1);
     expect(posts()).toHaveLength(0);
@@ -589,8 +437,8 @@ it.each([0, 2_000, 11_000, 31_000])(
     expect(semaphore.waiting).toBe(0);
   },
 );
-it.each([0, 2_000, 11_000, 31_000])(
-  'enforces configuration expiry through real HTTP authentication preparation (%i ms)',
+it.each([0, 11_000, 31_000])(
+  'enforces membership expiry through real HTTP authentication preparation (%i ms)',
   async (delay) => {
     const { AdtHttpClient } = await import('../../../src/adt/http.js');
     const time = Date.now(),
@@ -623,10 +471,6 @@ it.each([0, 2_000, 11_000, 31_000])(
     hook = (method) => {
       if (method === 'GET' && ++reads === 4) delayAuth = true;
     };
-    if (delay === 2_000) {
-      const sample = await reader(client, context());
-      reader.mockResolvedValue({ ...sample, observedAt: time - 29_000 });
-    }
     const ctx = pinnedMutationContext(
       client.safety,
       {
@@ -635,7 +479,7 @@ it.each([0, 2_000, 11_000, 31_000])(
       },
       { unlockFailed: false },
     );
-    const pending = executePinnedPublicationBatch(client, ctx, { action: 'publish_srvb', bindings: [input()] }, reader);
+    const pending = executePinnedPublication(client, ctx, { action: 'publish_srvb', ...input() });
     await started;
     expect(posts()).toHaveLength(0);
     clock.mockReturnValue(time + delay);
@@ -645,3 +489,17 @@ it.each([0, 2_000, 11_000, 31_000])(
     expect(result.ok).toBe(!delay);
   },
 );
+
+it('checks cancellation after final native membership awaits', async () => {
+  const controller = new AbortController();
+  let reads = 0;
+  hook = (method) => {
+    if (method === 'GET' && ++reads === 4) controller.abort();
+  };
+  const result = await executePinnedPublication(client, context(controller.signal), {
+    action: 'publish_srvb',
+    ...input(),
+  });
+  expect(result).toMatchObject({ ok: false, submitted: 0 });
+  expect(posts()).toHaveLength(0);
+});

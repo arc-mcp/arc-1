@@ -2,13 +2,12 @@ import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
+import { pinnedPublicAuth } from '../../helpers/pinned-public-auth.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { handleSAPManage } = await import('../../../src/handlers/manage.js');
-const { executePrivatePinnedFlp } = await import('../../../src/handlers/pinned-flp.js');
-const { executePrivatePinnedTrace, handlePinnedTrace } = await import('../../../src/handlers/pinned-trace.js');
-const { pinnedMutationContext } = await import('../../../src/adt/mutation-context.js');
+const { handlePinnedTrace } = await import('../../../src/handlers/pinned-trace.js');
 const { unrestrictedSafetyConfig } = await import('../../../src/adt/safety.js');
 const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 
@@ -23,6 +22,7 @@ const pinnedConfig = {
   ...DEFAULT_CONFIG,
   targetId: policy.target,
   multiTargetEndpoints: true,
+  multiTargetAuthorization: 'xsuaa-attribute' as const,
   allowWrites: true,
   ppEnabled: true,
   ppStrict: true,
@@ -69,16 +69,6 @@ function route(f: Fixture, handler: (method: string, path: string, body?: string
       return handler(method, parsed.pathname, init?.body) ?? mockResponse(599, 'Unexpected request');
     },
   );
-}
-
-const foreignContext = () =>
-  pinnedMutationContext(
-    { ...unrestrictedSafetyConfig(), multiTargetWrite: { ...policy } },
-    { deadline: Date.now() + 60_000 },
-    { unlockFailed: false },
-  );
-function contextFor(f: Fixture) {
-  return pinnedMutationContext(f.client.safety, { deadline: Date.now() + 60_000 }, { unlockFailed: false });
 }
 
 beforeEach(() => {
@@ -208,7 +198,7 @@ describe('trace_requests attribution on Principal Propagation routes', () => {
   });
 });
 
-describe('private qualification entries', () => {
+describe('public trace adapter', () => {
   it('runs the shared adapter and reports target, request id and no-replay wire behavior', async () => {
     const f = fixture();
     route(f, (method, path) => {
@@ -218,7 +208,7 @@ describe('private qualification entries', () => {
       if (method === 'GET' && path.endsWith('/requests')) return mockResponse(200, feed());
       return undefined;
     });
-    const result = await executePrivatePinnedTrace(f.client, closedTraceCalls[0], f.config, contextFor(f));
+    const result = await handlePinnedTrace(f.client, closedTraceCalls[0], f.config);
     expect(result.isError).toBeUndefined();
     expect(JSON.parse(result.content[0].text)).toMatchObject({
       ok: true,
@@ -236,7 +226,7 @@ describe('private qualification entries', () => {
   it('does not replay a stale-token 403 on the wire', async () => {
     const f = fixture();
     route(f, () => mockResponse(403, 'CSRF token validation failed', { 'x-csrf-token': 'Required' }));
-    const result = await executePrivatePinnedTrace(f.client, closedTraceCalls[0], f.config, contextFor(f));
+    const result = await handlePinnedTrace(f.client, closedTraceCalls[0], f.config);
     expect(result.isError).toBe(true);
     expect(JSON.parse(result.content[0].text)).toMatchObject({
       error: 'PINNED_WRITE_REFUSED',
@@ -248,7 +238,7 @@ describe('private qualification entries', () => {
   it('does not replay a 5xx on the wire and reports it as uncertain', async () => {
     const f = fixture();
     route(f, () => mockResponse(503, 'busy'));
-    const result = await executePrivatePinnedTrace(f.client, closedTraceCalls[0], f.config, contextFor(f));
+    const result = await handlePinnedTrace(f.client, closedTraceCalls[0], f.config);
     expect(JSON.parse(result.content[0].text)).toMatchObject({
       error: 'PINNED_WRITE_INCOMPLETE',
       state: 'parameters-unconfirmed',
@@ -256,7 +246,7 @@ describe('private qualification entries', () => {
     expect(f.calls.filter((call) => call.method === 'POST')).toHaveLength(1);
   });
 
-  it('changes ST05 through the private entry with exact-user readback', async () => {
+  it('changes ST05 through the public entry with exact-user readback', async () => {
     const f = fixture();
     let current = stateXml;
     route(f, (method, path, body) => {
@@ -264,223 +254,13 @@ describe('private qualification entries', () => {
       if (method === 'PUT') current = body as string;
       return mockResponse(200, method === 'GET' ? current : '', { 'content-type': ST05_TYPE });
     });
-    const result = await executePrivatePinnedTrace(f.client, closedTraceCalls[2], f.config, contextFor(f));
+    const result = await handlePinnedTrace(f.client, closedTraceCalls[2], f.config);
     expect(JSON.parse(result.content[0].text)).toMatchObject({
       ok: true,
       state: 'updated',
       scope: { clientIsolated: false },
     });
     expect(current).toContain('<ts:traceUser>MARIAN</ts:traceUser>');
-  });
-
-  it('runs tile mutations and lists through the private entry with a typed recording acknowledgement', async () => {
-    const f = fixture();
-    const entity = {
-      id: 'X-SAP-UI2-CATALOGPAGE:ZARC1_CAT',
-      domainId: 'ZARC1_CAT',
-      title: 'Catalog',
-      type: 'CATALOG_PAGE',
-      scope: 'CUSTOMIZING',
-      isReadOnly: false,
-      chipCount: '0000',
-    };
-    const tile = {
-      pageId: entity.id,
-      instanceId: 'I',
-      chipId: 'X-SAP-UI2-CHIP:/UI2/STATIC_APPLAUNCHER',
-      title: 'T',
-      configuration: JSON.stringify({
-        tileConfiguration: JSON.stringify({
-          id: 'T',
-          display_title_text: 'T',
-          semantic_object: 'S',
-          semantic_action: 'display',
-        }),
-      }),
-    };
-    let exists = false;
-    route(f, (method, path) => {
-      if (method === 'GET' && path.startsWith(`${FLP}/Catalogs(`))
-        return mockResponse(200, JSON.stringify({ d: entity }));
-      if (method === 'POST' && path === `${FLP}/PageChipInstances`) {
-        exists = true;
-        return mockResponse(201, JSON.stringify({ d: tile }));
-      }
-      if (method === 'GET' && path.endsWith('/PageChipInstances'))
-        return mockResponse(200, JSON.stringify({ d: { results: exists ? [tile] : [] } }));
-      if (method === 'GET' && path === `${FLP}/Catalogs`)
-        return mockResponse(200, JSON.stringify({ d: { results: [entity] } }));
-      return undefined;
-    });
-    const created = await executePrivatePinnedFlp(
-      f.client,
-      closedFlpCalls[5],
-      f.config,
-      contextFor(f),
-      'disposable-client-observation',
-    );
-    expect(JSON.parse(created.content[0].text)).toMatchObject({
-      ok: true,
-      state: 'created',
-      recording: 'not-established',
-      tile: { instanceId: 'I', pageId: entity.id },
-    });
-    expect(f.calls.filter((call) => call.method === 'POST')).toHaveLength(1);
-    const listed = await executePrivatePinnedFlp(
-      f.client,
-      closedFlpCalls[0],
-      f.config,
-      contextFor(f),
-      'disposable-client-observation',
-    );
-    expect(listed.content[0].text).toContain('1 catalogs');
-  });
-
-  it.each(['catalog', 'group'])('runs the private %s create through the real HTTP client', async (kind) => {
-    const f = fixture();
-    const args = kind === 'catalog' ? closedFlpCalls[3] : closedFlpCalls[4];
-    const entity =
-      kind === 'catalog'
-        ? {
-            id: 'X-SAP-UI2-CATALOGPAGE:ZARC1_CAT',
-            domainId: 'ZARC1_CAT',
-            title: 'Catalog',
-            type: 'CATALOG_PAGE',
-            scope: 'CUSTOMIZING',
-            isReadOnly: '',
-          }
-        : {
-            id: 'ZARC1_GROUP',
-            title: 'Group',
-            catalogId: '/UI2/FLPD_CATALOG',
-            layout: '',
-            scope: 'CUSTOMIZING',
-            isReadOnly: '',
-            isCatalogPage: '',
-          };
-    const missing = readFileSync(new URL('../../fixtures/flp/cust-resource-lookup-604.json', import.meta.url), 'utf8');
-    let created = false;
-    route(f, (method, path) => {
-      const set = kind === 'catalog' ? 'Catalogs' : 'Pages';
-      if (method === 'POST' && path === `${FLP}/${set}`) {
-        created = true;
-        return mockResponse(201, JSON.stringify({ d: entity }));
-      }
-      if (method === 'GET' && path.startsWith(`${FLP}/${set}(`))
-        return created ? mockResponse(200, JSON.stringify({ d: entity })) : mockResponse(404, missing);
-      return undefined;
-    });
-    const result = await executePrivatePinnedFlp(
-      f.client,
-      args,
-      f.config,
-      contextFor(f),
-      'disposable-client-observation',
-    );
-    expect(JSON.parse(result.content[0].text)).toMatchObject({
-      ok: true,
-      state: 'created',
-      priorExistence: 'unknown',
-      recording: 'not-established',
-    });
-    expect(f.calls.map((call) => call.method)).toEqual(['GET', 'POST', 'GET']);
-  });
-
-  it('does not refresh CSRF and replay a submitted private create after a403 challenge', async () => {
-    const f = fixture();
-    const missing = readFileSync(new URL('../../fixtures/flp/cust-resource-lookup-604.json', import.meta.url), 'utf8');
-    route(f, (method, path) => {
-      if (method === 'GET' && path.startsWith(`${FLP}/Catalogs(`)) return mockResponse(404, missing);
-      if (method === 'POST') return mockResponse(403, 'CSRF challenge', { 'x-csrf-token': 'required' });
-      return undefined;
-    });
-    const result = await executePrivatePinnedFlp(
-      f.client,
-      closedFlpCalls[3],
-      f.config,
-      contextFor(f),
-      'disposable-client-observation',
-    );
-    expect(JSON.parse(result.content[0].text)).toMatchObject({
-      ok: false,
-      state: 'create-unconfirmed',
-      phase: 'write',
-      priorExistence: 'unknown',
-      statusCode: 403,
-    });
-    expect(f.calls.map((call) => call.method)).toEqual(['GET', 'POST']);
-    expect(mockFetch.mock.calls.filter(([_url, init]) => init?.method === 'HEAD')).toHaveLength(1);
-  });
-
-  it.each([closedFlpCalls[3], closedFlpCalls[4]])(
-    'refuses private creation %j when its native lookup is unavailable',
-    async (input) => {
-      const f = fixture();
-      route(f, () => undefined);
-      const result = await executePrivatePinnedFlp(
-        f.client,
-        input,
-        f.config,
-        contextFor(f),
-        'disposable-client-observation',
-      );
-      expect(JSON.parse(result.content[0].text)).toMatchObject({
-        ok: false,
-        state: 'unchanged',
-        phase: 'preflight',
-        message: expect.stringContaining('No classic FLP change was submitted'),
-      });
-      expect(f.calls).toHaveLength(1);
-      expect(f.calls[0].method).toBe('GET');
-    },
-  );
-
-  it.each([
-    ['read-only global ceiling', { allowWrites: false }],
-    ['non-strict PP', { ppStrict: false }],
-    ['PP off', { ppEnabled: false }],
-    ['missing target', { targetId: '' }],
-    ['wrong target', { targetId: 'B4H/001' }],
-    ['no destination write policy', { multiTargetWrite: undefined as never }],
-    ['wrong-target write policy', { multiTargetWrite: { ...policy, target: 'B4H/001' } }],
-    ['a denied exact action', { denyActions: ['SAPDiagnose.trace_start', 'SAPManage.flp_create_catalog'] }],
-    ['a denied action glob', { denyActions: ['SAPDiagnose.trace_*', 'SAPManage.flp_*'] }],
-  ] as const)('refuses %s before SAP I/O', async (_label, overrides) => {
-    const f = fixture(overrides as never);
-    route(f, () => undefined);
-    await expect(executePrivatePinnedTrace(f.client, closedTraceCalls[0], f.config, contextFor(f))).rejects.toThrow(
-      'unavailable',
-    );
-    await expect(
-      executePrivatePinnedFlp(f.client, closedFlpCalls[3], f.config, contextFor(f), 'disposable-client-observation'),
-    ).rejects.toThrow('unavailable');
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it('refuses a read-only client ceiling, feature-off FLP and a foreign context', async () => {
-    const readOnly = fixture();
-    readOnly.client.safety.allowWrites = false;
-    route(readOnly, () => undefined);
-    await expect(
-      executePrivatePinnedTrace(readOnly.client, closedTraceCalls[0], readOnly.config, contextFor(readOnly)),
-    ).rejects.toThrow('unavailable');
-    const off = fixture({ featureFlp: 'off' } as never);
-    route(off, () => undefined);
-    await expect(
-      executePrivatePinnedFlp(
-        off.client,
-        closedFlpCalls[3],
-        off.config,
-        contextFor(off),
-        'disposable-client-observation',
-      ),
-    ).rejects.toThrow('unavailable');
-    const foreign = fixture();
-    route(foreign, () => undefined);
-    await expect(
-      executePrivatePinnedTrace(foreign.client, closedTraceCalls[0], foreign.config, foreignContext()),
-    ).rejects.toThrow('mutation context');
-    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -499,27 +279,7 @@ describe('private qualification entries', () => {
     const f = fixture();
     route(f, () => undefined);
     expect(tool).toBe('SAPDiagnose');
-    await expect(executePrivatePinnedTrace(f.client, args, f.config, contextFor(f))).rejects.toThrow('unavailable');
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    { action: 'flp_create_catalog', domainId: "Z')", title: 'x' },
-    { action: 'flp_create_catalog', domainId: 'Z', title: 'x', transport: 'A4HK900001' },
-    { action: 'flp_delete_catalog', catalogId: 'Z', package: '$TMP' },
-    { action: 'create_package', name: 'Z', description: 'x' },
-    { action: 'features' },
-    {
-      action: 'flp_create_tile',
-      catalogId: 'Z',
-      tile: { id: 'T', title: 'T', semanticObject: 'S', semanticAction: 'a', url: 'javascript:alert(1)' },
-    },
-  ])('refuses invalid or unlisted FLP input %j', async (args) => {
-    const f = fixture();
-    route(f, () => undefined);
-    await expect(
-      executePrivatePinnedFlp(f.client, args, f.config, contextFor(f), 'disposable-client-observation'),
-    ).rejects.toThrow('unavailable');
+    await expect(handlePinnedTrace(f.client, args, f.config)).rejects.toThrow('unavailable');
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });
@@ -528,7 +288,57 @@ describe('handler conventions', () => {
   it('uses the shared mutation facade and never reaches a raw transport for candidate writes', async () => {
     const f = fixture();
     const post = vi.spyOn(f.client.http, 'post').mockResolvedValue({ statusCode: 200, headers: {}, body: '' });
-    await executePrivatePinnedTrace(f.client, closedTraceCalls[0], f.config, contextFor(f));
+    await handlePinnedTrace(f.client, closedTraceCalls[0], f.config);
     expect(post.mock.calls[0][4]).toMatchObject({ noReplay: true, retryTransientErrors: false });
   });
+});
+
+it.each([
+  { allowWrites: false },
+  { ppStrict: false },
+  { ppEnabled: false },
+  { targetId: '' },
+  { targetId: 'B4H/001' },
+  { multiTargetWrite: undefined },
+  { multiTargetWrite: { ...policy, target: 'B4H/001' } },
+  { denyActions: ['SAPDiagnose.trace_start'] },
+  { denyActions: ['SAPDiagnose.trace_*'] },
+])('rejects public trace policy changes before native I/O: %j', async (overrides) => {
+  const f = fixture(overrides as never);
+  route(f, () => undefined);
+  expect(
+    (
+      await handleToolCall(
+        f.client,
+        f.config,
+        'SAPDiagnose',
+        closedTraceCalls[0],
+        pinnedPublicAuth(),
+        undefined,
+        undefined,
+        true,
+      )
+    ).isError,
+  ).toBe(true);
+  expect(mockFetch).not.toHaveBeenCalled();
+});
+it('rejects a read-only client at the public trace entry', async () => {
+  const f = fixture();
+  f.client.safety.allowWrites = false;
+  route(f, () => undefined);
+  expect(
+    (
+      await handleToolCall(
+        f.client,
+        f.config,
+        'SAPDiagnose',
+        closedTraceCalls[0],
+        pinnedPublicAuth(),
+        undefined,
+        undefined,
+        true,
+      )
+    ).isError,
+  ).toBe(true);
+  expect(mockFetch).not.toHaveBeenCalled();
 });

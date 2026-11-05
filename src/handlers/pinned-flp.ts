@@ -6,15 +6,11 @@ import type { AdtClient } from '../adt/client.js';
 import { flpCatalogKey } from '../adt/flp.js';
 import type { PinnedMutationContext } from '../adt/mutation-context.js';
 import { mutationHttp } from '../adt/mutation-http.js';
-import {
-  executePinnedFlpMutation,
-  PINNED_FLP_RECORDING_NOT_ESTABLISHED,
-  parsePinnedFlpList,
-} from '../adt/pinned-flp.js';
+import { PINNED_FLP_RECORDING_NOT_ESTABLISHED, parsePinnedFlpList } from '../adt/pinned-flp.js';
 import { listPinnedFlpCatalogs, listPinnedFlpGroups, readPinnedFlpTilePage } from '../adt/pinned-flp-entity.js';
 import type { ServerConfig } from '../server/types.js';
 import { catalogLines, groupLines, tileLines } from './flp-format.js';
-import { assertPrivatePinnedRuntime, pinnedOperationContext, pinnedOperationResult } from './pinned-operation.js';
+import { pinnedOperationContext, pinnedOperationResult } from './pinned-operation.js';
 import { type ToolResult, textResult } from './shared.js';
 
 export function isPinnedFlpRoute(client: AdtClient, config: ServerConfig, action: string): boolean {
@@ -76,22 +72,4 @@ export async function handlePinnedFlp(
     config,
     { action },
   );
-}
-
-/**
- * Qualification entry for an isolated client whose recording behavior the harness itself observes.
- * The acknowledgement is a typed code argument, so neither a tool call nor a catalog can supply it.
- */
-export async function executePrivatePinnedFlp(
-  client: AdtClient,
-  args: Record<string, unknown>,
-  config: ServerConfig,
-  context: PinnedMutationContext,
-  _recording: 'disposable-client-observation',
-): Promise<ToolResult> {
-  assertPrivatePinnedRuntime(client, config, 'SAPManage', args, context);
-  const action = String(args.action);
-  if (action.startsWith('flp_list_')) return listPinnedFlp(client, args, context);
-  const http = mutationHttp(client.http, client.safety, context);
-  return pinnedOperationResult(await executePinnedFlpMutation(http, client.safety, context, args), config, { action });
 }

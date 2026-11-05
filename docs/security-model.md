@@ -311,7 +311,7 @@ ENHO/SKTD, batch/RAP, package/API, CTS, trace/settings/quickfix and classic FLP 
 remains proposed for final acceptance. Historical reports labelled private or unwired describe their
 named revisions, not a blanket denial of the current surface. Unsupported action/type/input and
 platform combinations remain refused; ordinary generated-SRVB deletion still refuses and its
-separate wildcard-policy cleanup entry remains internal. Git and custom plugins stay excluded.
+former private cleanup entry is retained only in historical recovery source. Git and custom plugins stay excluded.
 
 All admitted mutations retain the common strict-PP, raw-scope, exact-target-grant and write-opt-in
 conjunction above. Standard tools, cache-none, UI/plugins off, per-call target drift checks and no
@@ -361,9 +361,10 @@ remains unverified rather than a claimed CTS receipt. FLP create requires native
 protection and exact owned readback; generic OData 404 or `/UI2/FND/604` remains unknown. A successful
 catalog DELETE may therefore remain acknowledged but unconfirmed. V4 publication is binding-wide;
 branch-dependent getters/native acknowledgments do not prove universal frontend or all-alias
-availability. The stronger internal non-recording profile remains distinct and lacks a general
-configuration reader. Generated V4 parent cleanup additionally requires both package policies
-explicitly unrestricted; parent typed absence does not prove every generated child absent.
+availability. The stronger non-recording alternative lacks a general native configuration reader; its
+speculative execution mode and private publication batches are removed. Historical generated-parent
+cleanup retains its original frozen source and evidence; parent typed absence does not prove every
+generated child absent.
 
 Package/API operations use their native resource contracts: local package DELETE relies on native
 non-cascade checks, move revalidates source/target policies and preview membership, and API release

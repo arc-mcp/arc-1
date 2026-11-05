@@ -60,8 +60,8 @@ The repository matrix includes source/DDIC/server-driven CRUD, supported class/p
 FUGR/FUNC/structural includes, text pools, BADI_IMPL ENHO, SKTD documents, bounded batches and RAP
 helpers. TABL/DTT is update-only; FUGR main-source replacement and unsupported batch combinations
 are excluded. APLO/UIAD do not expose separate activation. Ordinary SRVB CRUD refuses published or
-generated state. Generated V4 parent deletion has a distinct internal qualification entry, not a
-public schema row. Public publication is one V4 binding/version; no public publication batch or
+generated state. Generated V4 parent cleanup remains historical qualification/recovery work; its private
+entry is excluded from the current product build. Public publication is one V4 binding/version; no public publication batch or
 V2 publication path is inferred. The [matrix](../../docs_page/multi-target-writes.md#explicit-action-type-and-input-matrix)
 is authoritative for exact fields and current platform filters.
 
@@ -110,12 +110,10 @@ scope gate, public group-delete action, modern spaces/pages or Work Zone contrac
 V4 publication uses the same both-explicit-* policy and native platform evidence, with exact
 binding/version/type/package and metadata. It sends the authorized native job even when a weak
 getter appears to match. Native cloud BAdI/no-op branches and getters do not establish universal
-frontend/all-alias success; no non-recording or CTS receipt is claimed. The stronger internal
-non-recording profile remains distinct and has no general native configuration reader. Generated V4
-cleanup additionally needs both package policies explicitly unrestricted, exact generated state and
-whole-parent intent; it sends only the parent DELETE. Parent typed absence and generated cleanup
-accepted-but-unverified remain separate. This internal entry does not bypass the public generated
-binding guard.
+frontend/all-alias success; no non-recording or CTS receipt is claimed. The speculative non-recording configuration-reader mode and private publication batches are
+removed from the product. A general native configuration reader remains an unimplemented gap,
+not a second supported recording guarantee. Historical generated-parent cleanup keeps its frozen
+source and journals; parent typed absence does not prove generated-child cleanup.
 
 ### Effects beyond the selected resource
 

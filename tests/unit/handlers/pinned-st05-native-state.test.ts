@@ -4,8 +4,7 @@ import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
-const { executePrivatePinnedTrace } = await import('../../../src/handlers/pinned-trace.js');
-const { pinnedMutationContext } = await import('../../../src/adt/mutation-context.js');
+const { handlePinnedTrace } = await import('../../../src/handlers/pinned-trace.js');
 const { setSqlTraceState } = await import('../../../src/adt/diagnostics.js');
 const { unrestrictedSafetyConfig } = await import('../../../src/adt/safety.js');
 const state = readFileSync(new URL('../../fixtures/xml/st05-trace-state.xml', import.meta.url), 'utf8');
@@ -17,6 +16,7 @@ const config = {
   ...DEFAULT_CONFIG,
   allowWrites: true,
   multiTargetEndpoints: true,
+  multiTargetAuthorization: 'xsuaa-attribute' as const,
   ppEnabled: true,
   ppStrict: true,
   targetId: 'A4H/001',
@@ -47,11 +47,10 @@ function fixture(initial: string, afterPut: (body: string) => string = (body) =>
     run: async (sqlOn: boolean) =>
       JSON.parse(
         (
-          await executePrivatePinnedTrace(
+          await handlePinnedTrace(
             client,
             { action: 'set_sql_trace_state', sqlOn, ...(sqlOn ? { user: 'MARIAN' } : {}) },
             config,
-            pinnedMutationContext(client.safety, { deadline: Date.now() + 60_000 }, { unlockFailed: false }),
           )
         ).content[0].text,
       ),

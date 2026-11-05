@@ -4,7 +4,7 @@ import type { PinnedMutationContext } from '../adt/mutation-context.js';
 import { mutationHttp } from '../adt/mutation-http.js';
 import { cancelPinnedProfilerTrace, setPinnedSqlTraceState, startPinnedProfilerTrace } from '../adt/pinned-trace.js';
 import type { ServerConfig } from '../server/types.js';
-import { assertPrivatePinnedRuntime, pinnedOperationContext, pinnedOperationResult } from './pinned-operation.js';
+import { pinnedOperationContext, pinnedOperationResult } from './pinned-operation.js';
 import type { ToolResult } from './shared.js';
 
 const TRACE_MUTATIONS: readonly unknown[] = ['trace_start', 'trace_cancel', 'set_sql_trace_state'];
@@ -45,16 +45,5 @@ export async function handlePinnedTrace(
   config: ServerConfig,
 ): Promise<ToolResult> {
   const context = pinnedOperationContext(client, config, { tool: 'SAPDiagnose', args, timeoutMs: 60_000 });
-  return runPinnedTrace(client, args, config, context);
-}
-
-/** Qualification entry: same adapters and reporting, with its caller-owned context and deadline. */
-export async function executePrivatePinnedTrace(
-  client: AdtClient,
-  args: Record<string, unknown>,
-  config: ServerConfig,
-  context: PinnedMutationContext,
-): Promise<ToolResult> {
-  assertPrivatePinnedRuntime(client, config, 'SAPDiagnose', args, context);
   return runPinnedTrace(client, args, config, context);
 }

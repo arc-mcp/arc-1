@@ -26,9 +26,7 @@ const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { handlePinnedActivation, handlePrivatePinnedBindingActivation } = await import(
   '../../../src/handlers/write/pinned-activation.js'
 );
-const { preparePinnedPublication, preparePinnedPublicationBatch } = await import(
-  '../../../src/adt/pinned-publication.js'
-);
+const { selectPinnedPublication, preflightPinnedPublication } = await import('../../../src/adt/pinned-publication.js');
 let exists: boolean, body: string, fault: string;
 let harness: ReturnType<typeof managedHarness>;
 const selected = pinnedBindingSelection(bindingName);
@@ -96,12 +94,13 @@ const update = (patch = {}) =>
     description: 'Changed & preserved',
     ...patch,
   });
-const publish = (patch = {}) =>
-  preparePinnedPublication(
+const publish = async (patch = {}) =>
+  preflightPinnedPublication(
     harness.client,
-    harness.context(),
-    { name: bindingName, version: '0001', serviceType: 'odatav4', expectedMetadataHash: metadataHash(), ...patch },
-    'publish_srvb',
+    selectPinnedPublication(
+      { name: bindingName, version: '0001', serviceType: 'odatav4', expectedMetadataHash: metadataHash(), ...patch },
+      'publish_srvb',
+    ),
   );
 
 describe('private service-binding document and CRUD', () => {
@@ -239,11 +238,6 @@ describe('private binding activation and publication boundary', () => {
     expect(JSON.stringify(result)).toContain('binding-active-verification');
     expect(harness.calls.filter((r) => r.path.startsWith('/sap/bc/adt/activation'))).toHaveLength(1);
   });
-  it('validates the exact active binding but refuses missing current-principal qualification', async () => {
-    body = bindingXml('active');
-    expect(await publish()).toMatchObject({ ok: false, state: 'unchanged', qualification: 'not-established' });
-    expect(harness.calls.every((r) => r.method === 'GET')).toBe(true);
-  });
   it.each([
     { version: 'latest' },
     { serviceType: 'odata' },
@@ -270,21 +264,6 @@ describe('private binding activation and publication boundary', () => {
       expect(harness.calls.some((r) => r.method === 'POST')).toBe(false);
     },
   );
-  it.each(
-    [
-      [],
-      Array.from({ length: 11 }, () => ({})),
-      [
-        { name: bindingName, version: '0001', serviceType: 'odatav4', expectedMetadataHash: '0'.repeat(64) },
-        { name: bindingName, version: '0001', serviceType: 'odatav4', expectedMetadataHash: '0'.repeat(64) },
-      ],
-    ].map((bindings) => ({ bindings })),
-  )('bounds and deduplicates all batch selection before native reads', async ({ bindings }) => {
-    await expect(
-      preparePinnedPublicationBatch(harness.client, harness.context(), { action: 'publish_srvb', bindings }),
-    ).rejects.toThrow();
-    expect(harness.calls).toHaveLength(0);
-  });
 });
 
 function publicConfig() {
