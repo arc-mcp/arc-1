@@ -1008,6 +1008,7 @@ async function handleSAPReadBase(
       return textResult(toolJson(data));
     }
     case 'CDS_PREVIEW': {
+      if (isBtpSystem()) return errorResult('CDS_PREVIEW is not qualified for BTP ABAP.');
       const data = await client.runCdsPreview(name, {
         maxRows: args.maxRows === undefined ? undefined : Number(args.maxRows),
         columns: args.columns as string[] | undefined,

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CDS_PREVIEW_PATH, parseCdsPreviewRows } from '../../../src/adt/cds-preview.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { handleToolCall } from '../../../src/handlers/dispatch.js';
+import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/feature-cache.js';
 import { requestContext } from '../../../src/server/context.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
@@ -19,6 +20,7 @@ const rowsXml =
 let ddlBody: string, metaBody: string, dataBody: string;
 let metadataStatus: number;
 beforeEach(() => {
+  resetCachedFeatures();
   fetch.mockReset();
   ddlBody = ddlXml;
   metaBody = metaXml;
@@ -64,6 +66,22 @@ describe('native CDS preview', () => {
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toContain(message);
     expect(fetch).not.toHaveBeenCalled();
+  });
+  it('refuses an auto-detected BTP system before SAP', async () => {
+    setCachedFeatures({ systemType: 'btp' });
+    const result = await handleToolCall(
+      client(),
+      { ...DEFAULT_CONFIG, systemType: 'auto', allowDataPreview: true },
+      'SAPRead',
+      { type: 'CDS_PREVIEW', name: ddl },
+    );
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain('not qualified for BTP');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('uses the existing preview default for a zero row limit', async () => {
+    await client().runCdsPreview(ddl, { maxRows: 0 });
+    expect(new URL(posts()[0]![0]).searchParams.get('rowNumber')).toBe('101');
   });
   it('queries the entity instead of the DDLS/SQL-view name and trims lookahead without inventing a total', async () => {
     const result = await client().runCdsPreview('z_ddl', {

@@ -13,16 +13,21 @@ export type DataPreviewInput = {
 
 type IssueContext = { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void };
 
+/** Default values emitted by strict clients for unrelated SAPRead options. */
+export function isReadOptionFiller(key: string, value: unknown): boolean {
+  return (
+    value === false ||
+    (Array.isArray(value) && value.length === 0) ||
+    (key === 'format' && value === 'text') ||
+    (key === 'maxResults' && value === 0)
+  );
+}
+
 export function validateDataPreviewInput(input: DataPreviewInput, ctx: IssueContext): void {
   if (input.type === 'CDS_PREVIEW') {
     const allowed = new Set(['type', 'name', 'columns', 'where', 'maxRows']);
     for (const [key, value] of Object.entries<unknown>(input)) {
-      const filler =
-        value === undefined ||
-        value === null ||
-        value === '' ||
-        value === false ||
-        (Array.isArray(value) && value.length === 0);
+      const filler = value === undefined || value === null || value === '' || isReadOptionFiller(key, value);
       if (!filler && !allowed.has(key))
         ctx.addIssue({ code: 'custom', path: [key], message: `CDS_PREVIEW does not accept ${key}.` });
     }
@@ -31,7 +36,7 @@ export function validateDataPreviewInput(input: DataPreviewInput, ctx: IssueCont
     } catch (error) {
       ctx.addIssue({
         code: 'custom',
-        path: ['name'],
+        path: [],
         message: error instanceof Error ? error.message : 'Invalid CDS_PREVIEW input.',
       });
     }

@@ -3,7 +3,7 @@ import { XMLValidator } from 'fast-xml-parser';
 import { DataResponseBudget } from './data-result-context.js';
 import { canonicalDataSourceName } from './data-source-name.js';
 import type { DataSourceBlocklistGuard } from './data-source-policy.js';
-import { AdtApiError, AdtError } from './errors.js';
+import { AdtError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import { buildTableQuerySql, clampPreviewRows, fitFreestyleSqlLines } from './table-query.js';
 import { parseDiscoveryDocument, parseTableContents, parseXml } from './xml-parser.js';
@@ -28,10 +28,17 @@ export function validateCdsPreviewOptions(name: string, options: CdsPreviewOptio
     throw new AdtError('CDS_PREVIEW accepts at most 100 columns and 100 conditions.');
   if (options.where?.some((condition) => (condition.value?.length ?? 0) > 4096))
     throw new AdtError('CDS_PREVIEW condition values must not exceed 4096 characters.');
-  if (options.maxRows !== undefined && (!Number.isFinite(options.maxRows) || options.maxRows < 1))
-    throw new AdtError('CDS_PREVIEW maxRows must be a positive finite number.');
   // Validate the structured SQL grammar before any metadata request. Execution uses the resolved entity.
-  fitFreestyleSqlLines(buildTableQuerySql(ddlSource, options.columns, options.where));
+  try {
+    fitFreestyleSqlLines(buildTableQuerySql(ddlSource, options.columns, options.where));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Invalid structured query.';
+    throw new AdtError(
+      message.includes('255-character')
+        ? "CDS_PREVIEW: each SQL literal must fit SAP's 255-character lines. Shorten individual condition values."
+        : message.replaceAll('TABLE_QUERY', 'CDS_PREVIEW'),
+    );
+  }
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -56,13 +63,7 @@ async function metadata(
   accept: string,
   options: AdtRequestOptions,
 ): Promise<string> {
-  try {
-    return (await http.get(path, { Accept: accept }, options)).body;
-  } catch (error) {
-    if (error instanceof AdtApiError && error.statusCode === 404 && path.startsWith(CDS_PREVIEW_PATH))
-      throw new AdtError('SAP advertises CDS preview but its metadata resource is unavailable on this system.');
-    throw error;
-  }
+  return (await http.get(path, { Accept: accept }, options)).body;
 }
 
 export async function resolveCdsPreviewTarget(

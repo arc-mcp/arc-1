@@ -26,7 +26,6 @@ describe('CDS preview surface', () => {
     { columns: Array(101).fill('CARRID') },
     { where: [{ field: 'CARRID', op: '=', value: 'x'.repeat(4097) }] },
     { columns: ['@(execute)'] },
-    { maxRows: 0 },
   ])('rejects unsupported or unbounded inputs: %j', (extra) => {
     expect(SAPReadSchema.safeParse({ ...input, ...extra }).success).toBe(false);
   });
@@ -37,6 +36,11 @@ describe('CDS preview surface', () => {
         columns: ['CARRID'],
         where: [{ field: 'CARRID', op: '=', value: 'LH' }],
         includeSignature: false,
+        force_refresh: false,
+        expand_includes: false,
+        format: 'text',
+        maxResults: 0,
+        maxRows: 0,
       }).success,
     ).toBe(true);
   });

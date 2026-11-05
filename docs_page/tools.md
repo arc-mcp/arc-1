@@ -113,7 +113,7 @@ the complete inherited API.
 | `expand_includes` | boolean | No | For FUGR: expand include source inline, up to 80 source blocks (including main) and five include levels. `grep` implies this expansion; see [Function-group source search](#function-group-source-search). For PROG and INCL: read the program with every include it names, recursively, in one bounded call, or search them all with `grep`; see [Program include expansion](#program-include-expansion). |
 | `group` | string | No | For FUNC, and for VERSIONS or API_STATE with `objectType="FUNC"`: function group name; resolved through search when omitted, including namespaced functions and SAP_BASIS 750's decorated search names. |
 | `versionUri` | string | No | For VERSION_SOURCE: canonical source/revision URI from a VERSIONS response (`revisions[].uri`). Only known source endpoint shapes are accepted; unrelated ADT endpoints, absolute URLs, authority changes, dot segments, queries, fragments, controls, encoded backslashes, and ambiguous nested encodings are rejected. Encoded slashes remain valid inside namespaced ABAP object names. |
-| `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY/CDS_PREVIEW: requested row cap (default 100, clamped to 10,000). Wide results can hit the server's cumulative byte ceiling at fewer rows. ARC-1 caps returned rows even when SAP includes a lookahead row. |
+| `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY/CDS_PREVIEW: requested row cap (default 100, clamped to 10,000). Wide results can hit the server's cumulative byte ceiling at fewer rows. Zero or negative values use the default. ARC-1 caps returned rows even when SAP includes a lookahead row. |
 | `maxResults` | number | No | DEVC result cap (default 200, clamped to 1–1000). Indexed search sends it to SAP; direct mode applies it locally without reducing SAP's response. |
 | `packageScope` | string | No | DEVC: `"direct"` uses bounded native package browsing without recursion or descriptions. Omit for indexed search. `objectType` optionally selects an advertised folder such as `CLAS/OC`. |
 | `sqlFilter` | string | No | Legacy TABLE_CONTENTS condition. Do not rely on it for portable automation: the 758 endpoint expects a different SELECT-shaped payload, so condition-only filters are unusable there (816 behaves the same). Prefer TABLE_QUERY `where`. A non-empty `sqlFilter` on any other type, TABLE_QUERY included, is rejected before SAP is called. |
@@ -464,7 +464,7 @@ requires `SAP_ALLOW_DATA_PREVIEW`; free SQL can stay disabled. SAP evaluates CDS
 for the connected user. It does not grant SAP permissions or make other ARC-1 operations CDS-only.
 
 Supported now: active, non-parameterized views and view entities on a single on-premise target.
-No raw SQL, association paths, BTP or multi-target mode. Columns and conditions are limited to
+No raw SQL, association paths, BTP ABAP targets or multi-target mode. Columns and conditions are limited to
 100 each; unknown fields and unsupported options are rejected. Use `<>` for inequality on 758.
 The native collection must be advertised and its metadata available; there is no freestyle fallback.
 Verified on 758 SP02 with HTTPS Basic; the tested 750 SP02 metadata route returned 404.

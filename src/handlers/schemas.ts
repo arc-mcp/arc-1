@@ -30,7 +30,7 @@ import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import { SYNTAX_BATCH_TYPES } from '../adt/syntax-batch.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
-import { type DataPreviewInput, validateDataPreviewInput } from './data-preview-input.js';
+import { type DataPreviewInput, isReadOptionFiller, validateDataPreviewInput } from './data-preview-input.js';
 import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
 import { dumpFilters, validateDumpFilterInputs } from './dump-filter-inputs.js';
 import { sourcePreconditionError } from './editable-source.js';
@@ -149,11 +149,7 @@ function validateSapReadInput(
     const allowed = new Set(['type', 'name', 'objectType', 'version', 'source']);
     for (const [key, value] of Object.entries<unknown>(input)) {
       // Ignore strict-client filler, but reject options that would change the requested check.
-      const filler =
-        value === false ||
-        (Array.isArray(value) && value.length === 0) ||
-        (key === 'format' && value === 'text') ||
-        (key === 'maxResults' && value === 0);
+      const filler = isReadOptionFiller(key, value);
       if (value !== undefined && !allowed.has(key) && !filler) {
         ctx.addIssue({ code: 'custom', path: [key], message: `SYNTAX does not accept ${key}.` });
       }

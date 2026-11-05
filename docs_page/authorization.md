@@ -127,7 +127,7 @@ reachable at all — external *or* internal — and startup says so.
 
 With an active list, one logical request is decided exactly once:
 
-- direct exact matches are denied with **zero SAP calls**;
+- exact matches on supplied source names are denied with **zero SAP calls**; CDS preview resolves its DDLS to an entity first, so entity/alias matches are denied after metadata and before data execution;
 - otherwise free SQL is parsed locally, each direct source is resolved through exact ADT search, CDS
   roots are expanded through SAP's active SQL dependency graph, and DDIC replacement chains are followed through active `DD02L`/`DDLDEPENDENCY` catalog rows;
 - every repository/entity/database alias of every node is compared against the list;
