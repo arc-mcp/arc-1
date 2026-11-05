@@ -42,6 +42,7 @@ import {
   type RapHandlerRequirement,
   type RapHandlerSourceSections,
 } from './rap-handlers.js';
+import { rapProfile } from './rap-profile.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 
 /** Options for `generateBehaviorImplementation`. */
@@ -177,6 +178,7 @@ export async function generateBehaviorImplementation(
   className: string,
   options: RapGenerateOptions = {},
 ): Promise<RapGenerateResult> {
+  const profile = rapProfile(client);
   const dryRun = options.dryRun === true;
   const activateRequested = options.activate !== false; // default true
   const targetAlias = (options.targetAlias ?? '').trim().toLowerCase();
@@ -188,7 +190,7 @@ export async function generateBehaviorImplementation(
   const cleanClassName = className.trim();
 
   // ── Phase 1: discovery ────────────────────────────────────────────────
-  const metadata = await client.getClassMetadata(cleanClassName);
+  const metadata = await (profile ? profile.metadata() : client.getClassMetadata(cleanClassName));
   if (metadata.category !== 'behaviorPool') {
     throw new AdtSafetyError(
       `generate_behavior_implementation: class ${cleanClassName} is not a RAP behavior pool ` +
@@ -209,15 +211,18 @@ export async function generateBehaviorImplementation(
   }
   bdefName = bdefName.toUpperCase();
 
-  const bdefRead = await client.getBdef(bdefName);
-  const bdefSource = bdefRead.source;
+  const legacyBdefSource = profile ? undefined : (await client.getBdef(bdefName)).source;
   const objectUrl = classObjectUrl(cleanClassName);
   const scaffold = async (
     session: AdtHttpClient,
     save?: (url: string, source: string) => Promise<void>,
   ): Promise<RapGenerateResult> => {
     // Read the editable view through the locked session before deriving replacements.
-    const structured = await readRapClassSources(session, client.safety, cleanClassName);
+    const structured = profile
+      ? await profile.sources(session)
+      : await readRapClassSources(session, client.safety, cleanClassName);
+    const bdefSource = profile ? await profile.bdef(session, bdefName) : legacyBdefSource!;
+    profile?.validateSources(bdefSource, structured, targetAlias);
     const mainSource = structured.main;
     const definitionsSource = structured.definitions ?? '';
     const implementationsSource = structured.implementations ?? '';
@@ -271,6 +276,7 @@ export async function generateBehaviorImplementation(
       missingSignatures,
       missingStubs,
     );
+    profile?.validatePlan(scaffoldPlan);
 
     const result: RapGenerateResult = {
       discovery: {
@@ -310,19 +316,25 @@ export async function generateBehaviorImplementation(
   };
   if (dryRun) return scaffold(client.http);
   // Even activation-only reruns need the lock to establish that no source change is needed.
-  const result = await client.http.withStatefulSession(async (session) => {
-    const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY');
-    try {
-      return await scaffold(session, (url, source) =>
-        updateSource(session, client.safety, url, source, lock.lockHandle, transport ?? (lock.corrNr || undefined)),
-      );
-    } finally {
-      await unlockObject(session, objectUrl, lock.lockHandle);
-    }
-  });
+  const result = profile
+    ? await profile.edit(scaffold)
+    : await client.http.withStatefulSession(async (session) => {
+        const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY');
+        try {
+          return await scaffold(session, (url, source) =>
+            updateSource(session, client.safety, url, source, lock.lockHandle, transport ?? (lock.corrNr || undefined)),
+          );
+        } finally {
+          await unlockObject(session, objectUrl, lock.lockHandle);
+        }
+      });
 
   // ── Phase 5: optional activation ──────────────────────────────────────
   if (activateRequested) {
+    if (profile) {
+      result.activation = await profile.activate();
+      return result;
+    }
     try {
       const activationOutcome = await activateBatch(client.http, client.safety, [
         { url: objectUrl, name: cleanClassName },
@@ -366,6 +378,8 @@ export async function readRapClassSources(
   safety: SafetyConfig,
   name: string,
 ): Promise<RapHandlerSourceSections> {
+  if (safety.multiTargetWrite)
+    throw new AdtSafetyError('Pinned RAP reads require their exact registered source profile.');
   checkOperation(safety, OperationType.Read, 'GetRapClassSources');
   const sections: RapHandlerSourceSections = {
     main: (await http.get(classMainSourceUrl(name), { 'Cache-Control': 'no-cache' })).body,

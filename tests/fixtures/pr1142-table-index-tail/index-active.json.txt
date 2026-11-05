@@ -1,0 +1,18 @@
+{
+  "formatVersion": "1",
+  "header": {
+    "description": "ARC1 index EEE257AEFB75",
+    "originalLanguage": "en"
+  },
+  "uniqueIndex": false,
+  "bufferIndexOnly": false,
+  "textIndex": false,
+  "indexFields": [
+    {
+      "fieldName": "CLIENT"
+    },
+    {
+      "fieldName": "STATUS"
+    }
+  ]
+}

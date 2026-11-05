@@ -650,6 +650,7 @@ export async function handleSAPDiagnose(
     signal?: AbortSignal;
     configuredAbapRelease?: string;
     configuredSystemType?: SystemType;
+    requireExplicitTraceUser?: boolean;
   } = {},
 ): Promise<ToolResult> {
   const action = String(args.action ?? '');
@@ -1144,8 +1145,13 @@ export async function handleSAPDiagnose(
       );
     }
     case 'trace_requests': {
-      const user = (args.traceUser as string | undefined) ?? (args.user as string | undefined) ?? client.username;
-      const requests = await listTraceRequests(client.http, client.safety, user);
+      // A PP client's username is a display claim from the login token, not the mapped SAP user.
+      const explicitUser = (args.traceUser as string | undefined) ?? (args.user as string | undefined);
+      if (options.requireExplicitTraceUser && !explicitUser)
+        return errorResult(
+          'trace_requests on a Principal Propagation target requires "traceUser": ARC-1 cannot derive the mapped SAP user from your login name.',
+        );
+      const requests = await listTraceRequests(client.http, client.safety, explicitUser ?? client.username);
       return textResult(toolJson(requests));
     }
     case 'trace_cancel': {

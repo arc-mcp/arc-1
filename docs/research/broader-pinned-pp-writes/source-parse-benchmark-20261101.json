@@ -1,0 +1,40 @@
+{
+  "recordedAt": "2026-11-01T19:37:30.302238+00:00",
+  "scope": "Author local working-tree sample; no SAP, network, concurrency or deployment qualification. One process, increasing sizes; not a timing guarantee.",
+  "command": "node --import tsx docs/research/broader-pinned-pp-writes/source-parse-benchmark.mts",
+  "sha256": {
+    "docs/research/broader-pinned-pp-writes/source-parse-benchmark.mts": "9230e8b614ad86fd67bcc29adc79a38e5fa1ec63f7618c9850910136241f9493",
+    "src/context/unit-surgery.ts": "53e5516759aac4ef7613aa281d50968c341e6e4efce16952f7cf5faa6e3bdd84",
+    "src/handlers/write/unit-surgery.ts": "9e70b45b55fe5ff750f19e6620c3360f6285f8c5fa9f9e0ff9491f4528aa0055",
+    "src/handlers/write-helpers.ts": "a7311dc40b3382e12ced28d88de52ddb3d7dc5a99f3c680ddf0f7b33e5dfe493"
+  },
+  "samples": [
+    {
+      "count": 100,
+      "bytes": 5205,
+      "spliceMs": 22,
+      "lintMs": 14,
+      "lintBlocked": false,
+      "rssBytes": 154959872,
+      "node": "v22.21.1"
+    },
+    {
+      "count": 1000,
+      "bytes": 52905,
+      "spliceMs": 23,
+      "lintMs": 39,
+      "lintBlocked": false,
+      "rssBytes": 166215680,
+      "node": "v22.21.1"
+    },
+    {
+      "count": 5000,
+      "bytes": 268905,
+      "spliceMs": 64,
+      "lintMs": 137,
+      "lintBlocked": false,
+      "rssBytes": 199049216,
+      "node": "v22.21.1"
+    }
+  ]
+}

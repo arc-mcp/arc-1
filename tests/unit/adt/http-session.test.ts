@@ -236,9 +236,15 @@ describe('stateful ADT session lifecycle', () => {
     mockFetch.mockResolvedValueOnce(mockResponse(200, '', {}, contextId ? [`sap-contextid=${contextId}; Path=/`] : []));
     const client = new AdtHttpClient(config);
 
-    await client.withStatefulSession((session) => session.get('/no-context'));
+    const onClose = vi.fn();
+    await client.withStatefulSession((session) => session.get('/no-context'), {
+      timeoutMs: 30_000,
+      noReplay: true,
+      onClose,
+    });
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledExactlyOnceWith(contextId === '0' ? true : undefined);
   });
 
   it.each([200, 500])('redacts the context header from debug audit on cleanup HTTP %s', async (status) => {

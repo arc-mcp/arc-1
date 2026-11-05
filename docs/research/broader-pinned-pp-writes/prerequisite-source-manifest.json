@@ -1,0 +1,10 @@
+{
+  "src/adt/client.ts": "54fae0b1f2a06a9a0e179bab0dabaf532aeb36dd12c8170d2648413b95b25de6",
+  "src/adt/package-hierarchy.ts": "2aa99134768428d7122d47fdb18386ed3363576d5a149d465c6cad4fa349ff12",
+  "src/adt/safety.ts": "1c2bcc0a77daca1022f887d8fe1dc2b95ff08b575aa03253ae1037864a264f05",
+  "src/handlers/write-helpers.ts": "405a7665cf8e57c86e710be912a99b765a43cf8edf36ba49aa2377f7197e05b8",
+  "src/handlers/write/pinned.ts": "d6f5e62c496865011d735e2ca816d751505e483c05f83ec6402af10051ae6cfa",
+  "src/handlers/write/pinned-activation.ts": "243674191643bbf6016f2e487eb95f9f915066127f1e9347fa1ce1ee5925611f",
+  "tests/unit/adt/pinned-package-hierarchy.test.ts": "b7a2853065770985c42225e6b6735154287972ff35cdb44d7a5e3b44a851a014",
+  "tests/unit/handlers/pinned-writes.test.ts": "45ee3af4c4f9604ec86d88d590daa7a58196278f189ce22429ecff35e905529b"
+}

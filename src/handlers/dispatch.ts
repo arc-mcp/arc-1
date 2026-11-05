@@ -40,6 +40,7 @@ import { appendIdeLinks } from '../server/ide-links.js';
 import type { IdeLinkContext } from '../server/ide-request.js';
 import { logger } from '../server/logger.js';
 import { type McpRateLimiter, resolveRateLimitUserKey } from '../server/mcp-rate-limit.js';
+import { pinnedMutationAllowed, pinnedUnsupportedRawFields } from '../server/multi-target-write-surface.js';
 import { formatClientInfo } from '../server/trace-context.js';
 import type { ServerConfig } from '../server/types.js';
 import { handleSAPActivate } from './activate.js';
@@ -53,6 +54,7 @@ import { handleSAPLint } from './lint.js';
 import { handleSAPManage } from './manage.js';
 import { handleSAPNavigate } from './navigate.js';
 import { canonicalTablType, normalizeObjectType, normalizeTypeArgsForValidation } from './object-types.js';
+import { handlePinnedTrace, isPinnedTraceRoute } from './pinned-trace.js';
 import { handleSAPQuery } from './query.js';
 import { handleSAPRead } from './read.js';
 import { getToolSchema } from './schemas.js';
@@ -696,7 +698,14 @@ export function getToolRegistry(): ToolRegistry {
   reg('SAPQuery', (ctx) => handleSAPQuery(ctx.client, ctx.args, ctx.config.minimalErrors));
   reg('SAPWrite', (ctx) => handleSAPWrite(ctx.client, ctx.args, ctx.config, ctx.cache, ctx.cacheSecurity));
   reg('SAPActivate', (ctx) =>
-    handleSAPActivate(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity, ctx.config.ppEnabled),
+    handleSAPActivate(
+      ctx.client,
+      ctx.args,
+      ctx.cache,
+      ctx.cacheSecurity,
+      ctx.config.ppEnabled,
+      ctx.config.minimalErrors,
+    ),
   );
   reg('SAPNavigate', async (ctx) =>
     ctx.args.action === 'relations'
@@ -705,11 +714,14 @@ export function getToolRegistry(): ToolRegistry {
   );
   reg('SAPLint', (ctx) => handleSAPLint(ctx.client, ctx.args, ctx.config));
   reg('SAPDiagnose', (ctx) =>
-    handleSAPDiagnose(ctx.client, ctx.args, ctx.config.minimalErrors, {
-      configuredAbapRelease:
-        ctx.config.multiTargetEndpoints || ctx.config.targetId ? undefined : ctx.config.abapRelease,
-      configuredSystemType: ctx.config.systemType === 'auto' ? undefined : ctx.config.systemType,
-    }),
+    isPinnedTraceRoute(ctx.client, ctx.config, ctx.args.action)
+      ? handlePinnedTrace(ctx.client, ctx.args, ctx.config)
+      : handleSAPDiagnose(ctx.client, ctx.args, ctx.config.minimalErrors, {
+          configuredAbapRelease:
+            ctx.config.multiTargetEndpoints || ctx.config.targetId ? undefined : ctx.config.abapRelease,
+          configuredSystemType: ctx.config.systemType === 'auto' ? undefined : ctx.config.systemType,
+          requireExplicitTraceUser: !!ctx.config.targetId && ctx.config.ppEnabled,
+        }),
   );
   reg('SAPTransport', (ctx) => handleSAPTransport(ctx.client, ctx.args, ctx.config));
   reg('SAPGit', (ctx) => handleSAPGit(ctx.client, ctx.args, ctx.authInfo));
@@ -1014,6 +1026,66 @@ export async function handleToolCall(
     );
   }
 
+  // A meaningful raw field must not disappear into a broader pinned mutation during normalization.
+  if (
+    (config.targetId || config.multiTargetWrite || client.safety.multiTargetWrite) &&
+    pinnedUnsupportedRawFields(toolName, actionOrType, args).length
+  ) {
+    logger.emitAudit({
+      timestamp: new Date().toISOString(),
+      level: 'warn',
+      event: 'safety_blocked',
+      requestId: reqId,
+      user,
+      clientId,
+      target: config.targetId,
+      identity,
+      operation: toolName,
+      reason: 'Unsupported raw field on a pinned operation',
+    });
+    return errorResult(
+      toolJson({
+        error: 'MULTI_TARGET_OPERATION_FORBIDDEN',
+        message: 'This tool, input, or operation is not enabled for this multi-target connection.',
+      }),
+    );
+  }
+
+  // Never strip a supplied optimistic guard. Only an admitted pinned native metadata adapter
+  // accepts this field; ordinary single-target paths retain their original contract.
+  if (
+    ['SAPWrite', 'SAPActivate'].includes(toolName) &&
+    Object.hasOwn(args, 'expectedMetadataHash') &&
+    (!config.targetId ||
+      typeof args.expectedMetadataHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(args.expectedMetadataHash) ||
+      !pinnedMutationAllowed(toolName, normalizedArgs, config))
+  ) {
+    logger.emitAudit({
+      timestamp: new Date().toISOString(),
+      level: 'warn',
+      event: 'safety_blocked',
+      requestId: reqId,
+      user,
+      clientId,
+      clientAgent,
+      target: config.targetId,
+      identity,
+      operation: toolName,
+      reason: 'Unsupported metadata precondition on a public mutation',
+    });
+    return errorResult(
+      'expectedMetadataHash is not supported by this public write operation. No mutation was submitted.',
+    );
+  }
+
+  if (
+    toolName === 'SAPManage' &&
+    ['type', 'group', 'expectedCurrentState'].some((key) => Object.hasOwn(args, key)) &&
+    (!config.targetId || !pinnedMutationAllowed(toolName, normalizedArgs, config))
+  )
+    return errorResult('These native owner/state inputs require an admitted pinned API-release operation.');
+
   // Validate tool arguments with Zod schema (runs AFTER scope + deny check).
   const isBtp = config.systemType === 'btp';
   const schema = getToolSchema(toolName, isBtp);
@@ -1039,6 +1111,14 @@ export async function handleToolCall(
         reason: 'Input validation failed',
       });
       return errorResult(validationError);
+    }
+    if (config.targetId && pinnedMutationAllowed(toolName, args, config)) {
+      const { assertNoDroppedPinnedInput } = await import('../server/pinned-input-preservation.js');
+      try {
+        assertNoDroppedPinnedInput(args, parsed.data);
+      } catch {
+        return errorResult('Unsupported nested pinned input; no mutation was submitted.');
+      }
     }
     args = parsed.data as Record<string, unknown>;
   }
@@ -1088,7 +1168,11 @@ export async function handleToolCall(
             server: _server,
             requestId: reqId,
           };
-          result = await entry.invoke(dispatchCtx);
+          const pinned =
+            config.multiTargetEndpoints || config.targetId || config.multiTargetWrite
+              ? await (await import('./pinned-dispatch.js')).dispatchPinnedOperation(toolName, dispatchCtx)
+              : undefined;
+          result = pinned ?? (await entry.invoke(dispatchCtx));
         }
 
         const guardedResult = postDispatchResult?.();

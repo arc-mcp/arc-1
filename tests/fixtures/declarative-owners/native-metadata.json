@@ -1,0 +1,58 @@
+{
+  "target": "A4H/001",
+  "method": "GET",
+  "authentication": "Basic-read-only",
+  "projection": "Retained native root, identity/version, package and namespace values. Other attributes/elements removed; XML serialized with recorded prefixes. No source reads or mutations.",
+  "observations": [
+    {
+      "type": "DDLS",
+      "name": "ZARBMNYE6D8SGBL",
+      "nativeType": "DDLS/DF",
+      "path": "/sap/bc/adt/ddic/ddl/sources/zarbmnye6d8sgbl",
+      "packageName": "$TMP",
+      "recordedAt": "2026-11-02T12:49:01.804Z",
+      "originalBodySha256": "f75ba5bd6d2921580ecd1db6c9e97c397945c308523857e991bf658f4f76b5ee",
+      "metadataXml": "<ddl:ddlSource xmlns:adtcore=\"http://www.sap.com/adt/core\" xmlns:ddl=\"http://www.sap.com/adt/ddic/ddlsources\" adtcore:name=\"ZARBMNYE6D8SGBL\" adtcore:type=\"DDLS/DF\" adtcore:version=\"inactive\"><adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/%24tmp\" adtcore:type=\"DEVC/K\" adtcore:name=\"$TMP\" adtcore:packageName=\"$TMP\" /></ddl:ddlSource>"
+    },
+    {
+      "type": "DCLS",
+      "name": "ZARC1_BD_INGMVQRWBCECQI",
+      "nativeType": "DCLS/DL",
+      "path": "/sap/bc/adt/acm/dcl/sources/zarc1_bd_ingmvqrwbcecqi",
+      "packageName": "$TMP",
+      "recordedAt": "2026-11-02T12:49:02.086Z",
+      "originalBodySha256": "082b46f0b823e5da23706110aa1113459e055a2d41a8f8d32f7aa0b4125845d3",
+      "metadataXml": "<dcl:dclSource xmlns:adtcore=\"http://www.sap.com/adt/core\" xmlns:dcl=\"http://www.sap.com/adt/acm/dclsources\" adtcore:name=\"ZARC1_BD_INGMVQRWBCECQI\" adtcore:type=\"DCLS/DL\" adtcore:version=\"active\"><adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/%24tmp\" adtcore:type=\"DEVC/K\" adtcore:name=\"$TMP\" adtcore:packageName=\"$TMP\" /></dcl:dclSource>"
+    },
+    {
+      "type": "DDLX",
+      "name": "ZARC1_C_TRAVELDEMO",
+      "nativeType": "DDLX/EX",
+      "path": "/sap/bc/adt/ddic/ddlx/sources/zarc1_c_traveldemo",
+      "packageName": "Z_RAP_VB_BC26",
+      "recordedAt": "2026-11-02T12:49:02.598Z",
+      "originalBodySha256": "2a5a24b212d7c2e44a068182e5663d8a211e9a512ed64ddea3bfcbf29ebcd509",
+      "metadataXml": "<ddlx:ddlxSource xmlns:adtcore=\"http://www.sap.com/adt/core\" xmlns:ddlx=\"http://www.sap.com/adt/ddic/ddlxsources\" adtcore:name=\"ZARC1_C_TRAVELDEMO\" adtcore:type=\"DDLX/EX\" adtcore:version=\"active\"><adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/z_rap_vb_bc26\" adtcore:type=\"DEVC/K\" adtcore:name=\"Z_RAP_VB_BC26\" /></ddlx:ddlxSource>"
+    },
+    {
+      "type": "BDEF",
+      "name": "ZARC1_C_TRAVELDEMO",
+      "nativeType": "BDEF/BDO",
+      "path": "/sap/bc/adt/bo/behaviordefinitions/zarc1_c_traveldemo",
+      "packageName": "Z_RAP_VB_BC26",
+      "recordedAt": "2026-11-02T12:49:03.091Z",
+      "originalBodySha256": "c3b1cb4e8fe8c5464893f9ca5d053893bc4b609d53944535385d11bb389c574f",
+      "metadataXml": "<blue:blueSource xmlns:adtcore=\"http://www.sap.com/adt/core\" xmlns:blue=\"http://www.sap.com/wbobj/blue\" adtcore:name=\"ZARC1_C_TRAVELDEMO\" adtcore:type=\"BDEF/BDO\" adtcore:version=\"active\"><adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/z_rap_vb_bc26\" adtcore:type=\"DEVC/K\" adtcore:name=\"Z_RAP_VB_BC26\" /></blue:blueSource>"
+    },
+    {
+      "type": "SRVD",
+      "name": "ZARC1_SD_INEMRGXGJBPULY",
+      "nativeType": "SRVD/SRV",
+      "path": "/sap/bc/adt/ddic/srvd/sources/zarc1_sd_inemrgxgjbpuly",
+      "packageName": "$TMP",
+      "recordedAt": "2026-11-02T12:49:03.527Z",
+      "originalBodySha256": "67badded7d71b0e57e7b6df225d8de1a4f1e374770e89afe1f123ca6f3d0bf59",
+      "metadataXml": "<srvd:srvdSource xmlns:adtcore=\"http://www.sap.com/adt/core\" xmlns:srvd=\"http://www.sap.com/adt/ddic/srvdsources\" adtcore:name=\"ZARC1_SD_INEMRGXGJBPULY\" adtcore:type=\"SRVD/SRV\" adtcore:version=\"inactive\"><adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/%24tmp\" adtcore:type=\"DEVC/K\" adtcore:name=\"$TMP\" /></srvd:srvdSource>"
+    }
+  ]
+}

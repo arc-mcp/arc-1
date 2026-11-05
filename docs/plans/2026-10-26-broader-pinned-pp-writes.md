@@ -1,8 +1,74 @@
 # PR 2: broader built-in writes on pinned PP targets
 
-Status: proposed design and implementation plan; not implemented or live-qualified.
+## Current acceptance
+
+PR 1 is merged. PR 2 [#1142](https://github.com/arc-mcp/arc-1/pull/1142) remains draft.
+Use the [5 November current acceptance ledger](../research/2026-11-05-pr1142-current-acceptance.md)
+for completed representatives, blockers, restoration and final checks. It replaces the 4 November
+readiness snapshot; that snapshot predates the completed RAP tail and the consumed CTS releases.
+P2-A–P2-H and section 8 retain the agreed exit requirements. ADR-0011 remains proposed and FEAT-93
+open. Public routing is not deployed PP qualification or permission to replay a native operation.
+
+### Revision-bound evidence and earlier checkpoints
+
+The following records preserve implementation history and their original limits. Their private,
+unwired or retained-owner descriptions are true at those revisions; the current acceptance ledger is
+the status authority. Historical restoration statements apply to that experiment only and do not
+assert restoration of today's temporary state. Failed claims and their evidence remain consumed;
+a later source integration or fixed cleanup never resets them.
+
+- At `c59dd43f597dc99fcebfd52b48617e0b71e51740`, [public routing/generated-parent integration](../research/2026-11-03-pinned-public-generated-integration.md)
+  passed **569 unit suites / 17,000 tests** and three TypeScript/static/build/docs gates. The
+  [raw report](../research/2026-11-03-pinned-public-generated-validation-verbatim.md) retains its stale
+  test failure and guarded synthetic environment/network attempts; no external connection or
+  credential read occurred. It established source integration, not native or PP approval.
+- Earlier `c55c59c18` [integration checks](../research/2026-11-03-pinned-integration-checkpoint.md)
+  passed **554 files / 16,379 tests** and three TypeScript/build/lint/policy/budget/docs gates.
+  `2d9ad8e46` then passed [combined checks](../research/2026-11-03-pinned-combined-checkpoint-review.md):
+  2,069 focused tests, 59 historical synthetic regressions and static/build/docs gates. These are
+  not final-source tests or GitHub CI evidence.
+- [Declarative v3 recovery](../research/2026-11-03-native-declarative-v3-recovery.md),
+  [v4 failure](../research/2026-11-03-native-declarative-v4-failure.md) and the independently audited
+  [v4 recovery at `04826cc7`](../research/2026-11-03-native-declarative-v4-recovery.md) preserve the
+  fixture-syntax stop, later removal of both retained owners, all six owners/reference CLAS typed
+  absent and clear post-lock searches. The [V5 stop](../research/2026-11-03-native-declarative-v5-failure.md)
+  and its later retained-v2 audit remain distinct records, not an uninterrupted successful run.
+- Function/declarative reviews [18](../research/2026-11-02-function-activation-review-followup.md),
+  [19](../research/2026-11-02-group-activation-review-followup.md),
+  [20](../research/2026-11-02-declarative-review-followup.md),
+  [21](../research/2026-11-02-declarative-activation-review-followup.md),
+  [22](../research/2026-11-02-declarative-fixtures-review-followup.md) and
+  [23](../research/2026-11-02-native-declarative-harness-review-followup.md), plus
+  [early CDS/RAP source progress](../research/2026-11-02-pinned-declarative-sources.md), record private
+  implementation stages. They are not today's function/DDIC admission decision.
+- Text [review 6](../research/2026-11-01-pinned-text-review-followup.md),
+  activation [review 7](../research/2026-11-02-pinned-activation-review-followup.md) and
+  [exact FUNC activation](../research/2026-11-02-pinned-function-activation.md) preserve the original
+  verification, redaction, recovery and ownership corrections. [Native function observations](../research/2026-11-02-native-function-protocol.md)
+  at `1bb2eb43` showed generation did not activate its child and active deletion refused. Passive
+  SM12 at `086a8f5b` was sequence evidence, not a DELETE-cause proof; the rejected repeated-LOCK
+  diagnostic never ran. Active-FUNC deletion at `5b1669eb` then passed its local Basic-native
+  absence/parent/lock controls, without qualifying later profiles or PP.
+- The local `77e41fdcd` include/method run and [combined PP run at `1b234d3a4`](../research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
+  establish only their tested CLAS/INTF/include/v5-formatter combinations. Claude accepted the
+  evidence follow-up for continued development, not broader final acceptance. Later native
+  procedural/text, package/API, ENHO and runtime cleanups have their own immutable protocols/audits.
+
+This checklist is not a percentage complete or a finish-time estimate.
+
 Date: 26 October 2026. Research baseline: `e538bf71197ddb47ea74aca225c340a856d331af`.
 Dependency: [PR 1 shared mutation infrastructure](2026-10-26-shared-mutation-infrastructure.md).
+PR 1 merged as [#1138](https://github.com/arc-mcp/arc-1/pull/1138), commit `ac8385fa4`.
+Implementation starts with [ADR-0011](../adr/0011-broader-pinned-pp-mutations.md), the
+[mutation inventory](../research/broader-pinned-pp-writes/inventory.md) and request-scoped package hierarchy checks.
+[Implementation checkpoint and incomplete review status](../research/2026-10-29-broader-pinned-pp-writes-progress.md).
+[Review 24, native declarative failure and completed reviewed cleanup](../research/2026-11-02-native-declarative-failure-and-recovery.md).
+[Existing CLAS two-writer PP evidence and remaining qualification](../research/2026-11-01-broader-pinned-pp-writes-pp-qualification.md).
+[CLAS/INTF deletion integration and qualification limits](../research/2026-11-01-broader-pinned-pp-writes-deletion.md).
+[Class-local include implementation and local two-writer qualification](../research/2026-11-01-broader-pinned-pp-writes-includes.md).
+[Shared source adapters and review dispositions](../research/2026-11-01-pinned-source-adapters.md).
+[Text-part adapter and read-only native evidence](../research/2026-11-01-text-pool-active-version.md).
+[Main-source class metadata adapter and remaining qualification](../research/2026-11-01-pinned-class-metadata.md).
 Proposed title: `feat: expand pinned PP writes across built-in development operations`.
 [Research and owner decisions](../research/2026-10-26-multi-target-write-parity.md).
 
@@ -428,10 +494,18 @@ circumvent that choice.
 
 ### Formatter and quickfix
 
+The [1 November formatter checkpoint](../research/2026-11-01-broader-pinned-pp-writes-formatter.md)
+records SAP's user-specific scope documentation, native adapter and handler integration, a restored
+direct-authentication round trip and a two-identity MCP-visible run. Claude identified missing
+in-run actor/backend proof; stronger current-revision PP qualification remains required.
+
 Verify the native scope of formatter settings through PP. The current parser maps unknown styles
 to `keywordUpper` and the writer emits only two fields; do not describe that as preserving native
 fields. For the pinned adapter, patch only explicitly requested supported settings into the native
 document, preserve untouched fields/style values, and refuse an unrecognized document shape.
+Read-only native inspection subsequently found that older GET versions omit preferences replaced by
+PUT. The current pinned adapter therefore requires v5, with no older-version fallback; the native
+qualification reader must inspect that complete representation too.
 Confirm readback, keeping single-target changes separate unless a shared fix is explicitly reviewed.
 Report that it is a settings change, with no claim of DEVCLASS isolation. `format` returns source;
 it does not save it. `apply_quickfix` retains its existing write-scope classification but returns
@@ -465,7 +539,7 @@ not authorization to publish a partly qualified full-parity claim.
 | P2-B | Runtime/projection/safety plumbing; `multi-target-runtime.ts`, `multi-target-server.ts`, `multi-target-write-surface.ts`, `multi-target-tools.ts`, `authz/policy.ts`, `dispatch.ts`. | Common gate truth table passes for every mutating tool and direct hidden calls; transport management stays disabled until P2-F's guards land. |
 | P2-C | Reuse shared object adapters in `handlers/write/*`, `write-helpers.ts`, `adt/crud.ts`, source/metadata/type modules. | CRUD/surgery/text/metadata families preserve owner/package/recording/concurrency and errors. |
 | P2-D | `adt/devtools.ts`, `handlers/activate.ts`, `handlers/write/pinned-activation.ts`, batch/text/RAP callers. | One generalized pinned activation adapter; validated multi-owner activation, bounds, partial results and no legacy-path escape. |
-| P2-E | `handlers/manage.ts`, `adt/refactoring.ts`, `api-release.ts`, publication adapters. | Package lifecycle, API state and service availability readback. |
+| P2-E | `handlers/manage.ts`, `adt/refactoring.ts`, `api-release.ts`, publication adapters. | Public package create/move/local non-cascading delete, API state and SRVB CRUD/activation/publication profiles are integrated; the [initial private checkpoint](../research/2026-11-02-pinned-package-api-publication.md) is historical. Named local-package and recorded-MOVE/API/cleanup representatives passed. The named [RAP v4 publication/reverse cleanup](../research/2026-11-04-native-rap-retained-v4.md#actual-native-outcome-4-november) completed; remaining exit evidence is final-artifact PP and release review under the [both-explicit-* native-governed contract](../research/2026-11-03-pinned-publication-native-governed.md), preserving exact owner/package/request policies and truthful outcomes. Recorded package deletion and ordinary generated-SRVB CRUD remain refused; the separate generated-parent cleanup profile and stronger unimplemented non-recording configuration reader do not expand public authority. |
 | P2-F | `handlers/transport.ts`, `adt/transport.ts`, pinned request policy; `http.ts`, `xs-security.json`, deployment examples. | Runtime transport enablement and both low-level guard branches land together; generated-ID/recursive constraints, real-client scope and role evidence. |
 | P2-G | `handlers/diagnose.ts`, `adt/diagnostics.ts`, `handlers/lint.ts`, `adt/devtools.ts`, `handlers/manage.ts`, `adt/flp.ts`. | PP trace/settings/FLP contracts, partial outcomes and cleanup verified. |
 | P2-H | Schemas/tools/batch schemas, snapshots, budget checks, instructions/catalog, docs and final evidence. | Final-build tests, reviewed ADR, documented limits, upgrade and rollback examples. |

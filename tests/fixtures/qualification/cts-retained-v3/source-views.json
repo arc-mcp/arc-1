@@ -1,0 +1,7 @@
+{
+  "definitions.abap": "*\"* use this source file for any type of declarations (class\r\n*\"* definitions, interfaces or type declarations) you need for\r\n*\"* components in the private section\r\n",
+  "macros.abap": "*\"* use this source file for any macro definitions you need\r\n*\"* in the implementation part of the class\r\n",
+  "inactive.abap": "CLASS zarc1_cta_7b82b3723e57f10f DEFINITION\r\n  PUBLIC\r\n  CREATE PRIVATE .\r\n\r\n  PUBLIC SECTION.\r\n  PROTECTED SECTION.\r\n  PRIVATE SECTION.\r\nENDCLASS.\r\n\r\n\r\n\r\nCLASS zarc1_cta_7b82b3723e57f10f IMPLEMENTATION.\r\nENDCLASS.",
+  "implementations.abap": "*\"* use this source file for the definition and implementation of\r\n*\"* local helper classes, interface definitions and type\r\n*\"* declarations\r\n",
+  "active.abap": "class ZARC1_CTA_7B82B3723E57F10F definition\r\n  public\r\n  create private .\r\n\r\npublic section.\r\nprotected section.\r\nprivate section.\r\nENDCLASS.\r\n\r\n\r\n\r\nCLASS ZARC1_CTA_7B82B3723E57F10F IMPLEMENTATION.\r\nENDCLASS."
+}

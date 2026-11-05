@@ -28,7 +28,7 @@ const BUDGETS = {
   // write.ts is now a thin SAPWrite orchestrator (prologue + ctx + action dispatch) after the
   // Stage D split into src/handlers/write/{create,update-delete,class-surgery,rap}.ts. The action
   // submodules ride the default src budget; keep this tight so the dispatcher can't reabsorb them.
-  'src/handlers/write.ts': 300,
+  'src/handlers/write.ts': 285,
   // tools.ts holds every tool's JSON schema. The #520 description trim (write-mode tools/list
   // 87→66 KB to clear the Copilot-for-Eclipse gateway limit) shrank it; lowered to match. The
   // CLIENT-SAFETY size guard is scripts/ci/check-tool-schema-budget.ts — trim there before raising this.
@@ -61,7 +61,8 @@ const BUDGETS = {
   // the inclusive `to` bound, refuses to guess when a second holds a full page, and rejects bounds
   // SAP would silently discard or roll over to another day.
   // +5: bounded typed dump query hook; schema/compiler/budget setup live in feed-schema.ts.
-  'src/adt/diagnostics.ts': 1938,
+  // -92: the native trace-request contract moved to trace-requests.ts, shared with the pinned adapter.
+  'src/adt/diagnostics.ts': 1846,
   // The ADT client facade aggregates every read/write op; set_api_state (#506) + runQueryWithMetrics
   // (SAPQuery metrics) + getEffectiveUser (BTP JWT-derived user, G-5) + getSourceAtObjectUrl
   // (post-activation cache promotion) + get/writeClassTextElements (class text pool) pushed it past
@@ -87,7 +88,7 @@ const BUDGETS = {
   // +3: classify caller cancellation before generic network wrapping (#1045).
   'src/adt/http.ts': 1566, // Combined metadata discovery/language access and optional-analysis CSRF accounting.
   // #817: reject absent CTS documents at the existing list/get parser boundary.
-  'src/adt/transport.ts': 1477, // Exhaustive lock-holder parsing extracted to transport-locks.ts (#1080).
+  'src/adt/transport.ts': 1439, // Native entry removal extracted to transport-entry.ts (private pinned CTS candidate).
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed
   // XSUAA startup from main.
   // PP pool wiring and secret-free reuse audit status; logic lives in per-user-transport.ts (#1085).

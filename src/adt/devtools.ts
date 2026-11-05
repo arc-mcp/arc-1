@@ -1,3 +1,5 @@
+import { getMutationContext } from './mutation-http.js';
+import { PINNED_BATCH_OWNER_LIMIT, PINNED_BATCH_REFERENCE_LIMIT } from './pinned-batch-bounds.js';
 /**
  * Development tools for SAP ADT.
  *
@@ -11,19 +13,20 @@
 import { XMLValidator } from 'fast-xml-parser';
 import { getCurrentContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
+import { ActivationEvidenceError } from './activation-evidence-error.js';
 import { type AunitRunResult, parseAunitRunResult, withAunitCoverage } from './aunit.js';
 import { AdtApiError, AdtNetworkError, AdtSafetyError } from './errors.js';
+import { assertPinnedGroupGenerationReferences, nativeFunctionGroupExecution } from './function-activation-metadata.js';
 import type { AdtHttpClient } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
+import { nativeActivationExecuted, nativeInactiveReferences } from './native-activation-evidence.js';
 import { canonicalHostRelativeAdtPath } from './path-safety.js';
+import { assertPinnedActivationOptions } from './pinned-text-pool-activation.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type {
   CdsTestCase,
   CdsTestCasesResult,
   CoverageSummary,
-  FixAffectedObject,
-  FixDelta,
-  FixProposal,
   MethodCoverage,
   SyntaxCheckResult,
   SyntaxMessage,
@@ -122,7 +125,7 @@ export async function prettyPrint(http: AdtHttpClient, safety: SafetyConfig, sou
   return resp.body;
 }
 
-/** Read system-wide ADT PrettyPrinter settings */
+/** Read the connected SAP user's ADT PrettyPrinter settings for this system. */
 export async function getPrettyPrinterSettings(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -149,7 +152,7 @@ export async function getPrettyPrinterSettings(
   };
 }
 
-/** Update system-wide ADT PrettyPrinter settings */
+/** Update the connected SAP user's ADT PrettyPrinter settings for this system. */
 export async function setPrettyPrinterSettings(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -174,6 +177,8 @@ export interface ActivationResult {
   success: boolean;
   messages: string[];
   details: ActivationMessage[];
+  /** Only the explicit pinned function-group profile reports generation separately. */
+  execution?: 'activation' | 'generation';
 }
 
 const ACTIVATION_TIMEOUT_MS = 300_000;
@@ -188,12 +193,21 @@ function activationRequestOptions(): AdtRequestOptions {
   };
 }
 
+export interface ActivationReference {
+  uri: string;
+  name?: string;
+  type?: string;
+  deleted?: string;
+}
+
 export interface ActivationOptions {
   preaudit?: boolean;
   name?: string;
   /** Required on the multi-target boundary; validates initial and SAP-expanded references. */
-  validateReferences?: (refs: readonly { uri: string; name?: string }[]) => Promise<void>;
+  validateReferences?: (refs: readonly ActivationReference[]) => Promise<void>;
   beforeSubmit?: () => void;
+  /** Private pinned profile: exact group scope, never evidence that module drafts activated. */
+  functionGroupGeneration?: true;
 }
 
 /** Activate (publish) ABAP objects.
@@ -225,11 +239,12 @@ async function activateWithinBudget(
   options?: ActivationOptions,
 ): Promise<ActivationResult> {
   checkOperation(safety, OperationType.Activate, 'Activate');
-  if (
-    safety.multiTargetWrite &&
-    (!safety.multiTargetWrite.enabled || !options?.validateReferences || options.preaudit === false)
-  )
-    throw new AdtSafetyError('Missing pinned activation validation context.');
+  assertPinnedActivationOptions(http, safety, objectUrl, options);
+  if (options?.functionGroupGeneration !== undefined) {
+    if (options.functionGroupGeneration !== true || !safety.multiTargetWrite?.enabled)
+      throw new AdtSafetyError('Function-group generation requires its explicit pinned profile.');
+    assertPinnedGroupGenerationReferences(objectUrl, options.name, [{ uri: objectUrl, name: options.name }]);
+  }
   await options?.validateReferences?.([{ uri: objectUrl, name: options.name }]);
 
   try {
@@ -242,7 +257,8 @@ async function activateWithinBudget(
 
     const phase1Start = Date.now();
     options?.beforeSubmit?.();
-    const resp = await http.post(
+    const resp = await postActivation(
+      http,
       `/sap/bc/adt/activation?method=activate&preauditRequested=${preaudit}`,
       body,
       'application/*',
@@ -251,15 +267,20 @@ async function activateWithinBudget(
     );
     const phase1DurationMs = Date.now() - phase1Start;
 
-    const outcome = parseActivationOutcome(resp.body, safety.multiTargetWrite?.enabled === true);
+    const outcome = parseActivationOutcome(
+      resp.body,
+      options?.functionGroupGeneration ? 'function-group-generation' : safety.multiTargetWrite?.enabled === true,
+    );
     if (outcome.kind !== 'preaudit' || !preaudit) {
       return outcomeToResult(outcome);
     }
 
+    if (options?.functionGroupGeneration) assertPinnedGroupGenerationReferences(objectUrl, options.name, outcome.refs);
     await options?.validateReferences?.(outcome.refs);
     options?.beforeSubmit?.();
     return await confirmPreaudit(http, outcome.refs, options?.name ?? objectUrl, phase1DurationMs, requestOptions, {
       safety,
+      functionGroupGeneration: options?.functionGroupGeneration,
     });
   } catch (err) {
     return rethrowOrLockHint(err, options?.name ?? objectUrl);
@@ -277,11 +298,25 @@ export async function activateBatch(
   http: AdtHttpClient,
   safety: SafetyConfig,
   objects: Array<{ url: string; name: string }>,
-  options?: { preaudit?: boolean },
+  options?: Pick<ActivationOptions, 'preaudit' | 'validateReferences' | 'beforeSubmit'>,
 ): Promise<ActivationResult> {
   checkOperation(safety, OperationType.Activate, 'ActivateBatch');
-  if (safety.multiTargetWrite) throw new AdtSafetyError('Multi-target batch activation is forbidden.');
-  const requestOptions = activationRequestOptions();
+  const context = getMutationContext(http, safety);
+  if (
+    safety.multiTargetWrite &&
+    (!safety.multiTargetWrite.enabled ||
+      context?.mode !== 'pinned-pp' ||
+      !options?.validateReferences ||
+      options.preaudit === false ||
+      objects.length === 0 ||
+      objects.length > PINNED_BATCH_OWNER_LIMIT ||
+      new Set(objects.map((object) => object.url)).size !== objects.length)
+  )
+    throw new AdtSafetyError(
+      'Pinned batch activation is forbidden without bounded owners, preaudit and a scoped validator.',
+    );
+  const requestOptions = context?.mode === 'pinned-pp' ? context.requestPolicy : activationRequestOptions();
+  await options?.validateReferences?.(objects.map((object) => ({ uri: object.url, name: object.name })));
 
   const preaudit = options?.preaudit !== false;
   const refs = objects
@@ -298,7 +333,9 @@ ${refs}
 
   try {
     const phase1Start = Date.now();
-    const resp = await http.post(
+    options?.beforeSubmit?.();
+    const resp = await postActivation(
+      http,
       `/sap/bc/adt/activation?method=activate&preauditRequested=${preaudit}`,
       body,
       'application/*',
@@ -307,12 +344,17 @@ ${refs}
     );
     const phase1DurationMs = Date.now() - phase1Start;
 
-    const outcome = parseActivationOutcome(resp.body);
+    const outcome = parseActivationOutcome(resp.body, safety.multiTargetWrite?.enabled === true);
     if (outcome.kind !== 'preaudit' || !preaudit) {
       const result = outcomeToResult(outcome);
+      if (safety.multiTargetWrite) return result; // Ambiguous native batches are never replayed.
       return await retryBatchActivationIndividuallyAfterEd064(http, safety, objects, result, requestOptions, options);
     }
 
+    if (safety.multiTargetWrite && outcome.refs.length > PINNED_BATCH_REFERENCE_LIMIT)
+      throw new AdtSafetyError('Pinned activation exceeds the raw reference bound.');
+    await options?.validateReferences?.(outcome.refs);
+    options?.beforeSubmit?.();
     return await confirmPreaudit(
       http,
       outcome.refs,
@@ -320,7 +362,7 @@ ${refs}
       phase1DurationMs,
       requestOptions,
       {
-        ed064RetryObjects: objects,
+        ...(safety.multiTargetWrite ? {} : { ed064RetryObjects: objects }),
         preaudit: options?.preaudit,
         safety,
       },
@@ -345,6 +387,7 @@ async function confirmPreaudit(
     ed064RetryObjects?: Array<{ url: string; name: string }>;
     preaudit?: boolean;
     safety: SafetyConfig;
+    functionGroupGeneration?: true;
   },
 ): Promise<ActivationResult> {
   logger.debug('Activation preaudit: SAP returned inactive objects, confirming with preauditRequested=false', {
@@ -366,14 +409,22 @@ ${refLines}
   const phase2Start = Date.now();
   let result: ActivationResult | undefined;
   try {
-    const resp = await http.post(
+    const resp = await postActivation(
+      http,
       '/sap/bc/adt/activation?method=activate&preauditRequested=false',
       body,
       'application/*',
       { Accept: 'application/xml' },
       requestOptions,
     );
-    result = outcomeToResult(parseActivationOutcome(resp.body, options?.safety.multiTargetWrite?.enabled === true));
+    result = outcomeToResult(
+      parseActivationOutcome(
+        resp.body,
+        options?.functionGroupGeneration
+          ? 'function-group-generation'
+          : options?.safety.multiTargetWrite?.enabled === true,
+      ),
+    );
     if (options?.ed064RetryObjects) {
       result = await retryBatchActivationIndividuallyAfterEd064(
         http,
@@ -489,14 +540,25 @@ async function retryBatchActivationIndividuallyAfterEd064(
 // structured XML with <exc:exception> here (no "Logon Error Message" string), and
 // S/4's auth-failure HTML is "Anmeldung fehlgeschlagen" (also no match). So this
 // branch self-scopes without an explicit detectSystemCapabilities() check.
-function rethrowOrLockHint(err: unknown, objectLabel: string): never | ActivationResult {
-  if (err instanceof AdtNetworkError || (err instanceof AdtApiError && (err.statusCode === 429 || err.isServerError))) {
-    err.activationOutcome = 'unknown';
-    err.extraHint =
-      'If activation was submitted, its completion is unconfirmed; SAP may still finish it. ' +
-      'Check SAPRead(type="INACTIVE_OBJECTS") and inspect the object with force_refresh=true before another activation. ' +
-      'An active definition alone does not prove that dependent generation has finished.';
+async function postActivation(http: AdtHttpClient, ...args: Parameters<AdtHttpClient['post']>) {
+  try {
+    return await http.post(...args);
+  } catch (err) {
+    if (
+      err instanceof AdtNetworkError ||
+      (err instanceof AdtApiError && (err.statusCode === 429 || err.isServerError))
+    ) {
+      err.activationOutcome = 'unknown';
+      err.extraHint =
+        'If activation was submitted, its completion is unconfirmed; SAP may still finish it. ' +
+        'Check SAPRead(type="INACTIVE_OBJECTS") and inspect the object with force_refresh=true before another activation. ' +
+        'An active definition alone does not prove that dependent generation has finished.';
+    }
+    throw err;
   }
+}
+
+function rethrowOrLockHint(err: unknown, objectLabel: string): never | ActivationResult {
   if (
     err instanceof AdtApiError &&
     (err.statusCode === 400 || err.statusCode === 401 || err.statusCode === 403) &&
@@ -529,125 +591,15 @@ function outcomeToResult(outcome: ActivationOutcome): ActivationResult {
     }
     return { success: false, messages, details };
   }
-  return { success: outcome.kind === 'success', messages: outcome.messages, details: outcome.details };
-}
-
-/** Result of a publish/unpublish operation */
-export interface PublishResult {
-  severity: string;
-  shortText: string;
-  longText: string;
-}
-
-function findDeepValue(obj: unknown, key: string): unknown {
-  if (!obj || typeof obj !== 'object') return undefined;
-  if (Array.isArray(obj)) {
-    for (const item of obj) {
-      const found = findDeepValue(item, key);
-      if (found !== undefined) return found;
-    }
-    return undefined;
-  }
-  const record = obj as Record<string, unknown>;
-  if (key in record) return record[key];
-  for (const val of Object.values(record)) {
-    const found = findDeepValue(val, key);
-    if (found !== undefined) return found;
-  }
-  return undefined;
-}
-
-function parsePublishResponse(xml: string): PublishResult {
-  if (!xml.trim()) return { severity: 'OK', shortText: '', longText: '' };
-  const parsed = parseXml(xml);
-  const severity = findDeepValue(parsed, 'SEVERITY');
-  const shortText = findDeepValue(parsed, 'SHORT_TEXT');
-  const longText = findDeepValue(parsed, 'LONG_TEXT');
   return {
-    severity: severity != null ? String(severity) : 'UNKNOWN',
-    shortText: shortText != null ? String(shortText) : '',
-    longText: longText != null ? String(longText) : '',
+    success: outcome.kind === 'success',
+    messages: outcome.messages,
+    details: outcome.details,
+    ...(outcome.kind === 'success' && outcome.execution ? { execution: outcome.execution } : {}),
   };
 }
 
-function publishBody(name: string): string {
-  return `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:name="${escapeXmlAttr(name)}"/></adtcore:objectReferences>`;
-}
-
-// On-prem releases (live-verified on S/4HANA 2023, SAP_BASIS 758) render the publish/unpublish
-// job status ONLY as application/vnd.sap.as+xml: any Accept that does not cover it is rejected
-// with 406 SADT_RESOURCE 044 ("The message content is not acceptable. Accepted content types:
-// application/vnd.sap.as+xml") — e.g. the newer-release media type
-// application/vnd.sap.adt.businessservices.odatav4.v1+xml. Naming as+xml first keeps 758
-// deterministic; the wildcard keeps backends with other renderers working.
-const PUBLISH_JOB_ACCEPT = 'application/vnd.sap.as+xml, application/*;q=0.8';
-
-/**
- * Fully-qualified AS-XML media type for a publish/unpublish job, as Eclipse ADT sends it.
- * All four serviceType × job combinations live-verified against S/4HANA 2023 (SAP_BASIS 758).
- */
-function publishJobAsXmlType(serviceType: 'odatav2' | 'odatav4', job: 'publishjob' | 'unpublishjob'): string {
-  return `application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.${serviceType}.${job}`;
-}
-
-/**
- * True when the backend rejected content negotiation and named application/vnd.sap.as+xml as
- * the only type it supports. Self-scoping: only ever fires on backends that emit exactly this
- * complaint, so the as+xml retry cannot affect systems that accept the primary headers.
- */
-function isAsXmlOnlyNegotiationError(err: unknown): boolean {
-  if (!(err instanceof AdtApiError)) return false;
-  if (err.statusCode !== 406 && err.statusCode !== 415) return false;
-  return `${err.message} ${err.responseBody ?? ''}`.includes('application/vnd.sap.as+xml');
-}
-
-async function postPublishJob(
-  http: AdtHttpClient,
-  serviceType: 'odatav2' | 'odatav4',
-  job: 'publishjob' | 'unpublishjob',
-  name: string,
-  version: string,
-  options?: AdtRequestOptions,
-): Promise<PublishResult> {
-  const path = `/sap/bc/adt/businessservices/${serviceType}/${job}s?servicename=${encodeURIComponent(name)}&serviceversion=${encodeURIComponent(version)}`;
-  try {
-    const resp = await http.post(path, publishBody(name), 'application/xml', { Accept: PUBLISH_JOB_ACCEPT }, options);
-    return parsePublishResponse(resp.body);
-  } catch (err) {
-    if (!isAsXmlOnlyNegotiationError(err)) throw err;
-    const asXmlType = publishJobAsXmlType(serviceType, job);
-    logger.debug(`Publish job content negotiation rejected — retrying with ${asXmlType}`, { path });
-    const resp = await http.post(path, publishBody(name), asXmlType, { Accept: asXmlType }, options);
-    return parsePublishResponse(resp.body);
-  }
-}
-
-/** Publish an OData service binding (makes the service available for consumption) */
-export async function publishServiceBinding(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  name: string,
-  version = '0001',
-  serviceType: 'odatav2' | 'odatav4' = 'odatav2',
-): Promise<PublishResult> {
-  checkOperation(safety, OperationType.Activate, 'PublishServiceBinding');
-  // A lost/replaced response does not prove that SAP rejected the publish job.
-  return postPublishJob(http, serviceType, 'publishjob', name, version, {
-    retryTransientErrors: false,
-  });
-}
-
-/** Unpublish an OData service binding (removes the service from consumption) */
-export async function unpublishServiceBinding(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  name: string,
-  version = '0001',
-  serviceType: 'odatav2' | 'odatav4' = 'odatav2',
-): Promise<PublishResult> {
-  checkOperation(safety, OperationType.Activate, 'UnpublishServiceBinding');
-  return postPublishJob(http, serviceType, 'unpublishjob', name, version);
-}
+export { type PublishResult, publishServiceBinding, unpublishServiceBinding } from './service-publication.js';
 
 /** Run ABAP unit tests for an object and return the canonical structured result. */
 export async function runUnitTests(
@@ -857,128 +809,26 @@ export function supportsCdsTestCases(http: AdtHttpClient): boolean | undefined {
   return http.discoveryAcceptFor('/sap/bc/adt/aunit/dbtestdoubles/cds/testcases') !== undefined;
 }
 
-function assertQuickfixProposalUri(uri: string): void {
-  const quickfixProposalPrefix = '/sap/bc/adt/quickfixes/';
-  let parsed: URL;
-  try {
-    parsed = new URL(uri, 'https://arc1.invalid');
-  } catch {
-    throw new AdtSafetyError(`ApplyFixProposal refused invalid quickfix proposal URI: '${uri}'`);
-  }
-  if (
-    !uri.startsWith(quickfixProposalPrefix) ||
-    parsed.origin !== 'https://arc1.invalid' ||
-    !parsed.pathname.startsWith(quickfixProposalPrefix)
-  ) {
-    throw new AdtSafetyError(
-      `ApplyFixProposal refused non-quickfix proposal URI: '${uri}'. Use a proposal URI returned by SAPDiagnose(action="quickfix").`,
-    );
-  }
-}
-
-async function assertQuickfixOwnerExists(http: AdtHttpClient, sourceUri: string): Promise<void> {
-  // SAP's OO scanner can dump for missing owners (#993). Check metadata, not the
-  // source: inactive objects and unsaved optional class includes are valid inputs.
-  const owner = /^(\/sap\/bc\/adt\/oo\/(?:classes|interfaces)\/[^/?#]+)\//.exec(sourceUri)?.[1];
-  if (owner) {
-    if (!canonicalHostRelativeAdtPath(sourceUri, '/sap/bc/adt/oo/', { allowRawEncodedSlash: true })) {
-      throw new AdtSafetyError('Quick-fix sourceUri must be a canonical host-relative ADT source path.');
-    }
-    try {
-      await http.get(owner);
-    } catch (err) {
-      if (err instanceof AdtApiError && err.isNotFound) {
-        err.extraHint =
-          'Quick-fix request was not sent: SAP could not find the class/interface metadata. ' +
-          'Check name and sourceUri, or create the object first. It does not need to be activated.';
-      }
-      throw err;
-    }
-  }
-}
-
-/** Get SAP quick fix proposals for a given source position */
-export async function getFixProposals(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  sourceUri: string,
-  source: string,
-  line: number,
-  column: number,
-): Promise<FixProposal[]> {
-  checkOperation(safety, OperationType.Read, 'GetFixProposals');
-  await assertQuickfixOwnerExists(http, sourceUri);
-
-  const uriWithStart = `${sourceUri}#start=${line},${column}`;
-  const path = `/sap/bc/adt/quickfixes/evaluation?uri=${encodeURIComponent(uriWithStart)}`;
-
-  try {
-    const resp = await http.post(path, source, 'application/*', {
-      Accept: 'application/*',
-    });
-    return parseFixProposals(resp.body);
-  } catch (err) {
-    if (err instanceof AdtApiError && (err.statusCode === 404 || err.statusCode === 406)) {
-      // Graceful fallback: endpoint not available on this SAP release/system.
-      return [];
-    }
-    throw err;
-  }
-}
-
-/** Apply one SAP quick fix proposal and return replacement deltas */
-export async function applyFixProposal(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  proposal: FixProposal,
-  sourceUri: string,
-  source: string,
-  line: number,
-  column: number,
-): Promise<FixDelta[]> {
-  checkOperation(safety, OperationType.Update, 'ApplyFixProposal');
-  assertQuickfixProposalUri(proposal.uri);
-  await assertQuickfixOwnerExists(http, sourceUri);
-
-  const uriWithStart = `${sourceUri}#start=${line},${column}`;
-  const userContent =
-    proposal.userContent === undefined
-      ? ''
-      : `
-  <userContent>${escapeXmlAttr(proposal.userContent)}</userContent>`;
-  const affectedObjects = serializeAffectedObjects(proposal.affectedObjects);
-  // quickfixes.xsd uses elementFormDefault="unqualified"; only the root and imported adtcore
-  // elements are prefixed.
-  const body = `<?xml version="1.0" encoding="UTF-8"?>
-<quickfixes:proposalRequest xmlns:quickfixes="http://www.sap.com/adt/quickfixes" xmlns:adtcore="http://www.sap.com/adt/core">
-  <input>
-    <content>${escapeXmlAttr(source)}</content>
-    <adtcore:objectReference adtcore:uri="${escapeXmlAttr(uriWithStart)}"/>
-  </input>${affectedObjects}${userContent}
-</quickfixes:proposalRequest>`;
-
-  const resp = await http.post(proposal.uri, body, 'application/xml', {
-    Accept: 'application/xml',
-  });
-
-  return parseFixDeltas(resp.body);
-}
+export { applyFixProposal, getFixProposals } from './quickfix.js';
 
 // ─── Parsers ────────────────────────────────────────────────────────
 
 /** Discriminated outcome from parsing an activation response. */
 export type ActivationOutcome =
-  | { kind: 'success'; messages: string[]; details: ActivationMessage[] }
+  | { kind: 'success'; messages: string[]; details: ActivationMessage[]; execution?: 'activation' | 'generation' }
   | { kind: 'error'; messages: string[]; details: ActivationMessage[] }
   | {
       kind: 'preaudit';
-      refs: Array<{ uri: string; name: string }>;
+      refs: Array<ActivationReference & { name: string }>;
       messages: string[];
       details: ActivationMessage[];
     };
 
 /** Parse activation response into a discriminated outcome. */
-export function parseActivationOutcome(xml: string, requireExecutionEvidence = false): ActivationOutcome {
+export function parseActivationOutcome(
+  xml: string,
+  requireExecutionEvidence: boolean | 'function-group-generation' = false,
+): ActivationOutcome {
   if (!xml.trim() && !requireExecutionEvidence) return { kind: 'success', messages: [], details: [] };
 
   const parsed = parseXml(xml);
@@ -1028,30 +878,28 @@ export function parseActivationOutcome(xml: string, requireExecutionEvidence = f
   if (inactive.length > 0) {
     return {
       kind: 'preaudit',
-      refs: inactive.map((r) => ({ uri: r.uri, name: r.name })),
+      refs: requireExecutionEvidence
+        ? nativeInactiveReferences(xml)
+        : inactive.map((r) => ({ uri: r.uri, name: r.name })),
       messages,
       details,
     };
   }
 
+  let execution: 'activation' | 'generation' | undefined;
   if (requireExecutionEvidence) {
-    const properties = findDeepNodes(parsed, 'properties');
-    if (
-      !Object.hasOwn(parsed, 'messages') ||
-      properties.length !== 1 ||
-      properties[0]['@_activationExecuted'] !== 'true'
-    )
-      throw new AdtSafetyError(
-        'SAP did not affirm activation execution. Inspect the active and inactive owner before continuing.' +
-          (messages.length
-            ? ` SAP: ${messages
-                .slice(0, 5)
-                .map((text) => text.slice(0, 500))
-                .join('; ')}`
-            : ''),
-      );
+    let confirmed = false;
+    try {
+      if (requireExecutionEvidence === 'function-group-generation') {
+        execution = nativeFunctionGroupExecution(xml);
+        confirmed = execution !== undefined;
+      } else confirmed = nativeActivationExecuted(xml);
+    } catch (error) {
+      if (!(error instanceof AdtSafetyError)) throw error;
+    }
+    if (!confirmed) throw new ActivationEvidenceError(messages, details);
   }
-  return { kind: 'success', messages, details };
+  return { kind: 'success', messages, details, ...(execution ? { execution } : {}) };
 }
 
 /** Parse activation response XML to detect errors via proper XML parsing.
@@ -1076,9 +924,9 @@ export function parseActivationResult(xml: string): ActivationResult {
  *  Entries with no <object> child (transport-only rows) are ignored. */
 function extractInactiveObjectEntries(
   parsed: Record<string, unknown>,
-): Array<{ name: string; uri: string; user: string }> {
+): Array<{ uri: string; name: string; user: string }> {
   const entries = findDeepNodes(parsed, 'entry');
-  const out: Array<{ name: string; uri: string; user: string }> = [];
+  const out: Array<{ uri: string; name: string; user: string }> = [];
   for (const entry of entries) {
     const objectNode = entry.object;
     if (!objectNode || typeof objectNode !== 'object') continue;
@@ -1185,201 +1033,6 @@ function parseSyntaxCheckResult(xml: string, expectedJsonUri?: string): SyntaxCh
       ? { statusText: 'SAP did not return a processed JSON candidate check for this object.' }
       : {}),
   };
-}
-
-function toNodeRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!value) return undefined;
-  if (Array.isArray(value)) {
-    const first = value[0];
-    return first && typeof first === 'object' ? (first as Record<string, unknown>) : undefined;
-  }
-  return typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
-}
-
-function readNodeText(node: unknown): string {
-  if (node == null) return '';
-  if (typeof node === 'string' || typeof node === 'number' || typeof node === 'boolean') return String(node);
-  if (Array.isArray(node)) return node.map((n) => readNodeText(n)).join('');
-  if (typeof node !== 'object') return '';
-  const rec = node as Record<string, unknown>;
-  if ('#text' in rec) return readNodeText(rec['#text']);
-  return Object.entries(rec)
-    .filter(([k]) => !k.startsWith('@_'))
-    .map(([, v]) => readNodeText(v))
-    .join('');
-}
-
-function nodeRecords(value: unknown): Array<Record<string, unknown>> {
-  if (!value) return [];
-  if (Array.isArray(value)) {
-    return value.filter((item): item is Record<string, unknown> => item != null && typeof item === 'object');
-  }
-  return typeof value === 'object' ? [value as Record<string, unknown>] : [];
-}
-
-function readObjectReference(value: unknown): FixAffectedObject | undefined {
-  const objectRef = toNodeRecord(value);
-  const uri = String(objectRef?.['@_uri'] ?? '');
-  if (!uri) return undefined;
-
-  const affected: FixAffectedObject = { uri };
-  const type = objectRef?.['@_type'];
-  const name = objectRef?.['@_name'];
-  const description = objectRef?.['@_description'];
-  if (type != null) affected.type = String(type);
-  if (name != null) affected.name = String(name);
-  if (description != null) affected.description = String(description);
-  return affected;
-}
-
-function parseAffectedObjects(value: unknown): FixAffectedObject[] | undefined {
-  const affectedNode = toNodeRecord(value);
-  if (!affectedNode) return undefined;
-
-  const affected: FixAffectedObject[] = [];
-  for (const unit of nodeRecords(affectedNode.unit)) {
-    const ref = readObjectReference(unit.objectReference);
-    if (!ref) continue;
-    if (unit.content !== undefined) ref.content = readNodeText(unit.content);
-    affected.push(ref);
-  }
-
-  for (const objectRef of nodeRecords(affectedNode.objectReference)) {
-    const ref = readObjectReference(objectRef);
-    if (ref) affected.push(ref);
-  }
-
-  return affected.length > 0 ? affected : undefined;
-}
-
-function serializeObjectReferenceAttrs(ref: FixAffectedObject): string {
-  const attrs = [`adtcore:uri="${escapeXmlAttr(ref.uri)}"`];
-  if (ref.type !== undefined) attrs.push(`adtcore:type="${escapeXmlAttr(ref.type)}"`);
-  if (ref.name !== undefined) attrs.push(`adtcore:name="${escapeXmlAttr(ref.name)}"`);
-  if (ref.description !== undefined) attrs.push(`adtcore:description="${escapeXmlAttr(ref.description)}"`);
-  return attrs.join(' ');
-}
-
-function serializeAffectedObjects(affectedObjects: FixAffectedObject[] | undefined): string {
-  const units = (affectedObjects ?? [])
-    .filter((affected) => affected.uri && affected.content !== undefined)
-    .map(
-      (affected) => `    <unit>
-      <content>${escapeXmlAttr(affected.content ?? '')}</content>
-      <adtcore:objectReference ${serializeObjectReferenceAttrs(affected)}/>
-    </unit>`,
-    );
-
-  if (units.length === 0) return '';
-  return `
-  <affectedObjects>
-${units.join('\n')}
-  </affectedObjects>`;
-}
-
-function parseFixProposals(xml: string): FixProposal[] {
-  const parsed = parseXml(xml, true);
-  const results = findDeepNodes(parsed, 'evaluationResult');
-  if (results.length === 0) return [];
-
-  return results
-    .map((result) => {
-      const objectRef = toNodeRecord(result.objectReference);
-      const affectedObjects = parseAffectedObjects(result.affectedObjects);
-      return {
-        uri: String(objectRef?.['@_uri'] ?? ''),
-        type: String(objectRef?.['@_type'] ?? ''),
-        name: String(objectRef?.['@_name'] ?? ''),
-        description: String(objectRef?.['@_description'] ?? ''),
-        userContent: readNodeText(result.userContent),
-        ...(affectedObjects ? { affectedObjects } : {}),
-      } satisfies FixProposal;
-    })
-    .filter((proposal) => proposal.uri.length > 0);
-}
-
-function parseIntOrUndefined(value: unknown): number | undefined {
-  if (value == null) return undefined;
-  const parsed = Number.parseInt(String(value), 10);
-  return Number.isNaN(parsed) ? undefined : parsed;
-}
-
-function parsePositionFragment(uri: string, key: 'start' | 'end'): { line: number; column: number } | undefined {
-  const re = key === 'start' ? /(?:#|[;&])start=(\d+),(\d+)/ : /(?:#|[;&])end=(\d+),(\d+)/;
-  const match = uri.match(re);
-  if (!match?.[1] || !match[2]) return undefined;
-  return {
-    line: Number.parseInt(match[1], 10),
-    column: Number.parseInt(match[2], 10),
-  };
-}
-
-function parseFixDeltaNode(node: Record<string, unknown>): FixDelta {
-  const objectRef = toNodeRecord(node.objectReference);
-  const startNode = toNodeRecord(node.start ?? node.from ?? node.sourceStart);
-  const endNode = toNodeRecord(node.end ?? node.to ?? node.sourceEnd);
-
-  const uri = String(node['@_uri'] ?? objectRef?.['@_uri'] ?? '');
-
-  const startFromUri = parsePositionFragment(uri, 'start');
-  const endFromUri = parsePositionFragment(uri, 'end');
-
-  const startLine =
-    parseIntOrUndefined(node['@_startLine']) ??
-    parseIntOrUndefined(node['@_startline']) ??
-    parseIntOrUndefined(startNode?.['@_line']) ??
-    startFromUri?.line ??
-    0;
-  const startColumn =
-    parseIntOrUndefined(node['@_startColumn']) ??
-    parseIntOrUndefined(node['@_startCol']) ??
-    parseIntOrUndefined(node['@_startcolumn']) ??
-    parseIntOrUndefined(startNode?.['@_column']) ??
-    parseIntOrUndefined(startNode?.['@_col']) ??
-    startFromUri?.column ??
-    0;
-  const endLine =
-    parseIntOrUndefined(node['@_endLine']) ??
-    parseIntOrUndefined(node['@_endline']) ??
-    parseIntOrUndefined(endNode?.['@_line']) ??
-    endFromUri?.line ??
-    startLine;
-  const endColumn =
-    parseIntOrUndefined(node['@_endColumn']) ??
-    parseIntOrUndefined(node['@_endCol']) ??
-    parseIntOrUndefined(node['@_endcolumn']) ??
-    parseIntOrUndefined(endNode?.['@_column']) ??
-    parseIntOrUndefined(endNode?.['@_col']) ??
-    endFromUri?.column ??
-    startColumn;
-
-  const content = readNodeText(node.content ?? node.replacement ?? node.newText ?? node.text ?? node['#text']);
-
-  return {
-    uri,
-    range: {
-      start: { line: startLine, column: startColumn },
-      end: { line: endLine, column: endColumn },
-    },
-    content,
-  };
-}
-
-function parseFixDeltas(xml: string): FixDelta[] {
-  const parsed = parseXml(xml, true);
-  const unitNodes = findDeepNodes(parsed, 'deltas').flatMap((deltas) => nodeRecords(deltas.unit));
-  // ADT units carry replacement text only in <content>, never between child elements.
-  if (unitNodes.length > 0) return unitNodes.map((node) => parseFixDeltaNode({ ...node, content: node.content ?? '' }));
-
-  const candidateKeys = ['delta', 'edit', 'textEdit', 'replacement', 'replace'] as const;
-  let nodes: Array<Record<string, unknown>> = [];
-
-  for (const key of candidateKeys) {
-    nodes = findDeepNodes(parsed, key);
-    if (nodes.length > 0) break;
-  }
-
-  return nodes.map(parseFixDeltaNode);
 }
 
 /** Read the text content of a CDS test-case child element (string leaf or {#text} node). */

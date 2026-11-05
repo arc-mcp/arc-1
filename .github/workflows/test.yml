@@ -121,6 +121,9 @@ jobs:
       - name: Offline target authorization harness tests
         run: npm run test:target-auth:harness
 
+      - name: Offline pinned write qualification controls
+        run: npm run test:qualification:pr1142
+
       - name: Upload unit test results
         if: always()
         uses: actions/upload-artifact@v7

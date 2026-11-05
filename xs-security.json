@@ -127,6 +127,19 @@
         "arc1_targets",
         "arc1_write_targets"
       ]
+    },
+    {
+      "name": "MCPTargetTransportDeveloper",
+      "description": "Optional application-wide read/write/transports scopes with exact target attributes. Transport management also requires the pinned write gates, global transport ceiling and request policies; functional scopes merge across assigned roles.",
+      "scope-references": [
+        "$XSAPPNAME.read",
+        "$XSAPPNAME.write",
+        "$XSAPPNAME.transports"
+      ],
+      "attribute-references": [
+        "arc1_targets",
+        "arc1_write_targets"
+      ]
     }
   ],
   "oauth2-configuration": {

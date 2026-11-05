@@ -1,0 +1,15 @@
+<abapsource:objectStructureElement xml:base="/sap/bc/adt/oo/classes/zcl_proof/objectstructure?sap-client=001&amp;sap-language=EN" adtcore:name="ZCL_PROOF" adtcore:type="CLAS/OC" xmlns:adtcore="http://www.sap.com/adt/core" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:atom="http://www.w3.org/2005/Atom">
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionIdentifier" href="./source/main#start=1,6;end=1,15"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./source/main#start=1,0;end=6,8"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=7,0;end=12,8"/>
+<abapsource:objectStructureElement adtcore:type="CLAS/OM" adtcore:name="SELECTED" level="instance" visibility="public">
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionIdentifier" href="./source/main#start=3,12;end=3,20"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationIdentifier" href="./source/main#start=8,9;end=8,17"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./source/main#start=3,4;end=3,20"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=8,2;end=9,11"/>
+</abapsource:objectStructureElement>
+<abapsource:objectStructureElement adtcore:type="CLAS/OM" adtcore:name="NEIGHBOR" level="instance" visibility="private">
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./source/main#start=5,4;end=5,20"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=10,2;end=11,11"/>
+</abapsource:objectStructureElement>
+</abapsource:objectStructureElement>

@@ -15,7 +15,6 @@ import {
   createGroup,
   createTile,
   deleteCatalog,
-  FLP_TILE_PAGE_SIZE,
   listCatalogs,
   listGroups,
   listTiles,
@@ -27,7 +26,9 @@ import { parseSearchResults } from '../adt/xml-parser.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
 import { cacheProbedFeatures, getCachedFeatures, isPackagesEndpointAvailable } from './feature-cache.js';
+import { catalogLines, groupLines, tileLines } from './flp-format.js';
 import { functionModuleObjectUrl, inferObjectType, normalizeObjectType, objectUrlForType } from './object-types.js';
+import { handlePinnedFlp, isPinnedFlpRoute } from './pinned-flp.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import {
   DEVC_WRITE_UNAVAILABLE_HINT,
@@ -47,6 +48,7 @@ export async function handleSAPManage(
   const action = String(args.action ?? '');
   const flpUnavailableMessage =
     'FLP customization service (PAGE_BUILDER_CUST) is not available on this system. Check ICF service activation in SICF.';
+  if (isPinnedFlpRoute(client, config, action)) return handlePinnedFlp(client, args, config);
 
   switch (action) {
     case 'features': {
@@ -373,24 +375,11 @@ export async function handleSAPManage(
     }
 
     case 'flp_list_catalogs': {
-      const catalogs = await listCatalogs(client.http, client.safety);
-      const customCount = catalogs.filter((c) => /^(Z|Y)/i.test(c.domainId)).length;
-      const lines = [
-        `${catalogs.length} catalogs (${customCount} custom Z/Y). Columns: domainId | title | type | scope | chips`,
-        ...catalogs.map(
-          (c) => `${c.domainId} | ${c.title || '(no title)'} | ${c.type || '-'} | ${c.scope || '-'} | ${c.chipCount}`,
-        ),
-      ];
-      return textResult(lines.join('\n'));
+      return textResult(catalogLines(await listCatalogs(client.http, client.safety)));
     }
 
     case 'flp_list_groups': {
-      const groups = await listGroups(client.http, client.safety);
-      const lines = [
-        `${groups.length} groups. Columns: id | title`,
-        ...groups.map((g) => `${g.id} | ${g.title || '(no title)'}`),
-      ];
-      return textResult(lines.join('\n'));
+      return textResult(groupLines(await listGroups(client.http, client.safety)));
     }
 
     case 'flp_list_tiles': {
@@ -409,17 +398,7 @@ export async function handleSAPManage(
         }
         throw err;
       }
-      const truncated =
-        tiles.length === FLP_TILE_PAGE_SIZE ? ` (capped at ${FLP_TILE_PAGE_SIZE} — may be truncated)` : '';
-      const lines = [
-        `${tiles.length} tiles${truncated} in catalog "${catalogId}". Columns: instanceId | title | chipId | semanticObject | semanticAction`,
-        ...tiles.map((t) => {
-          const so = (t.configuration as Record<string, unknown> | null)?.semantic_object ?? '';
-          const sa = (t.configuration as Record<string, unknown> | null)?.semantic_action ?? '';
-          return `${t.instanceId} | ${t.title || '(no title)'} | ${t.chipId} | ${so} | ${sa}`;
-        }),
-      ];
-      return textResult(lines.join('\n'));
+      return textResult(tileLines(tiles, catalogId));
     }
 
     case 'flp_create_catalog': {
@@ -531,7 +510,8 @@ export async function handleSAPManage(
       featureConfig.ui5repo = config.featureUi5Repo as 'auto' | 'on' | 'off';
       featureConfig.flp = config.featureFlp as 'auto' | 'on' | 'off';
 
-      const probed = await probeFeatures(client.http, featureConfig, config.systemType);
+      // A selected-target refresh must not relabel native evidence with the runtime compatibility default.
+      const probed = await probeFeatures(client.http, featureConfig, config.targetId ? 'auto' : config.systemType);
 
       cacheProbedFeatures(probed, !!isPerUserClient || config.ppEnabled);
       const discoveryMap = getCachedFeatures()?.discoveryMap;

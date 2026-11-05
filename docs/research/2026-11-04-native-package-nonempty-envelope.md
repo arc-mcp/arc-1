@@ -1,0 +1,9 @@
+# Native package nonempty-error envelope
+
+The fixed package/API run completed its fresh request/task, LOCAL root/child and real batch creation/activation. Its first nonempty-root deletion returned400 with com.sap.adt / ExceptionResourceDeletionFailure / PAK051 and the exact owned package name. The bounded diagnostic retains the700-byte body digest and semantic keys, with three unrelated keys intentionally unexposed. No deletion completed, and the original permanent claim remains failed.
+
+The qualifier previously required every property value to be a scalar, including unrelated diagnostics. It now keeps all property keys unique while interpreting only T100 fields. Exact namespace, error status, message class/number/package, alias ambiguity and strict scalar T100 checks remain mandatory. Empty/opaque unrelated fields cannot establish authority and do not relax any mutation fence. The raw original body was not saved; new fixture-shape probes do not pretend to be an exact raw replay. Actual confirmation still needs a separately reviewed retained continuation. No production code or public route changes.
+
+Four current owners and empty MARIAN request/task A4HK906609/610 remain. The successful prefix must not repeat. The new continuation must bind the525-file stop packet, fresh state/locks and a new permanent claim before unfinished noncascade, move, API and cleanup stages.
+
+Independent review of the first c5 checkpoint found that unused T100 auxiliary slots still required text, and numeric references could hide semantic duplicate property keys. The successor reads only the five consumed ID/number/owner aliases, keeps all keys unique, and refuses the unqualified numeric-reference representation before parsing. The original checkpoint and failing direct/proxy counterexamples remain preserved.

@@ -1,0 +1,9 @@
+{
+  "baseCommit": "0ac0cd17a29124afc573971f9d5e74546fe625cb",
+  "files": {
+    "src/server/pinned-mutation-capabilities.ts": "527872e8008e107e3599b631e826edede508f4f4e756bccf4701c30870920f8c",
+    "src/server/multi-target-write-surface.ts": "fa19f09fc976ee488c5a1070218f5e507bf23120069330dd787510d0e3f8741f",
+    "src/server/multi-target-tools.ts": "8a7e00b61418f9bea378a3e9789b568c5f9b3509282178d336b3eb5a7eb8fe96",
+    "tests/unit/server/pinned-mutation-capabilities.test.ts": "00ffe4b693a9f76b8e4ba1e915fecfbddfbae8d3c696c28a694c8157ba2374dc"
+  }
+}

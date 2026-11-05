@@ -44,10 +44,13 @@ export async function readEditableSource(
   type: string,
   name: string,
 ): Promise<ToolResult> {
+  if (name && !TYPES.has(type)) {
+    // Keep schema/source-precondition imports independent of native HTTP adapter initialization.
+    const { hasEditableNativeProfile, readEditableNative } = await import('./editable-native.js');
+    if (hasEditableNativeProfile(type)) return readEditableNative(client, args, type, name);
+  }
   if (!name || !TYPES.has(type))
-    return errorResult(
-      'format="editable" requires name and a text-source type: PROG, INCL, CLAS, INTF, FUNC, DDLS, DCLS, BDEF, SRVD or DDLX.',
-    );
+    return errorResult('format="editable" requires name and a supported text-source or native metadata type.');
   if (args.action || args.version || args.method || args.grep || args.includeSignature || args.expand_includes) {
     return errorResult(
       'format="editable" reads the complete editable source. Omit action, version, method, grep, includeSignature and expand_includes.',

@@ -1,0 +1,49 @@
+# Independent public-admission source review — NO-GO
+
+Candidate: `ec7a98e2b25c2a6a6e137bd727d1cad4c1db3bb3`, base `afce2539960a5679851ec9c6e6176cb027be9aad`. Immutable snapshot: this packet's `source/`. The helper's initial verification and the final verification both confirmed **4,802 files unchanged**. Final source action was `review-input/verify-snapshot.py`; no source action followed it. Binding hashes are in `codex-source-binding.json`.
+
+**NO-GO for integrating this exact public wiring candidate until the two P2 input-preservation gaps below are corrected.** These are source correctness findings, not an assertion that an unauthorized identity bypassed the selected target/package policies. They cause unsupported caller input to disappear before a supported mutation is submitted and reported successful.
+
+This is an independent review of the new wiring, not a native/PP/public-release/deployment/whole-PR verdict. I previously authored underlying private package/API, editable-read, RAP and initial publication work; I did not author this public-admission delta. Existing adapters were assessed at their new dispatch/authority boundary rather than represented as wholly independently authored and reviewed anew.
+
+## F1 — P2: reject raw visibility selections on API-release revocation
+
+Location: `src/server/multi-target-write-surface.ts:38–50`, with `src/handlers/object-types.ts:289–295` and `src/handlers/dispatch.ts:1115–1118` showing the lost-input path.
+
+`apiVisibility` is a permitted field for `set_api_state`, so the new raw top-level field check accepts it. Legacy normalization deletes it whenever `apiState` is `NOT_RELEASED`. Consequently the SAPManage schema and private API-state adapter never see it, even though both explicitly reject a visibility selection on revocation. The new recursive check compares already-normalized input against Zod output, so cannot detect this earlier loss.
+
+The independent actual public `handleToolCall` → `AdtHttpClient` → guarded MockAgent reproduction supplies `apiVisibility: []`, `['cloudDevelopment']`, and `['not-a-visibility']` separately with an otherwise valid selected, authorized revoke. All three submit **one API-release PUT** and return `ok:true`, `state:state-changed`, `apiState:NOT_RELEASED`, `visibilitySelection:not-applicable`. The revoke with the selection omitted is the positive control and succeeds normally.
+
+Evidence: `codex-api-visibility.test.ts` and `codex-api-visibility.log` (**1 positive control passes, 3 refusal assertions fail**). Use the final object-wrapped `it.each` cases, not the separately retained initial row-construction attempt.
+
+Required correction: refuse meaningful raw revoke selections at the pinned public boundary, before legacy normalization can erase them. Preserve legitimate RELEASED selections, omitted/established empty optional-field handling, and established single-target normalization. Test the actual public route, not only the private handler or post-Zod input.
+
+## F2 — P2: validate raw batch-item function fields before normalization
+
+Location: `src/handlers/dispatch.ts:1115–1118` and `src/server/multi-target-write-surface.ts:34–40`; loss occurs at `src/handlers/object-types.ts:327–335` via `dropInapplicableFunctionProcessing`.
+
+The raw check inspects only batch top-level keys. For a non-FUNC `objects[]` item, legacy normalization deletes `processingType` and `updateTaskKind` before both batch capability/schema validation and the new post-Zod preservation check. The adapter therefore receives an ordinary item and can create and activate it, although the caller supplied an unsupported operation/type combination.
+
+Independent public dispatch using the existing stateful mocked ADT lifecycle demonstrates this for one CLAS item with each of `processingType:'rfc'`, `updateTaskKind:'startImmediate'`, `processingType:'remote'`, and `updateTaskKind:'collectiveRun'`. The first two are real advertised enum values applied to the wrong family; the latter two also demonstrate invalid values escaping validation. Every variant submits **one class CREATE**, performs source/activation work, and returns the batch `state:confirmed` with confirmed create and activation. The ordinary class batch is a successful positive control. The fake backend reports no unexpected request.
+
+Evidence: `codex-batch-preservation.test.ts` and `codex-batch-preservation.log` (**1 positive control passes, 4 refusal assertions fail**). Earlier two-variant files are retained as `.first`.
+
+Required correction: validate meaningful raw per-item fields and their processing semantics against the selected canonical type before destructive legacy normalization; preserve valid FUNC processing options, aliases, ordinary supported class batches and single-target behavior. In the same narrow correction, inspect the shared normalizer's `updateTaskKind` removal for FUNC creates whose processing type is not `update`; that is a statically identified sibling of the same boundary issue, not an independently demonstrated additional native mutation in this review. Keep the later post-Zod check for unknown nested fields as well.
+
+## Other reviewed boundaries and verification
+
+- The lazy selector requires verified raw write scope plus effective functional scopes, strict PP, the standard selected runtime, per-user identity, exact selected SAP client and verified read/write target grants. Scope implication remains existing policy: raw write implies effective read; admin alone does not replace the explicit raw write requirement. CTS management separately requires its functional transport scope/server switch. Source recording does not acquire a new CTS-management requirement.
+- Server/destination package and request policies remain distinct. Native-governed FLP/publication retain both explicit unrestricted request-policy conditions and native platform provenance. Writer-only companions go through writer admission; ordinary editable reads retain normal read behavior. Aggregate/shared Basic/Copilot/read-only routes remain closed to mutations in inspected wiring and denial tests.
+- Inspected the broadened capability snapshot, schema projection and field descriptions, lazy handler branches, private-context budget reuse, runtime input parsing, annotation recomputation after scope/deny pruning, and changed tests. Synthetic partial-registration tests are now deliberately isolated from the actual expanded matrix; actual matrix/public-route tests provide the complementary coverage. Prior lifecycle fixtures add synthetic verified middleware only where previously omitted and preserve explicit denial cases. The two raw-normalization cases above were missing from that coverage.
+- **36 focused suites / 1,893 tests pass**, including all changed test files plus selected legacy management, runtime/HTTP-route, managed-state and authorization cases. Exact selection and commands are retained in `codex-selected-tests.json` and `codex-focused-checks.json`.
+- Three TypeScript projects, full lint, policy validation and file/tool-schema budgets pass. Lint reports three existing informational template-literal suggestions, no errors. The broader pinned schema remains below its unchanged wire/token limits; the explicit description-count allowance increase is visible in the patch. Commands and results: `codex-static-checks.json` and corresponding logs.
+- The author's exact clean-archive **557 suites / 16,517 passing tests**, build and strict documentation checks are retained author evidence, not independently rerun here. No additional full-suite repetition was necessary to establish these bounded input-preservation findings.
+- Independent probe totals: **2 successful controls, 7 expected-refusal assertions fail**, across the two final probe files. These are synthetic contract tests, not native observations.
+- All checks use Node 22.21.1, the immutable archive without `.env`, individual dependency links, process preload plus explicit Vitest worker socket/env guards. New real-HTTP probes use `.invalid` origins and mocks; owned/global Agent paths are mocked and unexpected proxy construction refuses. The batch probe uses the existing fetch mock through the real ADT stack. Guard logs/worker checkpoints record **zero blocked or observed external network attempts and zero environment-file read attempts**; actual loopback test traffic and TSX local loader IPC are the only permitted socket categories. This review made no SAP/cloud/native/browser/credential operations or source edits.
+- Retained setup mistakes: initial API `it.each` array rows spread into individual arguments, so that preliminary run included an omitted-field control misclassified as a refusal; corrected final cases preserve complete arrays. Initial selected-test-list script failed on a Python tuple before checks ran and was corrected. Neither is counted as a product finding. No failure logs were discarded.
+
+## Qualification and named gaps remain open
+
+The candidate report/research and FEAT-93 continue to name generated/published SRVB cleanup, unsupported batch preparation families, API/move owner-profile limits, recorded package deletion, publication variants/narrower recording policies, ENHO/SKTD and RAP variants, and ST05 all-users limits. Those are not implicitly waived by this review, nor expanded into an invented universal per-operation/Cartesian proof requirement. Current-build two-writer PP and negative routes, applicable representative native qualification with justified component comparisons, operator/support docs and final review/CI remain parent acceptance work. Current native execution/cleanup elsewhere is outside this source verdict.
+
+Correct F1 and F2, retain these failing probes unchanged except path rebinding, and independently review the resulting exact source before integration. No permission for native execution or replay is supplied by this report.

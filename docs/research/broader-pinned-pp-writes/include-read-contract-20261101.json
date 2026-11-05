@@ -1,0 +1,73 @@
+{
+  "purpose": "Read-only native include GET responses; not initialization, write, lock or PP qualification",
+  "sourceRevision": "cc34bbd6bf4847a069b7a8404b03cb0e3c805493",
+  "targetUrl": "https://a4h.marianzeis.de",
+  "client": "001",
+  "configuredReader": "MARIAN",
+  "observations": [
+    {
+      "at": "2026-11-01T05:15:16.218Z",
+      "rows": [
+        {
+          "path": "/sap/bc/adt/oo/classes/cl_abap_context_info",
+          "status": 200,
+          "contentType": "application/vnd.sap.adt.oo.classes.v4+xml; charset=utf-8",
+          "bytes": 8650
+        },
+        {
+          "path": "/sap/bc/adt/oo/classes/cl_abap_context_info/includes/definitions",
+          "status": 200,
+          "contentType": "text/plain; charset=utf-8",
+          "bytes": 165
+        },
+        {
+          "path": "/sap/bc/adt/oo/classes/cl_abap_context_info/includes/implementations",
+          "status": 200,
+          "contentType": "text/plain; charset=utf-8",
+          "bytes": 143
+        },
+        {
+          "path": "/sap/bc/adt/oo/classes/cl_abap_context_info/includes/macros",
+          "status": 200,
+          "contentType": "text/plain; charset=utf-8",
+          "bytes": 106
+        },
+        {
+          "path": "/sap/bc/adt/oo/classes/cl_abap_context_info/includes/testclasses",
+          "status": 200,
+          "contentType": "text/plain; charset=utf-8",
+          "bytes": 9441
+        }
+      ]
+    },
+    {
+      "at": "2026-11-01T05:15:54.371Z",
+      "rows": [
+        {
+          "path": "/sap/bc/adt/oo/classes/cx_root",
+          "status": 200,
+          "contentType": "application/vnd.sap.adt.oo.classes.v4+xml; charset=utf-8",
+          "bytes": 5379
+        },
+        {
+          "path": "/sap/bc/adt/oo/classes/cx_root/includes/testclasses",
+          "status": 404,
+          "exceptionType": "ExceptionResourceNotFound",
+          "classifiedServiceError": false
+        },
+        {
+          "path": "/sap/bc/adt/oo/classes/cl_abap_char_utilities",
+          "status": 200,
+          "contentType": "application/vnd.sap.adt.oo.classes.v4+xml; charset=utf-8",
+          "bytes": 7643
+        },
+        {
+          "path": "/sap/bc/adt/oo/classes/cl_abap_char_utilities/includes/testclasses",
+          "status": 404,
+          "exceptionType": "ExceptionResourceNotFound",
+          "classifiedServiceError": false
+        }
+      ]
+    }
+  ]
+}

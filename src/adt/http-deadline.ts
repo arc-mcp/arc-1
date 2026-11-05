@@ -29,6 +29,14 @@ export interface AdtRequestOptions extends RequestDeadlineOptions {
   discardResponseBody?: boolean;
 }
 
+/** A separate allowance for closing an owned SAP application context. */
+export interface AdtSessionCleanup {
+  timeoutMs: number;
+  noReplay: boolean;
+  responseBudget?: DataResponseBudget;
+  onClose: (closed: boolean | undefined) => void;
+}
+
 /** Keep request cancellation/deadline controls while excluding result-data accounting from CSRF bootstrap. */
 export function withoutResponseBudget(options?: AdtRequestOptions): AdtRequestOptions | undefined {
   if (!options) return options;

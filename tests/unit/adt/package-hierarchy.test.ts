@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AdtSafetyError } from '../../../src/adt/errors.js';
+import { AdtApiError, AdtSafetyError } from '../../../src/adt/errors.js';
 import { AdtPackageHierarchyResolver } from '../../../src/adt/package-hierarchy.js';
 
 describe('AdtPackageHierarchyResolver', () => {
@@ -13,6 +13,17 @@ describe('AdtPackageHierarchyResolver', () => {
   function buildFetcher(graph: Record<string, string[]>) {
     return vi.fn(async (root: string) => graph[root.toUpperCase()] ?? []);
   }
+
+  it('keeps the subtree root and status without copying native diagnostic text', async () => {
+    const resolver = new AdtPackageHierarchyResolver(async () => {
+      throw new AdtApiError('PRIVATE_SAP_DIAGNOSTIC', 503, '/sap/bc/adt/repository/nodestructure');
+    });
+    const error = await resolver.isDescendantOrSelf('ZROOT', 'ZCHILD').catch((error) => error);
+    expect(error).toBeInstanceOf(AdtSafetyError);
+    expect(error.message).toContain('ZROOT');
+    expect(error.message).toContain('503');
+    expect(error.message).not.toContain('PRIVATE_SAP_DIAGNOSTIC');
+  });
 
   it('returns true for the root itself without calling fetcher', async () => {
     const fetcher = buildFetcher({});
@@ -107,7 +118,7 @@ describe('AdtPackageHierarchyResolver', () => {
     });
     const resolver = new AdtPackageHierarchyResolver(fetcher);
     await expect(resolver.isDescendantOrSelf('ZFOO', 'ZBAR')).rejects.toThrow(AdtSafetyError);
-    await expect(resolver.isDescendantOrSelf('ZFOO', 'ZBAR')).rejects.toThrow(/network down/);
+    await expect(resolver.isDescendantOrSelf('ZFOO', 'ZBAR')).rejects.toThrow(/ZFOO.*denying for safety/);
   });
 
   it('failed resolution is purged from cache so a retry can succeed', async () => {

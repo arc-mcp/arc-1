@@ -14,6 +14,13 @@ import { type FeedFilter, prepareDumpFilterQuery } from './feed-schema.js';
 import type { AdtHttpClient } from './http.js';
 import { assertCanonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
+import {
+  buildTraceParametersXml,
+  buildTraceRequestQuery,
+  TRACE_BASE,
+  TRACE_PROCESS_OBJECTS,
+  traceRequestPath,
+} from './trace-requests.js';
 import type {
   DumpChapter,
   DumpDetail,
@@ -474,57 +481,6 @@ export async function getTraceDbAccesses(
 
 // ─── ABAP Trace Requests (arm a profiler trace, then read it back) ───
 
-const TRACE_BASE = '/sap/bc/adt/runtime/traces/abaptraces';
-
-const TRACE_PROCESS_TYPE_URIS: Record<TracedProcessType, string> = {
-  any: `${TRACE_BASE}/processtypes/any`,
-  http: `${TRACE_BASE}/processtypes/http`,
-  dialog: `${TRACE_BASE}/processtypes/dialog`,
-  batch: `${TRACE_BASE}/processtypes/batch`,
-  rfc: `${TRACE_BASE}/processtypes/rfc`,
-};
-
-const TRACE_OBJECT_TYPE_URIS: Record<TracedObjectType, string> = {
-  any: `${TRACE_BASE}/objecttypes/any`,
-  url: `${TRACE_BASE}/objecttypes/url`,
-  transaction: `${TRACE_BASE}/objecttypes/transaction`,
-  report: `${TRACE_BASE}/objecttypes/report`,
-  functionModule: `${TRACE_BASE}/objecttypes/functionmodule`,
-};
-
-/** Object types valid per process type; the first entry is the sensible default. */
-const TRACE_PROCESS_OBJECTS: Record<TracedProcessType, TracedObjectType[]> = {
-  any: ['any', 'url', 'transaction', 'report', 'functionModule'],
-  http: ['url'],
-  dialog: ['transaction', 'report'],
-  batch: ['report'],
-  rfc: ['functionModule'],
-};
-
-/**
- * Build the trc:parameters body. Procedural units stay on (hitlist/statements); SQL/aggregate per opts.
- * allDbEvents follows sqlTrace: without it the `dbAccesses` analysis comes back EMPTY (only kernel summary
- * rows) — live-verified — so the whole point of the trace (which tables/joins were hit) is lost.
- */
-function buildTraceParametersXml(p: { description: string; aggregate: boolean; sqlTrace: boolean }): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<trc:parameters xmlns:trc="http://www.sap.com/adt/runtime/traces/abaptraces">
-  <trc:allMiscAbapStatements value="false"/>
-  <trc:allProceduralUnits value="true"/>
-  <trc:allInternalTableEvents value="false"/>
-  <trc:allDynproEvents value="false"/>
-  <trc:description value="${escapeXmlAttr(p.description)}"/>
-  <trc:aggregate value="${p.aggregate}"/>
-  <trc:explicitOnOff value="false"/>
-  <trc:withRfcTracing value="false"/>
-  <trc:allSystemKernelEvents value="false"/>
-  <trc:sqlTrace value="${p.sqlTrace}"/>
-  <trc:allDbEvents value="${p.sqlTrace}"/>
-  <trc:maxSizeForTraceFile value="100"/>
-  <trc:maxTimeForTracing value="600"/>
-</trc:parameters>`;
-}
-
 /**
  * Arm a profiler trace request. The next execution matching {traceUser, processType, objectType} is
  * recorded; read it back later via listTraces + the analysis sub-resources (dbAccesses needs sqlTrace).
@@ -578,17 +534,16 @@ export async function createTraceRequest(
   }
 
   // 2) create the request (when/who)
-  const qs = new URLSearchParams({
-    server: '*',
+  const qs = buildTraceRequestQuery({
     description,
     traceUser,
-    traceClient: client,
-    processType: TRACE_PROCESS_TYPE_URIS[processType],
-    objectType: TRACE_OBJECT_TYPE_URIS[objectType],
+    client,
+    processType,
+    objectType,
     expires,
-    maximalExecutions: String(maxExecutions),
+    maxExecutions,
     parametersId,
-  }).toString();
+  });
   const resp = await http.post(`${TRACE_BASE}/requests?${qs}`, '', 'application/xml');
   const created = parseTraceRequestFeed(resp.body)[0];
   if (!created?.id) {
@@ -619,52 +574,6 @@ export async function listTraceRequests(
 export async function deleteTraceRequest(http: AdtHttpClient, safety: SafetyConfig, id: string): Promise<void> {
   checkOperation(safety, OperationType.Update, 'DeleteTraceRequest');
   await http.delete(traceRequestPath(id));
-}
-
-// Normalize full-path, absolute-URL, or bare trace-request ids without creating an arbitrary DELETE primitive.
-function traceRequestPath(id: string): string {
-  const prefix = `${TRACE_BASE}/requests/`;
-  const trimmed = String(id ?? '').trim();
-  if (!trimmed) throw new AdtApiError('Refusing to cancel an empty trace-request id.', 400, prefix);
-  if (trimmed.includes('\\'))
-    throw new AdtApiError(`Refusing to cancel "${id}": malformed trace-request id.`, 400, trimmed);
-  const isAbsoluteUrl = /^https?:\/\//i.test(trimmed);
-  let raw = '';
-  try {
-    if (isAbsoluteUrl) new URL(trimmed);
-    raw = isAbsoluteUrl
-      ? (trimmed.match(/^https?:\/\/[^/?#]*(\/[^?#]*)?/i)?.[1] ?? '/')
-      : trimmed.startsWith('/')
-        ? trimmed
-        : `${prefix}${trimmed}`;
-  } catch {
-    throw new AdtApiError(`Refusing to cancel "${id}": malformed trace-request id.`, 400, trimmed);
-  }
-
-  const decoded = decodeTraceRequestPath(raw, id);
-  const tail = decoded.startsWith(prefix) ? decoded.slice(prefix.length) : '';
-  if (!tail || tail !== tail.trim() || /[\\/?#\s]/.test(tail) || tail === '.' || tail === '..') {
-    throw new AdtApiError(
-      `Refusing to cancel "${id}": not an abaptraces trace-request id (expected ${prefix}<id>).`,
-      400,
-      decoded,
-    );
-  }
-  return raw;
-}
-
-function decodeTraceRequestPath(path: string, originalId: string): string {
-  let decoded = path;
-  for (let i = 0; i < 5; i++) {
-    try {
-      const next = decodeURIComponent(decoded);
-      if (next === decoded) return decoded;
-      decoded = next;
-    } catch {
-      throw new AdtApiError(`Refusing to cancel "${originalId}": malformed trace-request id.`, 400, decoded);
-    }
-  }
-  throw new AdtApiError(`Refusing to cancel "${originalId}": over-encoded trace-request id.`, 400, decoded);
 }
 
 /** Pick the value of a node that repeats per role (admin/trace); prefer `trace`, else the first. */
@@ -1319,9 +1228,9 @@ export async function getCdsCreateStatements(
 
 // ─── ST05 SQL-trace state control ───────────────────────────────────
 
-const ST05_STATE_URL = '/sap/bc/adt/st05/trace/state';
+export const ST05_STATE_URL = '/sap/bc/adt/st05/trace/state';
 const ST05_DIRECTORY_URL = '/sap/bc/adt/st05/trace/directory';
-const ST05_STATE_CONTENT_TYPE = 'application/vnd.sap.adt.perf.trace.state.v1+xml';
+export const ST05_STATE_CONTENT_TYPE = 'application/vnd.sap.adt.perf.trace.state.v1+xml';
 
 export interface SqlTraceTypes {
   sql: boolean;

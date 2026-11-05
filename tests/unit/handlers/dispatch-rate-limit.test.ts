@@ -1,11 +1,39 @@
-import { describe, expect, it, vi } from 'vitest';
-import { AdtClient } from '../../../src/adt/client.js';
-import { handleToolCall } from '../../../src/handlers/dispatch.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuditEvent } from '../../../src/server/audit.js';
 import { logger } from '../../../src/server/logger.js';
 import type { McpRateLimiter } from '../../../src/server/mcp-rate-limit.js';
 import type { ServerConfig } from '../../../src/server/types.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+import { mockResponse } from '../../helpers/mock-fetch.js';
+import { AdtClient, mockFetch } from './setup-undici-mock.js';
+
+const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const programSource = 'REPORT zhello.\n';
+const sourcePath = '/sap/bc/adt/programs/programs/ZHELLO/source/main';
+const metadataPath = '/sap/bc/adt/programs/programs/zhello';
+const programMetadata =
+  '<p:abapProgram xmlns:p="http://www.sap.com/adt/programs/programs" xmlns:c="http://www.sap.com/adt/core" c:name="ZHELLO" c:type="PROG/P" c:version="active" p:programType="executableProgram"><c:packageRef c:name="$TMP"/></p:abapProgram>';
+beforeEach(() => {
+  mockFetch.mockReset();
+  mockFetch.mockImplementation(async (url: string, init: RequestInit = {}) => {
+    const request = new URL(String(url));
+    expect(init.method ?? 'GET').toBe('GET');
+    expect(request.origin).toBe('http://test.invalid');
+    expect([sourcePath, metadataPath]).toContain(request.pathname);
+    if (request.pathname === metadataPath)
+      return mockResponse(200, programMetadata, { 'content-type': 'application/xml' });
+    return mockResponse(200, programSource, { 'content-type': 'text/plain' });
+  });
+});
+
+afterEach(() => {
+  // Keep unexpected requests observable even if dispatch catches a mock assertion.
+  for (const [url, init] of mockFetch.mock.calls) {
+    expect(init?.method ?? 'GET').toBe('GET');
+    expect(new URL(String(url)).origin).toBe('http://test.invalid');
+    expect([sourcePath, metadataPath]).toContain(new URL(String(url)).pathname);
+  }
+});
 
 /**
  * Task 4 (Layer 2): handleToolCall integration with the per-user rate limiter.
@@ -27,9 +55,8 @@ function makeConfig(): ServerConfig {
   return { ...DEFAULT_CONFIG, url: 'http://test.invalid' };
 }
 
-function makeClient(): AdtClient {
-  // Constructed but never used in these tests — the limit check runs before any
-  // ADT call. The client must exist because handleToolCall's signature requires it.
+function makeClient(): InstanceType<typeof AdtClient> {
+  // Denials stop before ADT; allowed and bypassed calls use the exact mocked read.
   return new AdtClient({ baseUrl: 'http://test.invalid' });
 }
 
@@ -67,6 +94,7 @@ describe('handleToolCall — Layer 2 rate limiting', () => {
     expect(payload.message).toContain('13 seconds');
     // Limiter was consulted with the userKey derived from extra.userName
     expect(stubLimiter.consume).toHaveBeenCalledWith('marian@example.com', 'SAPRead');
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('falls back to clientId when no extra identity claim is set', async () => {
@@ -87,6 +115,7 @@ describe('handleToolCall — Layer 2 rate limiting', () => {
     );
 
     expect(stubLimiter.consume).toHaveBeenCalledWith('copilot-studio', 'SAPRead');
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('OIDC: keys by extra.sub when userName is absent (no clientId collapse)', async () => {
@@ -96,7 +125,7 @@ describe('handleToolCall — Layer 2 rate limiting', () => {
       consume: vi.fn().mockResolvedValue({ allowed: true }),
     };
 
-    await handleToolCall(
+    const aliceResult = await handleToolCall(
       makeClient(),
       makeConfig(),
       'SAPRead',
@@ -112,7 +141,7 @@ describe('handleToolCall — Layer 2 rate limiting', () => {
       false,
       stubLimiter,
     );
-    await handleToolCall(
+    const bobResult = await handleToolCall(
       makeClient(),
       makeConfig(),
       'SAPRead',
@@ -133,6 +162,11 @@ describe('handleToolCall — Layer 2 rate limiting', () => {
     expect(stubLimiter.consume).toHaveBeenNthCalledWith(2, 'user-uuid-bob', 'SAPRead');
     // Critical assertion: the two calls used DIFFERENT keys despite same clientId.
     expect(stubLimiter.consume).not.toHaveBeenCalledWith('shared-azp-app-id', 'SAPRead');
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+    for (const result of [aliceResult, bobResult]) {
+      expect(result.isError).not.toBe(true);
+      expect(result.content[0]?.text).toContain(programSource.trim());
+    }
   });
 
   it('emits mcp_rate_limited audit event on denial', async () => {
@@ -161,6 +195,7 @@ describe('handleToolCall — Layer 2 rate limiting', () => {
     expect(denial.limitPerMinute).toBe(30);
     expect(denial.retryAfterMs).toBe(8000);
     expect(denial.level).toBe('warn');
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('stdio mode (no authInfo) skips the limiter entirely', async () => {
@@ -168,7 +203,7 @@ describe('handleToolCall — Layer 2 rate limiting', () => {
       consume: vi.fn().mockResolvedValue({ allowed: false, retryAfterMs: 5000, limitPerMinute: 1 }),
     };
 
-    await handleToolCall(
+    const result = await handleToolCall(
       makeClient(),
       makeConfig(),
       'SAPRead',
@@ -182,12 +217,14 @@ describe('handleToolCall — Layer 2 rate limiting', () => {
 
     // The limiter must NOT have been consulted — there's no user to key on.
     expect(stubLimiter.consume).not.toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(result.isError).not.toBe(true);
+    expect(result.content[0]?.text).toContain(programSource.trim());
   });
 
   it('no limiter argument means no rate limiting (backward compat for tests)', async () => {
     // Call without the rate-limiter arg — the rate-limit branch must be skipped cleanly.
-    // We expect this call to pass the rate-limit gate; whatever happens next (scope check,
-    // schema validation, actual SAP call) is out of scope for this test.
+    // The real dispatch/read path completes against the deterministic ADT fixture.
     const result = await handleToolCall(
       makeClient(),
       makeConfig(),
@@ -199,11 +236,11 @@ describe('handleToolCall — Layer 2 rate limiting', () => {
       false,
       // no mcpRateLimiter
     );
-    // We don't assert on result content — only that the call did not short-circuit
-    // with a rate-limit response (whatever happens downstream — network error,
-    // validation error — is fine; just verify the rate-limit branch wasn't taken).
+    expect(result.isError).not.toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
     const text = result.content[0]?.text as string;
     expect(typeof text).toBe('string');
     expect(text).not.toMatch(/"error"\s*:\s*"rate_limited"/);
+    expect(text).toContain(programSource.trim());
   });
 });

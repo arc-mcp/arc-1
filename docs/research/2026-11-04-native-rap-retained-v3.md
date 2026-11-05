@@ -1,0 +1,25 @@
+# Fixed RAP continuation after the second retained stop
+
+The third consumed RAP claim stopped after SAP acknowledged the final documentation PUT. The native parser accepted the exact inactive state and same-owner relative link, but the old save comparison rejected two getter-derived operation-reference descriptions. The original failure remains failed. The [separate source correction](2026-11-04-sktd-native-reference-labels.md) changes only the qualified save comparison; full metadata hashes, native text, reference identities and opaque state remain guarded.
+
+## Fixed graph and remaining stages
+
+`native-rap-retained-v3-entry.ts` uses a new literal `pr1142-native-rap-documents-retained-v3` root and once-only claim. It has no arbitrary resume, target, owner or history-path option. The fixed suffix is `8E66923BDEF5`. The existing table, settings, view, implementation class, behavior definition and documentation are retained; the service definition and binding must still be strictly absent. The same shared driver, client factory, request policy and source/runtime binding serve this compiled profile.
+
+The initial GET-only proof checks all 38 full native responses against fixed byte counts and SHA-256 hashes. The documentation default and inactive bodies are `fc10e52833148c8f946d92a5816761a8948c478afe27ba70a2ea886e4bd09380`; the active counterpart remains `a7c1be0c58cc07a800db70314a16fc0b3d29d347cba468a3ab9dcf7648ab2069`. The other 35 responses remain unchanged. Separate native parsing verifies the inactive draft contains the root, approval, create and update long texts and both requested operation short texts; the active counterpart still contains only the previously activated root and approval content. Full metadata preconditions retain the derived labels.
+
+Execution begins at `activate-document-updated`. It then uses the already planned service definition, binding, synchronous native publication/unpublication and reverse cleanup stages. It cannot create any retained owner, update the documentation again, regenerate implementation code, or replay earlier activation or update stages. Historical completed stages and both acknowledged-but-unconfirmed document writes are reported separately from this attempt's completed stages. A contradictory later presence or uncertain final GET remains current inspection evidence even after a historical deletion confirmation.
+
+## Immutable history and controls
+
+The new verifier first calls the existing two retained-history verifiers, then binds all 695 files in the latest operator ledger, its exact failed result and intent, and the three independent audit report/ledger files. This covers the original and both consumed retained claims without rewriting their files, permissions or results. The latest native run had 345 journal rows, 83 GET, four POST and one PUT dispatch; no deletion or service publication occurred. The two recorded zero-lock post-controls were delayed by about seven minutes, so they are not evidence of absence of transient locks throughout that interval.
+
+Existing prepare, GET-only preflight, prerequisite check, one execution and final verification phases retain fresh actual JPEG controls, exact source/build and target binding, same-owner package/request policies, cancellation, shared deadlines, per-request bounds and final-dispatch proof. Stage authorization fences the actual request path. The common 768-attempt budget, two-MiB response cap and bounded owning-session cleanup remain unchanged. Uncertain submitted effects do not trigger automatic retries or compensation; the claim stays consumed and all affected resources remain available for inspection.
+
+## Evidence and limits
+
+Private operator report: `pr1142-rap-retained-v2-stop-operator-audit1/result.md`, SHA-256 `b91084315de58429f91eae9d6b129da8f4dcad1292e08d26043917918ac0b93f`.
+Private independent audit: `pr1142-rap-retained-v2-stop-independent-audit1/result.md`, SHA-256 `f70e59409c9652f9b8617940394d0509a7e0fdbb5456771fa7b4231954f574d8`.
+The bound native final draft is retained as a complete fixture. Standard SAP implementation sources remain private and are not included here.
+
+The separate production correction passed independent exact-source review at `dfcfa959500ea604d7f62f66618b68e7b76daa82` (private verdict SHA-256 `6fa840f436d4e19d2d14920de9c47e616a29fa6273fa59a75aa1d036e7e7f365`). This continuation candidate has not executed a new phase. Offline tests distinguish the actual captured starting state from synthetic future activation, service and cleanup responses. Native publication/recording and generated-child cleanup retain their existing accepted-but-unverified limitations; no frontend/all-alias verification or CTS receipt is claimed. Historical observations used the direct native identity and the read-only application configuration; they do not establish current-build principal propagation or public admission. Independent source review and fresh operator prerequisites remain required before any native continuation.

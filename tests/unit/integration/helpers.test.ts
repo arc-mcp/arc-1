@@ -1,5 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { hasSapCredentials, requireSapCredentials } from '../../integration/helpers.js';
+
+// These are unit fixtures: importing the live helper must never load workspace credentials.
+vi.mock('dotenv', () => ({ config: vi.fn() }));
 
 const SAP_ENV_KEYS = [
   'TEST_SAP_URL',

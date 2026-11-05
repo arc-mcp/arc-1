@@ -23,7 +23,7 @@ import { handleToolCall } from '../../src/handlers/dispatch.js';
 import type { ToolResult } from '../../src/handlers/shared.js';
 import type { ServerConfig } from '../../src/server/types.js';
 import { SkipReason, skipTest } from '../helpers/skip-policy.js';
-import { CrudRegistry, cleanupAll, generateUniqueName } from './crud-harness.js';
+import { CrudRegistry, cleanupAll, generateUniqueName, retryDelete } from './crud-harness.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
 
 const FM_LOCK_SKIP_REASON = `${SkipReason.BACKEND_UNSUPPORTED}: lock-handle session correlation differs on this release (NPL 7.50 ADT gap)`;
@@ -72,6 +72,7 @@ describe('FUNC parameter lifecycle (issue #252)', () => {
     const fugrUrl = `/sap/bc/adt/functions/groups/${encodeURIComponent(fugrName.toLowerCase())}`;
     const fmUrl = `/sap/bc/adt/functions/groups/${encodeURIComponent(fugrName.toLowerCase())}/fmodules/${encodeURIComponent(fmName.toLowerCase())}`;
 
+    let completed = false;
     try {
       // Step 1: Create FUGR via the ARC-1 handler (mirrors what an LLM would do).
       const fugrResult = await handleToolCall(client, config, 'SAPWrite', {
@@ -247,8 +248,14 @@ describe('FUNC parameter lifecycle (issue #252)', () => {
       expect(reReadPayload.signature.changing.map((p) => p.name)).toContain('CV_FLAG');
       expect(reReadPayload.signature.tables.map((p) => p.name)).toContain('IT_LINES');
       expect(reReadPayload.signature.raising.map((p) => p.name)).toContain('CX_SY_CONVERSION_NO_NUMBER');
+      completed = true;
     } finally {
-      // Cleanup is handled by registry/cleanupAll in afterAll.
+      if (completed) {
+        const deletion = await retryDelete(client.http, client.safety, fmUrl);
+        registry.remove(fmName);
+        expect(deletion, 'Activated parameterized function deletion').toMatchObject({ success: true });
+      }
+      // The owned group and incomplete setup are still cleaned in afterAll.
     }
   }, 120_000);
 

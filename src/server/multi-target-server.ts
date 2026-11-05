@@ -21,7 +21,7 @@ import type { MultiTargetRequestProjection } from './multi-target-request-projec
 import { buildMultiTargetConfig } from './multi-target-runtime.js';
 import type { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js';
 import { multiTargetInvocationDecision, normalizeTarget } from './multi-target-tools.js';
-import { pinnedWriteEnabled } from './multi-target-write-surface.js';
+import { pinnedUnsupportedRawFields, pinnedWriteEnabled } from './multi-target-write-surface.js';
 import { NATIVE_NAVIGATION_INSTRUCTIONS } from './server-instructions.js';
 import type { ServerConfig } from './types.js';
 
@@ -87,7 +87,7 @@ export function buildMultiTargetServerInstructions(options: MultiTargetServerOpt
     'Data preview and SQL require instance, destination, XSUAA scope, and SAP authorization consent.',
     'Offline SAPLint, read-only transport inspection, ATC, and ABAP Unit are available; ATC and Unit execute SAP workloads.',
     writable
-      ? 'CLAS/INTF main-source writes require both package policies; updates require an editable source hash. Activation affects the whole owner and its existing inactive drafts. Transport/Git management and all other mutations remain unavailable.'
+      ? 'Only the built-in action/type/input combinations listed in this connection are admitted. Repository writes, metadata updates, surgery, deletion and whole-owner activation enforce both package and request policies; read format="editable" for source/metadata guards. Activation affects the whole owner and all its inactive changes. Transport management additionally requires its server switch and functional scope. Trace, formatter and classic FLP changes use their native resource scopes, not repository packages; FLP/publication recording remains native-governed and unverified under both explicit unrestricted request policies. Unsupported variants and generated SRVB cleanup remain refused. Partial or unknown results never authorize replay. Git and extensions are unavailable.'
       : 'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable.',
     NATIVE_NAVIGATION_INSTRUCTIONS,
   ].join('\n');
@@ -606,6 +606,7 @@ export async function prepareMultiTargetCall(args: {
 
   // Use the same canonical arguments as the shared dispatch pipeline. This keeps
   // the early policy/PP gate and the eventual handler decision identical.
+  const suppliedArgs = callArgs;
   callArgs = normalizeTypeArgsForValidation(toolName, callArgs);
   if (toolName === 'SAPActivate' && callArgs.action === undefined) callArgs = { ...callArgs, action: 'activate' };
   const activeConfig = buildMultiTargetConfig(options.instanceConfig, selectedTarget, {
@@ -613,7 +614,9 @@ export async function prepareMultiTargetCall(args: {
     authorization: projection,
   });
   const action = invocationPolicyKey(toolName, callArgs);
-  const invocationDecision = multiTargetInvocationDecision(toolName, callArgs, activeConfig);
+  const invocationDecision = pinnedUnsupportedRawFields(toolName, action, suppliedArgs).length
+    ? 'forbidden'
+    : multiTargetInvocationDecision(toolName, callArgs, activeConfig);
   if (invocationDecision === 'forbidden') {
     logger.emitAudit({
       timestamp: new Date().toISOString(),

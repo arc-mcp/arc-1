@@ -658,10 +658,14 @@ describe('DevTools', () => {
     it('runs individual ED064 retries sequentially', async () => {
       const ed064 = '<messages><msg type="E" shortText="ED064 no next/previous object found"/></messages>';
       const firstRetry = defer<{ statusCode: number; headers: Record<string, string>; body: string }>();
+      const firstRetryStarted = defer<void>();
       const post = vi
         .fn()
         .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: ed064 })
-        .mockReturnValueOnce(firstRetry.promise)
+        .mockImplementationOnce(() => {
+          firstRetryStarted.resolve();
+          return firstRetry.promise;
+        })
         .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: '' });
       const http = {
         get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '' }),
@@ -676,8 +680,7 @@ describe('DevTools', () => {
         { url: '/sap/bc/adt/ddic/tables/zdm_project_d', name: 'ZDM_PROJECT_D' },
         { url: '/sap/bc/adt/ddic/tables/zdm_task_d', name: 'ZDM_TASK_D' },
       ]);
-      await Promise.resolve();
-      await Promise.resolve();
+      await firstRetryStarted.promise;
 
       expect(post).toHaveBeenCalledTimes(2);
       expect(post.mock.calls[1][1]).toContain('adtcore:name="ZDM_PROJECT_D"');

@@ -911,7 +911,9 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
         const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'PROG', name: 'ZPROG' });
         expect(result.isError).toBe(true);
         expect(result.content[0]?.text).not.toContain('abapfs_extensions');
-        expect(result.content[0]?.text).toContain('Retry first');
+        expect(result.content[0]?.text).toContain('Inspect the current object state before retrying');
+        expect(result.content[0]?.text).toContain('repeat the whole operation');
+        expect(result.content[0]?.text).not.toContain('fresh lock');
       } finally {
         resetCachedFeatures();
       }

@@ -47,6 +47,7 @@ import {
   targetFromPinnedMcpPath,
 } from './multi-target-identity.js';
 import { type MultiTargetRequestProjection, projectMultiTargetRequest } from './multi-target-request-projection.js';
+import { MULTI_TARGET_SCOPES_SUPPORTED, pinnedProtectedResourceScopes } from './multi-target-resource-scopes.js';
 import { ARC1_MANUAL_CLIENT_REDIRECT_URI_PATTERNS } from './oauth-redirect-policy.js';
 import {
   buildXsuaaSessionRefreshUrl,
@@ -344,7 +345,7 @@ export function multiTargetHealthStatus(registry: DestinationRegistry): 'ready' 
   return registry.available ? 'ready' : 'error';
 }
 
-export const MULTI_TARGET_SCOPES_SUPPORTED = Object.freeze(['read', 'data', 'sql', 'admin']);
+export { MULTI_TARGET_SCOPES_SUPPORTED } from './multi-target-resource-scopes.js';
 
 /**
  * Start the HTTP Streamable server.
@@ -802,10 +803,7 @@ export async function startHttpServer(
         res.json({
           resource: `${oauthFullBase}/${match?.[1]}/${match?.[2]}/mcp`,
           authorization_servers: [`${oauthFullBase}/`],
-          scopes_supported:
-            config.allowWrites && enforcedTargets
-              ? [...MULTI_TARGET_SCOPES_SUPPORTED, 'write']
-              : MULTI_TARGET_SCOPES_SUPPORTED,
+          scopes_supported: pinnedProtectedResourceScopes(config),
           resource_name: 'ARC-1 SAP MCP Server (pinned target)',
         });
       });

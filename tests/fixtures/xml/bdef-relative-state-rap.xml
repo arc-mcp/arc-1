@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sanitized representation from owned V4 BDEF metadata SHA256 2ecbdf84c6d8fe9f526e696082cd3def3f40c6dcdbd1cc9abb6d5100a0d4fb00.
+     Synthetic RAP dependency identity/package; timestamps, authors, unrelated links and syntax configuration omitted.
+     This is a metadata-shape regression, not a native behavior-pool qualification. -->
+<blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core"
+  abapsource:sourceUri="./zi_rap_test/source/main" adtcore:name="ZI_RAP_TEST" adtcore:type="BDEF/BDO" adtcore:version="inactive">
+  <atom:link xmlns:atom="http://www.w3.org/2005/Atom" href="./zi_rap_test?version=active" rel="http://www.sap.com/adt/relations/objectstates" title="Complementary active/inactive version"/>
+  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/zread_only" adtcore:type="DEVC/K" adtcore:name="ZREAD_ONLY"/>
+</blue:blueSource>

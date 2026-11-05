@@ -1,0 +1,9 @@
+{
+  "system": "A4H/001",
+  "sourceRevision": "bf4b7590a60f666ea961a3a2ecad955ce3668183",
+  "requested": "@EndUserText.label : 'ARC1 table graph EEE257AEFB75'\n@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE\n@AbapCatalog.tableCategory : #TRANSPARENT\n@AbapCatalog.deliveryClass : #A\n@AbapCatalog.dataMaintenance : #RESTRICTED\ndefine table zttgeee257aefb75 {\n  key client : abap.clnt not null;\n  key id : abap.char(10) not null;\n  status : abap.char(1);\n}\n",
+  "readback": "@EndUserText.label : 'ARC1 table graph EEE257AEFB75'\n@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE\n@AbapCatalog.tableCategory : #TRANSPARENT\n@AbapCatalog.deliveryClass : #A\n@AbapCatalog.dataMaintenance : #RESTRICTED\ndefine table zttgeee257aefb75 {\n\n  key client : abap.clnt not null;\n  key id     : abap.char(10) not null;\n  status     : abap.char(1);\n\n}",
+  "requestedSha256": "854084ad7bc099135630b5a13a268f60e1466860e5d9d158c2c4c274bf5653fb",
+  "readbackSha256": "a9b595f9d35811a62397d8d8ff4a846c8b77f531371451eae83665f43ab11a46",
+  "name": "ZTTGEEE257AEFB75"
+}

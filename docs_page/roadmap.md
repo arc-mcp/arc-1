@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-11-01
+**Last reviewed:** 2026-11-03
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -68,7 +68,7 @@ sequence.
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing | P1 | M | Ready | Architecture |
 | [ARCH-02](#arch-02) | Server-driven source-state version verification | P3 | S | Needs research | Architecture |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server API | P3 | L | Revisit on trigger | Architecture |
-| [FEAT-93](#feat-93) | Broader pinned PP mutation capabilities | P2 | XL | Design reviewed | Architecture |
+| [FEAT-93](#feat-93) | Broader pinned PP mutation capabilities | P2 | XL | Ready | Architecture |
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
@@ -188,43 +188,53 @@ and upgrade requirements. Do not widen the mutation-free multi-target contract a
 <a id="feat-93"></a>
 ### FEAT-93 — Broader pinned PP mutation capabilities
 
-- **Priority / effort / status:** P2 / XL / Design reviewed
+- **Priority / effort / status:** P2 / XL / Ready
 - **Category:** Architecture
 
-**Remaining gap.** PR [#1080](https://github.com/arc-mcp/arc-1/pull/1080) implements the scoped
-CLAS/INTF create/main-update, CLAS method-edit and whole-owner activation contract for local and
-transportable packages, with exact target write grants and independent server/destination policy.
-The owner selected broader built-in development and management parity, including object types,
-includes, deletes, batches, package changes, RAP/DDIC, publication, transport management, runtime
-tracing and classic FLP. Git and custom extensions/plugins are excluded. None of this expansion
-is enabled by the shared-infrastructure extraction; aggregate and Basic writes remain excluded.
+**Remaining gap.** Review the production consolidation, then finish qualification and release review
+for the explicit built-in pinned strict-PP
+write surface in draft [PR #1142](https://github.com/arc-mcp/arc-1/pull/1142). Implementation and
+independent source review cover the admitted resource profiles; source integration alone does not
+complete the [accepted plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-broader-pinned-pp-writes.md).
+The [current acceptance ledger](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-05-pr1142-current-acceptance.md)
+tracks the remaining gates and final verification; FEAT-93 stays open. Remaining work is:
 
-**Design evidence.** The [26 October research](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-26-multi-target-write-parity.md)
-separates accepted scope from proposed resource policies and live qualification gaps. It proposes
-[PR 1](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-shared-mutation-infrastructure.md)
-for behavior-preserving shared mutation infrastructure, now implemented for review with
-[separate qualification evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-29-shared-mutation-infrastructure.md), followed by
-[PR 2](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-broader-pinned-pp-writes.md)
-for the capability expansion. Existing opted-in writers may gain the documented capabilities;
-read-only applications/destinations must remain mutation-free.
-Author review and two Claude Code Opus 5.5 max reviews are recorded with findings and dispositions
-in the research record. The remaining implementation is PR 2's capability expansion; its live
-qualification remains outstanding.
+- Complete the retained native CTS release/delete representative, adopting the completed task owner
+  roundtrip and class save/activation/record-removal/deletion without replay. The corrected rich
+  inactive-inventory shapes passed source/security review. Consumed v4/v5 runs physically released
+  the task and parent; v5 then refused the released-parent comment's missing edit links. The
+  [fixed released-pair v6 profile](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-05-native-cts-released-pair-v6.md)
+  adopts607R/608R read-only and retains the unchanged fresh B/C graphs. Independent source review
+  and fresh native B/C qualification remain. Old failed claims stay failed; deleted class records and
+  released CTS history remain explicit. Preserve owning cleanup and the no-downstream-route limit.
+- Qualify the final deployed source with the two mapped PP writers, the remaining text/recording
+  and negative-route checks, reverse PP cleanup, then verified app/IAM/destination/SAP-role restoration.
+  The [fixed text-tail v2](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-05-current-pp-text-tail-v2.md) binds the stopped
+  pre-mutation attempt and the exact owned include/program relationship. Source review passed;
+  fresh PP execution remains pending, with no replay of completed owner creation or activation.
+  The [selected native-platform projection](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-05-pinned-native-platform-projection.md) corrects the automatic/manual probe and internal recording-profile handoff; source review and a fresh source-bound PP FLP window remain pending.
+- Reconcile final tests, security review, capability/version limits, operator upgrade/rollback docs
+  and independent execution audits. Native read/recording gaps and unsupported backend variants
+  stay explicit; successful parent deletion does not prove generated-resource absence.
 
-**Resume when.** PR 1 is accepted and the owner requests PR 2. Preserve the shared foundation's
-existing behavior; PR 2 requires a new reviewed ADR qualifying ADR-0010, explicit per-operation
-resource policies, negative tests and real PP evidence. Do not remove the explicit action matrix
-or add a duplicate global write switch. Caching, SaaS and embedding remain separate work. The
-roadmap entry stays open until the expanded scope is implemented and verified.
+The per-operation [inventory](https://github.com/arc-mcp/arc-1/blob/main/docs/research/broader-pinned-pp-writes/inventory.md)
+and current [capability matrix](https://github.com/arc-mcp/arc-1/blob/main/docs_page/multi-target-writes.md)
+retain the exact admission and qualification boundaries. Aggregate, Copilot, shared Basic and
+read-only applications/destinations remain mutation-free. Git and custom extensions/plugins are
+excluded. Existing opted-in writers may gain the documented capabilities without another global
+switch; runtime/user settings and classic FLP use native resource policies beyond package checks.
 
-**Prior work.** [#906](https://github.com/arc-mcp/arc-1/pull/906), the
-[alternatives assessment](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-22-multi-target-write-strategy.md)
-and [V2 roadmap](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/multi-target-v2-roadmap.md)
-remain design history; revalidate older gap statements against the current scoped implementation.
+**Resume when.** The production consolidation is verified, and the remaining native prerequisites
+and source-bound PP test sessions are available.
+Keep this idea open until the accepted expansion is implemented and verified; then remove it from
+the overview and details. The merged shared foundation is [PR #1138](https://github.com/arc-mcp/arc-1/pull/1138)
+and scoped CLAS/INTF writes are [PR #1080](https://github.com/arc-mcp/arc-1/pull/1080).
+Caching, SaaS, embedding and unqualified backend variants remain separate work.
 
 ## Authentication, compatibility, and security
 
 <a id="sec-16"></a>
+
 ### SEC-16 — Client ID Metadata Documents (CIMD / SEP-991)
 
 - **Priority / effort / status:** P1 / XL / Parked proposal

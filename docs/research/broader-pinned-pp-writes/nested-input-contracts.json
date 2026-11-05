@@ -1,0 +1,930 @@
+{
+  "common": {
+    "SAPWrite.fixedValues": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "low": {
+            "type": "string",
+            "maxLength": 10
+          },
+          "high": {
+            "type": "string",
+            "maxLength": 10
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 60
+          }
+        },
+        "required": [
+          "low"
+        ]
+      }
+    },
+    "SAPWrite.messages": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string"
+          },
+          "shortText": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "shortText"
+        ]
+      }
+    },
+    "SAPWrite.shortTexts": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "text"
+        ]
+      }
+    },
+    "SAPWrite.parameters": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "importing",
+              "exporting",
+              "changing",
+              "tables",
+              "exceptions",
+              "raising"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "type": {
+            "type": "string"
+          },
+          "byValue": {
+            "type": "boolean"
+          },
+          "default": {
+            "type": "string"
+          },
+          "optional": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ]
+      }
+    },
+    "SAPActivate.objects": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "name"
+        ]
+      }
+    },
+    "SAPManage.tile": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "icon": {
+          "type": "string"
+        },
+        "semanticObject": {
+          "type": "string"
+        },
+        "semanticAction": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "subtitle": {
+          "type": "string"
+        },
+        "info": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "semanticObject",
+        "semanticAction"
+      ]
+    },
+    "SAPDiagnose.proposalAffectedObjects": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "uri": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uri"
+        ]
+      }
+    },
+    "SAPDiagnose.filters": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "minItems": 1,
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "attribute": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "operator": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "values": {
+            "minItems": 1,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        },
+        "required": [
+          "attribute",
+          "operator",
+          "values"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "SAPLint.rules": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    }
+  },
+  "onprem": {
+    "SAPWrite.objects": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "PROG",
+              "CLAS",
+              "INTF",
+              "FUNC",
+              "FUGR",
+              "INCL",
+              "DDLS",
+              "DCLS",
+              "DDLX",
+              "BDEF",
+              "SRVD",
+              "SRVB",
+              "SKTD",
+              "KTD",
+              "TABL",
+              "TABL/DT",
+              "TABL/DS",
+              "DOMA",
+              "DTEL",
+              "MSAG",
+              "TTYP",
+              "ENQU",
+              "ENHO",
+              "DESD",
+              "DTSC",
+              "CSNM",
+              "EVTB",
+              "EVTO",
+              "COTA",
+              "DSFD",
+              "DTDC",
+              "UIAD",
+              "DRTY",
+              "APLO",
+              "SAJC",
+              "SAJT",
+              "TABL/DTI"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "package": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "rowType": {
+            "type": "string"
+          },
+          "rowTypeKind": {
+            "type": "string",
+            "enum": [
+              "builtin",
+              "structure"
+            ]
+          },
+          "rowTypeLength": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^\\d+$"
+              }
+            ]
+          },
+          "rowTypeDecimals": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^\\d+$"
+              }
+            ]
+          },
+          "length": {
+            "type": "number"
+          },
+          "decimals": {
+            "type": "number"
+          },
+          "outputLength": {
+            "type": "number"
+          },
+          "conversionExit": {
+            "type": "string"
+          },
+          "signExists": {
+            "type": "boolean"
+          },
+          "lowercase": {
+            "type": "boolean"
+          },
+          "fixedValues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "low": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "high": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 60
+                }
+              },
+              "required": [
+                "low"
+              ]
+            }
+          },
+          "valueTable": {
+            "type": "string"
+          },
+          "typeKind": {
+            "type": "string",
+            "enum": [
+              "domain",
+              "predefinedAbapType"
+            ]
+          },
+          "typeName": {
+            "type": "string"
+          },
+          "domainName": {
+            "type": "string"
+          },
+          "shortLabel": {
+            "type": "string"
+          },
+          "shortLength": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "mediumLabel": {
+            "type": "string"
+          },
+          "mediumLength": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20
+          },
+          "longLabel": {
+            "type": "string"
+          },
+          "longLength": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 40
+          },
+          "headingLabel": {
+            "type": "string"
+          },
+          "headingLength": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 55
+          },
+          "searchHelp": {
+            "type": "string"
+          },
+          "searchHelpParameter": {
+            "type": "string"
+          },
+          "setGetParameter": {
+            "type": "string"
+          },
+          "defaultComponentName": {
+            "type": "string"
+          },
+          "deactivateInputHistory": {
+            "type": "boolean"
+          },
+          "changeDocument": {
+            "type": "boolean"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "number": {
+                  "type": "string"
+                },
+                "shortText": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "number",
+                "shortText"
+              ]
+            }
+          },
+          "serviceDefinition": {
+            "type": "string"
+          },
+          "bindingType": {
+            "type": "string"
+          },
+          "odataVersion": {
+            "type": "string",
+            "enum": [
+              "V2",
+              "V4"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ]
+          },
+          "version": {
+            "type": "string"
+          },
+          "processingType": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "rfc",
+              "update"
+            ]
+          },
+          "updateTaskKind": {
+            "type": "string",
+            "enum": [
+              "startImmediate",
+              "immediateStartNoRestart",
+              "startDelayed"
+            ]
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "importing",
+                    "exporting",
+                    "changing",
+                    "tables",
+                    "exceptions",
+                    "raising"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "type": {
+                  "type": "string"
+                },
+                "byValue": {
+                  "type": "boolean"
+                },
+                "default": {
+                  "type": "string"
+                },
+                "optional": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "kind",
+                "name"
+              ]
+            }
+          }
+        },
+        "required": [
+          "type",
+          "name"
+        ]
+      }
+    },
+    "SAPDiagnose.objects": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "minItems": 1,
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "CLAS",
+              "INTF",
+              "PROG",
+              "FUGR",
+              "DDLS",
+              "DCLS",
+              "BDEF",
+              "DDLX",
+              "SRVD",
+              "SRVB",
+              "TABL",
+              "DTEL",
+              "DOMA"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^(?:\\/[A-Za-z0-9_]+\\/)?[A-Za-z0-9_]+$"
+          }
+        },
+        "required": [
+          "type",
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "btp": {
+    "SAPWrite.objects": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "CLAS",
+              "INTF",
+              "DDLS",
+              "DCLS",
+              "DDLX",
+              "BDEF",
+              "SRVD",
+              "SRVB",
+              "SKTD",
+              "KTD",
+              "TABL",
+              "TABL/DT",
+              "TABL/DS",
+              "DOMA",
+              "DTEL",
+              "MSAG",
+              "TTYP",
+              "ENQU",
+              "ENHO",
+              "DESD",
+              "DTSC",
+              "CSNM",
+              "EVTB",
+              "EVTO",
+              "COTA",
+              "DSFD",
+              "DTDC",
+              "UIAD",
+              "DRTY",
+              "APLO",
+              "SAJC",
+              "SAJT",
+              "TABL/DTI"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "package": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string"
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "rowType": {
+            "type": "string"
+          },
+          "rowTypeKind": {
+            "type": "string",
+            "enum": [
+              "builtin",
+              "structure"
+            ]
+          },
+          "rowTypeLength": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^\\d+$"
+              }
+            ]
+          },
+          "rowTypeDecimals": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^\\d+$"
+              }
+            ]
+          },
+          "length": {
+            "type": "number"
+          },
+          "decimals": {
+            "type": "number"
+          },
+          "outputLength": {
+            "type": "number"
+          },
+          "conversionExit": {
+            "type": "string"
+          },
+          "signExists": {
+            "type": "boolean"
+          },
+          "lowercase": {
+            "type": "boolean"
+          },
+          "fixedValues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "low": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "high": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 60
+                }
+              },
+              "required": [
+                "low"
+              ]
+            }
+          },
+          "valueTable": {
+            "type": "string"
+          },
+          "typeKind": {
+            "type": "string",
+            "enum": [
+              "domain",
+              "predefinedAbapType"
+            ]
+          },
+          "typeName": {
+            "type": "string"
+          },
+          "domainName": {
+            "type": "string"
+          },
+          "shortLabel": {
+            "type": "string"
+          },
+          "shortLength": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "mediumLabel": {
+            "type": "string"
+          },
+          "mediumLength": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20
+          },
+          "longLabel": {
+            "type": "string"
+          },
+          "longLength": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 40
+          },
+          "headingLabel": {
+            "type": "string"
+          },
+          "headingLength": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 55
+          },
+          "searchHelp": {
+            "type": "string"
+          },
+          "searchHelpParameter": {
+            "type": "string"
+          },
+          "setGetParameter": {
+            "type": "string"
+          },
+          "defaultComponentName": {
+            "type": "string"
+          },
+          "deactivateInputHistory": {
+            "type": "boolean"
+          },
+          "changeDocument": {
+            "type": "boolean"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "number": {
+                  "type": "string"
+                },
+                "shortText": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "number",
+                "shortText"
+              ]
+            }
+          },
+          "serviceDefinition": {
+            "type": "string"
+          },
+          "bindingType": {
+            "type": "string"
+          },
+          "odataVersion": {
+            "type": "string",
+            "enum": [
+              "V2",
+              "V4"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ]
+          },
+          "version": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "importing",
+                    "exporting",
+                    "changing",
+                    "tables",
+                    "exceptions",
+                    "raising"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "type": {
+                  "type": "string"
+                },
+                "byValue": {
+                  "type": "boolean"
+                },
+                "default": {
+                  "type": "string"
+                },
+                "optional": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "kind",
+                "name"
+              ]
+            }
+          }
+        },
+        "required": [
+          "type",
+          "name"
+        ]
+      }
+    },
+    "SAPDiagnose.objects": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "minItems": 1,
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "CLAS",
+              "INTF",
+              "FUGR",
+              "DDLS",
+              "DCLS",
+              "BDEF",
+              "DDLX",
+              "SRVD",
+              "SRVB",
+              "TABL",
+              "DTEL",
+              "DOMA"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^(?:\\/[A-Za-z0-9_]+\\/)?[A-Za-z0-9_]+$"
+          }
+        },
+        "required": [
+          "type",
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

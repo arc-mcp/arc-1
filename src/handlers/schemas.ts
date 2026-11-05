@@ -35,7 +35,8 @@ import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
 import { dumpFilters, validateDumpFilterInputs } from './dump-filter-inputs.js';
 import { sourcePreconditionError } from './editable-source.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
-import { CLASS_WRITE_INCLUDES, KNOWN_BASE_TYPES } from './object-types.js';
+import { CLASS_INCLUDE_FIELD, MANAGE_OWNER_FIELDS, NATIVE_METADATA_FIELDS } from './native-write-fields.js';
+import { KNOWN_BASE_TYPES } from './object-types.js';
 import { SAPQuerySchema, SAPQuerySchemaBtp } from './query-input.js';
 import { readMethodOptionError } from './read-method-options.js';
 import { LiveRelationsInput, relationNumber } from './relation-input.js';
@@ -770,10 +771,8 @@ export const SAPWriteSchema = z
     name: z.string().optional(),
     source: z.string().optional(),
     expectedSourceHash: z.string().optional(),
-    include: z.preprocess(
-      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
-      z.enum(CLASS_WRITE_INCLUDES).optional(),
-    ),
+    ...NATIVE_METADATA_FIELDS,
+    include: CLASS_INCLUDE_FIELD,
     /** For action="edit_text_symbols": which textpool subobject to write. Defaults to symbols. */
     textPart: z.enum(SAPREAD_TEXT_ELEMENT_INCLUDES).optional(),
     method: z.string().optional(),
@@ -886,10 +885,8 @@ export const SAPWriteSchemaBtp = z
     name: z.string().optional(),
     source: z.string().optional(),
     expectedSourceHash: z.string().optional(),
-    include: z.preprocess(
-      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
-      z.enum(CLASS_WRITE_INCLUDES).optional(),
-    ),
+    ...NATIVE_METADATA_FIELDS,
+    include: CLASS_INCLUDE_FIELD,
     textPart: z.enum(['symbols']).optional(),
     method: z.string().optional(),
     /**
@@ -980,6 +977,7 @@ export const SAPActivateSchema = z
     group: z.string().optional(),
     version: z.string().optional(),
     service_type: z.enum(['odatav2', 'odatav4']).optional(),
+    ...NATIVE_METADATA_FIELDS,
     preaudit: looseOptionalBoolean,
     objects: z
       .array(
@@ -1475,6 +1473,7 @@ export const SAPManageSchema = z
       'flp_delete_catalog',
       'set_api_state',
     ]),
+    ...MANAGE_OWNER_FIELDS,
     apiState: z.enum(['RELEASED', 'NOT_RELEASED']).optional(),
     apiVisibility: z
       .array(z.enum(API_RELEASE_VISIBILITIES))

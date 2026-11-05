@@ -6,6 +6,9 @@ import { connectivityProxyResponse } from '../../../src/adt/bounded-response.js'
 import { AdtClient } from '../../../src/adt/client.js';
 import { DataResponseBudget } from '../../../src/adt/data-result-context.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
+import { pinnedMutationContext } from '../../../src/adt/mutation-context.js';
+import { withMutationSession } from '../../../src/adt/mutation-http.js';
+import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { CachingLayer } from '../../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
 import { logger } from '../../../src/server/logger.js';
@@ -145,6 +148,77 @@ describe('proxy response lifecycle with real Undici bodies', () => {
 });
 
 describe('stateful Connectivity proxy ownership', () => {
+  it.each(['complete', 'fallback', 'oversized', 'oversized-closed', 'deadline', 'gzip'])(
+    'keeps the pinned close on its owning connection: %s',
+    async (mode) => {
+      const requests: Array<{ path: string; socket: unknown; headers: Record<string, unknown> }> = [];
+      const { server, config } = await setup((req, res) => {
+        const path = new URL(req.url!).pathname;
+        requests.push({ path, socket: req.socket, headers: req.headers });
+        if (req.method === 'HEAD') {
+          res.setHeader('x-csrf-token', 'T');
+          res.setHeader('set-cookie', `sap-contextid=${req.headers.cookie ? '0' : 'CONTEXT'}; Path=/`);
+        }
+        if (path.endsWith('/sessions')) {
+          if (mode === 'deadline') {
+            res.write('unfinished');
+            return;
+          }
+          if (mode === 'gzip') res.setHeader('content-encoding', 'gzip');
+          if (mode === 'fallback') res.statusCode = 404;
+          if (mode === 'complete' || mode === 'oversized-closed')
+            res.setHeader('set-cookie', 'sap-contextid=0; Path=/');
+          if (mode.startsWith('oversized')) {
+            res.write('x'.repeat(32 * 1024));
+            res.end('x'.repeat(32 * 1024 + 1));
+            return;
+          }
+        }
+        res.end('ok');
+      });
+      const client = new AdtHttpClient({ ...config, sapConnectivityAuth: 'pinned-writer' });
+      const safety = {
+        ...defaultSafetyConfig(),
+        allowWrites: true,
+        multiTargetWrite: {
+          target: 'A4H/001',
+          enabled: true,
+          allowedPackages: ['$TMP'],
+          allowedTransports: [],
+          serverAllowedTransports: [],
+        },
+      };
+      const context = pinnedMutationContext(safety, { deadline: Date.now() + 10_000 }, { unlockFailed: false });
+      let closed: boolean | undefined;
+      expect(
+        await withMutationSession(
+          client,
+          safety,
+          context,
+          async (session) => {
+            await session.post('/lock');
+            await session.put('/source', 'REPORT ztest.');
+            await session.post('/unlock');
+            return 'written';
+          },
+          {
+            timeoutMs: mode === 'deadline' ? 50 : 5000,
+            noReplay: true,
+            onClose: (value) => {
+              closed = value;
+            },
+          },
+        ),
+      ).toBe('written');
+      expect(closed).toBe(!['oversized', 'deadline', 'gzip'].includes(mode));
+      expect(new Set(requests.slice(1).map(({ socket }) => socket)).size).toBe(1);
+      expect(requests.filter(({ path }) => path.endsWith('/sessions'))).toHaveLength(1);
+      expect(requests.filter(({ path }) => path.endsWith('/discovery'))).toHaveLength(mode === 'fallback' ? 2 : 1);
+      for (const request of requests) expect(request.headers['sap-connectivity-authentication']).toBe('pinned-writer');
+      await expectConnectionsClosed(server);
+    },
+  );
+
   it('reuses the lock connection through write, unlock and SAP context cleanup', async () => {
     const requests: Array<{ path: string; socket: unknown; headers: Record<string, unknown> }> = [];
     const { server, client } = await setup((req, res) => {

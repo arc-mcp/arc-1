@@ -1,0 +1,13 @@
+# RAP independent correction review4
+
+2026-11-03. Root Codex reviewer; I authored neither source nor committed tests. Candidate **19a208ea019ab026858092f67ce30e591f445747**, base **75dd49a16e9beb331b5dea723a331884042c164a**.
+
+**Approved for private integration; no new actionable finding in this correction.** Review3 F2 is closed. The implementation-name reader now retains the entire token and normalizes whitespace around the interface qualifier, so `do_approve~other` remains distinct from `do_approve`. Comments/literals are still removed before statement inspection. Correct ordinary/renamed handlers, utilities and real interface implementations remain separate. No shared generator, lifecycle, public policy, native protocol or documentation changes are included in this two-file delta.
+
+I inspected the full bound source/test diff and reran the final review3 probes unchanged apart from absolute import-path redirection: **22/22 pass**, `root-probes.log`. Both compound masking cases now refuse before any write. The interface-method controls still create the distinct missing plain handler and preserve the original interface body. The seven affected private/legacy RAP suites pass **402 tests**, `root-focused.log`.
+
+First/final source verification confirms **4,646 unchanged bound files** at the exact candidate; final evidence is `root-snapshot-final.log`. No source action followed the final verifier. All review files/logs are outside the snapshot. Existing dependencies and Node22.21.1; no source edits, installs, manual Git, browser, credentials, external network or SAP/native operation occurred during the review.
+
+This narrow review explicitly reuses root review3's unchanged-code assessment, its independent396-test/three-project TypeScript/delta-lint evidence, and the earlier independent RAP reviews. Author4 separately reports current-source402 focused tests and type/build/lint/policy/budget checks. The 528-file/14,933-test full suite belongs to base75dd49a; I did not repeat it or claim it ran at19a208e. The extra six current tests and unchanged22 independent probes cover the actual correction. No redundant full-suite or documentation build was needed for this matcher/test-only delta.
+
+This is **not native/PP qualification, public admission, deployment or whole-PR approval**. The documented bounded BDEF/source parser subset, unqualified native/transported behavior-pool contracts, whole-class activation effects, independently observed BDEF dependency, two mapped writers and public gates remain open. Primary-branch integration and meaningful combined checks are still required.

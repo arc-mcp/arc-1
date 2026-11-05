@@ -441,13 +441,15 @@ function canonicalKey(key: string): string {
 function isSensitiveKey(key: string): boolean {
   const normalized = canonicalKey(key);
   return (
-    !KNOWN_SAFE_FIELD_KEYS.has(normalized) && SENSITIVE_KEY_FRAGMENTS.some((fragment) => normalized.includes(fragment))
+    normalized === 'lockhandle' ||
+    (!KNOWN_SAFE_FIELD_KEYS.has(normalized) &&
+      SENSITIVE_KEY_FRAGMENTS.some((fragment) => normalized.includes(fragment)))
   );
 }
 
 function isUrlKey(key: string): boolean {
   const normalized = canonicalKey(key);
-  return ['url', 'urls', 'uri', 'uris', 'href', 'hrefs'].some(
+  return ['url', 'urls', 'uri', 'uris', 'href', 'hrefs', 'path', 'paths'].some(
     (suffix) => normalized === suffix || normalized.endsWith(suffix),
   );
 }
@@ -471,7 +473,7 @@ function redactCredentialAssignments(value: string): string {
       '$1 [REDACTED]',
     )
     .replace(
-      /\b(password|passwd|passphrase|pwd|token|secret|api[_-]?key|authorization|credential|access[_-]?key|private[_-]?key|ssh[_-]?key|signature|cookie|jsessionid|sap[_-]?sessionid|sessionid|session|(?:client[_-]?vcs[_-]?)?auth[_-]?(?:pwd|user|token)|remote[_-]?(?:password|user|token))(?:(?:\\{1,64})?["'])?\s*([:=])\s*(?:(?:bearer|basic)\s+)?(?:\\{1,64}"[^"]*\\{1,64}"|\\{1,64}'[^']*\\{1,64}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
+      /\b(password|passwd|passphrase|pwd|token|secret|api[_-]?key|authorization|lock[_-]?handle|credential|access[_-]?key|private[_-]?key|ssh[_-]?key|signature|cookie|jsessionid|sap[_-]?sessionid|sessionid|session|(?:client[_-]?vcs[_-]?)?auth[_-]?(?:pwd|user|token)|remote[_-]?(?:password|user|token))(?:(?:\\{1,64})?["'])?\s*([:=])\s*(?:(?:bearer|basic)\s+)?(?:\\{1,64}"[^"]*\\{1,64}"|\\{1,64}'[^']*\\{1,64}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
       '$1$2[REDACTED]',
     );
 }
@@ -496,8 +498,33 @@ function sanitizeUrlAssignments(value: string): string {
   );
 }
 
+/** Invalid authorities can hide credentials behind path delimiters, including in embedded URLs. */
+function scrubMalformedAuthorities(value: string, truncated = false): string {
+  // Process from the end so replacing one token does not move earlier scheme offsets.
+  for (const match of [...value.matchAll(/[a-z][a-z\d+.-]*:\/\//gi)].reverse()) {
+    const offset = match.index + match[0].length;
+    const token = value.slice(offset).match(/^[^\s<>"']*/)?.[0] ?? '';
+    try {
+      new URL(match[0] + token.split(/[/?#]/, 1)[0]);
+      continue;
+    } catch {
+      // A non-numeric port, for example writer:password, is not an ordinary URL path.
+    }
+    const at = token.lastIndexOf('@');
+    if (at >= 0) value = `${value.slice(0, offset)}[REDACTED]@${value.slice(offset + at + 1)}`;
+    else if (truncated && offset + token.length === value.length)
+      value = `${value.slice(0, offset)}[REDACTED truncated URL authority]`;
+  }
+  return value;
+}
+
 function sanitizeUrl(value: string): string {
-  const normalizedValue = redactApplicationLogUrl(normalizeEscapedUrlSlashes(value));
+  // Userinfo can contain @ itself; scrub through the last @ in each bounded URL authority,
+  // including URLs embedded in another path/query. Query and fragment delimiters end authority.
+  const normalizedValue = scrubMalformedAuthorities(redactApplicationLogUrl(normalizeEscapedUrlSlashes(value))).replace(
+    /([a-z][a-z\d+.-]*:\/\/)[^/\s?#]+@/gi,
+    '$1[REDACTED]@',
+  );
   try {
     const parsed = new URL(normalizedValue);
     let changed = parsed.username.length > 0 || parsed.password.length > 0;
@@ -528,7 +555,7 @@ function sanitizeUrl(value: string): string {
   } catch {
     // Invalid URLs are rejected later by the handler, but audit runs before validation. Apply a
     // best-effort textual scrub so malformed userinfo/query secrets cannot escape first.
-    const withoutUserinfo = normalizedValue.replace(/^([a-z][a-z\d+.-]*:\/\/)[^/@\s]+@/i, '$1[REDACTED]@');
+    const withoutUserinfo = normalizedValue.replace(/([a-z][a-z\d+.-]*:\/\/)[^\s<>"']+@/gi, '$1[REDACTED]@');
     const fragmentStart = withoutUserinfo.indexOf('#');
     const beforeFragment = fragmentStart >= 0 ? withoutUserinfo.slice(0, fragmentStart) : withoutUserinfo;
     const fragment = fragmentStart >= 0 ? withoutUserinfo.slice(fragmentStart + 1) : undefined;
@@ -564,7 +591,13 @@ function boundAuditString(value: string, originalLength = value.length): string 
 }
 
 function auditStringInput(value: string): string {
-  return value.length <= MAX_AUDIT_STRING_LENGTH ? value : value.slice(0, MAX_AUDIT_STRING_LENGTH);
+  if (value.length <= MAX_AUDIT_STRING_LENGTH) return value;
+  // A cut can hide the terminating @, leaving a password prefix that URL parsing cannot identify.
+  // Discard an unfinished authority before parsing; complete authorities and long paths survive.
+  return scrubMalformedAuthorities(normalizeEscapedUrlSlashes(value.slice(0, MAX_AUDIT_STRING_LENGTH)), true).replace(
+    /([a-z][a-z\d+.-]*:\/\/)[^/\s]*$/gi,
+    '$1[REDACTED truncated URL authority]',
+  );
 }
 
 function redactedAuditKey(entryKey: string, target: Record<string, unknown>): string {

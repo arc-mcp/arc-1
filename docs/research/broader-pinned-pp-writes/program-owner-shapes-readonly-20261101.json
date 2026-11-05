@@ -1,0 +1,113 @@
+{
+  "target": "https://a4h.marianzeis.de, client 001",
+  "date": "2026-11-01",
+  "purpose": "Read-only native metadata shapes. No source write, lock, activation, PP identity or new artifact qualification. Raw XML remains private.",
+  "limits": [
+    "404 status alone is not typed proof of owner absence.",
+    "contextRefCount describes usage, not a returned complete ownership list.",
+    "These observations cover this system only; they do not qualify another release."
+  ],
+  "observations": [
+    {
+      "name": "RSPFPAR",
+      "readSucceeded": true,
+      "bodySha256": "5033e77e192dfc73ebc5381117edc18a6e2ae8b6fad05542b1fda0a689b44016",
+      "root": "abapProgram",
+      "type": "PROG/P",
+      "programType": "executableProgram",
+      "ownPackage": "SPFL",
+      "returnedContexts": []
+    },
+    {
+      "name": "SAPLSDIFRUNTIME",
+      "readSucceeded": false,
+      "httpStatus": 404
+    },
+    {
+      "name": "LSDIFRUNTIMEUXX",
+      "readSucceeded": true,
+      "bodySha256": "eff660b82817a009a4816924901c0a49b83b479af086a67a1215c8ac563c6bfa",
+      "root": "abapInclude",
+      "type": "PROG/I",
+      "contextRefCount": "1",
+      "ownPackage": null,
+      "returnedContexts": [
+        {
+          "name": "SAPLSDIFRUNTIME",
+          "type": "FUGR/I",
+          "uri": "/sap/bc/adt/functions/groups/sdifruntime/source/main"
+        }
+      ]
+    },
+    {
+      "name": "BCALV_EDIT_01F01",
+      "readSucceeded": false,
+      "httpStatus": 404
+    },
+    {
+      "name": "BCALV_EDIT_01",
+      "readSucceeded": true,
+      "bodySha256": "2681d74da40c73874712001976e408244bb88339fa2fac7682a6404a17227e02",
+      "root": "abapProgram",
+      "type": "PROG/P",
+      "programType": "executableProgram",
+      "ownPackage": "SLIS",
+      "returnedContexts": []
+    },
+    {
+      "name": "SAPMSSY0",
+      "readSucceeded": true,
+      "bodySha256": "e41a49025ef71382711421be5bc23b1318cb4480db13dc478cdf6267568ee2b0",
+      "root": "abapProgram",
+      "type": "PROG/P",
+      "programType": "subroutinePool",
+      "ownPackage": "SABP_CORE_ENDUSER",
+      "returnedContexts": []
+    },
+    {
+      "name": "RSDBCOM4",
+      "readSucceeded": true,
+      "bodySha256": "0c1216c5e4f3d1970a35d77d66c2173680f60bddd8c8c11ab8441812807ec551",
+      "root": "abapInclude",
+      "type": "PROG/I",
+      "contextRefCount": "20",
+      "ownPackage": "SLDBV",
+      "returnedContexts": []
+    },
+    {
+      "name": "RS38MCOM",
+      "readSucceeded": false,
+      "httpStatus": 404
+    },
+    {
+      "name": "RSDBRUNT",
+      "readSucceeded": false,
+      "httpStatus": 404
+    },
+    {
+      "name": "SAPMSEDT",
+      "readSucceeded": false,
+      "httpStatus": 404
+    },
+    {
+      "name": "SAPMS38M",
+      "readSucceeded": true,
+      "bodySha256": "3fc24248b2b4dd659aa6629e05cc64f0695e6c938893b4a2ffe4d14be8f73c45",
+      "root": "abapProgram",
+      "type": "PROG/P",
+      "programType": "modulePool",
+      "ownPackage": "SA38",
+      "returnedContexts": []
+    },
+    {
+      "name": "SAPMSYST",
+      "readSucceeded": true,
+      "bodySha256": "3a2009be851e28bd43c644ffd021a4cb61a95a532b05dc0ccc6180932588548c",
+      "root": "abapProgram",
+      "type": "PROG/P",
+      "programType": "modulePool",
+      "ownPackage": "SECC",
+      "returnedContexts": []
+    }
+  ]
+}

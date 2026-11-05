@@ -1,0 +1,59 @@
+{
+  "observedDate": "2026-11-01",
+  "kind": "read-only native contract inspection; no mutation or PP qualification",
+  "target": {
+    "url": "https://a4h.marianzeis.de",
+    "client": "001",
+    "directUser": "MARIAN",
+    "tlsVerification": true
+  },
+  "settingsReads": {
+    "v2": {
+      "status": 200,
+      "contentType": "application/vnd.sap.adt.ppsettings.v2+xml; charset=utf-8",
+      "bytes": 211,
+      "sha256": "fc0445edf7ccc2ea8abb4df4370abce8dce096198d8b03a9c869900f6015dcbe"
+    },
+    "v5": {
+      "status": 200,
+      "contentType": "application/vnd.sap.adt.ppsettings.v5+xml; charset=utf-8",
+      "bytes": 211,
+      "sha256": "fc0445edf7ccc2ea8abb4df4370abce8dce096198d8b03a9c869900f6015dcbe"
+    },
+    "preferred": {
+      "accept": "*/*",
+      "status": 200,
+      "contentType": "application/vnd.sap.adt.ppsettings.v5+xml; charset=utf-8",
+      "bytes": 211,
+      "sha256": "fc0445edf7ccc2ea8abb4df4370abce8dce096198d8b03a9c869900f6015dcbe"
+    }
+  },
+  "nativeSources": {
+    "CL_PRETTY_PRINTER_WB_SETTINGS": "b4684f9df96985da06aff06c94aa080ad88c0266971ef436eeba23d7a7d2f47d",
+    "CL_SEDI_ADT_RES_PP_SETTINGS": "682fe0ddfb70602e3a8dae9f1fc0957c6f628bc21f4295b79f135e75e896072d",
+    "CL_SEDI_ADT_RES_PRETTY_PRINTER": "c7dc1695cc56fa73d3868230ae68a747f5fb1134c8f6bbc665cc3e60486d1597",
+    "CL_SEDI_PRETTY_PRINTER": "6d3a1b645399ff39a600c13b7d672ee34473a3a8810a673cf90261da8f85380b"
+  },
+  "transformation": {
+    "name": "SEDI_ADT_PP_SETTINGS",
+    "sha256": "be21853cf79bbc0b585f81fea23d05bd4ad438dc90d56b2ce88c6ef21d668bdd"
+  },
+  "findings": {
+    "versionVisibility": {
+      "v3": [
+        "keepIdentifier",
+        "formatMethodCalls"
+      ],
+      "v4": [
+        "condenseMethodCalls",
+        "defaultAutoStyle"
+      ],
+      "v5": [
+        "formatValue"
+      ]
+    },
+    "put": "All fields passed to Workbench settings persistence; omitted values are not merged from stored settings.",
+    "primaryAtInspection": "v2 and v5 bytes identical; optional settings absent. Does not establish historical values.",
+    "candidate": "Request SAP preferred representation, require v5; refuse older or unknown future versions. Current-revision mutation and PP tests pending."
+  }
+}

@@ -1,0 +1,237 @@
+{
+  "baseline": "40eb9d2c384efcf9b5c38ca75eaed74d3e374172",
+  "sourceSha256": {
+    "src/adt/safety.ts": "87341ac2bd4dfb25082320f352ca82cda2633eeee73615bb5a60af1b49b094e4",
+    "src/server/multi-target-tools.ts": "6e5852e1d3a1e58b9220c2be1430ebc0da5d6e95da84dfd78231fc7cd315a00c",
+    "src/server/multi-target-write-surface.ts": "c3a51fefb6a7c4fb805391cf03075f47350ec46e948fe9a2e05580eee76b0679",
+    "src/server/pinned-mutation-capabilities.ts": "24dbf6a9dd0a4384bc22aefcacb66798ff9b9230abfe981d36265efa240cb8de",
+    "src/server/server.ts": "6ea05c8c9123bb9d1117ab1d14c2f8ef4aea3ce66a0870d8198ee7e444eab6e2",
+    "tests/unit/server/pinned-mixed-tools.test.ts": "928b4d619e3bd851680f879ba2e4fcf1ff24276581f5496648e3b3717c8c793e"
+  },
+  "productionCapabilitiesAdded": 0,
+  "focused": {
+    "files": 6,
+    "tests": 221
+  },
+  "fullUnit": {
+    "files": 387,
+    "tests": 10684
+  },
+  "checks": [
+    "typecheck",
+    "lint",
+    "validate:policy",
+    "build",
+    "file-size ratchet",
+    "tool-schema budgets"
+  ],
+  "catalogComparison": {
+    "comparedTo": "40eb9d2c3",
+    "comparisons": 24,
+    "allIdentical": true,
+    "results": [
+      {
+        "name": "reader",
+        "scopes": [
+          "read"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "reader",
+        "scopes": [
+          "read",
+          "write"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "reader",
+        "scopes": [
+          "admin"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "data",
+        "scopes": [
+          "read"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "data",
+        "scopes": [
+          "read",
+          "write"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "data",
+        "scopes": [
+          "admin"
+        ],
+        "bytes": 36905,
+        "sha256": "7c77789c185212db68233b152dfa6d049cb5bea392817090e095d675b62c9957"
+      },
+      {
+        "name": "sql",
+        "scopes": [
+          "read"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "sql",
+        "scopes": [
+          "read",
+          "write"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "sql",
+        "scopes": [
+          "admin"
+        ],
+        "bytes": 35492,
+        "sha256": "9cc4393ff85daaee892e4311fcce5c6dcc18bf26aa1d6e8ea5deb9c88bc95581"
+      },
+      {
+        "name": "both",
+        "scopes": [
+          "read"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "both",
+        "scopes": [
+          "read",
+          "write"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "both",
+        "scopes": [
+          "admin"
+        ],
+        "bytes": 37502,
+        "sha256": "cb43464305b1b4659a9526ce1ce69a8576f9b09f9352f55e695689ae8d7d5bed"
+      },
+      {
+        "name": "writer",
+        "scopes": [
+          "read"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "writer",
+        "scopes": [
+          "read",
+          "write"
+        ],
+        "bytes": 37135,
+        "sha256": "1c4ea02801b6ef669b7ae90ab3f632ecf22df2c04b445b52f5e21271256725d4"
+      },
+      {
+        "name": "writer",
+        "scopes": [
+          "admin"
+        ],
+        "bytes": 37135,
+        "sha256": "1c4ea02801b6ef669b7ae90ab3f632ecf22df2c04b445b52f5e21271256725d4"
+      },
+      {
+        "name": "disabled",
+        "scopes": [
+          "read"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "disabled",
+        "scopes": [
+          "read",
+          "write"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "disabled",
+        "scopes": [
+          "admin"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "basic",
+        "scopes": [
+          "read"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "basic",
+        "scopes": [
+          "read",
+          "write"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "basic",
+        "scopes": [
+          "admin"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "nonStrict",
+        "scopes": [
+          "read"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "nonStrict",
+        "scopes": [
+          "read",
+          "write"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      },
+      {
+        "name": "nonStrict",
+        "scopes": [
+          "admin"
+        ],
+        "bytes": 34650,
+        "sha256": "643f55f526c352ef396b5b74dac19b70664addebd7c5ee696c6b2786935438f1"
+      }
+    ]
+  },
+  "claudeReview": "pending-session-limit-reset",
+  "scope": "mixed-tool admission and annotations only; broader adapters remain pending"
+}

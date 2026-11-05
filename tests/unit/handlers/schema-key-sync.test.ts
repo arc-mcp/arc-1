@@ -48,10 +48,24 @@ function zodObjectKeys(schema: unknown): string[] {
   throw new Error('could not unwrap Zod schema to an object');
 }
 
-function jsonSchemaKeys(tool: string, btp: boolean, relationsAllowed: boolean): string[] | null {
+function jsonSchemaKeys(tool: string, btp: boolean, relationsAllowed: boolean, pinned: boolean): string[] | null {
   // features() has every backend feature available, so feature-gated tools (SAPGit) are registered.
   const defs = getToolDefinitions(
-    { ...fullConfig(btp), denyActions: relationsAllowed ? [] : ['SAPNavigate.relations'] },
+    {
+      ...fullConfig(btp),
+      ...(pinned
+        ? {
+            multiTargetWrite: {
+              enabled: true,
+              target: 'A4H/001',
+              allowedPackages: ['$TMP'],
+              allowedTransports: ['*'],
+              serverAllowedTransports: ['*'],
+            },
+          }
+        : {}),
+      denyActions: relationsAllowed ? [] : ['SAPNavigate.relations'],
+    },
     true,
     features(),
     {
@@ -63,11 +77,16 @@ function jsonSchemaKeys(tool: string, btp: boolean, relationsAllowed: boolean): 
   return Object.keys((def.inputSchema as any).properties ?? {});
 }
 
-describe.each([false, true])('Zod ↔ JSON-Schema field-key parity, relationsAllowed=%s', (relationsAllowed) => {
+describe.each([
+  { relationsAllowed: false, pinned: false },
+  { relationsAllowed: true, pinned: false },
+  { relationsAllowed: false, pinned: true },
+  { relationsAllowed: true, pinned: true },
+])('Zod ↔ JSON-Schema field-key parity, relations=$relationsAllowed pinned=$pinned', ({ relationsAllowed, pinned }) => {
   for (const tool of TOOLS) {
     for (const btp of [false, true]) {
       it(`${tool} (${btp ? 'btp' : 'onprem'}) has matching property keys`, () => {
-        const jsonKeys = jsonSchemaKeys(tool, btp, relationsAllowed);
+        const jsonKeys = jsonSchemaKeys(tool, btp, relationsAllowed, pinned);
         // Under the all-gates-on full config every one of the 12 tools must be registered — a null
         // means the tool silently dropped out of getToolDefinitions (a gating regression), which
         // would otherwise make this parity check pass vacuously. Fail loudly instead.
@@ -83,6 +102,19 @@ describe.each([false, true])('Zod ↔ JSON-Schema field-key parity, relationsAll
           }
         }
 
+        if (!pinned) {
+          const fields =
+            tool === 'SAPManage'
+              ? ['type', 'group', 'expectedCurrentState']
+              : ['SAPWrite', 'SAPActivate'].includes(tool)
+                ? ['expectedMetadataHash']
+                : [];
+          for (const field of fields) {
+            expect(zodKeys.has(field)).toBe(true);
+            expect(jsonSet.has(field)).toBe(false);
+            zodKeys.delete(field);
+          }
+        }
         const onlyZod = [...zodKeys].filter((k) => !jsonSet.has(k) && !INTENTIONAL_MISMATCHES.has(`${tool}:${k}`));
         const onlyJson = [...jsonSet].filter((k) => !zodKeys.has(k) && !INTENTIONAL_MISMATCHES.has(`${tool}:${k}`));
 

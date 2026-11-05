@@ -1,0 +1,8 @@
+{
+  "evidence": "Owned native INCL source PUT and GET only; no activation/deletion/PP claim. A4H SAP_BASIS758.",
+  "requestedSource": "* ARC1 procedural 6D7A93E20B45C18F\nFORM preserved.\n  DATA lv_value TYPE i.\n  lv_value = 1.\nENDFORM.\n\nFORM changed.\n  DATA lv_value TYPE i.\n  lv_value = 2.\nENDFORM.\n",
+  "storedSource": "* ARC1 procedural 6D7A93E20B45C18F\r\nFORM preserved.\r\n  DATA lv_value TYPE i.\r\n  lv_value = 1.\r\nENDFORM.\r\n\r\nFORM changed.\r\n  DATA lv_value TYPE i.\r\n  lv_value = 2.\r\nENDFORM.",
+  "requestedSourceHash": "12bbe0c04a5a5249e0e661c25d2a88725f6fea810dba1194a9d162246dd937af",
+  "storedSourceHash": "73ee1e44e20e34455195eb5c4181cd34d11addf7bf5a7b0d4ce3ef1bbe626362",
+  "storedBytes": 172
+}

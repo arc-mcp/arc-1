@@ -1,20 +1,3 @@
-/**
- * Error types for ADT API interactions.
- *
- * SAP ADT returns errors in multiple formats:
- * - HTTP status codes (401, 403, 404, 500)
- * - XML exception bodies (with structured error messages)
- * - HTML error pages (generic SAP web dispatcher errors)
- * - Plain text (rare, usually session-related)
- *
- * We normalize all of these into typed error classes so handlers
- * can make decisions without parsing strings.
- *
- * Learned from fr0ster: their extractAdtErrorMessage() parses the XML
- * exception body to get the actual SAP error message. We do the same
- * in AdtApiError.fromResponse().
- */
-
 import { parseReleaseNumber, STATEFUL_SESSION_MIN_RELEASE } from './release.js';
 import { decodeXmlEntities } from './xml-entities.js';
 
@@ -788,17 +771,16 @@ export function classifySapDomainError(
         `Your SAP_BASIS (${abapRelease}) does not honor stateful ADT HTTP sessions, so the lock ` +
         `is released before the write completes. To fix: ${abapfsFix}`;
     } else if (releaseNum !== undefined) {
-      // 7.51+ honors stateful sessions natively — a 423 here is more likely a transient
-      // expiry or a genuine concurrent lock, not the pre-7.51 backend gap.
+      // A native 423 alone does not identify the cause or establish that repeating a mutation is safe.
       hint =
-        'Lock handle is invalid or expired. Retry first — transient expiry is the common case. ' +
+        'Lock handle is invalid or expired. Inspect the current object state before retrying; repeat the whole operation only if it is still safe. ' +
         'If it persists, check SM12 for stale lock entries and ensure no other editor (Eclipse, ' +
         'SE80) holds the object.';
     } else {
       // Release unknown (detection unavailable): give the actionable < 7.51 guidance too,
       // so the hint is useful even when we could not detect the backend release.
       hint =
-        'Lock handle is invalid or expired. Retry first — transient expiry is the common case. ' +
+        'Lock handle is invalid or expired. Inspect the current object state before retrying; repeat the whole operation only if it is still safe. ' +
         `If 423 persists on the first PUT after a successful LOCK and your SAP_BASIS is below 7.51, ${abapfsFix}`;
     }
 
@@ -1148,4 +1130,25 @@ export function extractUnknownColumn(err: unknown): string | null {
 /** Render the self-correcting hint listing a table's actual columns. */
 export function formatUnknownColumnHint(badColumn: string, tableName: string, columns: string[]): string {
   return `Unknown column "${badColumn}" on ${tableName.toUpperCase()}. Available columns: ${columns.join(', ')}.`;
+}
+
+/** Content reaching a native query or shared launchpad text stays on one printable line. */
+export function hasControlCharacter(value: string): boolean {
+  return [...value].some((char) => char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f);
+}
+
+/** These statuses mean SAP refused the submission. Network loss, 429 and 5xx prove nothing about its effect. */
+export function isDefiniteNativeRejection(error: unknown): error is AdtApiError {
+  return error instanceof AdtApiError && [400, 401, 403, 404, 409, 412, 415, 422, 423].includes(error.statusCode);
+}
+
+/** Positive local evidence only: instantiate before invoking the refused native request, never after it. */
+export class AdtRequestNotSentError extends AdtSafetyError {
+  constructor(
+    readonly method: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'AdtRequestNotSentError';
+  }
 }

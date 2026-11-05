@@ -1,0 +1,56 @@
+{
+  "experiment": "pr1142-native-declarative-recovery-v1",
+  "consumed": true,
+  "revision": "eb82bd99cd786e5b073b79cfd300ad3696465123",
+  "node": "v22.21.1",
+  "target": "A4H/001",
+  "identity": "MARIAN",
+  "authentication": "Basic-native cleanup only; not PP evidence",
+  "owner": "/sap/bc/adt/ddic/ddl/sources/zarc1_nv_61edd87470c55db0",
+  "startedAt": "2026-11-02T20:08:23.717Z",
+  "lastReceiptAt": "2026-11-02T20:08:29.154Z",
+  "result": {
+    "failure": false,
+    "mutationAttempted": true,
+    "deleteAttempted": true,
+    "confirmedDeleted": true,
+    "cleanupConfirmed": true,
+    "stopped": false,
+    "remaining": [],
+    "inspectionRequired": []
+  },
+  "native": {
+    "deleteStatus": 200,
+    "unlockStatus": 200,
+    "independentTypedAbsence": true,
+    "inactiveInventoryContainsFixture": false
+  },
+  "sm12": {
+    "sm12-before": {
+      "capturedAt": "2026-11-02T20:08:17.792Z",
+      "zeroLocks": true,
+      "textSha256": "93249da0986bc52cf9df716764a8c481e6f77d0dc73c129e182650bfab0a09c2",
+      "imageSha256": "c961b322bdaf4d7dbc751c305572174b9e42058a51182b33c88e349496909419"
+    },
+    "sm12-after-suffix": {
+      "capturedAt": "2026-11-02T20:08:44.898Z",
+      "zeroLocks": true,
+      "textSha256": "0f6504ea23dce9f6bcf304d51d6639fd1fc98edbd87ae655a4cd02a4731c7b9b",
+      "imageSha256": "bb5d8f9d3e69dc12e0238c354cc4667d004132f18b74eccd9f0d7bad35f331a7"
+    },
+    "sm12-after-user": {
+      "capturedAt": "2026-11-02T20:08:57.078Z",
+      "zeroLocks": true,
+      "textSha256": "e9d77600d404566bbefa4dab616eb63e8a1cc0f3abc3e98573cea0ba4f0e2a63",
+      "imageSha256": "c961b322bdaf4d7dbc751c305572174b9e42058a51182b33c88e349496909419"
+    }
+  },
+  "manifestSha256": "2f80efdb077459959ea19d0e25bb14e0b09174d8f8442294dcb4d85daa1e99ad",
+  "resultSha256": "31f1bd4a81643f79adfdc6a19ca816e1aeb6a4eb855a59e3a18b2738a23e3130",
+  "originalFailedResultSha256": "e4a1997c61034c9de302dd0e25c44b524b1d9caa4af69fcb0270685ae13a7bf4",
+  "limits": [
+    "Cleanup only of one unchanged inactive owned DDLS; original lifecycle remains failed.",
+    "No PP, recording transport, other release, public admission or full lifecycle qualification.",
+    "Never rerun or remove either consumed claim."
+  ]
+}

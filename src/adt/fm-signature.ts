@@ -45,7 +45,10 @@ export interface FmParameter {
 }
 
 const KEYWORD_RE = /^\s*(IMPORTING|EXPORTING|CHANGING|TABLES|EXCEPTIONS|RAISING)\b/i;
-const PARAM_LINE_RE = /^\s*(?:VALUE\s*\(\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*\)?\s+(TYPE|LIKE)\s+(.+?)\s*$/i;
+// The caller trims each line. Separate wrapped/plain names and avoid overlapping whitespace
+// repetitions or lazy tail matching: long, malformed signature lines must remain linear.
+const PARAM_LINE_RE =
+  /^(?:VALUE\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)|([A-Za-z_][A-Za-z0-9_]*))\s+(TYPE|LIKE)\s+(\S.*)$/i;
 const SIMPLE_NAME_RE = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/;
 const KIND_ORDER: FmParameterKind[] = ['importing', 'exporting', 'changing', 'tables', 'exceptions', 'raising'];
 
@@ -347,7 +350,9 @@ function addParamFromLine(params: FmParameter[], kind: FmParameterKind, lineCont
 
   const m = PARAM_LINE_RE.exec(trimmed);
   if (!m) return;
-  const [, rawName, typeKeyword, rest] = m;
+  const rawName = m[1] ?? m[2],
+    typeKeyword = m[3],
+    rest = m[4];
   if (!rawName || !typeKeyword || !rest) return;
 
   // `byValue` is true iff the matched chunk between the line start and the name
@@ -363,13 +368,14 @@ function addParamFromLine(params: FmParameter[], kind: FmParameterKind, lineCont
   // Split off OPTIONAL and DEFAULT modifiers from the trailing portion.
   let remaining = rest.trim();
   // SAP may put pragmas after OPTIONAL; keep those pragmas in the type expression.
-  const optMatch = /\s+OPTIONAL(?=(?:\s+##\w+(?:\[[^\]\r\n]*\])?)*\s*$)/i.exec(remaining);
+  const optMatch = /(?<=\s)OPTIONAL(?=(?:\s+##\w+(?:\[[^\]\r\n]*\])?)*\s*$)/i.exec(remaining);
   if (optMatch) {
     optional = true;
-    remaining = `${remaining.slice(0, optMatch.index)}${remaining.slice(optMatch.index + optMatch[0].length)}`.trim();
+    remaining =
+      `${remaining.slice(0, optMatch.index).trimEnd()}${remaining.slice(optMatch.index + optMatch[0].length)}`.trim();
   }
   // DEFAULT introduces an expression up to the end (after stripping OPTIONAL).
-  const defMatch = /\s+DEFAULT\s+(.+)$/i.exec(remaining);
+  const defMatch = /(?<=\s)DEFAULT\s+(.+)$/i.exec(remaining);
   if (defMatch) {
     defaultExpr = (defMatch[1] ?? '').trim();
     remaining = remaining.slice(0, defMatch.index).trim();

@@ -1,0 +1,12 @@
+{
+  "type": "TABL/DS",
+  "name": "ZSCC0B9644EAD7A6",
+  "requested": "@EndUserText.label : 'ARC1 collections 0B9644EAD7A6'\n@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE\ndefine structure zscc0b9644ead7a6 {\n  entry_code : abap.char(4);\n  entry_text : abap.char(20);\n}\n",
+  "requestedSha256": "35302f92ce9ec1e7f627050cac985e177940347c90f58ab0eb15a88b611d0e0c",
+  "readback": "@EndUserText.label : 'ARC1 collections 0B9644EAD7A6'\n@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE\ndefine structure zscc0b9644ead7a6 {\n\n  entry_code : abap.char(4);\n  entry_text : abap.char(20);\n\n}",
+  "readbackSha256": "d43f070a565b803b577110c004c64a1cc10e77bfed5714b103dc04b319208ce4",
+  "protocol": "pr1142-native-ddic-collections-v1",
+  "sourceRevision": "757a7cef0e3a4bec73f08fb59ab29c964572bc05",
+  "failedResultSha256": "69ee03b39d67b22ff71d6e43c8a0e744e05b8586943429bc878fb308680961b5",
+  "observation": "One create/source-save; readback mismatch retained as failure. No activation or cleanup."
+}

@@ -543,3 +543,30 @@ describe('spliceMethod — qualified specifier on CCIMP source', () => {
     expect(result.newSource).toContain('ENDCLASS.');
   });
 });
+
+const duplicateInterfaceMethods = `CLASS lcl_a IMPLEMENTATION.
+ METHOD lif_x~run.
+  DATA(value) = 1.
+ ENDMETHOD.
+ENDCLASS.
+CLASS lcl_b IMPLEMENTATION.
+ METHOD lif_x~run.
+  DATA(value) = 2.
+ ENDMETHOD.
+ENDCLASS.`;
+it('refuses an interface-qualified name shared by different local classes', () => {
+  const result = spliceMethod(duplicateInterfaceMethods, 'ZCL_OWNER', 'lif_x~run', ' DATA(value) = 3.');
+  expect(result.success).toBe(false);
+  expect(result.error).toContain('Ambiguous');
+  expect(result.error).toContain('lcl_a~lif_x~run');
+});
+it('uses the containing class plus interface-qualified name to edit only the selected body', () => {
+  const result = spliceMethod(duplicateInterfaceMethods, 'ZCL_OWNER', 'lcl_b~lif_x~run', '  DATA(value) = 3.');
+  expect(result.success, result.error).toBe(true);
+  expect(result.newSource).toBe(duplicateInterfaceMethods.replace('DATA(value) = 2.', 'DATA(value) = 3.'));
+});
+
+it('refuses duplicate exact method bodies even when the containing class is identical', () => {
+  const duplicate = duplicateInterfaceMethods.replace('CLASS lcl_b IMPLEMENTATION.', 'CLASS lcl_a IMPLEMENTATION.');
+  expect(spliceMethod(duplicate, 'ZCL_OWNER', 'lif_x~run', ' DATA(value) = 3.').success).toBe(false);
+});

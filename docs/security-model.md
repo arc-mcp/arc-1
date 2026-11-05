@@ -89,7 +89,7 @@ These are the properties that must hold on **every change**. The per-PR checklis
 these seven applied to a diff. Each lists where it lives and how it fails.
 
 ### I1 — Two gates before every mutation
-Every mutating ADT operation passes **scope ∧ safety ∧ resolved-package**, fail-closed:
+Every repository mutation passes **scope ∧ safety ∧ resolved-package**, fail-closed:
 - a `read`/`write`/`data`/`sql`/`transports`/`git`/`admin` scope mapped in `ACTION_POLICY`;
 - a `checkOperation(safety, OperationType.X, ...)` (or `checkGit`/`checkTransport`) immediately
   before the `http.{post,put,delete}` call — **no unguarded HTTP mutation**;
@@ -104,12 +104,20 @@ Where: [`src/authz/policy.ts`](../src/authz/policy.ts) (`ACTION_POLICY`),
 Fails when: a new write path skips the package gate (see R4), or gates a user-supplied package
 instead of the resolved one, or package resolution fails *open*.
 
-For the scoped pinned multi-target path, require ADR-0010's additional conjunction before resolving
-PP: existing pinned route, global and destination write opt-ins, verified raw write scope, read
-access grant and exact write-target grant. Global and destination package/CTS rules are independent
-constraints, never replacement lists. Aggregate/Copilot and Basic routes cannot mutate. Carry an
-explicit enabled/disabled context into the ADT boundary; a missing context must not select legacy
-single-target writes. See [the implementation contract](plans/2026-10-22-multi-target-pinned-writes.md).
+Non-repository mutations retain scope/safety checks and use the native resource policy in R23; a trace,
+formatter preference or classic FLP catalog does not acquire a fictitious package owner.
+
+For the pinned multi-target path, ADR-0010 and the integrated ADR-0011 adapters require the same
+conjunction before resolving PP: an existing pinned route, strict PP, target-filtered XSUAA access,
+global and destination write opt-ins, verified raw write scope, read access and an exact write-target
+grant. Functional scopes and action denials further restrict each operation. Server and destination
+package/CTS rules are independent constraints, never replacement lists. Aggregate/Copilot, shared
+Basic and read-only routes cannot dispatch mutation actions, even if their catalog displays one.
+Carry an explicit enabled/disabled context into the ADT boundary; a missing context must not select
+legacy single-target writes. The [current matrix](../docs_page/multi-target-writes.md) and
+[broader implementation contract](plans/2026-10-26-broader-pinned-pp-writes.md) extend the
+[earlier CLAS/INTF baseline](plans/2026-10-22-multi-target-pinned-writes.md), without declaring final
+ADR-0011 or PR 2 acceptance.
 
 ### I2 — Per-user isolation of anything cached or keyed
 Wherever SAP authorization differs per user, a cache or in-memory map must **either** key on a
@@ -293,27 +301,96 @@ jar; clearing an existing jar in place would not provide that isolation.
 
 ### R23 — Scoped pinned multi-target mutation risks
 
-**High, mitigated by explicit gates; residual operational and authored-code risks accepted for this scope.**
+**High, mitigated by explicit gates; operational and authored-code risks accepted in the plan,
+with broader release acceptance still pending.**
 
-ADR-0010 introduces an explicit PP-only mutation surface under `SAP_ALLOW_WRITES`, destination
-opt-in, target-filtered XSUAA access and exact verified write grants. It supports CLAS/INTF main
-source writes and whole-owner activation, with independent package and canonical-request policy.
-Read-only defaults, aggregate/Copilot isolation, no shared-Basic writes and per-call drift checks
-remain structural. Source hashes, owning stateful locks, positive local/CTS evidence, bounded
-cleanup, no automatic mutation replay and positive activation-execution evidence protect the
-scoped lifecycle. [Qualification evidence](research/2026-10-22-multi-target-write-qualification.md)
-distinguishes live SAP checks from fault-injection tests and untested release shapes.
+ADR-0010 is the earlier accepted CLAS/INTF baseline. The explicit adapters and public routing
+integrated in PR #1142 now cover the supported source, DDIC/server-driven, procedural/text,
+ENHO/SKTD, batch/RAP, package/API, CTS, trace/settings/quickfix and classic FLP rows in the
+[operator matrix](../docs_page/multi-target-writes.md). [ADR-0011](adr/0011-broader-pinned-pp-mutations.md)
+remains proposed for final acceptance. Historical reports labelled private or unwired describe their
+named revisions, not a blanket denial of the current surface. Unsupported action/type/input and
+platform combinations remain refused; ordinary generated-SRVB deletion still refuses and its
+separate wildcard-policy cleanup entry remains internal. Git and custom plugins stay excluded.
 
-Residual limits: one process shares availability; route/client identity does not isolate the
-cross-client ABAP repository; package rules do not sandbox the eventual behavior of authored ABAP;
-ABAP Unit can execute authored code under the SAP user (deny `SAPDiagnose.unittest` when unintended);
-activation includes preexisting drafts for the complete owner; an interrupted create/save may leave
-partial state. CTS allowance is deliberately parent-request-level, including its SAP-managed tasks.
-Audit delivery remains asynchronous. Removed IAM assignments may survive in old tokens/refresh
-sessions, so immediate disable uses server/destination policy and restart, and admitted calls may
-still complete. New backends require new public IDs and grants. Operators must assess these limits
-before enabling the feature; separate single-target applications remain the stronger availability
-and deployment-isolation option.
+All admitted mutations retain the common strict-PP, raw-scope, exact-target-grant and write-opt-in
+conjunction above. Standard tools, cache-none, UI/plugins off, per-call target drift checks and no
+PP fallback remain structural. Every submitted repository owner uses both real-package policies,
+with fresh subtree evidence before submission and, for locking profiles, under its owning lock.
+Source/metadata preconditions,
+recording evidence, bounded owning-session cleanup and positive activation/state proof apply to
+the selected native profile. Cancellation/deadline, attempt and response limits remain enforced;
+own cleanup has a separate bounded allowance after failure or expiry. Missing or malformed context
+does not enter a legacy path. Mutations are not automatically replayed; interrupted operations can leave saved, activated or partially
+deleted state. Metadata can save immediately active, and whole-owner/pool activation can include
+other sessions' preexisting drafts. Public batch calls remain bounded partial workflows, not
+transactions. API-state read preconditions are not a qualified atomic compare-and-swap contract.
+
+**CTS policy is parent-request-level.** Repository recording verifies canonical parent/task
+membership and independently checks both request lists; it does not require explicit transport
+management permission. The six public CTS management actions additionally require the global
+transport-write switch and raw `transports` scope. Generated request creation needs unrestricted
+global policy (legacy empty or explicit `*`) and explicit destination `*`; narrow lists cannot
+authorize an unknown generated ID. Missing destination request policy is not unrestricted.
+Recursive preflight/revalidation bounds submitted children, preserves every observed unexpected
+member and reports confirmed, partial and uncertain steps; it is not an atomic SAP tree snapshot.
+Native category/state, inactive-object and complete object-key checks still apply.
+
+`MCPTargetTransportDeveloper` combines existing application-wide read/write/transports scopes with
+exact target attributes. Functional scopes **merge across role assignments**: transport role A plus
+write role B can permit CTS management on both destinations if their policies allow it. There is
+no target-specific transports grant. Destination request restrictions or separate applications
+provide that separation. Transport-scope advertisement belongs to the writable pinned OAuth
+surface, not aggregate endpoints. Source integration is not final role-composition or deployed PP
+qualification, and templates do not assign themselves to users.
+
+**Native resources and effects remain broader than repository packages.** Trace and formatter
+operations retain their native user/client/server scope and SAP permissions. PP trace requests
+require an explicit SAP username instead of an IdP display-name default. Profiler operations bind
+returned IDs and retain uncertain parameters/request outcomes. ST05 spans application-server
+instances, is not client-isolated, and refuses writes that would clear active non-SQL traces;
+qualified OFF normalizes known fields to native inactive defaults. Unknown reset/opaque shapes
+and all-users filters remain blocked. Formatter v5 preserves supported native state; quickfix
+returns unsaved same-owner deltas and persistence still requires guarded SAPWrite. Bounded native
+lists cannot turn errors or incomplete results into empty/complete collections.
+
+Classic FLP and V4 publication use the source-backed native-governed recording alternative only
+with **explicit unrestricted `*` in both effective request lists**; unlike CTS create, an empty
+global list does not qualify. Native authority/no-dialog selection governs actual recording, which
+remains unverified rather than a claimed CTS receipt. FLP create requires native duplicate/no-overwrite
+protection and exact owned readback; generic OData 404 or `/UI2/FND/604` remains unknown. A successful
+catalog DELETE may therefore remain acknowledged but unconfirmed. V4 publication is binding-wide;
+branch-dependent getters/native acknowledgments do not prove universal frontend or all-alias
+availability. The stronger internal non-recording profile remains distinct and lacks a general
+configuration reader. Generated V4 parent cleanup additionally requires both package policies
+explicitly unrestricted; parent typed absence does not prove every generated child absent.
+
+Package/API operations use their native resource contracts: local package DELETE relies on native
+non-cascade checks, move revalidates source/target policies and preview membership, and API release
+binds the actual APIS recording resource. `$TMP` stays protected; recorded package deletion and
+unqualified variants stay closed. Publication affects other consumers, CTS release may affect
+later import queues, and DDIC activation can adjust dependent objects beyond submitted references.
+Target and package checks do not sandbox these downstream effects or cross-client repository
+changes. Every explicit submitted/expanded activation reference still needs authorization.
+Existing reader-authorized ABAP Unit can execute authored code under the requesting SAP identity;
+use `SAP_DENY_ACTIONS=SAPDiagnose.unittest` when unintended. `unittest_ci` remains refused in
+multi-target mode. Existing trace reads likewise retain their native data/authorization effects.
+
+One process shares availability and audit delivery remains asynchronous. Removed IAM assignments
+may survive in old tokens/refresh sessions; immediate disable uses explicit server/destination
+policy values and restart of every instance, and admitted calls may still complete. Use fresh
+authorization/catalogs after upgrades and restore the matching artifact, policy and destination
+configuration for rollback. A new backend requires new public IDs/grants. Separate single-target
+applications remain the stronger availability/deployment isolation option.
+
+The [acceptance checklist](plans/2026-10-26-broader-pinned-pp-writes.md#acceptance-status)
+keeps the remaining RAP publication/cleanup, permission-dependent CTS, final-artifact two-writer
+PP/text/recording/denials, genuine Basic-target negative and non-ADT FLP PP/Cloud Connector/CSRF/roles
+representative explicit. Temporary IAM/XSUAA/destination/SAP-role/application restoration and final
+tests/security/CI/release review are also pending. Named direct Basic-native successes do not grant
+multi-target Basic writes or qualify the final PP artifact. Unverified 750/816/backend variants
+remain distinguished from concrete unsupported native contracts. No blanket parity or final
+ADR acceptance follows from the integrated source.
 
 
 ## 6. Per-PR security review checklist

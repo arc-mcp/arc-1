@@ -103,6 +103,26 @@ describe('retryDelete', () => {
     };
   }
 
+  it.each(['Object is not locked (invalid lock handle)', 'ExceptionResourceInvalidLockHandle: locked'])(
+    'does not retry invalid handle responses: %s',
+    async (message) => {
+      const http = { withStatefulSession: vi.fn().mockRejectedValue(new Error(message)) };
+      const result = await retryDelete(http as any, {} as any, '/owned', 3, 1);
+      expect(result).toMatchObject({ success: false, attempts: 1 });
+      expect(http.withStatefulSession).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not retry a typed invalid handle whose generic message looks transient', async () => {
+    const error = new AdtApiError(
+      'Object locked',
+      423,
+      '/owned',
+      '<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><namespace id="com.sap.adt"/><type id="ExceptionResourceInvalidLockHandle"/></exc:exception>',
+    );
+    const http = { withStatefulSession: vi.fn().mockRejectedValue(error) };
+    expect(await retryDelete(http as any, {} as any, '/owned', 3, 1)).toMatchObject({ success: false, attempts: 1 });
+  });
   it('succeeds on first attempt', async () => {
     const http = mockHttp(['success']);
     // We need to mock the crud module imports. Since retryDelete imports lockObject/deleteObject
