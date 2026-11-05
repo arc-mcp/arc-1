@@ -1,5 +1,5 @@
 /** Pinned policy around the shared source-edit callback. */
-import { updateSource, withLockedMutation } from '../../adt/crud.js';
+import { type SourceEditProfile, updateSource } from '../../adt/crud.js';
 import { AdtSafetyError } from '../../adt/errors.js';
 import { throwIfRequestCancelled } from '../../adt/http-deadline.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
@@ -10,16 +10,11 @@ import {
   prepareFunctionSourceVerification,
   sourceHash,
 } from '../../adt/source-precondition.js';
-import type { ToolResult } from '../shared.js';
 import type { SapWriteContext } from './context.js';
 import { pinnedSourceLockPolicy } from './pinned-lock.js';
 import { pinnedSourceState } from './pinned-source-context.js';
-import type { SourceEdit } from './source-edit.js';
 
-export async function withPinnedSourceEdit(
-  ctx: SapWriteContext,
-  edit: (locked: SourceEdit) => Promise<ToolResult>,
-): Promise<ToolResult> {
+export function pinnedSourceEditProfile(ctx: SapWriteContext): Extract<SourceEditProfile, { mode: 'pinned-pp' }> {
   const state = pinnedSourceState(ctx);
   if (!state.pkg || !state.recording)
     throw new AdtSafetyError('Source editing requires verified package and recording preflight.');
@@ -27,8 +22,10 @@ export async function withPinnedSourceEdit(
   const policy = pinnedSourceLockPolicy(ctx.client, context, ctx.objectUrl, state.pkg, recording, (phase) => {
     state.phase = phase;
   });
-  return withLockedMutation(ctx.client.http, ctx.client.safety, context, ctx.objectUrl, policy, async (http, lock) =>
-    edit({
+  return {
+    mode: 'pinned-pp',
+    lock: policy,
+    createEdit: (http, lock) => ({
       http,
       async read(url) {
         if (url !== state.sourceUrl || state.writeAttempted || state.unchangedConfirmed)
@@ -84,5 +81,5 @@ export async function withPinnedSourceEdit(
         state.state = 'saved-inactive';
       },
     }),
-  );
+  };
 }

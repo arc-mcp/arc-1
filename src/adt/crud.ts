@@ -118,6 +118,8 @@ export async function unlockObject(http: AdtHttpClient, objectUrl: string, lockH
 export interface MutationLockPolicy {
   beforeLock: () => void;
   validateLock: (session: AdtHttpClient, lock: LockResult) => Promise<void>;
+  /** Runs after the owning unlock attempt, including operation/unlock failure; preserves legacy cache precedence. */
+  afterUnlockAttempt?: () => void;
   /** Native operations such as text-pool activation require unlock first, on this same SAP session. */
   afterUnlock?: (session: AdtHttpClient) => Promise<void>;
   /** A verified no-op may have no post-unlock work; cleanup failures are still recorded. */
@@ -265,10 +267,14 @@ export async function withLockedMutation<T>(
       result = await operation(session, lock);
     } finally {
       additionalLocks.delete(session);
-      if (context.mode === 'single-target') {
-        // Preserve legacy finally precedence, including an unlock error replacing the primary error.
-        await unlockObject(owningSession, objectUrl, lock.lockHandle);
-      } else await release(objectUrl, lock.lockHandle, policy);
+      try {
+        if (context.mode === 'single-target') {
+          // Preserve legacy finally precedence, including an unlock error replacing the primary error.
+          await unlockObject(owningSession, objectUrl, lock.lockHandle);
+        } else await release(objectUrl, lock.lockHandle, policy);
+      } finally {
+        policy.afterUnlockAttempt?.();
+      }
     }
     if (policy.afterUnlock && policy.afterUnlockNeeded?.() !== false) {
       if (context.mode === 'pinned-pp') {
@@ -457,6 +463,74 @@ export async function deleteObject(
   await http.delete(url);
 }
 
+/** Transform callbacks share one owning source protocol; pinned policy cannot fall back to legacy I/O. */
+export interface SourceEdit {
+  http: AdtHttpClient;
+  read(url: string): Promise<string>;
+  save(url: string, source: string, warnings?: string): Promise<void>;
+  unchanged(): void;
+}
+export type SourceEditProfile =
+  | {
+      mode: 'single-target';
+      transport?: string;
+      expectedSourceHash?: string;
+      onWriteAttempt?: () => void;
+      afterUnlockAttempt?: () => void;
+    }
+  | { mode: 'pinned-pp'; lock: MutationLockPolicy; createEdit: (http: AdtHttpClient, lock: LockResult) => SourceEdit };
+
+export async function withSourceMutation<T>(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  context: MutationContext,
+  objectUrl: string,
+  profile: SourceEditProfile,
+  edit: (source: SourceEdit) => Promise<T>,
+  abapRelease?: string,
+): Promise<T> {
+  if (context.mode !== profile.mode)
+    throw new AdtSafetyError('The source-edit policy does not match its mutation context.');
+  const policy =
+    profile.mode === 'pinned-pp'
+      ? profile.lock
+      : { ...legacyLockPolicy, afterUnlockAttempt: profile.afterUnlockAttempt };
+  return withLockedMutation(
+    http,
+    safety,
+    context,
+    objectUrl,
+    policy,
+    async (session, lock) =>
+      edit(
+        profile.mode === 'pinned-pp'
+          ? profile.createEdit(session, lock)
+          : {
+              http: session,
+              unchanged() {},
+              async read(url) {
+                checkOperation(safety, OperationType.Read, 'GetSource');
+                const source = (await session.get(url, { 'Cache-Control': 'no-cache' })).body;
+                assertSourceHash(source, profile.expectedSourceHash, url);
+                return source;
+              },
+              async save(url, source) {
+                profile.onWriteAttempt?.();
+                await updateSource(
+                  session,
+                  safety,
+                  url,
+                  source,
+                  lock.lockHandle,
+                  profile.transport ?? (lock.corrNr || undefined),
+                );
+              },
+            },
+      ),
+    abapRelease,
+  );
+}
+
 /**
  * High-level: update source with guaranteed unlock.
  * lock → optional fresh read/transform and hash check → updateSource → unlock (in try-finally)
@@ -472,24 +546,19 @@ export async function safeUpdateSource(
   expectedSourceHash?: string,
 ): Promise<void> {
   checkOperation(safety, OperationType.Update, 'UpdateSource');
-  await withLockedMutation(
+  await withSourceMutation(
     http,
     safety,
     singleTargetMutationContext(safety),
     objectUrl,
-    legacyLockPolicy,
-    async (session, lock) => {
-      const effectiveTransport = transport ?? (lock.corrNr || undefined);
+    { mode: 'single-target', transport, expectedSourceHash },
+    async (edit) => {
       let replacement: string;
       if (expectedSourceHash !== undefined || typeof source === 'function') {
-        checkOperation(safety, OperationType.Read, 'GetSource');
-        const current = await session.get(sourceUrl, { 'Cache-Control': 'no-cache' });
-        assertSourceHash(current.body, expectedSourceHash, sourceUrl);
-        replacement = typeof source === 'function' ? await source(current.body, session) : source;
-      } else {
-        replacement = source;
-      }
-      await updateSource(session, safety, sourceUrl, replacement, lock.lockHandle, effectiveTransport);
+        const current = await edit.read(sourceUrl);
+        replacement = typeof source === 'function' ? await source(current, edit.http) : source;
+      } else replacement = source;
+      await edit.save(sourceUrl, replacement);
     },
     abapRelease,
   );

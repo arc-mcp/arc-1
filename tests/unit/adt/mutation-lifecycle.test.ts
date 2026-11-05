@@ -5,6 +5,7 @@ import {
   updateSource,
   withAdditionalMutationLock,
   withLockedMutation,
+  withSourceMutation,
 } from '../../../src/adt/crud.js';
 import { DataResponseBudget } from '../../../src/adt/data-result-context.js';
 import { AdtSafetyError } from '../../../src/adt/errors.js';
@@ -655,5 +656,52 @@ it.each([new DataResponseBudget(65537, 'test', true), new DataResponseBudget(128
     ).toThrow('at most 64 KiB');
     expect(fn).not.toHaveBeenCalled();
     expect(mockFetch).not.toHaveBeenCalled();
+  },
+);
+
+it('refuses a legacy source policy on a pinned context before acquiring a lock', async () => {
+  const { http, safety, context } = fixture();
+  const transform = vi.fn();
+  await expect(withSourceMutation(http, safety, context, owner, { mode: 'single-target' }, transform)).rejects.toThrow(
+    'policy does not match',
+  );
+  expect(transform).not.toHaveBeenCalled();
+  expect(mockFetch).not.toHaveBeenCalled();
+});
+it.each(['operation', 'unlock', 'cache'])(
+  'preserves legacy source finalization precedence after %s failure',
+  async (failure) => {
+    const f = fixture();
+    const safety = { ...f.safety, multiTargetWrite: undefined };
+    const order: string[] = [];
+    const fallback = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url, options) => {
+      if (options.method === 'PUT') {
+        order.push('save');
+        if (failure === 'operation') throw new AdtSafetyError('save failed');
+      }
+      if (String(url).includes('_action=UNLOCK')) {
+        order.push('unlock');
+        if (failure === 'unlock') throw new AdtSafetyError('unlock failed');
+      }
+      return fallback(url, options);
+    });
+    await expect(
+      withSourceMutation(
+        f.http,
+        safety,
+        singleTargetMutationContext(safety),
+        owner,
+        {
+          mode: 'single-target',
+          afterUnlockAttempt: () => {
+            order.push('cache');
+            if (failure === 'cache') throw new Error('cache failed');
+          },
+        },
+        async (edit) => edit.save(owner + '/source/main', 'replacement'),
+      ),
+    ).rejects.toThrow(failure === 'operation' ? 'save failed' : failure + ' failed');
+    expect(order).toEqual(['save', 'unlock', 'cache']);
   },
 );
