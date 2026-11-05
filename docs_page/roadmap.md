@@ -353,9 +353,11 @@ automatic revocation to deletion. Pre-existing BTP SUSH entries are separate evi
 - **Priority / effort / status:** P3 / S / Needs research
 - **Category:** Compatibility
 
-**Remaining gap.** Program and function-group deletion now holds owner and pool
-locks and refuses explicit inactive pool metadata; it never activates a draft
-automatically. The caller's inactive feed is not an ownership or absence check.
+**Remaining gap.** Where the text-pool service is advertised, program and function-group
+deletion holds owner and pool locks and refuses explicit inactive pool metadata; it never
+activates a draft automatically. Validated discovery can permit owner-only deletion on
+legacy systems without that service, where inactive SAP GUI text drafts cannot be checked.
+The caller's inactive feed is not an ownership or absence check.
 The remaining qualification is two users, recording transports and principal
 propagation, including drafts outside a shared request and competing locks. See the
 [cross-user deletion evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-cross-user-text-delete.md).

@@ -10,13 +10,18 @@
  * Split out of client.ts, which keeps only the thin delegating methods.
  */
 
+import { XMLValidator } from 'fast-xml-parser';
+import { getCurrentContext } from '../server/context.js';
+import { logger } from '../server/logger.js';
 import { lockObject, unlockObject } from './crud.js';
 import { activate } from './devtools.js';
+import { resolveAcceptType } from './discovery.js';
 import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
+import { throwIfRequestCancelled } from './http-deadline.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { textPartChanges } from './text-part-changes.js';
-import { parseXml } from './xml-parser.js';
+import { parseDiscoveryDocument, parseXml } from './xml-parser.js';
 
 /** Media type per subobject. Each is used as BOTH Content-Type and Accept on the write PUT (SAP
  *  returns 400 "Accept header missing" otherwise). */
@@ -69,8 +74,47 @@ function textElementsObject(objectType: TextElementObjectType, name: string): st
  *  A not-yet-populated map answers true, so 757/758/816 is never false-blocked and a real
  *  404 surfaces from SAP instead. */
 function serviceAvailable(http: AdtHttpClient, objectType: TextElementObjectType): boolean {
-  if (!http.hasDiscoveryData()) return true;
-  return http.discoveryAcceptFor(`/sap/bc/adt/textelements/${TEXT_ELEMENT_COLLECTIONS[objectType]}`) !== undefined;
+  const collection = `/sap/bc/adt/textelements/${TEXT_ELEMENT_COLLECTIONS[objectType]}`;
+  const listed = http.hasDiscoveryCollection(collection);
+  return listed === undefined || collectionAdvertised(listed, http.discoveryAcceptFor(collection));
+}
+
+function collectionAdvertised(listed: boolean | undefined, mime: string | undefined): boolean {
+  return listed === true || mime !== undefined;
+}
+
+type ServiceAvailability = 'present' | 'absent' | 'inconclusive';
+
+/** Only the deleted owner's own catalog can establish that its optional pool service is absent. */
+function deleteAvailability(
+  listed: boolean | undefined,
+  mime: string | undefined,
+  ownerListed: boolean | undefined,
+): ServiceAvailability {
+  if (collectionAdvertised(listed, mime)) return 'present';
+  return ownerListed === true ? 'absent' : 'inconclusive';
+}
+
+async function discoverPoolAvailability(
+  session: AdtHttpClient,
+  collection: string,
+  ownerCollection: string,
+  signal?: AbortSignal,
+): Promise<ServiceAvailability> {
+  try {
+    const response = await session.get(
+      '/sap/bc/adt/discovery',
+      { Accept: 'application/atomsvc+xml' },
+      { signal, deadline: Date.now() + 5000, noReplay: true },
+    );
+    if (XMLValidator.validate(response.body) !== true) return 'inconclusive';
+    const map = parseDiscoveryDocument(response.body);
+    return deleteAvailability(map.has(collection), resolveAcceptType(map, collection), map.has(ownerCollection));
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    // Failed optional discovery never authorizes skipping the pool lock and metadata check.
+    return 'inconclusive';
+  }
 }
 
 /** Fail clean when the ADT textelements service is absent. */
@@ -273,7 +317,23 @@ export async function withActiveTextPoolForDelete<T>(
   name: string,
   deleteOwner: () => Promise<T>,
 ): Promise<T> {
-  if (!serviceAvailable(session, objectType)) return deleteOwner();
+  const collection = `/sap/bc/adt/textelements/${TEXT_ELEMENT_COLLECTIONS[objectType]}`;
+  const ownerCollection = objectType === 'PROG' ? '/sap/bc/adt/programs/programs' : '/sap/bc/adt/functions/groups';
+  const cached = deleteAvailability(
+    session.hasDiscoveryCollection(collection),
+    session.discoveryAcceptFor(collection),
+    session.hasDiscoveryCollection(ownerCollection),
+  );
+  const signal = getCurrentContext()?.signal;
+  const availability =
+    cached === 'inconclusive' ? await discoverPoolAvailability(session, collection, ownerCollection, signal) : cached;
+  throwIfRequestCancelled({ signal });
+  logger.debug('Text-pool service before deletion', {
+    objectType,
+    availability,
+    discovery: cached === 'inconclusive' ? 'fresh' : 'cached',
+  });
+  if (availability === 'absent') return deleteOwner();
   const uri = textElementsObject(objectType, name);
   const lock = await lockObject(session, safety, uri, 'MODIFY');
   try {
