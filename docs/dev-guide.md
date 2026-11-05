@@ -230,15 +230,24 @@ uses native non-cascade checks, repeated local metadata/recording validation and
 session. Recorded package deletion remains closed. Parentless local creation requires its exact
 native profile; `$TMP` is a display anchor, not ancestry.
 
-The [V4 publication executor](research/broader-pinned-pp-writes/native-service-contracts.md#publication-and-generated-resources) shares the legacy sender.
-Its qualified non-recording profile remains internal: it requires trusted request-bound native
-configuration evidence and has no production configuration reader. Public pinned publication uses
-the [native-governed profile](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-publication-native-governed.md), which requires
-both explicit unrestricted request policies and reports native state without claiming a
-non-recording guarantee or a CTS receipt. Both preserve final-send evidence expiry and submit an
-explicit job even when the initial getter matches; `pinned-publication-result.ts` projects minimal
-errors without mutating native results. Ordinary public SRVB deletion still refuses generated owners;
-the separate generated-parent qualification profile is not a caller-selectable bypass.
+The [V4 publication executor](research/broader-pinned-pp-writes/native-service-contracts.md#publication-and-generated-resources) shares the legacy sender and accepts one binding/version.
+Its [native-governed profile](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-publication-native-governed.md)
+requires both explicit unrestricted request policies and reports native state without claiming a
+non-recording guarantee or CTS receipt. Final-send evidence expiry and an explicit native job remain
+required even when the initial getter matches. `pinned-publication-result.ts` projects minimal errors
+without mutating native results. Private batches, preparation/qualification handlers and the speculative
+non-recording reader mode are retired; a general native configuration reader remains a historical gap.
+Ordinary SRVB deletion still refuses generated owners. Historical generated-parent cleanup retains
+its immutable recovery source and journals outside the current product build.
+
+Source replacement and compatible surgery use `crud.ts::withSourceMutation`, with explicit legacy
+or pinned source policies on the existing lock primitive. Legacy hashes/read requirements, transport
+fallback and cache-failure modes remain distinct from pinned proof and readback. Metadata updates
+share `write/metadata-update.ts`'s coordinator; `pinned-metadata-write.ts` supplies native
+preparation/completion policy, while creation follow-ups retain their separate native protocol.
+`pinned-operation.ts::revalidatedPinnedContext` derives final-send allowances without renewing the
+parent deadline or cleanup, and charges both child and parent through `RequestAttemptBudget`'s
+trusted hook. Resource-specific target, identity, ownership and recording rules remain explicit.
 
 `src/adt/crud.ts::withLockedMutation` is shared by single-target `safeUpdateSource`,
 `safeUpdateClassInclude`, and the pinned source adapters in `handlers/write/pinned-source-lifecycle.ts`.
