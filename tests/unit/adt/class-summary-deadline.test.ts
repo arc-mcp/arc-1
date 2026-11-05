@@ -104,7 +104,7 @@ describe('class summary deadline', () => {
     expect(result.consumed.sends).toBe(6);
     expect(result.consumed.responseBytes).toBeLessThanOrEqual(131072);
     expect(paths.some((path) => path.includes('/source/'))).toBe(false);
-  }, 8000);
+  });
   it('still reports incomplete discovery and stops subsequent providers at five seconds', async () => {
     const { client, paths } = await setup(5600);
     const result = await discover(client, new ExtensionDiscoverySession('summary', request, client.safety));
@@ -116,7 +116,7 @@ describe('class summary deadline', () => {
     ]);
     expect(renderExtensionDiscovery(result)[0]?.text).toContain('"reason":"deadline"');
     expect(paths.some((path) => path.endsWith('/enhancements/implementations'))).toBe(false);
-  }, 8000);
+  });
   it('honors a shorter caller deadline', async () => {
     const { client } = await setup(1000);
     const deadline = Date.now() + 150;
