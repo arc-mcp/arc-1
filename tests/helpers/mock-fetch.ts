@@ -1,3 +1,5 @@
+import type { Dispatcher } from 'undici';
+
 /**
  * Shared test helper for mocking fetch() responses.
  *
@@ -38,4 +40,15 @@ export function mockResponse(
     text: async () => body,
     json: async () => JSON.parse(body),
   } as unknown as Response;
+}
+
+/** Keep real Connectivity request construction; replace only its socket with the current MockPool. */
+export function mockConnectivityClient(currentPool: () => Pick<Dispatcher, 'request'>) {
+  return class {
+    request(options: Dispatcher.RequestOptions) {
+      const url = new URL(options.path);
+      return currentPool().request({ ...options, path: url.pathname + url.search });
+    }
+    async close() {}
+  };
 }

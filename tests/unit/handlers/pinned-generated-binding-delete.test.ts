@@ -4,19 +4,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '../../../src/server/types.js';
 
 const proxy = vi.hoisted(() => ({ pool: undefined as any }));
-vi.mock('undici', async (original) => {
-  const actual = await original<typeof import('undici')>();
-  return {
-    ...actual,
-    Client: class {
-      request(options: any) {
-        const url = new URL(options.path);
-        return proxy.pool.request({ ...options, path: url.pathname + url.search });
-      }
-      async close() {}
-    },
-  };
-});
+vi.mock('undici', async (original) => ({
+  ...(await original<typeof import('undici')>()),
+  Client: (await import('../../helpers/mock-fetch.js')).mockConnectivityClient(() => proxy.pool),
+}));
 const { MockAgent, getGlobalDispatcher, setGlobalDispatcher } = await import('undici');
 const { AdtClient } = await import('../../../src/adt/client.js');
 const { defaultSafetyConfig } = await import('../../../src/adt/safety.js');
