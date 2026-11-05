@@ -109,7 +109,7 @@ PROG/INCL edits or remove the remaining pinned CRUD orchestrator. All 11,733 uni
 
 ## Opus review at `aa4dfb14` and follow-up
 
-The [verbatim review](broader-pinned-pp-writes/claude-class-adapters-review-20261101.md) was produced
+The [verbatim review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/broader-pinned-pp-writes/claude-class-adapters-review-20261101.md) was produced
 by actual Claude Code `claude-opus-5-5` with launcher `--effort max`. Its SHA-256 is
 `69dc1f9ade2dc382551bd13a64bdf521321edde3bda68377384a6d42ef6fef41`. It found **2 Medium and
 5 Low** issues, no High, and explicitly kept this PR a draft. It independently passed 432 files /
@@ -139,7 +139,7 @@ Follow-up dispositions, to be reviewed again:
    accepts 33 declared / 53 implemented methods and 7 / 7 respectively. Indirect interface
    references not proven from the selected source and unsupported parser syntax still refuse.
    This is author compatibility evidence, not a write or PP qualification; raw captures remain
-   private. The [read-only observation receipt](broader-pinned-pp-writes/class-shapes-readonly-20261101.json)
+   private. The [read-only observation receipt](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/broader-pinned-pp-writes/class-shapes-readonly-20261101.json)
    records hashes and before/after results. Older releases remain unqualified.
 5. Added public authored chain/interface fixtures and tests for chain insertion, positive
    abstract/redefinition flags, a namespaced owner, no-op cleanup failure, real configured lint
@@ -164,7 +164,7 @@ still exercise their earlier harness, not the new metadata mutation scenarios.
 ## Second independent review
 
 Actual Opus 5.5 max reviewed immutable `cee2a18e17ed2c44a49e150fb5844784ea93d042`:
-[verbatim follow-up report](broader-pinned-pp-writes/claude-class-adapters-followup-review-20261101.md).
+[verbatim follow-up report](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/broader-pinned-pp-writes/claude-class-adapters-followup-review-20261101.md).
 It found three Medium and five Low issues, including formatting-hidden ambiguity and definition/body
 symmetry gaps in the preceding dispositions. All five permitted checks passed and both independent
 snapshot checks were unchanged (4,243 files); the author also reran the verifier unchanged. The reviewer

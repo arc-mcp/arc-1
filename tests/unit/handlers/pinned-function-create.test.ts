@@ -1,5 +1,6 @@
 /** Candidate function creation through the shared handler; still outside public capability admission. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { AdtRequestNotSentError } from '../../../src/adt/errors.js';
 import { pinnedMutationContext } from '../../../src/adt/mutation-context.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
@@ -7,9 +8,6 @@ import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
-const { contractSelection, observeContractHttp } = await import(
-  '../../../scripts/qualification/pr1142/native-contract-transport.js'
-);
 const { AdtHttpClient } = await import('../../../src/adt/http.js');
 const { createPinnedFunctionContext } = await import('../../../src/handlers/write/pinned-function-context.js');
 const { pinnedSourceState, forgetPinnedSourceContext } = await import(
@@ -391,13 +389,7 @@ it('reports a local creation allowlist refusal as unchanged without sending the 
     ...input
   ) {
     if (input[0].split('?')[0] !== `${parent}/fmodules`) return nativePost.apply(this, input);
-    const guarded = observeContractHttp(
-      { post: nativePost.bind(this) } as InstanceType<typeof AdtHttpClient>,
-      contractSelection('0123456789ABCDEF'),
-      () => {},
-      async () => {},
-    );
-    return guarded.post(...input);
+    return Promise.reject(new AdtRequestNotSentError('POST', 'Fixture observer refused before send.'));
   });
   const result = await create('FUNC', {}, true);
   expect(result.isError).toBe(true);

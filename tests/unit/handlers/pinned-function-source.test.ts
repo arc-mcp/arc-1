@@ -1,5 +1,6 @@
 /** Candidate native profile tests; public capability admission is added only with the complete family. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { AdtRequestNotSentError } from '../../../src/adt/errors.js';
 import { pinnedMutationContext } from '../../../src/adt/mutation-context.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
@@ -7,9 +8,6 @@ import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
-const { contractSelection, observeContractHttp } = await import(
-  '../../../scripts/qualification/pr1142/native-contract-transport.js'
-);
 const { AdtHttpClient } = await import('../../../src/adt/http.js');
 const { createPinnedFunctionContext } = await import('../../../src/handlers/write/pinned-function-context.js');
 const { pinnedSourceState, forgetPinnedSourceContext } = await import(
@@ -258,19 +256,9 @@ it('preserves a function whose native body readback differs after the sole PUT',
   expect(cleanup).toMatchObject({ unlockFailed: false, sessionClosed: true });
 });
 it('reports an observer refusal before PUT as unchanged and releases the owning lock', async () => {
-  const nativePut = AdtHttpClient.prototype.put;
-  vi.spyOn(AdtHttpClient.prototype, 'put').mockImplementation(function (
-    this: InstanceType<typeof AdtHttpClient>,
-    ...input
-  ) {
-    const guarded = observeContractHttp(
-      { put: nativePut.bind(this) } as InstanceType<typeof AdtHttpClient>,
-      contractSelection('0123456789ABCDEF'),
-      () => {},
-      async () => {},
-    );
-    return guarded.put(...input);
-  });
+  vi.spyOn(AdtHttpClient.prototype, 'put').mockImplementation(() =>
+    Promise.reject(new AdtRequestNotSentError('PUT', 'Fixture observer refused before send.')),
+  );
   const { result, state, cleanup } = await update('FUNC', {}, true);
   expect(result.isError).toBe(true);
   expect(state).toMatchObject({ state: 'unchanged', phase: 'source-save', writeAttempted: false });

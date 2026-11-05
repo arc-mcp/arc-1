@@ -170,7 +170,7 @@ separately. Reporting that gap is the correct outcome; no workaround is designed
 Based on `13f5518a`, uncommitted, author run only: 505 files and 13,673 unit tests, three TypeScript
 projects, build, lint (three existing informational findings), policy, file and schema budgets and
 the strict documentation build pass. Tool-definition snapshots are unchanged. The
-[independent review and follow-up](2026-11-02-pinned-trace-flp-review-followup.md) record later
+[independent review and follow-up](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-pinned-trace-flp-review-followup.md) record later
 corrections and checks; every native scenario above remains open.
 
 ## Limits

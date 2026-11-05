@@ -233,7 +233,7 @@ native profile; `$TMP` is a display anchor, not ancestry.
 The [V4 publication executor](research/2026-11-03-pinned-v4-publication.md) shares the legacy sender.
 Its qualified non-recording profile remains internal: it requires trusted request-bound native
 configuration evidence and has no production configuration reader. Public pinned publication uses
-the [native-governed profile](research/2026-11-03-pinned-publication-native-governed.md), which requires
+the [native-governed profile](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-publication-native-governed.md), which requires
 both explicit unrestricted request policies and reports native state without claiming a
 non-recording guarantee or a CTS receipt. Both preserve final-send evidence expiry and submit an
 explicit job even when the initial getter matches; `pinned-publication-result.ts` projects minimal
@@ -311,7 +311,7 @@ requires exact membership. Caller/stored transient instructions, nonempty native
 `lockhandle`, and the native `selfexplainatory=true` / `documented=true` long-text deletion pair
 refuse before PUT. See [explicit removal evidence](research/2026-11-04-msag-explicit-native-removal.md)
 and [native row evidence](research/2026-11-03-msag-native-row-preservation.md). Earlier
-[review corrections](research/2026-11-02-pinned-ddic-review-followup.md) describe their original
+[review corrections](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-pinned-ddic-review-followup.md) describe their original
 checkpoint; qualification results do not expand the current per-type input contract.
 
 Function-family activation is admitted through the common pinned orchestrator. Its handler grant
@@ -319,7 +319,7 @@ is internal and never accepted from tool input. FUNC verifies active/default met
 against the captured draft; FUGR generation has an explicit exact-group profile and does not imply child-module
 activation. Structural includes activate their exact include URI and require their own active
 metadata/source proof; group generation is not a substitute. Both child and group require matching
-recording contexts. Generation alone does not imply a new transition when the child was already active. See [review 19 corrections](research/2026-11-02-group-activation-review-followup.md) and [review 18 follow-up](research/2026-11-02-function-activation-review-followup.md).
+recording contexts. Generation alone does not imply a new transition when the child was already active. See [review 19 corrections](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-group-activation-review-followup.md) and [review 18 follow-up](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-function-activation-review-followup.md).
 
 `native-xml-evidence.ts` retains namespace bindings, rejects ambiguous identity attributes, malformed
 or DOCTYPE-bearing documents, and bounds metadata. `native-activation-evidence.ts` preserves preaudit
@@ -365,7 +365,7 @@ which blocks later explicit writes and survives omission or read failure. Public
 its global transport-write ceiling, authenticated write/transports scopes and both request policies;
 a builder flag or role template alone grants nothing. Source recording remains separate and may
 be enabled while management is off. Native-contract and remaining qualification limits are recorded
-in [CTS research](research/2026-11-02-pinned-cts-management-candidate.md) and the current write guide.
+in [CTS research](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-pinned-cts-management-candidate.md) and the current write guide.
 
 Trace/quickfix/FLP rows in `server/pinned-runtime-candidates.ts` are imported by the admitted
 management matrix despite the historical filename. `handlers/pinned-{trace,flp}.ts` route to bounded

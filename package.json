@@ -106,8 +106,7 @@
     "btp:build-deploy": "npm run btp:build && npm run btp:deploy",
     "btp:build-deploy-ext": "npm run btp:build && npm run btp:deploy-ext",
     "btp:build-deploy-ui-ext": "npm run btp:build-ui-ext && npm run btp:deploy-ui-ext",
-    "audit:ci": "audit-ci --config audit-ci.json",
-    "test:qualification:pr1142": "node scripts/qualification/pr1142/formatter-regression.mjs && node scripts/qualification/pr1142/deletion-regression.mjs"
+    "audit:ci": "audit-ci --config audit-ci.json"
   },
   "dependencies": {
     "@abaplint/core": "^2.120.92",

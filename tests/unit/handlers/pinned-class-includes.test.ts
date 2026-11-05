@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { isIncludeSaveResult } from '../../../scripts/qualification/pr1142/include-qualification.mjs';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { requestContext } from '../../../src/server/context.js';
@@ -149,9 +148,15 @@ describe('pinned class include handler and native lock policy', () => {
         sourceHash: sourceHash(replacement),
       });
       expect(body).not.toHaveProperty('ok');
-      expect(
-        isIncludeSaveResult(body, { target: config.targetId, name: 'ZCL_INCLUDE', include, initialized: false }),
-      ).toBe(true);
+      expect(body).toMatchObject({
+        action: 'update',
+        target: config.targetId,
+        type: 'CLAS',
+        name: 'ZCL_INCLUDE',
+        include,
+        initialized: false,
+      });
+      expect(body.sourceHash).toMatch(/^[a-f0-9]{64}$/);
       expect(includeWrites()).toHaveLength(1);
       expect(includeWrites()[0].path).toContain(`/includes/${include}?lockHandle=class-lock`);
       expect(requests.filter((r) => r.path.includes('_action=LOCK'))[0].path).toContain(`${owner}?`);
@@ -258,14 +263,15 @@ describe('pinned class include handler and native lock policy', () => {
       });
       expect(result.isError, result.content[0].text).toBeUndefined();
       expect(body).toMatchObject({ state: 'saved-inactive', initialized: true });
-      expect(
-        isIncludeSaveResult(body, {
-          target: config.targetId,
-          name: 'ZCL_INCLUDE',
-          include: 'definitions',
-          initialized: true,
-        }),
-      ).toBe(true);
+      expect(body).toMatchObject({
+        action: 'update',
+        target: config.targetId,
+        type: 'CLAS',
+        name: 'ZCL_INCLUDE',
+        include: 'definitions',
+        initialized: true,
+      });
+      expect(body.sourceHash).toMatch(/^[a-f0-9]{64}$/);
       expect(includeWrites().map((r) => r.method)).toEqual(['POST', 'PUT']);
       for (const request of includeWrites()) {
         const url = new URL(request.path, 'http://sap');

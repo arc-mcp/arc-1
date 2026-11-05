@@ -58,7 +58,7 @@ regression checks. These are mocks and fixtures, not current native or two-write
 The document writer is under separate independent review. Its reported SKTD namespace-shadowing
 rewrite problem is not changed by this read delta: the ordinary reader preserves raw XML and
 namespace-aware hashes without invoking that legacy rewrite. A separate
-[writer correction](2026-11-02-pinned-enhancement-documents-review-followup.md) qualifies structural
+[writer correction](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-pinned-enhancement-documents-review-followup.md) qualifies structural
 write slots and activation reporting; the combined candidate still needs independent re-review. Returning a hash never represents write readiness.
 Native release/view behavior, current-build PP and public mutation admission remain open.
 

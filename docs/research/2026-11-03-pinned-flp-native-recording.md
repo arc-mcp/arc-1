@@ -83,7 +83,7 @@ readiness follows from these offline tests.
 
 ## Independent review and combined checks
 
-The [independent review](2026-11-03-pinned-flp-native-recording-review1-verbatim.md) approved private
+The [independent review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-flp-native-recording-review1-verbatim.md) approved private
 integration of `687fc44b487892487b766dc0ac3a099f360f9cf7`: 331 affected tests, 14 additional
 actual-HTTP probes and one new-profile import-purity check passed. All three TypeScript projects,
 policy, size and delta-lint checks passed, with all 4,727 snapshot files unchanged. A broader

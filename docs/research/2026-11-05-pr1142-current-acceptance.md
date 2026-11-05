@@ -2,7 +2,7 @@
 
 **Blocked; keep the PR draft, ADR-0011 proposed and FEAT-93 open.** This is the current
 acceptance ledger. The [plan](../plans/2026-10-26-broader-pinned-pp-writes.md#8-validation-and-release-gates)
-retains the agreed requirements; dated reports retain their original results and limits.
+retains the agreed requirements; archived dated reports retain their original results and limits.
 Deletion, CTS, runtime controls and classic FLP remain in scope. Git/plugins remain excluded.
 
 ## Source and evidence boundary
@@ -18,9 +18,9 @@ must follow review and validation of the consolidated source.
 | Gate | Current evidence and remaining work |
 | --- | --- |
 | Shared foundation and built-in implementation | PR #1138 merged. Explicit public admission and resource adapters are integrated. Source routing does not establish live qualification. |
-| Earlier native representatives | Package/API, DDIC/procedural, enhancement, trace restoration and [RAP publication/reverse cleanup](2026-11-04-native-rap-retained-v4.md#actual-native-outcome-4-november) completed for their named revisions/routes. The RAP gate must not be reopened from the plan's older snapshot. Generated-resource and recording limits remain. |
-| Retained CTS | [v6](2026-11-05-native-cts-released-pair-v6.md) adopts the already released A pair read-only. Independent review and fresh B recursive release/C empty-request deletion remain. v4/v5 failures stay failed; never replay their releases or reset claims. Preserve the no-downstream-import restriction. |
-| Final-build PP | [Text-tail v2](2026-11-05-current-pp-text-tail-v2.md) remains unexecuted: two distinct mapped writers, remaining text/recording proof and reverse cleanup need fresh source/artifact/identity controls. Earlier owner creation/activation must not replay. |
+| Earlier native representatives | Package/API, DDIC/procedural, enhancement, trace restoration and [RAP publication/reverse cleanup](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-04-native-rap-retained-v4.md#actual-native-outcome-4-november) completed for their named revisions/routes. The RAP gate must not be reopened from the plan's older snapshot. Generated-resource and recording limits remain. |
+| Retained CTS | [v6](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-05-native-cts-released-pair-v6.md) adopts the already released A pair read-only. Independent review and fresh B recursive release/C empty-request deletion remain. v4/v5 failures stay failed; never replay their releases or reset claims. Preserve the no-downstream-import restriction. |
+| Final-build PP | [Text-tail v2](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-05-current-pp-text-tail-v2.md) remains unexecuted: two distinct mapped writers, remaining text/recording proof and reverse cleanup need fresh source/artifact/identity controls. Earlier owner creation/activation must not replay. |
 | Classic FLP and route denials | [Native-platform projection](2026-11-05-pinned-native-platform-projection.md) has source/controlled-wire evidence. Fresh deployed PP FLP and genuine Basic-target, aggregate, writes-off destination, raw-scope and exact-grant negatives remain. Direct native Basic tests do not prove PP or Basic-route denials. |
 | Restoration | On 5 November, read-only CF queries confirmed the isolated app's current droplet and complete application environment match the saved originals; writes, transport writes and Basic targets are off. IAM/XSUAA/destination/SAP-role reconciliation and retained repository effects remain unverified; the BTP CLI session is expired. No live mutation was attempted in this bounded pass. |
 | Local verification | Prior candidate full run: 20,188/20,190, two 10-second timeouts, no pending tests; **failed**. Both test files pass after setup isolation (165 tests). Build, three TypeScript targets, lint, policy, size/schema budgets and strict docs pass. Exact final full-suite and pushed-head CI results are recorded in the PR description; historical logs remain unchanged. |
@@ -70,6 +70,39 @@ Those boundaries were restored. Initial failing regression logs are retained; a 
 before this refactor is considered verified. The observable tool/schema fixtures are unchanged.
 
 Source imports and current routing docs were updated; immutable historical research and native
-journals remain available at their original revisions. Existing qualification imports follow the
-consolidated exports, but this is not permission to execute them against consumed native claims.
+journals remain available at their original revisions. The historical qualification source is preserved in the
+[pre-cleanup snapshot](https://github.com/arc-mcp/arc-1/tree/1636bab36d86df10ba169f816d2bb4555b38419b/scripts/qualification/pr1142); it is not permission to execute consumed native claims.
 FEAT-93 stays open and ADR-0011 remains proposed until current-source qualification and restoration.
+
+## Repository cleanup
+
+At the user's request, 293 PR commits were squashed into `1636bab36` with an identical tree.
+The cleanup is a separate reviewable commit. The original history is also retained in a local
+backup branch and verified Git bundle. No production `src/` file changes in this cleanup.
+
+The PR changes **1,201 → 438 files**. Removed from the active tree:
+
+- 292 one-off qualification files, including consumed experiment versions, fixed operator IDs,
+  host-specific controllers and the formatter/deletion regression runners.
+- 190 test/helper files devoted to that machinery, plus two orphaned shared test helpers.
+  The baseline full passing run accounts for 163 retired test files and 4,033 cases.
+- 243 repeated progress, review, gate-manifest and raw-dump research files; 50 useful native
+  contracts, the current acceptance ledger and tested capability inventory files remain.
+- 34 fixture files with no surviving reader. Product wire fixtures and tool/schema snapshots remain.
+
+Five product test files keep their cases and assertions using direct source APIs and local test
+inputs, removing their dependence on archived operators. The remaining unit CI stays in place;
+only the CI/package command for the retired one-off qualification runners disappears.
+
+Historical links now name the immutable snapshot rather than deleted current paths. The snapshot
+retains every removed byte; the original run journals, mutation claims and raw evidence outside
+the repository are untouched. A separate frozen recovery checkout is retained locally. Recovery
+must use the original run's bound source, ownership and no-replay records; the archive snapshot
+never overrides those bindings or authorizes another execution. The original `0ab3046e5` operator
+checkout is also preserved. No live SAP/BTP operation was performed during this cleanup.
+
+The cleanup removes **99,143 net lines**. All **537 remaining test files / 16,157 cases**
+pass, with no failures or skips; the retained case names exactly match the baseline. All three
+typecheck targets, build, lint, policy, sizes/schema and strict documentation checks pass.
+The prior 20,190-case result describes the pre-cleanup tree. These deletions establish no live acceptance.
+Further production simplification/review precedes final qualification.

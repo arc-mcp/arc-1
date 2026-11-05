@@ -84,7 +84,7 @@ lifecycle/CTS and PP/public qualification. No claim of completed package parity 
 
 ## Independent review
 
-[Exact-source review](2026-11-03-pinned-local-root-create-review1-verbatim.md) approved private integration of `8628c1963a2203ed23cc6b2c13d5a250bfaf1101`: 475 affected tests and 18 additional actual-HTTP MockAgent probes passed, as did three TypeScript projects, lint, policy and sizes. All 4,747 snapshot files remained unchanged. Integration shares the already-identical request-policy predicate with publication and FLP; no second policy is introduced. Native root/child lifecycle, actual readback/recording effects, cleanup, PP and public admission remain unqualified.
+[Exact-source review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-local-root-create-review1-verbatim.md) approved private integration of `8628c1963a2203ed23cc6b2c13d5a250bfaf1101`: 475 affected tests and 18 additional actual-HTTP MockAgent probes passed, as did three TypeScript projects, lint, policy and sizes. All 4,747 snapshot files remained unchanged. Integration shares the already-identical request-policy predicate with publication and FLP; no second policy is introduced. Native root/child lifecycle, actual readback/recording effects, cleanup, PP and public admission remain unqualified.
 
 
 ## Native empty-parent representation correction
@@ -116,7 +116,7 @@ readback. Raw backend source and inventory remain private.
 
 ## Empty-parent reader review
 
-The native empty-parent correction at `f1fd62d8` passed [independent private-integration review](2026-11-03-pinned-local-root-empty-parent-review-verbatim.md):
+The native empty-parent correction at `f1fd62d8` passed [independent private-integration review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-local-root-empty-parent-review-verbatim.md):
 316 tests including 28 additional actual-HTTP direct/proxy probes, all three TypeScript projects,
 lint, policy and size checks. All 4,771 snapshot files remained unchanged. A unique present empty
 native parent element is accepted for fresh-root readback; missing, foreign or malformed evidence

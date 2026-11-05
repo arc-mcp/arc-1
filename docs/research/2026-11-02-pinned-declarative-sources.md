@@ -84,7 +84,7 @@ At `70d4e83b`, seventy new tests cover all five positive types, public/private g
 and metadata drift, independent package/CTS policies, exact references/namespaces, both activation
 phases, native flags, inactive/incorrect active readback, response limits, cancellation and minimal
 errors. Combined with the review 20 follow-up, focused source/group/declarative activation suites pass
-178 cases. The [review 20 corrections](2026-11-02-declarative-review-followup.md) remain separate from
+178 cases. The [review 20 corrections](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-declarative-review-followup.md) remain separate from
 that review's accepted snapshot; neither they nor this new activation profile have fresh native or
 PP evidence yet.
 
@@ -124,7 +124,7 @@ configuration were unchanged; the original owned qualification fixtures remain a
 
 ## Review 21 and the next native fixture plan
 
-[Review 21 and its follow-up](2026-11-02-declarative-activation-review-followup.md) close review 20
+[Review 21 and its follow-up](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-declarative-activation-review-followup.md) close review 20
 and address activation result wording, explicit state/size coverage and stable CTS recording across
 preaudit. At `63303383` the private activation suite has 85 cases; the next follow-up adds five saved-draft/active-alternative cases. None enables a public mutation.
 
@@ -135,8 +135,8 @@ The initial and replacement sources differ only by a fixture comment. Dependenci
 and an uncertain child preserves its dependency closure during cleanup. The original fifteen offline checks at `63303383` cover fixture constraints and local rules;
 follow-up coverage also checks every dependency and both source versions. Only the two DDLS sources
 reach a parser. BDEF/DDLX use narrow pattern rules; DCLS/SRVD have declaration/target assertions,
-not grammar validation. A [one-run qualification harness](2026-11-02-native-declarative-qualification.md) now has offline
-checks. Review 23 said not to run it; its [follow-up](2026-11-02-native-declarative-harness-review-followup.md)
+not grammar validation. A [one-run qualification harness](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-native-declarative-qualification.md) now has offline
+checks. Review 23 said not to run it; its [follow-up](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-native-declarative-harness-review-followup.md)
 awaits independent review. It has not been run against SAP; these sources have not been
 compiled or mutated on SAP. SAP's current language reference is syntax
 research, not A4H release qualification:

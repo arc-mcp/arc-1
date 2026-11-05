@@ -601,9 +601,57 @@ it('creates metadata and source owners with their real distinct adapters in one 
   expect(rows[1].activation.result.nativeStateVerified).toBe(true);
 });
 it('preserves the six-owner CDS dependency input order and activates only that complete set', async () => {
-  const { declarativeFixtures } = await import('../../../scripts/qualification/pr1142/native-declarative-fixtures.js');
   const { pinnedDeclarativeSelection } = await import('../../../src/adt/pinned-repository-owner.js');
-  const fixtures = declarativeFixtures('A123456789ABCDEF');
+  const fixtures = [
+    {
+      type: 'DDLS',
+      name: 'ZARC1_NV_A123456789ABCDEF',
+      owner: '/sap/bc/adt/ddic/ddl/sources/zarc1_nv_a123456789abcdef',
+      source:
+        "// ARC1 declarative A123456789ABCDEF\n@EndUserText.label: 'ARC1 declarative A123456789ABCDEF'\n@AccessControl.authorizationCheck: #NOT_REQUIRED\n@Metadata.allowExtensions: true\ndefine root view entity ZARC1_NV_A123456789ABCDEF as select from sflight\n{\n  key carrid as Carrier,\n  key connid as ConnectionId,\n  key fldate as FlightDate\n}\n",
+      description: 'ARC1 declarative A123456789ABCDEF',
+    },
+    {
+      type: 'DDLS',
+      name: 'ZARC1_NA_A123456789ABCDEF',
+      owner: '/sap/bc/adt/ddic/ddl/sources/zarc1_na_a123456789abcdef',
+      source:
+        "// ARC1 declarative A123456789ABCDEF\n@EndUserText.label: 'ARC1 declarative A123456789ABCDEF'\ndefine root abstract entity ZARC1_NA_A123456789ABCDEF\n{\n  Item : abap.char(10);\n}\n",
+      description: 'ARC1 declarative A123456789ABCDEF',
+    },
+    {
+      type: 'DCLS',
+      name: 'ZARC1_ND_A123456789ABCDEF',
+      owner: '/sap/bc/adt/acm/dcl/sources/zarc1_nd_a123456789abcdef',
+      source:
+        "// ARC1 declarative A123456789ABCDEF\n@EndUserText.label: 'ARC1 declarative A123456789ABCDEF'\n@MappingRole: true\ndefine role ZARC1_ND_A123456789ABCDEF\n{\n  grant select on ZARC1_NV_A123456789ABCDEF;\n}\n",
+      description: 'ARC1 declarative A123456789ABCDEF',
+    },
+    {
+      type: 'DDLX',
+      name: 'ZARC1_NX_A123456789ABCDEF',
+      owner: '/sap/bc/adt/ddic/ddlx/sources/zarc1_nx_a123456789abcdef',
+      source:
+        "// ARC1 declarative A123456789ABCDEF\n@Metadata.layer: #CUSTOMER\nannotate view ZARC1_NV_A123456789ABCDEF with\n{\n  @UI.lineItem: [{ position: 10, label: 'Probe' }]\n  Carrier;\n}\n",
+      description: 'ARC1 declarative A123456789ABCDEF',
+    },
+    {
+      type: 'BDEF',
+      name: 'ZARC1_NA_A123456789ABCDEF',
+      owner: '/sap/bc/adt/bo/behaviordefinitions/zarc1_na_a123456789abcdef',
+      source:
+        '// ARC1 declarative A123456789ABCDEF\nabstract;\nstrict ( 2 );\nwith hierarchy;\ndefine behavior for ZARC1_NA_A123456789ABCDEF\n{\n  field ( mandatory : execute ) Item;\n}\n',
+      description: 'ARC1 declarative A123456789ABCDEF',
+    },
+    {
+      type: 'SRVD',
+      name: 'ZARC1_NS_A123456789ABCDEF',
+      owner: '/sap/bc/adt/ddic/srvd/sources/zarc1_ns_a123456789abcdef',
+      source:
+        "// ARC1 declarative A123456789ABCDEF\n@EndUserText.label: 'ARC1 declarative A123456789ABCDEF'\ndefine service ZARC1_NS_A123456789ABCDEF\n{\n  expose ZARC1_NV_A123456789ABCDEF as Flights;\n}\n",
+      description: 'ARC1 declarative A123456789ABCDEF',
+    },
+  ] as const;
   world.objects.clear();
   for (const item of fixtures)
     world.objects.set(item.owner, {

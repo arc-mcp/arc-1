@@ -193,21 +193,21 @@ not current blanket admission denials. See the [resource checkpoint](../research
 [DDIC profiles](../research/2026-11-02-pinned-ddic-server-driven.md),
 [trace/FLP checkpoint](../research/2026-11-02-pinned-trace-flp.md),
 [FLP recording contract](../research/2026-11-03-pinned-flp-native-recording.md) and
-[publication alternative](../research/2026-11-03-pinned-publication-native-governed.md).
+[publication alternative](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-publication-native-governed.md).
 Current dispatch/capability rows supersede their historical “not publicly wired” status while
 retaining each unresolved native limit. Names such as handlePrivatePinned… and historical scenario
 lists are not the current public capability decision.
 
 Named native 758 representatives have now completed the local package/API lifecycle and four-owner
 cleanup, ENHO retained activation/reverse cleanup, ST05 ON/OFF restoration, and procedural/table/MSAG
-cleanup. The [RAP v4 tail](../research/2026-11-04-native-rap-retained-v4.md#actual-native-outcome-4-november)
+cleanup. The [RAP v4 tail](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-04-native-rap-retained-v4.md#actual-native-outcome-4-november)
 also completed publication/unpublication and reverse cleanup, with seven owners and implicit table
 settings typed absent; its generated-resource and recording limits remain explicit. These direct
 Basic-native observations do not enable shared Basic mutations or qualify current-build PP.
 Remaining CTS parent/recursive release and empty-request deletion, final current-build two-writer
 PP/text/recording, classic FLP and negative-route/Basic evidence, and app/IAM/destination/SAP-role
 restoration are outstanding. Historical
-[combined PP evidence](../research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md) applies
+[combined PP evidence](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md) applies
 only to its named builds and tested operations.
 
 Do not equate missing 750/816/cloud evidence with native non-support. Apply the actual type registry,

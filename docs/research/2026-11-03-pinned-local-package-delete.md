@@ -106,12 +106,12 @@ contract is known.
 
 ## Independent review and integration
 
-The [independent review](2026-11-03-pinned-local-package-delete-review1-verbatim.md) approved private
+The [independent review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-local-package-delete-review1-verbatim.md) approved private
 integration of `881bbad2c023368d4865f6f57d29f32b1395f0d3` after 215 affected tests and 18 additional
 real-client/mock-fetch probes. It also rehashed the native source evidence and parsed the actual
 read-only `$TMP` metadata capture through the scoped reader. That establishes representation only;
 `$TMP` remains protected and no native deletion was attempted.
 
 All four source/test files match the candidate byte for byte at integrated `6a229e8cd`. The
-[combined checkpoint](2026-11-03-pinned-integration-checkpoint.md) passed its full offline gates.
+[combined checkpoint](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-integration-checkpoint.md) passed its full offline gates.
 Native empty-leaf/content/child cases, recording effects, PP and public admission remain unqualified.

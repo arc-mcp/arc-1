@@ -80,9 +80,9 @@ native readback fidelity and current-profile PP remain unqualified on both platf
 The positive fixture now supplies both attributes rather than relying on their omission. New
 regressions cover absent, changed, empty, padded and wrong-namespace values, plus an alternate
 namespace prefix and XML-escaped description. The 13 negative regressions failed against the old
-implementation; all retain one POST and no PUT/DELETE after the correction. The [independent follow-up review](broader-pinned-pp-writes/codex-package-api-review2-20261102.md)
+implementation; all retain one POST and no PUT/DELETE after the correction. The [independent follow-up review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/broader-pinned-pp-writes/codex-package-api-review2-20261102.md)
 closed the finding with 82 independently passing focused tests and an unchanged snapshot. The
-[original review](broader-pinned-pp-writes/codex-package-api-review1-20261102.md) remains available.
+[original review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/broader-pinned-pp-writes/codex-package-api-review1-20261102.md) remains available.
 
 Follow-up validation uses Node 22.21.1: the full suite passes **505 files / 13,635 tests**;
 source/scripts/tests typecheck, build, full lint, policy and size/schema budgets pass. The focused

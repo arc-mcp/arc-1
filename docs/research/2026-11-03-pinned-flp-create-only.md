@@ -102,7 +102,7 @@ delete verification, recording/request selection, native/PP qualification and pu
 
 ## Independently reviewed private integration
 
-The [verbatim independent review](2026-11-03-pinned-flp-create-review1-verbatim.md) approves
+The [verbatim independent review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-flp-create-review1-verbatim.md) approves
 private integration of `9a80a805fa3e1103bcb679d9f8a4e98bcae9ff1e`, with no actionable findings.
 It records 272 existing tests across eight suites, 22 additional HTTP-client probes using synthetic
 fetch responses, unchanged native source evidence and unchanged review snapshot. These are offline

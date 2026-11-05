@@ -98,21 +98,21 @@ No source capture or passing mock test admits them publicly.
 
 ## Independent correction review and integration
 
-The [first independent review](2026-11-03-pinned-publication-review1-verbatim.md) found that a
+The [first independent review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-publication-review1-verbatim.md) found that a
 30-second configuration observation could expire while the actual HTTP request waited for its
 semaphore or authentication. Correction `4bd4a4c86864c6e5cbe499e85d0cd521129fe4f6` carries that
 original expiry into the one job request's deadline. The
-[second review](2026-11-03-pinned-publication-review2-verbatim.md) passed 277 affected tests and
+[second review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-publication-review2-verbatim.md) passed 277 affected tests and
 13 independent expiry/budget controls; its original delayed-send reproduction now sends zero POSTs.
 All source/test bytes of the corrected candidate match the integrated revision `6a229e8cd`.
 
-The [combined integration checkpoint](2026-11-03-pinned-integration-checkpoint.md) records passing
+The [combined integration checkpoint](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-integration-checkpoint.md) records passing
 checks. This closes the private implementation review only. The production configuration reader,
 native lifecycle/generated-owner cleanup, public admission and current-build PP remain open.
 
 ## Separate native-governed alternative
 
-A later [private alternative](2026-11-03-pinned-publication-native-governed.md) uses explicit unrestricted
+A later [private alternative](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-publication-native-governed.md) uses explicit unrestricted
 request policies at both layers and reports recording as unverified. It reuses this executor and
 single-use sender without claiming the native branch is non-recording. This does not remove the
 configuration-reader requirement from the stronger profile documented above or admit public calls.

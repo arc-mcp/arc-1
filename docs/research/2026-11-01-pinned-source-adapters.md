@@ -33,7 +33,7 @@ authored HTTP-mock tests; live program writing has not been qualified.
 
 Actual Claude Code **Opus 5.5, effort max** reviewed immutable
 `cee2a18e17ed2c44a49e150fb5844784ea93d042` and returned three Medium and five Low findings:
-[verbatim report](broader-pinned-pp-writes/claude-class-adapters-followup-review-20261101.md).
+[verbatim report](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/broader-pinned-pp-writes/claude-class-adapters-followup-review-20261101.md).
 The reviewer independently passed the full 432-file/11,783-test suite, three TypeScript projects,
 size/schema checks and 59 existing qualification-harness simulations. First/last snapshot checks
 and the subsequent author check all verified the same 4,243 files unchanged. The reviewer did not
@@ -115,7 +115,7 @@ transportable-object coverage and remaining built-in adapters are required befor
 ## Third Claude review and follow-up
 
 Actual Claude Code **Opus 5.5, requested effort max** reviewed immutable `10b131e9d861335bd2d4195b3f322dc279db5cbc`.
-Its [verbatim report](broader-pinned-pp-writes/claude-source-adapters-review-20261101.md)
+Its [verbatim report](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/broader-pinned-pp-writes/claude-source-adapters-review-20261101.md)
 returned no High, three Medium and six Low findings. It independently passed 434 files/11,860 tests,
 three TypeScript projects, size/schema checks and 59 existing harness simulations. Its first and
 last snapshot checks and the author recheck verified 4,251 files unchanged. It executed no individual
@@ -163,7 +163,7 @@ The result now preserves the confirmed deletion or primary failure, adds the cle
 returns an error. Two native HTTP-mock tests prove close-only failure and a combined DELETE rejection,
 with one DELETE and one close attempt.
 
-Read-only [metadata receipts](broader-pinned-pp-writes/program-owner-shapes-readonly-20261101.json)
+Read-only [metadata receipts](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/broader-pinned-pp-writes/program-owner-shapes-readonly-20261101.json)
 show RSPFPAR/executableProgram, SAPMSSY0/subroutinePool, SAPMS38M and SAPMSYST/modulePool with own
 packages. RSDBCOM4 is a package-owning abapInclude. LSDIFRUNTIMEUXX is exposed through the general
 include URL as PROG/I but has a FUGR/I context and no own package. This confirms why a URL/type/name
@@ -171,7 +171,7 @@ check alone cannot establish standalone ownership; it does not prove that SAP wo
 to that alias. Metadata only was read; no permissions or deployed configuration changed.
 
 
-The [reproducible local sample](broader-pinned-pp-writes/source-parse-benchmark-20261101.json)
+The [reproducible local sample](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/broader-pinned-pp-writes/source-parse-benchmark-20261101.json)
 uses an authored program with 100, 1,000 and 5,000 independent FORM blocks, edits one block and
 runs configured lint. It records exact source/script hashes, sizes, timings and process RSS. It is
 one increasing-size run on this machine, without SAP/network or concurrent requests; it does not
@@ -203,7 +203,7 @@ Fresh two-writer PP qualification of these bytes remains required.
 ## Fourth Claude review and follow-up
 
 Actual Claude Code **Opus 5.5**, launched with **effort max**, reviewed immutable `7af4069ae6332e68c5fd130085806849bd5145a0`.
-The [verbatim report](broader-pinned-pp-writes/claude-source-review-fixes-20261101.md) has SHA-256
+The [verbatim report](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/broader-pinned-pp-writes/claude-source-review-fixes-20261101.md) has SHA-256
 `b135dc2e4ee8be390dd0146227806098eb1ad3ba058440111113255b307aa714`.
 It found no High, two Medium and ten Low issues and requested fixes and review before a live artifact
 freeze. It independently passed 435 files/11,928 tests, all three TypeScript projects, size/schema
@@ -263,7 +263,7 @@ The final type-only test-helper annotation was checked by all three TypeScript p
 
 Actual Claude Code **Opus 5.5**, launched with **effort max**, reviewed immutable
 `d0993a04939ada38376808a96883a6b28cbaec26`.
-The [verbatim report](broader-pinned-pp-writes/claude-program-lifecycle-review-20261101.md) has SHA-256
+The [verbatim report](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/broader-pinned-pp-writes/claude-program-lifecycle-review-20261101.md) has SHA-256
 `0dec00e3f64b648788e61b8e15fa230af07771a91e5e2bf8c9ffd6b88f1e0f4f`.
 It found no High, two Medium and eight Low issues. Reviewer and author verification confirmed the
 same 4,320 files unchanged; the reviewer independently passed 437 files/11,991 tests, all three
@@ -327,9 +327,9 @@ simulations passed. The initial full run caught the action-list expectation miss
 admitted text operation; its correction and stronger refusal assertions are included in the passing
 full run. No new live deployment or mutation qualification is claimed.
 
-The [sixth review and follow-up](2026-11-01-pinned-text-review-followup.md) records three reproduced
+The [sixth review and follow-up](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-01-pinned-text-review-followup.md) records three reproduced
 Medium findings, the fixes and remaining native qualification requirements. Its verbatim report is
 preserved separately. Native function ownership now has a private, unadvertised candidate backed by
 [GET-only metadata evidence](2026-11-01-pinned-function-resources.md); the family is not yet admitted.
 
-The [seventh independent review and follow-up](2026-11-02-pinned-activation-review-followup.md) records current diagnostic/cleanup fixes, private creation checks and remaining native-function blockers. It does not qualify these bytes live.
+The [seventh independent review and follow-up](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-pinned-activation-review-followup.md) records current diagnostic/cleanup fixes, private creation checks and remaining native-function blockers. It does not qualify these bytes live.

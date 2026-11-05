@@ -6,7 +6,7 @@ ordinary single-target sender, generated-owner cleanup or native configuration r
 
 ## Preserved review and disposition
 
-The independent [verbatim review](2026-11-03-pinned-publication-native-governed-review1-verbatim.md)
+The independent [verbatim review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-publication-native-governed-review1-verbatim.md)
 has SHA256 `784823449a5056f16a4a846ba11a3aa7583284aa95f30d753bdec3ba26b74415`.
 Its original candidate, probes, four failing observations and logs remain unchanged in the private
 review packet. Rebound probes change only absolute source/fixture and external output paths.

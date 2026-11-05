@@ -7,7 +7,7 @@ routes still refuse these types. This work ran offline only: no SAP system, clou
 credential was used, and it is neither live nor PP evidence.
 
 The independent Codex fallback review requested four P2 corrections; the
-[implementation and verbatim report](2026-11-02-pinned-ddic-review-followup.md) preserve their
+[implementation and verbatim report](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-pinned-ddic-review-followup.md) preserve their
 dispositions. The corrected candidates await a fresh independent review and all native qualification.
 
 Base `13f5518a`. Evidence replayed from the repository: `tests/fixtures/xml/{domain-metadata,domain-with-fixvalues,dataelement-metadata,tabletype-stringtab,lockobject-emekkoe}.xml`,

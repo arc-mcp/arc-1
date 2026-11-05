@@ -50,7 +50,7 @@ tests, not claims about a live SAP system.
 
 The native shapes and canonicalization are inherited from the
 [DDIC/server-driven candidate](2026-11-02-pinned-ddic-server-driven.md), its
-[review corrections](2026-11-02-pinned-ddic-review-followup.md), and the
+[review corrections](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-pinned-ddic-review-followup.md), and the
 [package/API/service-binding candidate](2026-11-02-pinned-package-api-publication.md).
 Fresh native read qualification still needs release-specific evidence that each requested view
 returns the expected owner and exposes saved/draft state, including another user's draft, active

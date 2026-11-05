@@ -68,7 +68,7 @@ corrected as described above, then the full suite passed. The requested independ
 
 ## Opus review at `b06ffdee6` and follow-up
 
-The [verbatim actual Opus 5.5 max review](broader-pinned-pp-writes/claude-shared-method-review-20261101.md)
+The [verbatim actual Opus 5.5 max review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/broader-pinned-pp-writes/claude-shared-method-review-20261101.md)
 retained the checkpoint with no High/Medium finding and five Low findings. It independently passed
 11,557 tests, all 59 simulations, typechecks and size/schema budgets. The 2,601-file snapshot was
 unchanged before and after, and was verified again by the author. The command used
@@ -124,7 +124,7 @@ the later reviews and revision-bound run are recorded below. New adapter bytes r
 
 ## Opus review at `771aff1c6`
 
-The [verbatim Opus 5.5 max review](broader-pinned-pp-writes/claude-method-quality-review-20261101.md)
+The [verbatim Opus 5.5 max review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/broader-pinned-pp-writes/claude-method-quality-review-20261101.md)
 retained this checkpoint with no High/Medium finding and five Low findings. All 11,572 tests,
 59 simulations, typechecks and size checks passed independently. Its 2,605-file snapshot was
 unchanged before/after review and on the author's subsequent verification. The launcher used
@@ -139,7 +139,7 @@ not the then-pending two-identity pinned PP qualification. No new capability is 
 
 ## Fresh PP evidence at `77e41fdcd`
 
-The [complete include/CRUD/formatter run](2026-11-01-broader-pinned-pp-writes-includes.md#complete-fresh-pp-run-16021607-utc)
+The [complete include/CRUD/formatter run](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-01-broader-pinned-pp-writes-includes.md#complete-fresh-pp-run-16021607-utc)
 exercised this shared main-method handler for both mapped SAP writers, followed by owner activation,
 independent native actor/source checks and deletion. Production bytes match the accepted `771aff1c6`
 checkpoint; its test/documentation follow-ups are included. All temporary access and configuration

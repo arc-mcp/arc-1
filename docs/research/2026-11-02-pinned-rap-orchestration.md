@@ -177,7 +177,7 @@ gain package write authorization or mutation scope. The actual private wrappers 
 preview/apply paths and failure before any source write with owning-lock cleanup; reads for applying
 changes intentionally occur under the class lock.
 
-The [independent correction review](2026-11-03-pinned-rap-bdef-link-review-verbatim.md) approved
+The [independent correction review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-rap-bdef-link-review-verbatim.md) approved
 `7b18bad0` for private integration: 400 focused tests plus eight additional wrapper tests covering
 26 variants, all three TypeScript projects and static gates passed. All 4,789 source files and both
 historical metadata hashes stayed unchanged. A process-wide socket guard recorded zero attempts.

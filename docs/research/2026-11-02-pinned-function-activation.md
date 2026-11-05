@@ -1,6 +1,6 @@
 # Private FUNC activation adapter
 
-> Historical implementation record, superseded by the [review 18 follow-up](2026-11-02-function-activation-review-followup.md) and [review 19 corrections](2026-11-02-group-activation-review-followup.md). The budget, metadata-proof and review statements below describe the earlier revision.
+> Historical implementation record, superseded by the [review 18 follow-up](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-function-activation-review-followup.md) and [review 19 corrections](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-group-activation-review-followup.md). The budget, metadata-proof and review statements below describe the earlier revision.
 
 This candidate extends the existing pinned activation orchestrator with an exact native FUNC
 profile. It does not add FUNC to the public capability matrix. FUGR generation, group-owned
@@ -36,7 +36,7 @@ readback, malformed-reference, fallback, source-budget, cancellation and uncerta
 All 486 unit files / 12,999 tests, the three TypeScript projects, build and lint (three existing
 infos) passed. After the metadata response-budget addition, all 38 FUNC cases, strict documentation
 and 965 tracked source/test file budgets plus 12 schema scenarios also passed. No live test or independent review of this adapter has occurred. The separately reviewed
-[active-FUNC deletion experiment](2026-11-02-native-function-protocol.md#seventeenth-review-and-successful-native-active-deletion)
+[active-FUNC deletion experiment](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-native-function-protocol.md#seventeenth-review-and-successful-native-active-deletion)
 passed at the earlier `5b1669eb` checkpoint; this newer activation profile was not part of that run.
 
 The subsequent author review found that a word-boundary MIME match accepted

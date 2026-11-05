@@ -42,7 +42,7 @@ FEAT-93 remains open, including the guarded adapter and two-writer qualification
 Author validation passed 423 files / 11,494 tests, all three typecheck projects, lint, strict docs
 and file/schema budgets. The focused class-surgery/RAP suite passed 282 tests. Local replay of the
 saved native source/structure now refuses all three individual edits before transformation.
-The [subsequent Opus review](broader-pinned-pp-writes/claude-stream-and-chain-review-20261101.md)
+The [subsequent Opus review](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/broader-pinned-pp-writes/claude-stream-and-chain-review-20261101.md)
 retained this guard for the observed shape. Its Low finding requires positive selected-name
 validation before any broader pinned adapter uses it; that admission remains closed. A follow-up
 adds the start-column case and narrows the public wording. The separately documented

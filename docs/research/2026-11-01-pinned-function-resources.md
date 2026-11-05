@@ -42,7 +42,7 @@ source/signature preservation, structural FORM neighbors, native group pool part
 resources and removed-lock receipts. Renamed resources in mutation fixtures are authored variants;
 they do not imply that these standard SAP objects were changed.
 
-Private creation and processing metadata now have offline tests, including observed structural-include membership and cleanup failures. FUGR main-source replacement is refused; native FUNC signature normalization remains unresolved. Activation identities, transportable cases and two distinct propagated SAP writers still need implementation and/or qualification. See the [seventh-review follow-up](2026-11-02-pinned-activation-review-followup.md). The extracted function-processing metadata helper preserves existing single-target
+Private creation and processing metadata now have offline tests, including observed structural-include membership and cleanup failures. FUGR main-source replacement is refused; native FUNC signature normalization remains unresolved. Activation identities, transportable cases and two distinct propagated SAP writers still need implementation and/or qualification. See the [seventh-review follow-up](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-pinned-activation-review-followup.md). The extracted function-processing metadata helper preserves existing single-target
 behavior and has a strict private candidate branch; that branch is not reachable through public
 function creation yet. DDIC/RAP, batches, other types, management, CTS, traces and FLP remain separate
 required parts of the accepted PR #1142 scope. Git and custom extensions/plugins remain excluded.

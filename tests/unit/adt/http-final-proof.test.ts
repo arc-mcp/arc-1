@@ -1,7 +1,7 @@
 import { Socket } from 'node:net';
 import { type Dispatcher, getGlobalDispatcher, MockAgent, setGlobalDispatcher } from 'undici';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { nativeRequestPolicy } from '../../../scripts/qualification/pr1142/native-observed-http.js';
+import { DataResponseBudget } from '../../../src/adt/data-result-context.js';
 import { AdtNetworkError } from '../../../src/adt/errors.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
 import { RequestAttemptBudget } from '../../../src/adt/request-attempt-budget.js';
@@ -94,7 +94,13 @@ for (const proxy of [false, true]) {
       time += cap;
     });
     budget.dispatched = vi.fn();
-    const options = nativeRequestPolicy({ deadline: time + (cap === 6000 ? cap : 90000), attemptBudget: budget });
+    const options = {
+      deadline: time + cap,
+      attemptBudget: budget,
+      noReplay: true,
+      retryTransientErrors: false,
+      responseBudget: new DataResponseBudget(2 * 1024 * 1024, 'final-proof-test', true),
+    };
     expect(options.deadline).toBe(time + cap);
     await expect(http.delete('/sap/bc/adt/owned', undefined, options)).rejects.toBeInstanceOf(AdtNetworkError);
     expect(deletes).toBe(0);

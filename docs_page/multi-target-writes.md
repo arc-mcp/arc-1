@@ -326,7 +326,7 @@ older-version fallback. Accepted styles are keywordUpper, keywordLower, keywordA
 native toUpper/toLower settings currently refuse even reads. Hidden storage and same-user concurrent
 updates are not proven preserved. Strong ETags are sent when present, but native conditional-write
 enforcement remains unqualified; observed writes were native-unconditional. Historical
-[two-writer and v5 evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
+[two-writer and v5 evidence](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-01-broader-pinned-pp-writes-combined-qualification.md)
 applies to its named artifact and styles, not every current combination.
 
 ## Classic FLP

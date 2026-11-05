@@ -191,10 +191,10 @@ and upgrade requirements. Do not widen the mutation-free multi-target contract a
 - **Priority / effort / status:** P2 / XL / Ready
 - **Category:** Architecture
 
-**Remaining gap.** Review the production consolidation, then finish qualification and release review
+**Remaining gap.** Review the consolidated production source after repository cleanup, then finish qualification and release review
 for the explicit built-in pinned strict-PP
-write surface in draft [PR #1142](https://github.com/arc-mcp/arc-1/pull/1142). Implementation and
-independent source review cover the admitted resource profiles; source integration alone does not
+write surface in draft [PR #1142](https://github.com/arc-mcp/arc-1/pull/1142). The admitted resource profiles are integrated; earlier independent reviews remain revision-bound.
+The consolidated source still needs final review, and source integration alone does not
 complete the [accepted plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-broader-pinned-pp-writes.md).
 The [current acceptance ledger](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-05-pr1142-current-acceptance.md)
 tracks the remaining gates and final verification; FEAT-93 stays open. Remaining work is:
@@ -203,13 +203,13 @@ tracks the remaining gates and final verification; FEAT-93 stays open. Remaining
   roundtrip and class save/activation/record-removal/deletion without replay. The corrected rich
   inactive-inventory shapes passed source/security review. Consumed v4/v5 runs physically released
   the task and parent; v5 then refused the released-parent comment's missing edit links. The
-  [fixed released-pair v6 profile](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-05-native-cts-released-pair-v6.md)
+  [fixed released-pair v6 profile](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-05-native-cts-released-pair-v6.md)
   adopts607R/608R read-only and retains the unchanged fresh B/C graphs. Independent source review
   and fresh native B/C qualification remain. Old failed claims stay failed; deleted class records and
   released CTS history remain explicit. Preserve owning cleanup and the no-downstream-route limit.
 - Qualify the final deployed source with the two mapped PP writers, the remaining text/recording
   and negative-route checks, reverse PP cleanup, then verified app/IAM/destination/SAP-role restoration.
-  The [fixed text-tail v2](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-05-current-pp-text-tail-v2.md) binds the stopped
+  The [fixed text-tail v2](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-05-current-pp-text-tail-v2.md) binds the stopped
   pre-mutation attempt and the exact owned include/program relationship. Source review passed;
   fresh PP execution remains pending, with no replay of completed owner creation or activation.
   The [selected native-platform projection](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-05-pinned-native-platform-projection.md) corrects the automatic/manual probe and internal recording-profile handoff; source review and a fresh source-bound PP FLP window remain pending.

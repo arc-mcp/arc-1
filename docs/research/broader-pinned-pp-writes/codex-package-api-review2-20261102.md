@@ -1,9 +1,0 @@
-# Package/API follow-up review 2
-
-Independent parent Codex review of `083cbd77e5d61a92cc5fafabe04cedea787e454f` against `8dd5dfa07402a36d5cc4c347e475b31406e35db7`. Reviewer authored neither code nor tests. Codex follows the confirmed external Claude usage limit.
-
-**Private integration: GO. No new finding in the focused delta.** Review 1 P2 is closed. The root reader uses exact decoded values from the ADT core namespace; required description and responsible input are always validated before submission and both are compared after the acknowledged POST. Missing, changed, padded or wrongly bound fields retain created-unverified rather than success. Alternate namespace prefixes and XML entity decoding are supported. No replay, corrective PUT or compensating DELETE is added. The exact-value reader also makes identity/settings validation stricter rather than broadening the private contract.
-
-Independently read the complete four-file delta, surrounding validation/submission/outcome code, shared native XML reader, applicable AGENTS and roadmap. The two focused package/SRVB suites passed 82 tests on Node 22.21.1. The author reported 13 expected failures before the fix and a passing full suite of 505 files / 13,635 tests plus other checks have retained logs; those broader checks were not repeated for this small delta. First/final verifier confirmed 4,560 tracked files unchanged. No source edits/install/native action/credentials/network occurred. One search used an incorrect native XML filename, then the actual import was followed. No source reads after final verifier.
-
-This verdict is only for integrating the private candidate. Native metadata fidelity, package deletion/non-cascade proof, publication recording, current-build PP and public admission remain open. It is neither whole-PR readiness nor a native-run approval.
