@@ -1,6 +1,8 @@
 /** Private DDIC metadata profile: fresh under-lock merge, lossless preflight and read-back evidence. */
+import type { AdtClient } from '../../adt/client.js';
 import { updateObject, withLockedMutation } from '../../adt/crud.js';
 import { AdtError, AdtSafetyError } from '../../adt/errors.js';
+import type { AdtHttpClient } from '../../adt/http.js';
 import { throwIfRequestCancelled } from '../../adt/http-deadline.js';
 import { mutationClient } from '../../adt/mutation-client.js';
 import { nativeXmlRoot } from '../../adt/native-xml-evidence.js';
@@ -87,7 +89,7 @@ async function verifySave(
 }
 
 /** Shared SAPWrite update action selects this profile on pinned routes. Never reuses the caller's package. */
-export async function writePinnedMetadataUpdate(ctx: SapWriteContext): Promise<ToolResult> {
+export function pinnedMetadataUpdateProfile(ctx: SapWriteContext) {
   const state = pinnedSourceState(ctx);
   const { client, args, config, type, name, objectUrl } = ctx;
   if (!state.pkg || !state.recording)
@@ -97,85 +99,84 @@ export async function writePinnedMetadataUpdate(ctx: SapWriteContext): Promise<T
   const policy = pinnedSourceLockPolicy(client, context, objectUrl, pkg, recording, (phase) => {
     state.phase = phase;
   });
-  await withLockedMutation(client.http, client.safety, context, objectUrl, policy, async (session, lock) => {
-    const current = mutationClient(client, context, session);
-    state.phase = 'metadata-read';
-    // Explicit inactive view: an unversioned read can hide another user's pending draft.
-    const stored = await readPinnedDdicEvidence(current, selected, 'inactive');
-    if (stored.packageName !== pkg) throw new AdtSafetyError('The owner package changed since preflight.');
-    if (args.expectedMetadataHash !== undefined && args.expectedMetadataHash !== stored.hash)
-      throw new AdtSafetyError('The stored metadata changed since it was read. No write was sent. Re-read it first.');
-    state.phase = 'edit-preparation';
-    let body: string;
-    try {
-      const provided = getMetadataWriteProperties(args);
-      if (type === 'DTEL') provided.typeName = provided.typeName ?? provided.domainName;
-      const merged = await mergeMetadataWriteProperties(current, type, name, provided, stored.xml);
-      if (type === 'MSAG') {
-        const language = stored.root.attribute('language', 'http://www.sap.com/adt/core');
-        if (
-          !language?.trim() ||
-          language !== language.trim() ||
-          !stored.masterLanguage?.trim() ||
-          language !== stored.masterLanguage
-        )
-          throw new AdtSafetyError(
-            'Message texts require verified language and master language; connect in the master language to edit them.',
-          );
+  let persistedBody: string, changed: string[], addedMessages: ReadonlySet<string> | undefined;
+  return {
+    lock: policy,
+    transport: recording.request,
+    async prepare(current: AdtClient) {
+      state.phase = 'metadata-read';
+      // Explicit inactive view: an unversioned read can hide another user's pending draft.
+      const stored = await readPinnedDdicEvidence(current, selected, 'inactive');
+      if (stored.packageName !== pkg) throw new AdtSafetyError('The owner package changed since preflight.');
+      if (args.expectedMetadataHash !== undefined && args.expectedMetadataHash !== stored.hash)
+        throw new AdtSafetyError('The stored metadata changed since it was read. No write was sent. Re-read it first.');
+      state.phase = 'edit-preparation';
+      let body: string;
+      try {
+        const provided = getMetadataWriteProperties(args);
+        if (type === 'DTEL') provided.typeName = provided.typeName ?? provided.domainName;
+        const merged = await mergeMetadataWriteProperties(current, type, name, provided, stored.xml);
+        if (type === 'MSAG') {
+          const language = stored.root.attribute('language', 'http://www.sap.com/adt/core');
+          if (
+            !language?.trim() ||
+            language !== language.trim() ||
+            !stored.masterLanguage?.trim() ||
+            language !== stored.masterLanguage
+          )
+            throw new AdtSafetyError(
+              'Message texts require verified language and master language; connect in the master language to edit them.',
+            );
+        }
+        body = buildCreateXml(
+          type,
+          name,
+          pkg,
+          String(args.description ?? merged._description ?? name),
+          merged,
+          stored.masterLanguage,
+          stored.responsible,
+          resolveWriteSystemType(config, current) === 'btp',
+        );
+        body = withStoredRootAttributes(body, stored.root);
+      } catch (error) {
+        throw localRefusal(error);
       }
-      body = buildCreateXml(
-        type,
-        name,
-        pkg,
-        String(args.description ?? merged._description ?? name),
-        merged,
-        stored.masterLanguage,
-        stored.responsible,
-        resolveWriteSystemType(config, current) === 'btp',
-      );
-      body = withStoredRootAttributes(body, stored.root);
-    } catch (error) {
-      throw localRefusal(error);
-    }
-    let changed: string[], addedMessages: ReadonlySet<string> | undefined;
-    let persistedBody = body;
-    if (type === 'MSAG') {
-      const prepared = preparePinnedMessageClassUpdate(stored.xml, body, {
-        messages: args.messages !== undefined,
-        description: args.description !== undefined,
-      });
-      body = prepared.body;
-      persistedBody = prepared.persistedBody;
-      changed = prepared.changedFields;
-      addedMessages = addedMessageNumbers(stored.xml, persistedBody);
-    } else {
-      const target = metadataFields(nativeXmlRoot(body, selected.root, selected.namespace, true), selected.namespace);
-      changed = assertOnlyRequestedChanges(stored.fields, target, requestedPaths(ctx));
-    }
-    if (!changed.length) {
-      state.unchangedConfirmed = true;
-      state.metadata = { hash: stored.hash, nativeVersion: stored.version };
-      return;
-    }
-    checkOperation(client.safety, OperationType.Update, 'PinnedMetadataSave');
-    throwIfRequestCancelled(context.requestPolicy);
-    state.phase = 'metadata-save';
-    state.state = 'metadata-save-unknown';
-    state.writeAttempted = true;
-    await updateObject(
-      session,
-      client.safety,
-      objectUrl,
-      body,
-      lock.lockHandle,
-      vendorContentTypeForType(type),
-      recording.request,
-    );
-    const saved = await verifySave(ctx, session, persistedBody, [], false, addedMessages);
-    state.metadata = { hash: saved.hash, nativeVersion: saved.version, changedFields: changed };
-    state.state = savedState(saved.version);
-  });
-  return textResult('');
+      persistedBody = body;
+      if (type === 'MSAG') {
+        const prepared = preparePinnedMessageClassUpdate(stored.xml, body, {
+          messages: args.messages !== undefined,
+          description: args.description !== undefined,
+        });
+        body = prepared.body;
+        persistedBody = prepared.persistedBody;
+        changed = prepared.changedFields;
+        addedMessages = addedMessageNumbers(stored.xml, persistedBody);
+      } else {
+        const target = metadataFields(nativeXmlRoot(body, selected.root, selected.namespace, true), selected.namespace);
+        changed = assertOnlyRequestedChanges(stored.fields, target, requestedPaths(ctx));
+      }
+      if (!changed.length) {
+        state.unchangedConfirmed = true;
+        state.metadata = { hash: stored.hash, nativeVersion: stored.version };
+        return;
+      }
+
+      return { body, result: textResult('') };
+    },
+    beforeSave() {
+      checkOperation(client.safety, OperationType.Update, 'PinnedMetadataSave');
+      throwIfRequestCancelled(context.requestPolicy);
+      state.phase = 'metadata-save';
+      state.state = 'metadata-save-unknown';
+      state.writeAttempted = true;
+    },
+    async complete(session: AdtHttpClient) {
+      const saved = await verifySave(ctx, session, persistedBody, [], false, addedMessages);
+      state.metadata = { hash: saved.hash, nativeVersion: saved.version, changedFields: changed };
+      state.state = savedState(saved.version);
+    },
+  };
 }
 
 /** SAP's POST stores only a shell for these; the requested definition needs a separate locked save. */

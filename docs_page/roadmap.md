@@ -191,7 +191,7 @@ and upgrade requirements. Do not widen the mutation-free multi-target contract a
 - **Priority / effort / status:** P2 / XL / Ready
 - **Category:** Architecture
 
-**Remaining gap.** Finish the source/metadata lifecycle simplification after retiring qualification-only runtime paths and specializing publication, then finish qualification and release review
+**Remaining gap.** Verify the shared source/metadata lifecycles, final-send guards and specialized publication after retiring qualification-only runtime paths, then finish qualification and release review
 for the explicit built-in pinned strict-PP
 write surface in draft [PR #1142](https://github.com/arc-mcp/arc-1/pull/1142). The admitted resource profiles are integrated; earlier independent reviews remain revision-bound.
 The consolidated source still needs final review, and source integration alone does not

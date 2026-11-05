@@ -1,14 +1,14 @@
 /** Full XML replacements must merge the current metadata under the SAP lock. */
 
 import type { AdtClient } from '../../adt/client.js';
-import { lockObject, unlockObject, updateObject } from '../../adt/crud.js';
+import { updateObject, withLockedMutation } from '../../adt/crud.js';
 import {
   formatKtdWriteReport,
   type KtdShortText,
   type KtdWriteReport,
   rewriteKtdDocument,
 } from '../../adt/ddic-xml.js';
-import { mutationResponsible } from '../../adt/mutation-client.js';
+import { mutationClient, mutationResponsible } from '../../adt/mutation-client.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
 import { logger } from '../../server/logger.js';
 import { getCachedFeatures } from '../feature-cache.js';
@@ -21,13 +21,13 @@ import {
   vendorContentTypeForType,
 } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
-import { writePinnedMetadataUpdate } from './pinned-metadata-write.js';
+import { pinnedMetadataUpdateProfile } from './pinned-metadata-write.js';
 
 export async function writeMetadataUpdate(ctx: SapWriteContext, existingPackage?: string): Promise<ToolResult> {
   const { client, args, config, type, name, objectUrl, transport, invalidateWrittenObject } = ctx;
-  if (ctx.mutationContext.mode === 'pinned-pp') return writePinnedMetadataUpdate(ctx);
-  const dryRun = type === 'SKTD' && args.dryRun === true;
-  const prepare = async (current: AdtClient) => {
+  const pinned = ctx.mutationContext.mode === 'pinned-pp' ? pinnedMetadataUpdateProfile(ctx) : undefined;
+  const dryRun = !pinned && type === 'SKTD' && args.dryRun === true;
+  const prepareLegacy = async (current: AdtClient) => {
     if (type === 'SKTD') {
       // Omit version: the editable envelope includes pending node changes. An
       // explicit active read would revert them on the next update (2026-09-02).
@@ -60,38 +60,47 @@ export async function writeMetadataUpdate(ctx: SapWriteContext, existingPackage?
     );
     return { body, result: textResult(`Successfully updated ${type} ${name}.`) };
   };
+  const prepare = pinned?.prepare ?? prepareLegacy;
 
   // A preview validates the same transformation without reserving a snapshot.
-  if (dryRun) return (await prepare(client)).result;
-  checkOperation(client.safety, OperationType.Update, 'MetadataUpdate');
-  return client.withStatefulSession(async (current) => {
-    const lock = await lockObject(current.http, current.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
-    let writeAttempted = false;
-    try {
-      const { body, result } = await prepare(current);
+  if (dryRun) return (await prepareLegacy(client)).result;
+  if (!pinned) checkOperation(client.safety, OperationType.Update, 'MetadataUpdate');
+  let writeAttempted = false;
+  const policy = pinned?.lock ?? {
+    beforeLock: () => {},
+    validateLock: async () => {},
+    afterUnlockAttempt: () => {
+      if (writeAttempted)
+        try {
+          invalidateWrittenObject(type, name);
+        } catch {
+          logger.warn('Metadata cache invalidation failed after a write attempt.');
+        }
+    },
+  };
+  return withLockedMutation(
+    client.http,
+    client.safety,
+    ctx.mutationContext,
+    objectUrl,
+    policy,
+    async (session, lock) => {
+      const prepared = await prepare(mutationClient(client, ctx.mutationContext, session));
+      if (!prepared) return textResult('');
+      pinned?.beforeSave();
       writeAttempted = true;
       await updateObject(
-        current.http,
-        current.safety,
+        session,
+        client.safety,
         objectUrl,
-        body,
+        prepared.body,
         lock.lockHandle,
         vendorContentTypeForType(type),
-        transport ?? (lock.corrNr || undefined),
+        pinned ? pinned.transport : (transport ?? (lock.corrNr || undefined)),
       );
-      return result;
-    } finally {
-      try {
-        await unlockObject(current.http, objectUrl, lock.lockHandle);
-      } finally {
-        if (writeAttempted) {
-          try {
-            invalidateWrittenObject(type, name);
-          } catch {
-            logger.warn('Metadata cache invalidation failed after a write attempt.');
-          }
-        }
-      }
-    }
-  });
+      await pinned?.complete(session);
+      return prepared.result;
+    },
+    pinned ? undefined : getCachedFeatures()?.abapRelease,
+  );
 }
