@@ -113,6 +113,8 @@ export function multiTargetInvocationDecision(
     return pinnedMutationAllowed(toolName, args, config) ? 'allowed' : 'forbidden';
   if (!MULTI_TARGET_TOOLS.has(toolName)) return 'forbidden';
   const action = invocationPolicyKey(toolName, args);
+  // CDS preview has only been qualified on a single on-premise target.
+  if (toolName === 'SAPRead' && action === 'CDS_PREVIEW') return 'forbidden';
   if (toolName === 'SAPQuery' && action === 'long_text' && config.systemType === 'btp') return 'forbidden';
   const actionRule = MULTI_TARGET_ACTION_RULES.get(toolName);
   if (actionRule && (!action || !actionRule.actions.has(action.toLowerCase()))) return 'forbidden';

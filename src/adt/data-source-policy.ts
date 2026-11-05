@@ -340,6 +340,12 @@ export class DataSourceBlocklistGuard {
     }
   }
 
+  /** Reject an explicit alias before metadata reads, without emitting a premature allow decision. */
+  async rejectBlockedName(name: string): Promise<void> {
+    if (this.blockedSources.some((blocked) => canonicalDataSourceName(blocked) === name))
+      await this.enforceSources([name]);
+  }
+
   async enforceSources(directSources: string[]): Promise<void> {
     if (this.blockedSources.length === 0) return;
     await this.decide(directSources, async () => {
