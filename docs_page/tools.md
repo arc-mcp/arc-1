@@ -187,7 +187,7 @@ base plus qualified partial coverage. Caller cancellation still propagates.
 
 | Discovery budget after base read | Summary | Sources |
 |---|---:|---:|
-| Time | 2 seconds | 12 seconds |
+| Time | 5 seconds for CLAS; 2 seconds for other types | 12 seconds |
 | Actual SAP sends, including CSRF/retries | 6 | 20 |
 | Aggregate decoded response bytes, streamed | 128 KiB | 256 KiB |
 | Graph/source expansion | 8 rendered identities, no nested reads | 20 nodes, depth 5, 80 edges |
