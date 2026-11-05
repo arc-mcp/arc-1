@@ -1503,13 +1503,19 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
   A new program needs its first owner activation before deletion. If its source cannot compile
   and you intend to discard it, replace it with `REPORT <name>.`, activate, then delete. If SAP leaves an empty FUGR
   pool inactive after activation, stop and involve the user; there is no verified automatic repair. Clean pools and source-only
-  drafts can be deleted while both locks remain held. An unavailable discovery collection
-  retains the legacy delete path (7.50); an advertised service error stops deletion.
+  drafts can be deleted while both locks remain held. If cached discovery is inconclusive,
+  deletion makes one discovery read (up to five seconds) in the owner-locked session. Only a valid catalog
+  listing the program or function-group collection can establish that its text-pool collection is absent and allow
+  owner-only deletion (for example, on 7.50). Without that API, inactive text drafts saved in SAP GUI
+  cannot be checked. Inconclusive discovery and advertised-service failures keep the pool guard.
   To recover an older PROG orphan, recreate and activate the program, then delete it. For a FUGR
   orphan, recovery depends on the pool state; do not assume another activation repaired it.
 - **Discovery-gated.** CLAS symbols were verified on 758, 816 and BTP ABAP; PROG/FUGR are
   on-prem object types. The service is absent
-  on the tested NW 7.50 system. When discovery is loaded, ARC-1 reports an unavailable service
+  on the tested NW 7.50 system. Collection presence does not require an advertised Accept type.
+  Legacy discovery catalog reads use client/language headers. With `SAP_DISABLE_SAML=true`, ARC-1 keeps
+  the existing URL bypass; query-sensitive 7.40 discovery remains unsupported in that mode.
+  When discovery is loaded, ARC-1 reports an unavailable service
   without calling the broken legacy endpoint. Without discovery, SAP's actual error surfaces.
 - **Reads:** `objectType` defaults to `PROG`; use `CLAS` or `FUGR` explicitly for those objects.
   Whole-pool reads label the non-empty raw bodies of supported parts. SAP may return empty-value
