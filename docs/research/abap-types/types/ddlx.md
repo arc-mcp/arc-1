@@ -47,15 +47,6 @@ the rest of the ADT object-type taxonomy. Verified-from-source rather than verif
 - **Evidence**: verified-from-source (abap-file-formats released, probe catalog) — no Eclipse-jar confirmation of slash form
 - **Issue**: minor — `DDLX/EX` alias should be re-confirmed against a live ADT typestructure response when convenient
 
-## Recommendation
-- Keep as-is. Optionally add a fixture-backed test that confirms `DDLX/EX` is what ADT
-  actually returns for a customer-created DDLX, to close the Eclipse-jar gap.
-- **Breaking change**: no
-- **Test gap to close**: `tests/fixtures/probe/<a4h>/ddlx-typestructure.xml` snapshot showing
-  `<adtcore:objectType>DDLX/EX</adtcore:objectType>` from a live response — gives us
-  Eclipse-jar-equivalent evidence.
-
-
 ## Native identity follow-up — 2 November 2026
 
 A bounded read-only metadata GET on A4H/001 observed `DDLX/EX`, root `ddlx:ddlxSource`,
@@ -63,4 +54,4 @@ namespace `http://www.sap.com/adt/ddic/ddlxsources` and its own `DEVC/K` package
 The [retained projection](../../../../tests/fixtures/declarative-owners/native-metadata.json)
 records the original identity, timestamp and body hash. This resolves the older native metadata
 identity uncertainty above on this target; it does not change the recorded Eclipse-jar or
-other-release evidence. [Private mutation work and limits](../../2026-11-02-pinned-declarative-sources.md).
+other-release evidence. [Ownership and mutation evidence](../../broader-pinned-pp-writes/native-source-contracts.md#native-ownership).

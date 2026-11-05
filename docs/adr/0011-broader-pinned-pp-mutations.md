@@ -168,7 +168,7 @@ that would clear another active non-SQL trace refuses. Qualified OFF resets know
 non-stack properties to native inactive defaults; no extra restore PUT or filter-preservation promise
 is made. Unknown reset shapes/nonempty unqualified table lists and allUsers remain blocked; already-matching
 state is preserved without PUT. Tests
-restore actual prior state without clearing unrelated traces. See the [native ST05 contract](../research/2026-11-04-st05-native-inactive-state.md).
+restore actual prior state without clearing unrelated traces. See the [native ST05 contract](../research/broader-pinned-pp-writes/native-runtime-contracts.md#traces-and-selected-platform).
 
 Formatter patches are mapped-user preferences, not global system settings. Native v5 preserves
 visible unselected attributes; older/lossy representations and unsupported native styles refuse.
@@ -189,10 +189,10 @@ status record for final checks, remaining live evidence and restoration. The req
 remain binding; dated evidence retains its original revision and outcome.
 
 The 2–3 November reports titled private candidate are immutable implementation/review checkpoints,
-not current blanket admission denials. See the [resource checkpoint](../research/2026-11-02-pinned-package-api-publication.md),
-[DDIC profiles](../research/2026-11-02-pinned-ddic-server-driven.md),
-[trace/FLP checkpoint](../research/2026-11-02-pinned-trace-flp.md),
-[FLP recording contract](../research/2026-11-03-pinned-flp-native-recording.md) and
+not current blanket admission denials. See the [resource checkpoint](../research/broader-pinned-pp-writes/native-service-contracts.md#publication-and-generated-resources),
+[DDIC profiles](../research/broader-pinned-pp-writes/native-metadata-contracts.md#definition-preservation),
+[trace/FLP checkpoint](../research/broader-pinned-pp-writes/native-runtime-contracts.md#traces-and-selected-platform),
+[FLP recording contract](../research/broader-pinned-pp-writes/native-runtime-contracts.md#classic-flp) and
 [publication alternative](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-publication-native-governed.md).
 Current dispatch/capability rows supersede their historical “not publicly wired” status while
 retaining each unresolved native limit. Names such as handlePrivatePinned… and historical scenario

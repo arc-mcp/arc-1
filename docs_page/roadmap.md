@@ -212,14 +212,14 @@ tracks the remaining gates and final verification; FEAT-93 stays open. Remaining
   The [fixed text-tail v2](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-05-current-pp-text-tail-v2.md) binds the stopped
   pre-mutation attempt and the exact owned include/program relationship. Source review passed;
   fresh PP execution remains pending, with no replay of completed owner creation or activation.
-  The [selected native-platform projection](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-05-pinned-native-platform-projection.md) corrects the automatic/manual probe and internal recording-profile handoff; source review and a fresh source-bound PP FLP window remain pending.
+  The [selected native-platform projection](https://github.com/arc-mcp/arc-1/blob/main/docs/research/broader-pinned-pp-writes/native-runtime-contracts.md#traces-and-selected-platform) corrects the automatic/manual probe and internal recording-profile handoff; source review and a fresh source-bound PP FLP window remain pending.
 - Reconcile final tests, security review, capability/version limits, operator upgrade/rollback docs
   and independent execution audits. Native read/recording gaps and unsupported backend variants
   stay explicit; successful parent deletion does not prove generated-resource absence.
 
-The per-operation [inventory](https://github.com/arc-mcp/arc-1/blob/main/docs/research/broader-pinned-pp-writes/inventory.md)
-and current [capability matrix](https://github.com/arc-mcp/arc-1/blob/main/docs_page/multi-target-writes.md)
-retain the exact admission and qualification boundaries. Aggregate, Copilot, shared Basic and
+The [research index](https://github.com/arc-mcp/arc-1/blob/main/docs/research/broader-pinned-pp-writes/inventory.md)
+links the native contract evidence; the current [capability matrix](https://github.com/arc-mcp/arc-1/blob/main/docs_page/multi-target-writes.md)
+defines exact admission and qualification boundaries. Aggregate, Copilot, shared Basic and
 read-only applications/destinations remain mutation-free. Git and custom extensions/plugins are
 excluded. Existing opted-in writers may gain the documented capabilities without another global
 switch; runtime/user settings and classic FLP use native resource policies beyond package checks.

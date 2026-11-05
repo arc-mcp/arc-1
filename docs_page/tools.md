@@ -1302,7 +1302,7 @@ admission is unchanged, and public `SAPWrite`/`SAPActivate` explicitly reject `e
 instead of silently discarding it. Reuse a hash only for the same object, type and requested view;
 hashes are content preconditions, not identity credentials, and identical content can share a hash.
 Native saved/draft behavior, release coverage and two-user PP qualification for the private writers
-remain open. See the [editable-read evidence and limits](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-02-editable-native-read-companions.md).
+remain open. See the [editable-read evidence and limits](https://github.com/arc-mcp/arc-1/blob/main/docs/research/broader-pinned-pp-writes/native-source-contracts.md#native-ownership).
 
 ### Procedural unit surgery
 

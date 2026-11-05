@@ -220,17 +220,17 @@ Bounded batch creation/activation enters `write/pinned-batches.ts` from pinned d
 common owner profiles and `devtools.ts::activateBatch` under one scoped deadline.
 Keep the fixed bounds in `adt/pinned-batch-bounds.ts` aligned with raw native reference parsing.
 No pinned ED064 replay, rollback, implicit publication or activation after a failed deferred create.
-The [batch contract](research/2026-11-02-pinned-batches.md) retains unsupported group/document/SDO combinations.
+The [batch contract](research/broader-pinned-pp-writes/native-source-contracts.md#rap-and-batches) retains unsupported group/document/SDO combinations.
 
 Package/API/SRVB adapters use `adt/pinned-managed-resources.ts` and explicit public input rows.
 `pinned-service-binding.ts` uses the shared owning-lock lifecycle and preserves complete XML;
 `write/pinned-binding-activation.ts` feeds the shared activation orchestrator. `pinned-api-release.ts`
-authorizes the native APIS recording resource. The [local package-delete profile](research/2026-11-03-pinned-local-package-delete.md)
+authorizes the native APIS recording resource. The [local package-delete profile](research/broader-pinned-pp-writes/native-service-contracts.md#packages-and-api-state)
 uses native non-cascade checks, repeated local metadata/recording validation and the owning
 session. Recorded package deletion remains closed. Parentless local creation requires its exact
 native profile; `$TMP` is a display anchor, not ancestry.
 
-The [V4 publication executor](research/2026-11-03-pinned-v4-publication.md) shares the legacy sender.
+The [V4 publication executor](research/broader-pinned-pp-writes/native-service-contracts.md#publication-and-generated-resources) shares the legacy sender.
 Its qualified non-recording profile remains internal: it requires trusted request-bound native
 configuration evidence and has no production configuration reader. Public pinned publication uses
 the [native-governed profile](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-03-pinned-publication-native-governed.md), which requires
@@ -296,7 +296,7 @@ source-backed native derivations. Subtree selections use `metadataSubtree` to ma
 and repeated entries; a sibling with a similar prefix is never implicitly selected. Server-driven
 saves and technical settings use `pinned-server-driven.ts` and `pinned-table-settings.ts`. All share
 the lock policy and result boundary. The public input matrix retains subtype and batch restrictions;
-the [original profile research](research/2026-11-02-pinned-ddic-server-driven.md) is historical evidence,
+the [original profile research](research/broader-pinned-pp-writes/native-metadata-contracts.md#definition-preservation) is historical evidence,
 not the current admission table.
 
 Metadata comparison paths retain namespace identity; only enumerated dimensions/counts normalize
@@ -309,8 +309,8 @@ part of the proof. Complete replacements generate native `mc:deletedmessages` in
 validated stored numbers omitted by the request; persisted readback is compared separately and still
 requires exact membership. Caller/stored transient instructions, nonempty native row `corrno` or
 `lockhandle`, and the native `selfexplainatory=true` / `documented=true` long-text deletion pair
-refuse before PUT. See [explicit removal evidence](research/2026-11-04-msag-explicit-native-removal.md)
-and [native row evidence](research/2026-11-03-msag-native-row-preservation.md). Earlier
+refuse before PUT. See [explicit removal evidence](research/broader-pinned-pp-writes/native-metadata-contracts.md#message-classes)
+and [native row evidence](research/broader-pinned-pp-writes/native-metadata-contracts.md#message-classes). Earlier
 [review corrections](https://github.com/arc-mcp/arc-1/blob/1636bab36d86df10ba169f816d2bb4555b38419b/docs/research/2026-11-02-pinned-ddic-review-followup.md) describe their original
 checkpoint; qualification results do not expand the current per-type input contract.
 
@@ -377,12 +377,12 @@ is not client-isolated or implicitly restricted to the caller's own SAP user.
 Never add `$filter` to `PageChipInstances`. `adt/pinned-flp-entity.ts` bounds collection bodies and
 flags incomplete lists; collection 404s never mean empty. Tiles require exact page ownership and
 unique instance IDs. No general keyed absence classifier is qualified: accepted catalog deletion
-can stay unconfirmed. Catalog/group creation uses the [native create-only contract](research/2026-11-03-pinned-flp-create-only.md),
+can stay unconfirmed. Catalog/group creation uses the [native create-only contract](research/broader-pinned-pp-writes/native-runtime-contracts.md#classic-flp),
 retains unresolved lookup state and never retries submitted failures. Writable ownership needs
-explicit false flags and client scope. The [native-governed recording profile](research/2026-11-03-pinned-flp-native-recording.md)
+explicit false flags and client scope. The [native-governed recording profile](research/broader-pinned-pp-writes/native-runtime-contracts.md#classic-flp)
 requires both explicit unrestricted request policies and revalidates through the final-send boundary;
 it never asserts a CTS receipt. Catalog routing, native observations and final PP/release acceptance
-remain distinct. Earlier [scenario research](research/2026-11-02-pinned-trace-flp.md) is not a current
+remain distinct. Earlier [scenario research](research/broader-pinned-pp-writes/native-runtime-contracts.md#traces-and-selected-platform) is not a current
 blanket refusal of these public actions.
 
 Focused tests: `tests/unit/adt/mutation-{client,compatibility,lifecycle,isolation}.test.ts`,
@@ -407,7 +407,7 @@ See the [implementation evidence](research/2026-10-29-shared-mutation-infrastruc
 | Read message classes via `MSAG` (canonical short type added in audit Plan B; `MESSAGES` deprecated alias) | `src/handlers/read.ts` (case 'MSAG'/'MESSAGES'), `src/handlers/schemas.ts`, `src/handlers/tools.ts`, `src/adt/client.ts` (`getMessageClassInfo`) |
 | Add source revision history read (VERSIONS / VERSION_SOURCE) | `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/adt/types.ts`, `src/handlers/read.ts`, `src/handlers/schemas.ts`, `src/handlers/tools.ts` |
 | Add DCL (access control) read/write | `src/adt/client.ts`, `src/handlers/read.ts` + `src/handlers/write.ts`, `src/handlers/schemas.ts`, `src/handlers/tools.ts` |
-| Add fix proposal / quickfix operation | `src/adt/quickfix.ts` (re-exported by `devtools.ts`), `src/handlers/diagnose.ts`, schemas/tools + tests — proposal POST URIs must stay exact; transport sends SAP context in headers. Preserve delta/state whitespace (#993); see `docs/research/2026-10-13-quickfix-exact-uri.md`. The pinned `pinned-quickfix` profile binds fresh proposal context and only returns deltas; qualification limits: `docs/research/2026-11-02-pinned-quickfix.md`. |
+| Add fix proposal / quickfix operation | `src/adt/quickfix.ts` (re-exported by `devtools.ts`), `src/handlers/diagnose.ts`, schemas/tools + tests — proposal POST URIs must stay exact; transport sends SAP context in headers. Preserve delta/state whitespace (#993); see `docs/research/2026-10-13-quickfix-exact-uri.md`. The pinned `pinned-quickfix` profile binds fresh proposal context and only returns deltas; qualification limits: `docs/research/broader-pinned-pp-writes/native-runtime-contracts.md`. |
 | Add OData-based read (non-ADT) | `src/adt/ui5-repository.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts`, `src/handlers/schemas.ts` |
 | Add FLP operation | `src/adt/flp.ts`, `src/handlers/manage.ts`, `src/handlers/tools.ts`, `src/handlers/schemas.ts` |
 | Add package create/delete/move (DEVC) | `src/handlers/manage.ts` (`handleSAPManage`), `src/handlers/tools.ts`, `src/handlers/schemas.ts`, `src/adt/ddic-xml.ts`, `src/adt/refactoring.ts` |
@@ -449,7 +449,7 @@ See the [implementation evidence](research/2026-10-29-shared-mutation-infrastruc
 | Add/modify procedural unit surgery (`SAPWrite edit_unit` / `add_unit`, #558/#776) | `src/context/unit-surgery.ts`, `src/handlers/write/unit-surgery.ts`, `src/handlers/{write,schemas,tools}.ts`, `src/authz/policy.ts`, tests. FORM/MODULE only for on-prem PROG/INCL (including `INCL group=`); event blocks have no abaplint structure and stay unsupported. `add_unit` appends at physical EOF without moving INCLUDEs; both actions refuse incomplete MODULE structures. Keep the fresh editable-source GET inside the SAP lock, without cached draft/version selection ([live evidence and scope](plans/2026-09-21-edit-unit-lock.md)). |
 | Add/extend SAPRead `grep` regex search | `src/context/grep.ts` (`grepSource` — `gim` regex w/ literal fallback, ±3 context, 100-match cap), `src/handlers/read.ts` (`if (args.grep)` branch per source-bearing read; CLAS uses `client.getClassInclude`; FUGR greps each expanded include via `grepSourceBlocks`, where a per-include literal miss is not an invalid pattern; rejects `grep`+`method` together), `src/adt/client.ts` (`getClassInclude`), `schemas.ts`/`tools.ts`, tests (#313). |
 | Extend edit_method for class-local includes (CCDEF/CCIMP) | `src/handlers/write/class-surgery.ts` (`detectLocalHandlerInclude` + `edit_method` include routing), `src/handlers/schemas.ts` (`validateSapWriteInput` accepts `include`), `tools.ts`, tests. Auto-detect: `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses, `zif_X~method`→MAIN. |
-| Add CLAS class-section surgery (`add_method`/`delete_method`/`edit_method_signature`/`change_method_visibility`/`edit_class_definition`, #303) | `src/adt/class-structure.ts` (splice/diff helpers), `src/adt/client.ts` (`getClassStructure`), `src/adt/xml-parser.ts` (`parseClassStructure` — 7.50 split + 7.58+ unified shapes), `src/handlers/write/class-surgery.ts`, `src/handlers/{schemas,tools}.ts`, `src/authz/policy.ts`, tests + `objectstructure-clas-*` fixtures. Refuse-policy diff runs client-side before PUT (adds need an IMPL stub; orphan IMPLs rejected); `include=` writes skip it. Individual signature/delete/visibility edits refuse chained declarations because native ranges include earlier members; see [range evidence](research/2026-11-01-class-surgery-range-boundaries.md). |
+| Add CLAS class-section surgery (`add_method`/`delete_method`/`edit_method_signature`/`change_method_visibility`/`edit_class_definition`, #303) | `src/adt/class-structure.ts` (splice/diff helpers), `src/adt/client.ts` (`getClassStructure`), `src/adt/xml-parser.ts` (`parseClassStructure` — 7.50 split + 7.58+ unified shapes), `src/handlers/write/class-surgery.ts`, `src/handlers/{schemas,tools}.ts`, `src/authz/policy.ts`, tests + `objectstructure-clas-*` fixtures. Refuse-policy diff runs client-side before PUT (adds need an IMPL stub; orphan IMPLs rejected); `include=` writes skip it. Individual signature/delete/visibility edits refuse chained declarations because native ranges include earlier members; see [range evidence](research/broader-pinned-pp-writes/native-source-contracts.md#class-structure). |
 | Add SAPSearch tadir_lookup `source` variants (adt/db/both) | `src/handlers/search.ts` (`handleSAPSearch` tadir_lookup branch + merge/splitBrain), `src/handlers/{schemas,tools}.ts` (`source` enum), `src/adt/client.ts` (`lookupObjectsViaDb` via `runQuery`), `src/authz/policy.ts`, `src/adt/types.ts`, tests. `db`/`both` escalate to **sql scope** (viewer-only can't piggyback); default `adt`. |
 | SAPWrite batch preflight / `activateAtEnd` | `src/handlers/write/create.ts` (`writeActionBatchCreate`) + `write/batch-results.ts`, `schemas.ts`/`tools.ts`, tests. All deterministic checks precede creation; per-entry persistence survives failed writes/activation. Invalidate confirmed/uncertain mutations, including failures. Failed terminal activation never infers success from missing object messages. Legacy `activateAtEnd` still activates the already-written subset after a runtime write failure; the pinned batch profile stops and preserves partial results without deferred activation after failure. |
 | Modify hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |

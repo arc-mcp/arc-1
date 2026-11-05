@@ -19,9 +19,7 @@
             "maxLength": 60
           }
         },
-        "required": [
-          "low"
-        ]
+        "required": ["low"]
       }
     },
     "SAPWrite.messages": {
@@ -37,10 +35,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "number",
-          "shortText"
-        ]
+        "required": ["number", "shortText"]
       }
     },
     "SAPWrite.shortTexts": {
@@ -57,10 +52,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "node",
-          "text"
-        ]
+        "required": ["node", "text"]
       }
     },
     "SAPWrite.parameters": {
@@ -71,14 +63,7 @@
         "properties": {
           "kind": {
             "type": "string",
-            "enum": [
-              "importing",
-              "exporting",
-              "changing",
-              "tables",
-              "exceptions",
-              "raising"
-            ]
+            "enum": ["importing", "exporting", "changing", "tables", "exceptions", "raising"]
           },
           "name": {
             "type": "string"
@@ -101,10 +86,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "kind",
-          "name"
-        ]
+        "required": ["kind", "name"]
       }
     },
     "SAPActivate.objects": {
@@ -123,10 +105,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "type",
-          "name"
-        ]
+        "required": ["type", "name"]
       }
     },
     "SAPManage.tile": {
@@ -158,12 +137,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "id",
-        "title",
-        "semanticObject",
-        "semanticAction"
-      ]
+      "required": ["id", "title", "semanticObject", "semanticAction"]
     },
     "SAPDiagnose.proposalAffectedObjects": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -187,9 +161,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "uri"
-        ]
+        "required": ["uri"]
       }
     },
     "SAPDiagnose.filters": {
@@ -218,11 +190,7 @@
             }
           }
         },
-        "required": [
-          "attribute",
-          "operator",
-          "values"
-        ],
+        "required": ["attribute", "operator", "values"],
         "additionalProperties": false
       }
     },
@@ -311,10 +279,7 @@
           },
           "rowTypeKind": {
             "type": "string",
-            "enum": [
-              "builtin",
-              "structure"
-            ]
+            "enum": ["builtin", "structure"]
           },
           "rowTypeLength": {
             "anyOf": [
@@ -374,9 +339,7 @@
                   "maxLength": 60
                 }
               },
-              "required": [
-                "low"
-              ]
+              "required": ["low"]
             }
           },
           "valueTable": {
@@ -384,10 +347,7 @@
           },
           "typeKind": {
             "type": "string",
-            "enum": [
-              "domain",
-              "predefinedAbapType"
-            ]
+            "enum": ["domain", "predefinedAbapType"]
           },
           "typeName": {
             "type": "string"
@@ -457,10 +417,7 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "number",
-                "shortText"
-              ]
+              "required": ["number", "shortText"]
             }
           },
           "serviceDefinition": {
@@ -471,36 +428,22 @@
           },
           "odataVersion": {
             "type": "string",
-            "enum": [
-              "V2",
-              "V4"
-            ]
+            "enum": ["V2", "V4"]
           },
           "category": {
             "type": "string",
-            "enum": [
-              "0",
-              "1"
-            ]
+            "enum": ["0", "1"]
           },
           "version": {
             "type": "string"
           },
           "processingType": {
             "type": "string",
-            "enum": [
-              "normal",
-              "rfc",
-              "update"
-            ]
+            "enum": ["normal", "rfc", "update"]
           },
           "updateTaskKind": {
             "type": "string",
-            "enum": [
-              "startImmediate",
-              "immediateStartNoRestart",
-              "startDelayed"
-            ]
+            "enum": ["startImmediate", "immediateStartNoRestart", "startDelayed"]
           },
           "parameters": {
             "type": "array",
@@ -509,14 +452,7 @@
               "properties": {
                 "kind": {
                   "type": "string",
-                  "enum": [
-                    "importing",
-                    "exporting",
-                    "changing",
-                    "tables",
-                    "exceptions",
-                    "raising"
-                  ]
+                  "enum": ["importing", "exporting", "changing", "tables", "exceptions", "raising"]
                 },
                 "name": {
                   "type": "string"
@@ -539,17 +475,11 @@
                   "type": "boolean"
                 }
               },
-              "required": [
-                "kind",
-                "name"
-              ]
+              "required": ["kind", "name"]
             }
           }
         },
-        "required": [
-          "type",
-          "name"
-        ]
+        "required": ["type", "name"]
       }
     },
     "SAPDiagnose.objects": {
@@ -585,10 +515,7 @@
             "pattern": "^(?:\\/[A-Za-z0-9_]+\\/)?[A-Za-z0-9_]+$"
           }
         },
-        "required": [
-          "type",
-          "name"
-        ],
+        "required": ["type", "name"],
         "additionalProperties": false
       }
     }
@@ -662,10 +589,7 @@
           },
           "rowTypeKind": {
             "type": "string",
-            "enum": [
-              "builtin",
-              "structure"
-            ]
+            "enum": ["builtin", "structure"]
           },
           "rowTypeLength": {
             "anyOf": [
@@ -725,9 +649,7 @@
                   "maxLength": 60
                 }
               },
-              "required": [
-                "low"
-              ]
+              "required": ["low"]
             }
           },
           "valueTable": {
@@ -735,10 +657,7 @@
           },
           "typeKind": {
             "type": "string",
-            "enum": [
-              "domain",
-              "predefinedAbapType"
-            ]
+            "enum": ["domain", "predefinedAbapType"]
           },
           "typeName": {
             "type": "string"
@@ -808,10 +727,7 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "number",
-                "shortText"
-              ]
+              "required": ["number", "shortText"]
             }
           },
           "serviceDefinition": {
@@ -822,17 +738,11 @@
           },
           "odataVersion": {
             "type": "string",
-            "enum": [
-              "V2",
-              "V4"
-            ]
+            "enum": ["V2", "V4"]
           },
           "category": {
             "type": "string",
-            "enum": [
-              "0",
-              "1"
-            ]
+            "enum": ["0", "1"]
           },
           "version": {
             "type": "string"
@@ -844,14 +754,7 @@
               "properties": {
                 "kind": {
                   "type": "string",
-                  "enum": [
-                    "importing",
-                    "exporting",
-                    "changing",
-                    "tables",
-                    "exceptions",
-                    "raising"
-                  ]
+                  "enum": ["importing", "exporting", "changing", "tables", "exceptions", "raising"]
                 },
                 "name": {
                   "type": "string"
@@ -874,17 +777,11 @@
                   "type": "boolean"
                 }
               },
-              "required": [
-                "kind",
-                "name"
-              ]
+              "required": ["kind", "name"]
             }
           }
         },
-        "required": [
-          "type",
-          "name"
-        ]
+        "required": ["type", "name"]
       }
     },
     "SAPDiagnose.objects": {
@@ -897,20 +794,7 @@
         "properties": {
           "type": {
             "type": "string",
-            "enum": [
-              "CLAS",
-              "INTF",
-              "FUGR",
-              "DDLS",
-              "DCLS",
-              "BDEF",
-              "DDLX",
-              "SRVD",
-              "SRVB",
-              "TABL",
-              "DTEL",
-              "DOMA"
-            ]
+            "enum": ["CLAS", "INTF", "FUGR", "DDLS", "DCLS", "BDEF", "DDLX", "SRVD", "SRVB", "TABL", "DTEL", "DOMA"]
           },
           "name": {
             "type": "string",
@@ -919,10 +803,7 @@
             "pattern": "^(?:\\/[A-Za-z0-9_]+\\/)?[A-Za-z0-9_]+$"
           }
         },
-        "required": [
-          "type",
-          "name"
-        ],
+        "required": ["type", "name"],
         "additionalProperties": false
       }
     }

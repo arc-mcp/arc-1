@@ -196,9 +196,10 @@ describe('runtime and quickfix candidate rows', () => {
   });
 
   it('name missing qualification for every row, in the research recipe', () => {
-    const recipe = ['2026-11-02-pinned-trace-flp.md', '2026-11-02-pinned-quickfix.md']
-      .map((file) => readFileSync(new URL(`../../../docs/research/${file}`, import.meta.url), 'utf8'))
-      .join('\n');
+    const recipe = readFileSync(
+      new URL('../../../docs/research/broader-pinned-pp-writes/native-runtime-contracts.md', import.meta.url),
+      'utf8',
+    );
     expect(Object.keys(PINNED_RUNTIME_MISSING_QUALIFICATION).sort()).toEqual([...keys].sort());
     for (const scenarios of Object.values(PINNED_RUNTIME_MISSING_QUALIFICATION)) {
       expect(scenarios.length).toBeGreaterThan(0);

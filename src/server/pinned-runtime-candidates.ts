@@ -83,7 +83,7 @@ export const PINNED_RUNTIME_COMPANION_CANDIDATES: readonly PinnedCompanionCapabi
   })),
 );
 
-/** Scenario IDs from docs/research/2026-11-02-pinned-trace-flp.md; a row without one cannot be reviewed. */
+/** Scenario IDs from docs/research/broader-pinned-pp-writes/native-runtime-contracts.md; a row without one cannot be reviewed. */
 export const PINNED_RUNTIME_MISSING_QUALIFICATION: Readonly<Record<string, readonly string[]>> = Object.freeze({
   'SAPDiagnose.apply_quickfix': ['QFX-1', 'QFX-2', 'QFX-3', 'QFX-4'],
   'SAPDiagnose.trace_start': ['TRC-1', 'TRC-2', 'TRC-3', 'TRC-4'],

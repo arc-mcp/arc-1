@@ -10,7 +10,7 @@ import { isMultiTargetInvocationAllowed } from '../../../src/server/multi-target
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 const inventory = JSON.parse(
-  readFileSync(new URL('../../../docs/research/broader-pinned-pp-writes/inventory.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../fixtures/pinned-writes/inventory.json', import.meta.url), 'utf8'),
 ) as {
   actions: Record<string, { scope: string; operation: string; disposition: string }>;
   types: Record<string, { family: string }>;
@@ -22,10 +22,7 @@ const inventory = JSON.parse(
 };
 
 const nestedInputs = JSON.parse(
-  readFileSync(
-    new URL('../../../docs/research/broader-pinned-pp-writes/nested-input-contracts.json', import.meta.url),
-    'utf8',
-  ),
+  readFileSync(new URL('../../fixtures/pinned-writes/nested-input-contracts.json', import.meta.url), 'utf8'),
 ) as Record<'common' | 'onprem' | 'btp', Record<string, unknown>>;
 
 describe('PR 2 review inventory drift guard (not runtime authorization)', () => {

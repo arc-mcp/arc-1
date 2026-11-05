@@ -300,342 +300,192 @@
   "types": {
     "PROG": {
       "family": "source",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "CLAS": {
       "family": "source",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "ADR-0010-main-source-subset-only"
     },
     "INTF": {
       "family": "source",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "ADR-0010-main-source-subset-only"
     },
     "FUNC": {
       "family": "source",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "FUGR": {
       "family": "source",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "INCL": {
       "family": "source",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "DDLS": {
       "family": "source",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "DCLS": {
       "family": "source",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "DDLX": {
       "family": "source",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "BDEF": {
       "family": "source",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "SRVD": {
       "family": "source",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "SRVB": {
       "family": "metadata",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "SKTD": {
       "family": "metadata",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "KTD": {
       "family": "metadata",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "TABL": {
       "family": "metadata",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "TABL/DTT": {
       "family": "table-settings",
-      "crud": [
-        "update"
-      ],
+      "crud": ["update"],
       "qualification": "new-pinned-adapter-required"
     },
     "TABL/DT": {
       "family": "metadata",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "TABL/DS": {
       "family": "metadata",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "DOMA": {
       "family": "metadata",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "DTEL": {
       "family": "metadata",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "MSAG": {
       "family": "metadata",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "TTYP": {
       "family": "metadata",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "ENQU": {
       "family": "metadata",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "ENHO": {
       "family": "metadata",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "DESD": {
       "family": "server-driven",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "DTSC": {
       "family": "server-driven",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "CSNM": {
       "family": "server-driven",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "EVTB": {
       "family": "server-driven",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "EVTO": {
       "family": "server-driven",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "COTA": {
       "family": "server-driven",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "DSFD": {
       "family": "server-driven",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "DTDC": {
       "family": "server-driven",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "UIAD": {
       "family": "server-driven",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "DRTY": {
       "family": "server-driven",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "APLO": {
       "family": "server-driven",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "SAJC": {
       "family": "server-driven",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "SAJT": {
       "family": "server-driven",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     },
     "TABL/DTI": {
       "family": "server-driven",
-      "crud": [
-        "create",
-        "update",
-        "delete"
-      ],
+      "crud": ["create", "update", "delete"],
       "qualification": "new-pinned-adapter-required"
     }
   },
@@ -845,14 +695,7 @@
       "variant",
       "version"
     ],
-    "SAPLint": [
-      "action",
-      "indentation",
-      "name",
-      "rules",
-      "source",
-      "style"
-    ]
+    "SAPLint": ["action", "indentation", "name", "rules", "source", "style"]
   },
   "actionLists": {
     "SAPWrite": [
@@ -872,11 +715,7 @@
       "scaffold_rap_handlers",
       "update"
     ],
-    "SAPActivate": [
-      "activate",
-      "publish_srvb",
-      "unpublish_srvb"
-    ],
+    "SAPActivate": ["activate", "publish_srvb", "unpublish_srvb"],
     "SAPManage": [
       "cache_stats",
       "change_package",
@@ -935,14 +774,7 @@
       "unittest",
       "unittest_ci"
     ],
-    "SAPLint": [
-      "format",
-      "get_formatter_settings",
-      "lint",
-      "lint_and_fix",
-      "list_rules",
-      "set_formatter_settings"
-    ]
+    "SAPLint": ["format", "get_formatter_settings", "lint", "lint_and_fix", "list_rules", "set_formatter_settings"]
   },
   "btpFields": {
     "SAPWrite": [
