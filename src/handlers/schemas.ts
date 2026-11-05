@@ -291,9 +291,9 @@ export const SAPReadSchema = z
     versionUri: z.string().optional(),
     /** For type=FUNC: when true, response is JSON {source, signature: {importing, exporting, ...}}. */
     includeSignature: looseOptionalBoolean,
-    /** For TABLE_QUERY: columns to select (default: all). */
+    /** For TABLE_QUERY/CDS_PREVIEW: columns to select (default: all). */
     columns: z.array(z.string()).optional(),
-    /** For TABLE_QUERY: structured WHERE conditions ANDed together. */
+    /** For TABLE_QUERY/CDS_PREVIEW: structured WHERE conditions ANDed together. */
     where: z.array(TableQueryWhereItemSchema).optional(),
   })
   .strict()
@@ -337,9 +337,9 @@ export const SAPReadSchemaBtp = z
     versionUri: z.string().optional(),
     /** For type=FUNC: when true, response is JSON {source, signature: {importing, exporting, ...}}. */
     includeSignature: looseOptionalBoolean,
-    /** For TABLE_QUERY: columns to select (default: all). */
+    /** For TABLE_QUERY/CDS_PREVIEW: columns to select (default: all). */
     columns: z.array(z.string()).optional(),
-    /** For TABLE_QUERY: structured WHERE conditions ANDed together. */
+    /** For TABLE_QUERY/CDS_PREVIEW: structured WHERE conditions ANDed together. */
     where: z.array(TableQueryWhereItemSchema).optional(),
   })
   .strict()

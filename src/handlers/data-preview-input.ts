@@ -1,4 +1,6 @@
-/** SAPRead input rules for the two data preview types, TABLE_QUERY and TABLE_CONTENTS. */
+/** SAPRead input rules for structured and unfiltered data preview types. */
+
+import { type CdsPreviewOptions, validateCdsPreviewOptions } from '../adt/cds-preview.js';
 
 /** The SAPRead fields these rules read; validateSapReadInput extends it with the rest. */
 export type DataPreviewInput = {
@@ -12,6 +14,29 @@ export type DataPreviewInput = {
 type IssueContext = { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void };
 
 export function validateDataPreviewInput(input: DataPreviewInput, ctx: IssueContext): void {
+  if (input.type === 'CDS_PREVIEW') {
+    const allowed = new Set(['type', 'name', 'columns', 'where', 'maxRows']);
+    for (const [key, value] of Object.entries<unknown>(input)) {
+      const filler =
+        value === undefined ||
+        value === null ||
+        value === '' ||
+        value === false ||
+        (Array.isArray(value) && value.length === 0);
+      if (!filler && !allowed.has(key))
+        ctx.addIssue({ code: 'custom', path: [key], message: `CDS_PREVIEW does not accept ${key}.` });
+    }
+    try {
+      validateCdsPreviewOptions(input.name ?? '', input as CdsPreviewOptions);
+    } catch (error) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['name'],
+        message: error instanceof Error ? error.message : 'Invalid CDS_PREVIEW input.',
+      });
+    }
+    return;
+  }
   if (input.type === 'TABLE_QUERY') {
     if (!('name' in input) || !input.name) {
       ctx.addIssue({ code: 'custom', path: ['name'], message: 'TABLE_QUERY requires a table or CDS view name.' });

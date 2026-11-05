@@ -125,6 +125,7 @@ sequence.
 | [FEAT-79](#feat-79) | DDIC-aware dependency context | P2 | M | Needs research | Code intelligence |
 | [FEAT-96](#feat-96) | Bounded class overview and large-read policy | P2 | M | Needs research | Code intelligence |
 | [FEAT-97](#feat-97) | Complete SHLP definitions and effective appends | P3 | M | Needs research | Object coverage |
+| [FEAT-98](#feat-98) | CDS preview parameters and association paths | P2 | M | Needs research | Data access |
 | [FEAT-42](#feat-42) | Additional CI output formats | P3 | XS | Revisit on trigger | CI |
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
@@ -1242,6 +1243,21 @@ positive append fixtures covering switch/interface semantics. Preserve data/SQL 
 keep execution/export extensions outside core. BTP and live restricted-user/PP qualification remain
 separate evidence requirements. See [native evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/abap-types/types/shlp.md) and
 [implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-29-shlp-native-metadata.md).
+
+<a id="feat-98"></a>
+### FEAT-98 — CDS preview parameters and association paths
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Data access
+
+**Remaining gap.** The bounded single-target CDS preview addresses flat, non-parameterized reads.
+[#1194](https://github.com/arc-mcp/arc-1/issues/1194) also requests parameter binding and association
+navigation. Their native contracts and authorization behavior are not yet qualified.
+
+**Resume with.** A concrete consumer example and native ADT traces for parameter binding or
+association navigation, including restricted-user access controls and response limits. Keep querying
+CDS entities, preserve the blocklist, and do not substitute generated SQL views. Broader target/auth
+modes require their own qualification. See the [verified initial contract](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-05-cds-preview-contract.md).
 
 ## CI and operations
 

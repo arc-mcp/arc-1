@@ -1007,6 +1007,14 @@ async function handleSAPReadBase(
       const data = await client.getTableContents(name, maxRows, args.sqlFilter as string | undefined);
       return textResult(toolJson(data));
     }
+    case 'CDS_PREVIEW': {
+      const data = await client.runCdsPreview(name, {
+        maxRows: args.maxRows === undefined ? undefined : Number(args.maxRows),
+        columns: args.columns as string[] | undefined,
+        where: args.where as Array<{ field: string; op: string; value?: string }> | undefined,
+      });
+      return textResult(toolJson(data));
+    }
     case 'TABLE_QUERY': {
       const maxRows = Number(args.maxRows ?? 100);
       const columns = Array.isArray(args.columns) ? (args.columns as string[]) : undefined;

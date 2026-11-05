@@ -179,7 +179,7 @@
         },
         "maxRows": {
           "type": "number",
-          "description": "Returned row cap for TABLE_CONTENTS/TABLE_QUERY (default 100, max 10,000; byte limit may apply sooner)."
+          "description": "Returned row cap: TABLE_CONTENTS/TABLE_QUERY (default 100, max 10,000; byte cap may apply sooner)."
         },
         "maxResults": {
           "type": "number",
@@ -213,11 +213,11 @@
           "items": {
             "type": "string"
           },
-          "description": "TABLE_QUERY only: columns to select (default all), e.g. [\"MATNR\",\"BWART\"]."
+          "description": "TABLE_QUERY: columns (default all)."
         },
         "where": {
           "type": "array",
-          "description": "For TABLE_QUERY: structured WHERE conditions, ANDed together. Each item: {field, op, value?}. Ops: =, <>, <, <=, >, >=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL; STARTS_WITH: literal prefix. Use <>; 758 rejects !=. IN/NOT IN: bare comma-separated values, e.g. \"261,262\". ARC-1 quotes/escapes them; no subqueries. Example: [{\"field\":\"MATNR\",\"op\":\"=\",\"value\":\"300006888\"},{\"field\":\"BUDAT_MKPF\",\"op\":\">=\",\"value\":\"20250101\"}].",
+          "description": "For TABLE_QUERY: ANDed conditions: {field, op, value?}. Ops: =, <>, <, <=, >, >=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL; STARTS_WITH: literal prefix. Use <>; 758 rejects !=. IN/NOT IN: bare comma-separated values, e.g. \"261,262\". ARC-1 quotes/escapes them; no subqueries. Example: [{\"field\":\"MATNR\",\"op\":\"=\",\"value\":\"300006888\"},{\"field\":\"BUDAT_MKPF\",\"op\":\">=\",\"value\":\"20250101\"}].",
           "items": {
             "type": "object",
             "properties": {
