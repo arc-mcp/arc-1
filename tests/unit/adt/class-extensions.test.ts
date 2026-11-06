@@ -28,6 +28,7 @@ function setup(
     feed?: string;
     source?: string;
     rootType?: string;
+    release?: string;
   } = {},
 ) {
   const safety = { ...defaultSafetyConfig(), denyActions: options.deny ?? [] };
@@ -65,12 +66,92 @@ function setup(
   const client = { safety, http: { get, post }, getRevisions, getRevisionSource } as unknown as AdtClient;
   const run = async () => {
     const nodes = await discoverClassIdentities(client, session, request);
-    await discoverClassSources(client, session, nodes, '750');
+    await discoverClassSources(client, session, nodes, options.release ?? '750');
     return session.finish();
   };
   return { run, client, request, session, get, post, getRevisions, getRevisionSource, received };
 }
 describe('class-bound enhancements', () => {
+  it.each(['758', '7.58'])('reads owned XH sources directly from active revisions on %s', async (release) => {
+    const s = setup({ release });
+    const result = await s.run();
+    expect(result.sources).toHaveLength(2);
+    expect(result.sources[0]).toMatchObject({ representation: 'generated_include_revision' });
+    expect(s.get.mock.calls.some(([path]) => path.includes('/enhoxh/'))).toBe(false);
+  });
+
+  it.each([401, 403, 404, 429, 500])(
+    'preserves a revision-first HTTP %s failure without metadata fallback',
+    async (status) => {
+      const s = setup({ release: '758' });
+      s.getRevisions.mockRejectedValueOnce(new AdtApiError('revision failed', status, '/versions'));
+      const result = await s.run();
+      expect(result.sources).toEqual([]);
+      expect(result.providers[1]).toMatchObject({ status: [401, 403].includes(status) ? 'denied' : 'incomplete' });
+      expect(s.get.mock.calls.some(([path]) => path.includes('/enhoxh/'))).toBe(false);
+      expect(s.getRevisionSource).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not select history or try metadata when the active revision is absent', async () => {
+    const s = setup({ release: '758', feed: fixture('class-feed.xml').replaceAll('00000', '00001') });
+    const result = await s.run();
+    expect(result.providers[1]).toMatchObject({ status: 'unsupported', reason: 'source_unavailable' });
+    expect(result.sources).toEqual([]);
+    expect(s.getRevisionSource).not.toHaveBeenCalled();
+    expect(s.get.mock.calls.some(([path]) => path.includes('/enhoxh/'))).toBe(false);
+  });
+
+  it.each(['SAPRead.ENHO', 'SAPRead.INCL', 'SAPRead.VERSIONS', 'SAPRead.VERSION_SOURCE'])(
+    'preserves %s denial before reading a generated revision',
+    async (deny) => {
+      const s = setup({ release: '758', deny: [deny] });
+      const result = await s.run();
+      expect(result.sources).toEqual([]);
+      expect(result.providers.some((p) => p.status === 'denied')).toBe(true);
+      expect(s.getRevisions).not.toHaveBeenCalled();
+      expect(s.get.mock.calls.some(([path]) => path.includes('/enhoxh/'))).toBe(false);
+    },
+  );
+
+  it.each(['', '<feed/>', fixture('class-feed.xml').replaceAll('CL_OO_ADT_ENHANCED_CLASS1', 'UNRELATED')])(
+    'stops on malformed or mismatched revision evidence %#',
+    async (feed) => {
+      const s = setup({ release: '758', feed });
+      const result = await s.run();
+      expect(result.sources).toEqual([]);
+      expect(result.providers[1]).toMatchObject({ status: 'incomplete', reason: 'invalid_provider_response' });
+      expect(s.session.stopped).toBe(true);
+      expect(s.getRevisionSource).not.toHaveBeenCalled();
+      expect(s.get.mock.calls.some(([path]) => path.includes('/enhoxh/'))).toBe(false);
+    },
+  );
+
+  it('preserves network failure on the direct revision route', async () => {
+    const s = setup({ release: '758' });
+    s.getRevisions.mockRejectedValueOnce(new AdtNetworkError('network failed'));
+    const result = await s.run();
+    expect(result.sources).toEqual([]);
+    expect(result.providers[1]?.status).toBe('incomplete');
+    expect(s.get.mock.calls.some(([path]) => path.includes('/enhoxh/'))).toBe(false);
+  });
+
+  it.each(['816'])('keeps the existing metadata route for unqualified release %s', async (release) => {
+    const s = setup({ release });
+    await s.run();
+    expect(s.get.mock.calls.some(([path]) => path.includes('/enhoxh/'))).toBe(true);
+  });
+
+  it('omits generic class source reads while the release is unknown', async () => {
+    const s = setup({ release: '' });
+    const result = await s.run();
+    expect(result.providers[1]).toMatchObject({ status: 'unsupported', reason: 'class_source_release_unknown' });
+    expect(result.sources).toEqual([]);
+    expect(result.omissions.sources).toBe(1);
+    expect(s.getRevisions).not.toHaveBeenCalled();
+    expect(s.get.mock.calls.some(([path]) => path.includes('/enhoxh/'))).toBe(false);
+  });
+
   it('omits unknown switch support from generated source-only metadata', async () => {
     const s = setup();
     const result = await readActiveClassEnhancementSource(
@@ -80,7 +161,7 @@ describe('class-bound enhancements', () => {
       [{ name, type: 'CLAS/OC', uri: rootUri }],
       '750',
     );
-    expect(result.enhancementInclude).toMatchObject({ name: parent });
+    expect(result?.enhancementInclude).toMatchObject({ name: parent });
     expect(result).not.toHaveProperty('switchSupported');
   });
 
@@ -108,8 +189,8 @@ describe('class-bound enhancements', () => {
       ],
       '758',
     );
-    expect(source.source).toBe('exact active child source');
-    expect(source.switchSupported).toBe(true);
+    expect(source?.source).toBe('exact active child source');
+    expect(source?.switchSupported).toBe(true);
     expect(s.get.mock.calls[1]?.[0]).toBe(
       `/sap/bc/adt/enhancements/enhoxhh/${name.toLowerCase()}/source/main?version=active`,
     );
@@ -358,7 +439,7 @@ describe('class-bound enhancements', () => {
     s.get.mockResolvedValue({
       body: `<enhancement name="${enhancement}"><contentSpecific><hookTechnology><enhancedObject name="${name}" type="CLAS/OC" uri="${rootUri}"/></hookTechnology></contentSpecific></enhancement>`,
     });
-    await discoverClassSources(s.client, s.session, nodes);
+    await discoverClassSources(s.client, s.session, nodes, '750');
     expect(s.session.result.providers.at(-1)).toMatchObject({ status: 'unsupported', reason: 'source_unavailable' });
     expect(s.session.result.omissions.sources).toBe(1);
     expect(s.session.result.nodes).toHaveLength(1);
