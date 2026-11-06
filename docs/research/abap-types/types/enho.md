@@ -60,7 +60,8 @@ the captured handler made no generic XH metadata request. Eight rendered hook so
 The reporter's exact class is absent here; original-system and restricted-user/PP retests remain open.
 Direct ENHO reads and other known releases keep the existing routing. While the release is unknown
 (e.g. during startup), the class read retains identities but omits generic XH sources without calling
-the serializer; retry after the feature probe completes or configure `SAP_ABAP_RELEASE`.
+the serializer; retry after the feature probe completes. Single-target deployments can also
+configure `SAP_ABAP_RELEASE`; multi-target endpoints rely on the probe.
 
 ## Verified read routes (2026-10-01, issue #896)
 

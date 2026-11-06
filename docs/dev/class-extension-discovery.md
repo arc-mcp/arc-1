@@ -25,7 +25,8 @@ class enhancements, so it is never attempted, including when the revision is mis
 The probed release takes precedence over an explicitly configured release. Other known
 releases retain the existing route; direct SAPRead ENHO is unchanged. If the release is unknown,
 XH sources are omitted as `class_source_release_unknown`; retry after `SAPManage probe` or configure
-`SAP_ABAP_RELEASE`. Discovery and independent hooks can still return their results. These remain qualification
+`SAP_ABAP_RELEASE` for a single target. Multi-target endpoints rely on the probe.
+Discovery and independent hooks can still return their results. These remain qualification
 gaps tracked in #1196, including the previously observed generic-route failures on 816.
 
 For other releases/subtypes, the active known-subtype ENHO reader may use a
