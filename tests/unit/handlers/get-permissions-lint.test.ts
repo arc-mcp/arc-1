@@ -4,6 +4,7 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { runPreWriteLint } = await import('../../../src/handlers/write-helpers.js');
+const { validateBeforeWrite } = await import('../../../src/lint/lint.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 
@@ -38,6 +39,9 @@ describe('GET PERMISSIONS pre-write lint (#1167)', () => {
     { systemType: 'btp' as const, abapRelease: '920' },
   ])('accepts unchanged and comment-only edits on $systemType $abapRelease', (target) => {
     for (const body of [permissions, `" Documentation only\n${permissions}`]) {
+      const parsed = validateBeforeWrite(classSource(body), 'zcl_permissions.clas.abap', target);
+      expect(parsed.pass, JSON.stringify(parsed)).toBe(true);
+      expect(parsed.warnings.filter((issue) => issue.rule === 'parser_error')).toEqual([]);
       const result = runPreWriteLint(classSource(body), 'CLAS', 'ZCL_PERMISSIONS', { ...DEFAULT_CONFIG, ...target });
       expect(result.blocked, JSON.stringify(result)).toBe(false);
       expect(result.warnings ?? '').not.toContain('[parser_error]');

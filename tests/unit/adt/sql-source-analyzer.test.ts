@@ -100,6 +100,11 @@ describe('analyzeSqlDataSources', () => {
       ['association path with alias', 'SELECT * FROM i_view\\_assoc AS a', /CDS association path/],
       ['association path before WHERE', "SELECT * FROM i_view\\_assoc WHERE carrid = 'LH'", /CDS association path/],
       ['association path in FROM', 'SELECT * FROM i_view\\_assoc', /CDS association path/],
+      [
+        'association path as a JOIN target',
+        'SELECT * FROM scarr AS a INNER JOIN i_view\\_assoc AS b ON a~carrid = b~carrid',
+        /CDS association path/,
+      ],
       ['association path in the field list', 'SELECT \\_assoc-field FROM i_view', /CDS column path/],
       ['host variable', 'SELECT * FROM scarr WHERE carrid = @lv_carrid', /host expressions/],
       ['host method expression', 'SELECT * FROM scarr WHERE carrid = @( zcl_demo=>value( ) )', /host expressions/],
