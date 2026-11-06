@@ -212,21 +212,18 @@ const COMMENT_OR_BLANK = /^(\s*$|\*|\s*")/;
 /** Split `source` into leading/trailing full-line comments (outer blank lines dropped) and the block between. */
 function splitCommentWrapper(source: string): { head: string[]; core: string; tail: string[] } {
   const lines = source.replace(/\r\n/g, '\n').split('\n');
-  let start = 0;
-  let end = lines.length;
+  let first = 0;
+  let last = lines.length;
+  while (first < last && !lines[first]!.trim()) first++;
+  while (last > first && !lines[last - 1]!.trim()) last--;
+  let start = first;
+  let end = last;
   while (start < end && COMMENT_OR_BLANK.test(lines[start]!)) start++;
   while (end > start && COMMENT_OR_BLANK.test(lines[end - 1]!)) end--;
-  const trimBlank = (part: string[]) => {
-    let a = 0;
-    let b = part.length;
-    while (a < b && !part[a]!.trim()) a++;
-    while (b > a && !part[b - 1]!.trim()) b--;
-    return part.slice(a, b);
-  };
   return {
-    head: trimBlank(lines.slice(0, start)),
-    core: lines.slice(start, end).join('\n').trim(),
-    tail: trimBlank(lines.slice(end)),
+    head: lines.slice(first, start),
+    core: lines.slice(start, end).join('\n'),
+    tail: lines.slice(end, last),
   };
 }
 
@@ -258,7 +255,7 @@ export function insertUnit(
   // Full-line comments and blank lines around the block (e.g. `* --> TAG` / `* <-- TAG` change markers)
   // are kept verbatim; anything else outside the single block is still refused.
   const { head, core, tail } = splitCommentWrapper(addition);
-  const kind = core.match(/^(FORM|MODULE)\s/i)?.[1]?.toUpperCase() as EditableUnitKind | undefined;
+  const kind = core.match(/^\s*(FORM|MODULE)\s/i)?.[1]?.toUpperCase() as EditableUnitKind | undefined;
   if (!kind) {
     return fail(
       'source must contain one complete FORM...ENDFORM or MODULE...ENDMODULE block (full-line comments around it are allowed).',

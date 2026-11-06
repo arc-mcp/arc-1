@@ -151,6 +151,23 @@ describe('insertUnit', () => {
     expect(lines[result.unit!.endLine - 1]).toBe('ENDFORM.');
   });
 
+  it.each(['\n', '\r\n'])('preserves wrapper gaps and unit indentation with line ending %j', (eol) => {
+    const original = `REPORT zunit.${eol}`;
+    const wrapped = '* begin\n\n  " indented note  \n  FORM gamma.\n    WRITE 3.\n  ENDFORM.  \n\n* end';
+    const result = insertUnit(original, 'ZUNIT', 'gamma', `\n\n${wrapped}\n\n`);
+    expect(result.success, result.error).toBe(true);
+    expect(result.newSource).toBe(original + wrapped.replaceAll('\n', eol) + eol);
+    expect(result.newUnitSource).toBe(wrapped);
+    expect(result.unit).toMatchObject({ startLine: 5, endLine: 7 });
+  });
+
+  it('preserves indentation on a plain block while removing only outer blank lines', () => {
+    const block = '  FORM gamma.\n  ENDFORM.  ';
+    const result = insertUnit('REPORT zunit.\n', 'ZUNIT', 'gamma', `\n${block}\n\n`);
+    expect(result.success, result.error).toBe(true);
+    expect(result.newSource).toBe(`REPORT zunit.\n${block}\n`);
+  });
+
   it('accepts quote comments around a MODULE and preserves CRLF', () => {
     const result = insertUnit(
       'PROGRAM zmod.\r\n',
