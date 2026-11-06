@@ -444,7 +444,7 @@ INFO: auth: MCP=[none] SAP=cookie (shared)
 ### When to use it
 
 - ✅ SSO-only on-prem SAP, solo developer loop.
-- ✅ Your IdP enforces MFA / X.509 client certs that can't be scripted.
+- ✅ Your IdP enforces MFA or another browser-only login that can't be scripted. For X.509 client-certificate logon see [below](#x509-client-certificate-logon-windows).
 - ❌ Multi-user / deployed ARC-1 — cookies are one user's session.
 - ❌ BTP ABAP Environment — use [service-key OAuth](btp-abap-environment.md).
 - ❌ Combined with `SAP_PP_ENABLED=true` — the extractor refuses, and ARC-1 fails at startup unless the explicit escape-hatch `SAP_PP_ALLOW_SHARED_COOKIES=true` is set.
@@ -456,6 +456,20 @@ INFO: auth: MCP=[none] SAP=cookie (shared)
 - No refresh token — you get whatever session the browser has.
 
 For per-user SAP identity with a deployed ARC-1, use a **per-user BTP Destination**: Cloud Connector Principal Propagation for on-premise SAP, or `OAuth2UserTokenExchange` for BTP ABAP Environment. See [deployment.md](deployment.md).
+
+### X.509 client-certificate logon (Windows)
+
+Some on-prem systems log users on with an X.509 client certificate (for example a domain-issued user certificate in the Windows certificate store) and do not offer Basic auth. ADT answers anonymous requests with `401` and `WWW-Authenticate: Basic`, but returns `200` when the certificate is presented via mutual TLS.
+
+The cookie extractor cannot help here: the browser authenticates each request with the certificate, so the cookies it holds are not a usable session and SAP answers `401` when ARC-1 replays them. Authenticate **with the certificate itself** instead and hand the resulting SAP session cookies to ARC-1 through `SAP_COOKIE_FILE`. These cookies keep working without the certificate, and ARC-1 re-reads the file after a `401`, so a script can refresh them without restarting ARC-1.
+
+The repository ships a PowerShell launcher that does this: [examples/windows-x509-sso](https://github.com/arc-mcp/arc-1/tree/main/examples/windows-x509-sso). It reads `SAP_URL`, `SAP_CLIENT` and an optional `ARC1_CERT_ISSUER` (issuer filter for the certificate) from the MCP `env` block, logs on with the certificate, writes the Netscape cookie file, refreshes it every 15 minutes and starts ARC-1. Use one MCP server entry per system.
+
+- Always set `SAP_CLIENT`: some systems default to another client, and the logon then creates a session for that client.
+- Same limits as cookie auth: developer-only, single user, shared SAP identity, never together with `SAP_PP_ENABLED=true`.
+- SAP authorizations of the mapped user still apply.
+- The cookie file holds a live session; keep it in a private directory.
+- The launcher uses the Windows certificate store and is not available on macOS or Linux.
 
 ---
 

@@ -116,7 +116,7 @@ does not ensure the next call re-authenticates; follow
 | `--cookie-file` | `SAP_COOKIE_FILE` | Netscape-format cookies, re-read during 401 recovery and before CSRF bootstrap; changed cookies replace the old session, empty/unreadable files preserve the last known cookies, and a locked stateful operation keeps its session until it finishes — refresh the file and retry the call without restarting. |
 | `--cookie-string` | `SAP_COOKIE_STRING` | Inline cookies (`k=v; k2=v2`) read once at startup. **Cannot hot-reload** — restart with a new value or switch to `SAP_COOKIE_FILE`. |
 
-Cookie auth is not for production. See [local-development.md → SSO cookie extractor](local-development.md#sso-only-on-prem-cookie-extractor). On startup, the auth preflight is non-blocking when `SAP_COOKIE_FILE` is set, so the server starts even if cookies are about to be re-extracted out-of-band. Per-user PP clients never inherit cookie state — `cookieFile`/`cookieString` are stripped from per-user configs.
+Cookie auth is not for production. See [local-development.md → SSO cookie extractor](local-development.md#sso-only-on-prem-cookie-extractor). On startup, the auth preflight is non-blocking when `SAP_COOKIE_FILE` is set, so the server starts even if cookies are about to be re-extracted out-of-band. Per-user PP clients never inherit cookie state — `cookieFile`/`cookieString` are stripped from per-user configs. If your system logs users on with an X.509 client certificate, browser cookies are not reusable; see [X.509 client-certificate logon](local-development.md#x509-client-certificate-logon-windows).
 
 #### B3. BTP ABAP Environment (direct OAuth)
 
