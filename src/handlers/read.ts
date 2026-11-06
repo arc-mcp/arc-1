@@ -205,6 +205,7 @@ export async function handleSAPRead(
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
   minimalErrors: boolean,
+  configuredRelease?: string,
 ): Promise<ToolResult> {
   const captured: { version: SourceVersion; source?: string; group?: string } = { version: 'active' };
   const base = await handleSAPReadBase(client, args, cachingLayer, cacheSecurity, minimalErrors, captured);
@@ -221,6 +222,7 @@ export async function handleSAPRead(
     base,
     captured.version,
     captured.source,
+    configuredRelease,
   );
 }
 

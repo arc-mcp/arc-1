@@ -47,6 +47,21 @@ include route (`ENHANCEMENT` blocks with the generated local interface and
 directly with HTTP 500 on 758 too and is served from the revision feed. Not verified: reading
 the `EIMP`/`EM001` includes, inactive versions through the feed, and 816.
 
+## Class-source reads on 758 (2026-11-06, #1196)
+
+For `SAPRead CLAS extensions=sources`, owned generic XH identities now read their active
+generated-include revision without calling `enhoxh`. Native 758 SP02 serializer source confirms
+that unsupported technologies leave its result reference initial. The existing EXTED_OBJ ownership,
+feed identity, active revision, deny rules and request budgets still apply; technology stays unknown.
+Native verification used direct HTTPS/Basic, client 001, through the production handler and local
+MCP stdio. `CL_OO_ADT_ENHANCED_CLASS` returned its active generated parent and actual EM001 child;
+the captured handler made no generic XH metadata request. Eight rendered hook sources from
+`CL_SEEF_ADT_TEST_AUNIT_1` kept their baseline identities and hashes. Summary reads remain source-free.
+The reporter's exact class is absent here; original-system and restricted-user/PP retests remain open.
+Direct ENHO reads and other known releases keep the existing routing. While the release is unknown
+(e.g. during startup), the class read retains identities but omits generic XH sources without calling
+the serializer; retry after the feature probe completes or configure `SAP_ABAP_RELEASE`.
+
 ## Verified read routes (2026-10-01, issue #896)
 
 | Repository subtype | Collection / Accept | Observed behavior |

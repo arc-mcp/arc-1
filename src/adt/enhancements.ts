@@ -6,6 +6,7 @@ import { enhancementIncludeName, readEnhancementIncludeRevision } from './enhanc
 import { withFilterConditions } from './enho-filter.js';
 import { AdtApiError, AdtError, extractExceptionType } from './errors.js';
 import type { AdtRequestOptions } from './http-deadline.js';
+import { parseReleaseNumber } from './release.js';
 import { RevisionHistoryError } from './revision-feed.js';
 import { checkOperation, OperationType } from './safety.js';
 import type { EnhancementImplementationInfo } from './types.js';
@@ -44,12 +45,29 @@ export async function readActiveClassEnhancementSource(
   request: AdtRequestOptions,
   expectedOwners: ReadonlyArray<{ name: string; type: string; uri: string }>,
   release?: string,
-): Promise<EnhancementImplementationInfo> {
+): Promise<EnhancementImplementationInfo | undefined> {
   checkOperation(client.safety, OperationType.Read, 'GetEnhancementImplementation');
   if (!expectedOwners.length) throw new RevisionHistoryError();
   const include = enhancementIncludeName(identity.name);
   if (identity.type !== 'ENHO/XH' && identity.type !== 'ENHO/XHH')
     throw new AdtError('No qualified class enhancement source provider for this native type.');
+  const readGeneratedSource = async (): Promise<EnhancementImplementationInfo | undefined> => {
+    const read = await readEnhancementIncludeRevision(client, include, { ...request, version: 'active' });
+    if (!read) return undefined;
+    return {
+      name: identity.name,
+      description: '',
+      package: '',
+      technology: '',
+      badiImplementations: [],
+      source: read.source,
+      enhancementInclude: { name: read.include, revision: read.revision },
+      note: 'Generated active include revision; technology and runtime switch applicability remain unknown.',
+    };
+  };
+  // The owning-class relation already established this identity. On 758 the generic serializer
+  // dumps for class enhancements; use the labelled source representation without probing it first.
+  if (identity.type === 'ENHO/XH' && parseReleaseNumber(release) === 758) return readGeneratedSource();
   const [collection, accept] = ROUTES[identity.type];
   const path = `/sap/bc/adt/enhancements/${collection}/${encodeURIComponent(identity.name.toLowerCase())}`;
   try {
@@ -85,18 +103,9 @@ export async function readActiveClassEnhancementSource(
     // This path is only for a known class-bound ENHO. Never search/reroute on an unexpected failure.
     if (request.attemptBudget?.authorizationFailureObserved || !enhancementSourceUnavailable(error, release))
       throw error;
-    const read = await readEnhancementIncludeRevision(client, include, { ...request, version: 'active' });
+    const read = await readGeneratedSource();
     if (!read) throw error;
-    return {
-      name: identity.name,
-      description: '',
-      package: '',
-      technology: '',
-      badiImplementations: [],
-      source: read.source,
-      enhancementInclude: { name: read.include, revision: read.revision },
-      note: 'Generated active include revision; technology and runtime switch applicability remain unknown.',
-    };
+    return read;
   }
 }
 
