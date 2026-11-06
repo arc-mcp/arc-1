@@ -316,4 +316,21 @@ describe('SAPWrite add_unit (#776)', () => {
     expect(body).toContain(row.source.trim());
     expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
   });
+
+  it('writes a change-marker comment wrapped around the new unit', async () => {
+    const calls = mockEditUnitFlow({
+      objectPath: '/sap/bc/adt/programs/includes/ZINSERT_I',
+      activeSource: 'MODULE first OUTPUT.\nENDMODULE.\n',
+    });
+    const wrapped = '* --> ZTAG 001\nMODULE added OUTPUT.\nENDMODULE.\n* <-- ZTAG 001';
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'add_unit',
+      type: 'INCL',
+      name: 'ZINSERT_I',
+      unit: 'added',
+      source: wrapped,
+    });
+    expect(result.isError, JSON.stringify(result)).toBeUndefined();
+    expect(calls.find((c) => c.method === 'PUT')?.body).toContain(wrapped);
+  });
 });

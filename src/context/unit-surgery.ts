@@ -207,6 +207,29 @@ export function spliceUnit(
   return { newSource, oldUnitSource, newUnitSource, unit, success: true };
 }
 
+const COMMENT_OR_BLANK = /^(\s*$|\*|\s*")/;
+
+/** Split `source` into leading/trailing full-line comments (outer blank lines dropped) and the block between. */
+function splitCommentWrapper(source: string): { head: string[]; core: string; tail: string[] } {
+  const lines = source.replace(/\r\n/g, '\n').split('\n');
+  let start = 0;
+  let end = lines.length;
+  while (start < end && COMMENT_OR_BLANK.test(lines[start]!)) start++;
+  while (end > start && COMMENT_OR_BLANK.test(lines[end - 1]!)) end--;
+  const trimBlank = (part: string[]) => {
+    let a = 0;
+    let b = part.length;
+    while (a < b && !part[a]!.trim()) a++;
+    while (b > a && !part[b - 1]!.trim()) b--;
+    return part.slice(a, b);
+  };
+  return {
+    head: trimBlank(lines.slice(0, start)),
+    core: lines.slice(start, end).join('\n').trim(),
+    tail: trimBlank(lines.slice(end)),
+  };
+}
+
 /** Append a complete new unit at physical EOF; never reposition INCLUDEs. */
 export function insertUnit(
   source: string,
@@ -232,20 +255,24 @@ export function insertUnit(
   if (units.some((unit) => unit.name.toUpperCase() === unitName.toUpperCase())) {
     return fail(`Unit "${unitName}" already exists in ${objectName}; use edit_unit to replace it.`);
   }
-  const kind = addition
-    .trim()
-    .match(/^(FORM|MODULE)\s/i)?.[1]
-    ?.toUpperCase() as EditableUnitKind | undefined;
-  if (!kind) return fail('source must contain one complete FORM...ENDFORM or MODULE...ENDMODULE block.');
+  // Full-line comments and blank lines around the block (e.g. `* --> TAG` / `* <-- TAG` change markers)
+  // are kept verbatim; anything else outside the single block is still refused.
+  const { head, core, tail } = splitCommentWrapper(addition);
+  const kind = core.match(/^(FORM|MODULE)\s/i)?.[1]?.toUpperCase() as EditableUnitKind | undefined;
+  if (!kind) {
+    return fail(
+      'source must contain one complete FORM...ENDFORM or MODULE...ENDMODULE block (full-line comments around it are allowed).',
+    );
+  }
   const unit: EditableUnitInfo = { name: unitName, kind, startLine: 1, endLine: 1 };
-  const invalid = replacementError(unit, addition, objectName, abaplintVersion);
+  const invalid = replacementError(unit, core, objectName, abaplintVersion);
   if (invalid) return fail(invalid);
 
   const prefix = normalized && !normalized.endsWith('\n') ? `${normalized}\n` : normalized;
-  const newUnitSource = addition.replace(/\r\n/g, '\n').trim();
+  const newUnitSource = [...head, core, ...tail].join('\n');
   let newSource = `${prefix}${newUnitSource}\n`;
   if (source.includes('\r\n')) newSource = newSource.replace(/\n/g, '\r\n');
-  unit.startLine = prefix.split('\n').length;
-  unit.endLine = unit.startLine + newUnitSource.split('\n').length - 1;
+  unit.startLine = prefix.split('\n').length + head.length;
+  unit.endLine = unit.startLine + core.split('\n').length - 1;
   return { success: true, newSource, newUnitSource, oldUnitSource: '', unit };
 }
