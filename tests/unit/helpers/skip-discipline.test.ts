@@ -24,8 +24,10 @@ function listTsFiles(dir: string): string[] {
 }
 
 function matchingFiles(pattern: RegExp, excludedFiles: string[] = []): string[] {
+  // relative() returns backslash-separated paths on Windows; excludedFiles are forward-slash
+  // literals, so normalize before comparing.
   return SCAN_DIRS.flatMap(listTsFiles)
-    .map((file) => relative(REPO_ROOT, file))
+    .map((file) => relative(REPO_ROOT, file).replaceAll('\\', '/'))
     .filter((file) => !excludedFiles.includes(file))
     .filter((file) => pattern.test(readFileSync(join(REPO_ROOT, file), 'utf8')))
     .sort();

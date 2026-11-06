@@ -66,7 +66,6 @@ const CATEGORIES = [
       /batch_create aggregated inner-object failure/i,
       /Stale partial-create/i,
       /HTTP 400 for custom class source offset/i,
-      /ADT definition API returned HTTP 400/i,
     ],
     hint: 'Known backend instability on specific releases.',
   },

@@ -60,6 +60,12 @@ describe('E2E SKTD (Knowledge Transfer Document) tests', () => {
     });
     const text = expectToolSuccess(result);
 
+    requireOrSkip(
+      ctx,
+      !text.includes('No Knowledge Transfer Document') ? true : undefined,
+      `${SkipReason.NO_FIXTURE}: ZC_FBCLUBTP Knowledge Transfer Document`,
+    );
+
     // The KTD for ZC_FBCLUBTP has base64-encoded Markdown — SAPRead must return decoded text
     expect(text).not.toContain('<sktd:docu');
     expect(text).not.toContain('sktd:text');
@@ -94,6 +100,14 @@ describe('E2E SKTD (Knowledge Transfer Document) tests', () => {
 
   it('SKTD full CRUD lifecycle: create DDLS → create KTD → update with Markdown → read → activate → delete', async (ctx) => {
     requireOrSkip(ctx, sktdSupported ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
+    // This lifecycle's parent uses DEFINE VIEW ENTITY (SAP_BASIS 755+), not classic CDS.
+    const features = JSON.parse(expectToolSuccess(await callTool(client, 'SAPManage', { action: 'probe' })));
+    expect(features.abapRelease).toMatch(/^\d{3}$/);
+    requireOrSkip(
+      ctx,
+      Number(features.abapRelease) >= 755 ? true : undefined,
+      `${SkipReason.BACKEND_UNSUPPORTED}: test fixture requires CDS view entities (SAP_BASIS >= 755)`,
+    );
     // Use a unique name to avoid collisions across test runs
     const objectName = uniqueName('ZARC1SKTD');
 
@@ -110,16 +124,16 @@ define view entity ${objectName}
   key obj_name as ObjectName
 }`;
 
-    const createDdls = await callTool(client, 'SAPWrite', {
-      action: 'create',
-      type: 'DDLS',
-      name: objectName,
-      package: '$TMP',
-      source: ddlSource,
-    });
-    expectToolSuccessOrSkip(ctx, createDdls);
-
+    let ktdCreateAttempted = false;
     try {
+      const createDdls = await callTool(client, 'SAPWrite', {
+        action: 'create',
+        type: 'DDLS',
+        name: objectName,
+        package: '$TMP',
+        source: ddlSource,
+      });
+      expectToolSuccessOrSkip(ctx, createDdls);
       // Step 2: Activate the DDLS (KTD needs an active parent to attach to)
       const activateDdls = await callTool(client, 'SAPActivate', {
         action: 'activate',
@@ -129,6 +143,7 @@ define view entity ${objectName}
       expectToolSuccess(activateDdls);
 
       // Step 3: Create KTD for the DDLS
+      ktdCreateAttempted = true;
       const createKtd = await callTool(client, 'SAPWrite', {
         action: 'create',
         type: 'SKTD',
@@ -195,16 +210,16 @@ define view entity ${objectName}
       const deletedText = expectToolSuccess(readDeleted);
       expect(deletedText).toContain('No Knowledge Transfer Document');
     } finally {
-      // Cleanup: delete the DDLS (best-effort — KTD should already be deleted)
+      // A failed source PUT can leave a DDLS shell; cleanup also covers that create attempt.
       try {
-        await callTool(client, 'SAPWrite', { action: 'delete', type: 'SKTD', name: objectName });
-      } catch {
-        // best-effort-cleanup — may already be deleted
-      }
-      try {
-        await callTool(client, 'SAPWrite', { action: 'delete', type: 'DDLS', name: objectName });
-      } catch {
-        // best-effort-cleanup
+        if (ktdCreateAttempted) {
+          const remaining = expectToolSuccess(await callTool(client, 'SAPRead', { type: 'SKTD', name: objectName }));
+          if (!remaining.includes('No Knowledge Transfer Document')) {
+            expectToolSuccess(await callTool(client, 'SAPWrite', { action: 'delete', type: 'SKTD', name: objectName }));
+          }
+        }
+      } finally {
+        expectToolSuccess(await callTool(client, 'SAPWrite', { action: 'delete', type: 'DDLS', name: objectName }));
       }
     }
   });

@@ -45,11 +45,11 @@ export class Logger {
 
   constructor(
     private format: LogFormat = 'text',
-    verbose: boolean = false,
+    level: LogLevel = 'info',
   ) {
-    this.minLevel = verbose ? LEVEL_PRIORITY.debug : LEVEL_PRIORITY.info;
+    this.minLevel = LEVEL_PRIORITY[level];
     // Default: stderr only
-    this.sinks = [new StderrSink(format, verbose ? 'debug' : 'info')];
+    this.sinks = [new StderrSink(format, level)];
   }
 
   /** Add a log sink (file, BTP audit log, etc.) */
@@ -196,11 +196,11 @@ function isPlainLogContext(value: unknown): value is LogContext {
 }
 
 /** Global logger instance — initialized during server startup */
-export let logger = new Logger('text', false);
+export let logger = new Logger('text', 'info');
 
-/** Initialize the global logger with server configuration */
-export function initLogger(format: LogFormat, verbose: boolean): void {
-  logger = new Logger(format, verbose);
+/** Initialize the global logger with server configuration (`SAP_VERBOSE` is already folded into `level`). */
+export function initLogger(format: LogFormat, level: LogLevel): void {
+  logger = new Logger(format, level);
 }
 
 /**

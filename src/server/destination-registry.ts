@@ -2,17 +2,29 @@
 
 import { createHash } from 'node:crypto';
 import type { SafetyConfig } from '../adt/safety.js';
-import type { DestinationDiscoveryResult, DiscoveredDestination } from './destination-discovery.js';
+import type {
+  DestinationAuthorizationOptions,
+  DestinationDiscoveryResult,
+  DiscoveredDestination,
+} from './destination-discovery.js';
+import { enforcedCatalogFitsSnapshot } from './multi-target-catalog-enforced.js';
+import { projectEnforcedDiagnostic } from './multi-target-catalog-projection.js';
 import {
   isSupportedMultiTargetArcProperty,
   isWriteRelatedArcProperty,
+  parseDestinationAllowlist,
   parseDestinationBoolean,
 } from './multi-target-destination-config.js';
-import { buildTargetId, SAP_SYSID_PATTERN, TARGET_SYSTEM_ALIAS_PATTERN } from './multi-target-identity.js';
+import {
+  buildTargetId,
+  MULTI_TARGET_MAX,
+  normalizeTargetDisplayText,
+  SAP_SYSID_PATTERN,
+  TARGET_SYSTEM_ALIAS_PATTERN,
+} from './multi-target-identity.js';
 import type { ServerConfig } from './types.js';
 
-export { TARGET_ID_PATTERN } from './multi-target-identity.js';
-export const MULTI_TARGET_MAX = 256;
+export { MULTI_TARGET_MAX, TARGET_ID_PATTERN } from './multi-target-identity.js';
 
 export type TargetExclusionCode =
   | 'ACTIVE'
@@ -64,13 +76,28 @@ export interface TargetDescriptor {
   readonly identity: TargetIdentity;
   readonly proxyType: 'OnPremise';
   readonly hasCloudConnectorLocationId: boolean;
+  readonly writePolicy?: Readonly<{
+    allowWrites: boolean;
+    allowedPackages: readonly string[];
+    allowedTransports: readonly string[];
+  }>;
   readonly requestedPolicy: TargetPolicy;
   readonly effectivePolicy: TargetPolicy;
   readonly connectionFingerprint: string;
   readonly fingerprint: string;
 }
 
+export interface TargetWriteDiagnostic {
+  readonly configured: boolean;
+  readonly enabledByConfiguration: boolean;
+  readonly packageRuleCount: number;
+  readonly transportRuleCount: number;
+  readonly digest: string;
+  readonly reason: 'ENABLED_REQUIRES_USER_GRANT' | 'GLOBAL_WRITES_DISABLED' | 'DESTINATION_WRITES_DISABLED';
+}
+
 export interface TargetDiagnostic {
+  readonly write?: TargetWriteDiagnostic;
   readonly destinationName: string;
   readonly target?: string;
   readonly status: 'active' | 'disabled' | 'ignored' | 'quarantined';
@@ -95,11 +122,12 @@ export interface TargetDiagnostic {
     allowFreeSQL?: boolean;
     targetAlias?: string;
     unknownProperties?: readonly string[];
+    unknownPropertyCount?: number;
   }>;
 }
 
 export interface RegistryFailure {
-  readonly code: 'TARGET_LIMIT_EXCEEDED' | 'REGISTRY_DISCOVERY_ERROR';
+  readonly code: 'TARGET_LIMIT_EXCEEDED' | 'REGISTRY_DISCOVERY_ERROR' | 'CATALOG_SIZE_LIMIT_EXCEEDED';
   readonly message: string;
 }
 
@@ -117,11 +145,7 @@ export interface RegistryCounts {
 
 export function sanitizeTargetDescription(value: string | undefined, fallback: string): string {
   if (!value) return fallback;
-  const withoutControls = Array.from(value.normalize('NFKC'), (character) => {
-    const codePoint = character.codePointAt(0) ?? 0;
-    return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f) ? ' ' : character;
-  }).join('');
-  const normalized = withoutControls.replace(/\s+/g, ' ').trim();
+  const normalized = normalizeTargetDisplayText(value);
   return normalized.length > 0 && normalized.length <= 160 ? normalized : fallback;
 }
 
@@ -161,11 +185,15 @@ export function targetFingerprint(value: FingerprintInput): string {
     language: value.language,
     allowDataPreview: value.requestedPolicy.allowDataPreview,
     allowFreeSQL: value.requestedPolicy.allowFreeSQL,
+    writePolicy: value.writePolicy,
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
 
-function immutableArcConfig(properties: Readonly<Record<string, string>>): TargetDiagnostic['arcConfig'] {
+function immutableArcConfig(
+  properties: Readonly<Record<string, string>>,
+  facts?: DiscoveredDestination['arcValidation'],
+): TargetDiagnostic['arcConfig'] {
   const unknownProperties = Object.keys(properties)
     .filter((key) => !isSupportedMultiTargetArcProperty(key))
     .sort();
@@ -177,6 +205,7 @@ function immutableArcConfig(properties: Readonly<Record<string, string>>): Targe
       ? { targetAlias: properties['arc1.target_alias'] }
       : {}),
     ...(unknownProperties.length > 0 ? { unknownProperties: Object.freeze(unknownProperties) } : {}),
+    ...(facts?.unknownPropertyCount ? { unknownPropertyCount: facts.unknownPropertyCount } : {}),
   });
 }
 
@@ -209,7 +238,7 @@ function excludedCandidate(
 }
 
 function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateEvaluation {
-  const arcConfig = immutableArcConfig(source.arcProperties);
+  const arcConfig = immutableArcConfig(source.arcProperties, source.arcValidation);
   const diagnosticBase = {
     destinationName: source.name,
     type: source.type,
@@ -253,15 +282,31 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
     );
   }
 
+  if (source.arcValidation?.hasWriteProperty || source.arcValidation?.unknownPropertyCount) {
+    return excludedCandidate(
+      source,
+      diagnosticBase,
+      true,
+      'quarantined',
+      source.arcValidation.hasWriteProperty ? 'UNSUPPORTED_V1_WRITE_CONFIG' : 'UNKNOWN_ARC1_PROPERTY',
+      source.arcValidation.hasWriteProperty
+        ? 'This write-related destination property is unsupported; use only the documented pinned PP write properties.'
+        : 'Unsupported ARC-1 destination properties; inspect the configuration in BTP Cockpit.',
+    );
+  }
+
   for (const key of Object.keys(source.arcProperties)) {
-    if (isWriteRelatedArcProperty(key)) {
+    if (
+      isWriteRelatedArcProperty(key) &&
+      (!isSupportedMultiTargetArcProperty(key) || base.multiTargetAuthorization !== 'xsuaa-attribute')
+    ) {
       return excludedCandidate(
         source,
         diagnosticBase,
         true,
         'quarantined',
         'UNSUPPORTED_V1_WRITE_CONFIG',
-        'Write-related destination configuration is not supported in multi-target v1.',
+        'Pinned writes require xsuaa-attribute authorization; unsupported write properties are refused.',
       );
     }
     if (!isSupportedMultiTargetArcProperty(key)) {
@@ -452,6 +497,30 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
     );
   }
 
+  let writePolicy: TargetDescriptor['writePolicy'];
+  try {
+    const allowWrites = parseDestinationBoolean(source.arcProperties['arc1.allow_writes']);
+    if (source.arcProperties['arc1.allow_writes'] !== undefined && allowWrites === undefined) throw new Error();
+    const allowedPackages = parseDestinationAllowlist(source.arcProperties['arc1.allowed_packages'], 'packages');
+    const allowedTransports = parseDestinationAllowlist(source.arcProperties['arc1.allowed_transports'], 'transports');
+    if (allowWrites && (!allowedPackages || authentication !== 'PrincipalPropagation')) throw new Error();
+    if (Object.keys(source.arcProperties).some(isWriteRelatedArcProperty)) {
+      writePolicy = Object.freeze({
+        allowWrites: allowWrites === true,
+        allowedPackages: allowedPackages ?? Object.freeze([]),
+        allowedTransports: allowedTransports ?? Object.freeze([]),
+      });
+    }
+  } catch {
+    return excludedCandidate(
+      source,
+      diagnosticBase,
+      true,
+      'quarantined',
+      'INVALID_POLICY',
+      'Writes require a PP destination, an explicit valid package allowlist, and valid bounded write properties.',
+    );
+  }
   const targetId = buildTargetId(source.sapSysId, source.sapClient, targetAlias);
   const description = sanitizeTargetDescription(source.description, targetId);
   const descriptionFallback = description === targetId && source.description !== targetId;
@@ -476,6 +545,7 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
     hasCloudConnectorLocationId: source.hasCloudConnectorLocationId,
     requestedPolicy,
     effectivePolicy,
+    ...(writePolicy ? { writePolicy } : {}),
   };
   const connectionFingerprint = targetConnectionFingerprint({
     urlFingerprint: source.urlFingerprint,
@@ -507,6 +577,22 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
       message: 'Destination is active on pinned and aggregate multi-target routes.',
       requestedPolicy,
       effectivePolicy,
+      ...(writePolicy
+        ? {
+            write: Object.freeze({
+              configured: writePolicy.allowWrites,
+              enabledByConfiguration: base.allowWrites && writePolicy.allowWrites,
+              packageRuleCount: writePolicy.allowedPackages.length,
+              transportRuleCount: writePolicy.allowedTransports.length,
+              digest: createHash('sha256').update(JSON.stringify(writePolicy)).digest('hex'),
+              reason: !writePolicy.allowWrites
+                ? ('DESTINATION_WRITES_DISABLED' as const)
+                : !base.allowWrites
+                  ? ('GLOBAL_WRITES_DISABLED' as const)
+                  : ('ENABLED_REQUIRES_USER_GRANT' as const),
+            }),
+          }
+        : {}),
       limitedByInstance:
         requestedPolicy.allowDataPreview !== effectivePolicy.allowDataPreview ||
         requestedPolicy.allowFreeSQL !== effectivePolicy.allowFreeSQL,
@@ -614,6 +700,8 @@ export class DestinationRegistry {
   readonly loadedAt: string;
   readonly counts: RegistryCounts;
   readonly arcAdjacentWithoutMarkerCount: number;
+  readonly countsComplete: boolean;
+  readonly arcRelatedAtLeast?: number;
   private readonly byTarget: ReadonlyMap<string, TargetDescriptor>;
 
   private constructor(args: {
@@ -624,6 +712,8 @@ export class DestinationRegistry {
     loadedAt?: string;
     counts: RegistryCounts;
     arcAdjacentWithoutMarkerCount: number;
+    countsComplete?: boolean;
+    arcRelatedAtLeast?: number;
   }) {
     this.targets = Object.freeze([...args.targets]);
     this.diagnostics = Object.freeze([...args.diagnostics]);
@@ -632,11 +722,16 @@ export class DestinationRegistry {
     this.loadedAt = args.loadedAt ?? new Date().toISOString();
     this.counts = Object.freeze({ ...args.counts });
     this.arcAdjacentWithoutMarkerCount = args.arcAdjacentWithoutMarkerCount;
+    this.countsComplete = args.countsComplete ?? true;
+    this.arcRelatedAtLeast = args.arcRelatedAtLeast;
     this.byTarget = new Map(this.targets.map((target) => [target.target, target]));
     Object.freeze(this);
   }
 
-  static unavailable(failure: RegistryFailure): DestinationRegistry {
+  static unavailable(
+    failure: RegistryFailure,
+    options: DestinationAuthorizationOptions & { arcRelatedAtLeast?: number } = {},
+  ): DestinationRegistry {
     return new DestinationRegistry({
       targets: [],
       diagnostics: [],
@@ -654,10 +749,26 @@ export class DestinationRegistry {
         quarantined: 0,
       },
       arcAdjacentWithoutMarkerCount: 0,
+      countsComplete: options.authorizationMode !== 'xsuaa-attribute',
+      arcRelatedAtLeast: options.arcRelatedAtLeast,
     });
   }
 
-  static fromDiscovery(discovery: DestinationDiscoveryResult, base: ServerConfig): DestinationRegistry {
+  static fromDiscovery(
+    discovery: DestinationDiscoveryResult,
+    base: ServerConfig,
+    options: DestinationAuthorizationOptions = {},
+  ): DestinationRegistry {
+    const enforced = options.authorizationMode === 'xsuaa-attribute';
+    if (enforced && (discovery.arcRelatedAtLeast !== undefined || discovery.subaccount.length > MULTI_TARGET_MAX)) {
+      return DestinationRegistry.unavailable(
+        {
+          code: 'TARGET_LIMIT_EXCEEDED',
+          message: `More than ${MULTI_TARGET_MAX} ARC-related destinations; no discovered target is active.`,
+        },
+        { ...options, arcRelatedAtLeast: MULTI_TARGET_MAX + 1 },
+      );
+    }
     const evaluated = discovery.subaccount.map((source) => evaluate(source, base));
     const enabledCount = evaluated.filter((entry) => entry.enabled).length;
     if (enabledCount > MULTI_TARGET_MAX) {
@@ -730,13 +841,23 @@ export class DestinationRegistry {
     }
     targets.sort((a, b) => a.target.localeCompare(b.target));
     diagnostics.sort((a, b) => diagnosticSortKey(a).localeCompare(diagnosticSortKey(b)));
-    return new DestinationRegistry({
+    const registry = new DestinationRegistry({
       targets,
-      diagnostics,
-      revision: registryRevision(diagnostics, targets),
+      diagnostics: enforced ? diagnostics.map(projectEnforcedDiagnostic) : diagnostics,
+      revision: registryRevision(enforced ? diagnostics.map(projectEnforcedDiagnostic) : diagnostics, targets),
       counts: countsFor(discovery, diagnostics, enabledCount, targets.length),
       arcAdjacentWithoutMarkerCount: discovery.arcAdjacentWithoutMarkerCount,
     });
+    if (enforced && !enforcedCatalogFitsSnapshot(registry)) {
+      return DestinationRegistry.unavailable(
+        {
+          code: 'CATALOG_SIZE_LIMIT_EXCEEDED',
+          message: 'Complete target catalog exceeds its size limit; no discovered target is active.',
+        },
+        options,
+      );
+    }
+    return registry;
   }
 
   get(target: string): TargetDescriptor | undefined {

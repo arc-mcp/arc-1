@@ -1,0 +1,12 @@
+{
+  "extension": "1.2.0",
+  "bundleSha256": "783f99a7623a5b2c2d2eb6a3d84e6e3428d2c48429020d12267d324777ae7b03",
+  "exampleSha256": "fb8b20c2650590b9bcab810f0fa6eab91e547c58f5db30681a32b9f82c613801",
+  "serializerRoundTrip": "byte-identical",
+  "cells": 3,
+  "destinationBindings": 0,
+  "fieldAndRowLimitCheck": "pass",
+  "unknownKeysDropped": true,
+  "malformedJsonOpensEmptySqlCell": true,
+  "note": "Actual installed serializer evaluated in isolation with minimal NotebookData/NotebookCellData stubs. No extension activation or SAP calls. Not a stable-format guarantee."
+}

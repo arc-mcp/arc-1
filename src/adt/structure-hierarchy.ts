@@ -1,6 +1,20 @@
+import { getCurrentContext } from '../server/context.js';
+import { discoverDdicAppends } from './ddic-extensions.js';
+import { type EmbeddedStructureRef, parseEmbeddedStructures } from './embedded-structures.js';
+import {
+  assertExtensionReadAllowed,
+  type ExtensionDiscoveryResult,
+  ExtensionDiscoverySession,
+  ExtensionProtocolError,
+  type ExtensionProvider,
+} from './extension-discovery.js';
+import { parseRelationXml } from './repository-relations.js';
+
+export { type EmbeddedStructureRef, parseEmbeddedStructures } from './embedded-structures.js';
+
 import type { AdtClient, SourceReadOptions, SourceReadResult } from './client.js';
-import { findWhereUsed, getWhereUsedScope, type WhereUsedResult } from './codeintel.js';
-import { AdtApiError, isNotFoundError } from './errors.js';
+import { findWhereUsed, type WhereUsedResult } from './codeintel.js';
+import { AdtApiError, AdtCsrfBootstrapError, AdtResponseLimitError, isNotFoundError } from './errors.js';
 
 export type StructureNodeKind = 'root' | 'include' | 'append';
 
@@ -9,15 +23,10 @@ export interface StructureNode {
   attribute: string | null;
   kind: StructureNodeKind;
   children: StructureNode[];
+  suffix?: string;
   cyclic?: boolean;
   truncated?: boolean;
   error?: string;
-}
-
-export interface EmbeddedStructureRef {
-  name: string;
-  attribute: string | null;
-  kind: 'include' | 'append';
 }
 
 export interface StructureHierarchyResult {
@@ -34,65 +43,42 @@ export interface StructureHierarchyResult {
     unresolved: number;
     truncated: number;
   };
+  extensionDiscovery?: Omit<ExtensionDiscoveryResult, 'edges'>;
   warnings?: string[];
 }
 
 type StructureHierarchyClient = Pick<AdtClient, 'getTabl' | 'resolveTablObjectUrl' | 'http' | 'safety'>;
 
-const DEFAULT_MAX_DEPTH = 10;
+const DEFAULT_MAX_DEPTH = 5;
+const MAX_APPEND_CANDIDATES = 12;
 const WHERE_USED_UNAVAILABLE_STATUSES = new Set([400, 404, 405, 415, 501]);
-
-export function parseEmbeddedStructures(source: string): EmbeddedStructureRef[] {
-  const refs: EmbeddedStructureRef[] = [];
-  if (!source) return refs;
-
-  for (const rawLine of source.split(/\r?\n/)) {
-    const line = rawLine.replace(/\/\/.*$/, '').trim();
-    if (!line || line.startsWith('@') || line.startsWith('*')) continue;
-
-    const classicInclude = line.match(/^\.include\s+([a-z0-9_/]+)/i);
-    if (classicInclude?.[1]) {
-      refs.push({ name: classicInclude[1].toUpperCase(), attribute: null, kind: 'include' });
-      continue;
-    }
-
-    const namedInclude = line.match(/^([a-z][a-z0-9_]*)\s*:\s*include\s+([a-z0-9_/]+)\s*;?/i);
-    if (namedInclude?.[1] && namedInclude[2]) {
-      refs.push({
-        name: namedInclude[2].toUpperCase(),
-        attribute: namedInclude[1].toLowerCase(),
-        kind: 'include',
-      });
-      continue;
-    }
-
-    const anonymousInclude = line.match(/^include\s+([a-z0-9_/]+)\s*;?/i);
-    if (anonymousInclude?.[1]) {
-      refs.push({ name: anonymousInclude[1].toUpperCase(), attribute: null, kind: 'include' });
-    }
-  }
-
-  return refs;
-}
 
 export async function buildStructureHierarchy(
   client: StructureHierarchyClient,
   name: string,
   options: { version?: SourceReadOptions['version']; includeExtensions?: boolean; maxDepth?: number } = {},
 ): Promise<StructureHierarchyResult> {
+  assertExtensionReadAllowed(client.safety, 'TABL');
   const rootName = normalizeStructureName(name);
   const includeExtensions = options.includeExtensions !== false;
   const maxDepth = parseMaxDepth(options.maxDepth);
   const warnings: string[] = [];
   const sourceCache = new Map<string, string | null>();
-  let appendDiscoveryDisabled = false;
+  let fallbackDisabled = false;
+  let session: ExtensionDiscoverySession | undefined;
+  let totalNodes = 0;
+  const appendCache = new Map<string, EmbeddedStructureRef[]>();
 
   const readSource = async (structureName: string): Promise<string | null> => {
     const upper = normalizeStructureName(structureName);
     if (sourceCache.has(upper)) return sourceCache.get(upper) ?? null;
 
     try {
-      const result: SourceReadResult = await client.getTabl(upper, { version: options.version });
+      const result: SourceReadResult = session
+        ? await session.read('TABL', (request) =>
+            client.getTabl(upper, { ...request, version: options.version ?? 'active' }),
+          )
+        : await client.getTabl(upper, { version: options.version ?? 'active' });
       sourceCache.set(upper, result.source);
       return result.source;
     } catch (err) {
@@ -109,41 +95,113 @@ export async function buildStructureHierarchy(
     throw new AdtApiError(`Could not read source for structure/table ${rootName}`, 404, '');
   }
 
+  session = new ExtensionDiscoverySession(
+    'sources',
+    {
+      root: { type: 'TABL', name: rootName, version: options.version ?? 'active' },
+      scope: 'explicit structure hierarchy',
+    },
+    client.safety,
+    { signal: getCurrentContext()?.signal },
+  );
+
   const buildNode = async (
     structureName: string,
     kind: StructureNodeKind,
     attribute: string | null,
     path: readonly string[],
+    suffix?: string,
   ): Promise<StructureNode> => {
     const upper = normalizeStructureName(structureName);
-    const node: StructureNode = { structure: upper, attribute, kind, children: [] };
+    const node: StructureNode = { structure: upper, attribute, kind, children: [], ...(suffix ? { suffix } : {}) };
+    totalNodes++;
 
     if (path.includes(upper)) {
       node.cyclic = true;
       return node;
     }
 
-    const source = await readSource(upper);
+    let source: string | null = null;
+    const sourceProvider: ExtensionProvider = {
+      id: 'structure_source',
+      family: 'ddic_include',
+      status: 'returned',
+      coverage: 'bounded_traversal',
+      scope: upper,
+    };
+    await session!.provider(sourceProvider, async () => {
+      source = await readSource(upper);
+    });
     if (source === null) {
+      sourceProvider.status = sourceProvider.status === 'denied' ? 'denied' : 'incomplete';
+      sourceProvider.reason ??= 'source_unavailable';
+      session!.omit('sources');
       node.error = `Could not read source for ${upper}`;
       return node;
     }
 
     if (path.length >= maxDepth) {
       node.truncated = true;
+      session!.omit('depth');
       return node;
     }
 
-    const extensionRefs =
-      includeExtensions && !appendDiscoveryDisabled
-        ? await findExtensionRefs(client, upper, readSource, warnings, () => {
-            appendDiscoveryDisabled = true;
-          })
-        : [];
-    const childRefs = [...parseEmbeddedStructures(source), ...extensionRefs];
+    let extensionRefs: EmbeddedStructureRef[] = [];
+    if (appendCache.has(upper)) extensionRefs = appendCache.get(upper)!;
+    else if (includeExtensions && !session!.stopped) {
+      const found = await discoverDdicAppends(client, session!, upper, path.length);
+      extensionRefs = found.references.map((ref) => ({ name: ref.name, kind: 'append', attribute: null }));
+      if (
+        !fallbackDisabled &&
+        ['not_advertised', 'unsupported'].includes(found.provider.status) &&
+        found.provider.reason !== 'unsupported_version'
+      ) {
+        warnings.push(
+          `Append coverage for ${upper} uses a source-verified where-used candidate index; completeness is unknown.`,
+        );
+        const fallback: ExtensionProvider = {
+          id: 'ddic_where_used',
+          family: 'ddic_append',
+          status: 'returned',
+          coverage: 'candidate_index',
+          scope: upper,
+        };
+        await session!.provider(fallback, async () => {
+          extensionRefs = await findExtensionRefs(client, session!, upper, readSource, warnings, (reason) => {
+            fallbackDisabled = true;
+            fallback.status = reason === 'unsupported' ? 'unsupported' : 'incomplete';
+            fallback.reason = reason;
+          });
+        });
+      }
+    }
+    appendCache.set(upper, extensionRefs);
+    const scanIssues: string[] = [];
+    const embedded = parseEmbeddedStructures(source, scanIssues);
+    if (scanIssues.length) {
+      node.error = `Include scan incomplete: ${scanIssues.join(', ')}`;
+      warnings.push(`DDIC ${upper}: ${node.error}`);
+    }
+    const childRefs = [...embedded, ...extensionRefs];
     const nextPath = [...path, upper];
     for (const ref of childRefs) {
-      node.children.push(await buildNode(ref.name, ref.kind, ref.attribute, nextPath));
+      if (totalNodes >= session!.limits.nodes) {
+        node.truncated = true;
+        session!.omit('nodes');
+        break;
+      }
+      if (session!.stopped) {
+        totalNodes++;
+        session!.omit('sources');
+        node.children.push({
+          structure: ref.name,
+          attribute: ref.attribute,
+          kind: ref.kind,
+          children: [],
+          truncated: true,
+          ...(ref.suffix ? { suffix: ref.suffix } : {}),
+        });
+      } else node.children.push(await buildNode(ref.name, ref.kind, ref.attribute, nextPath, ref.suffix));
     }
     return node;
   };
@@ -156,70 +214,72 @@ export async function buildStructureHierarchy(
     maxDepth,
     tree,
     summary: summarizeStructureTree(tree),
-    ...(warnings.length > 0 ? { warnings: [...new Set(warnings)] } : {}),
+    ...(includeExtensions ? { extensionDiscovery: structureDiscoveryMetadata(session.finish()) } : {}),
+    ...(warnings.length > 0 || session.result.issues.length > 0
+      ? { warnings: [...new Set([...warnings, ...session.result.issues])] }
+      : {}),
   };
+}
+
+// Structure context already exposes its occurrence tree. The provider's append-only
+// edges omit include owners; do not expose them as a second, disconnected graph.
+function structureDiscoveryMetadata({ edges: _edges, ...metadata }: ExtensionDiscoveryResult) {
+  return metadata;
 }
 
 async function findExtensionRefs(
   client: StructureHierarchyClient,
+  session: ExtensionDiscoverySession,
   baseName: string,
   readSource: (name: string) => Promise<string | null>,
   warnings: string[],
-  disableAppendDiscovery: () => void,
+  disableAppendDiscovery: (reason: 'unsupported' | 'candidate_limit') => void,
 ): Promise<EmbeddedStructureRef[]> {
   const candidates = new Set<string>();
-  const baseObjectUrl = await client.resolveTablObjectUrl(baseName);
+  const baseObjectUrl = await session.read('TABL', (options) => client.resolveTablObjectUrl(baseName, options));
   const collectCandidates = (results: readonly WhereUsedResult[]) => {
     for (const result of results) {
+      if (result.type.toUpperCase() !== 'TABL/DS' || result.isResult === false) continue;
       const candidate = normalizeStructureName(result.name);
-      if (!candidate || candidate === baseName) continue;
-      if (!/^TABL\//i.test(result.type)) continue;
+      if (!/^(?:\/[A-Z0-9_]+\/)?[A-Z0-9_$]{1,30}$/.test(candidate))
+        throw new ExtensionProtocolError('Invalid append candidate.');
+      if (candidate === baseName) continue;
       candidates.add(candidate);
     }
   };
 
-  let scopedTypes: string[];
   try {
-    const scope = await getWhereUsedScope(client.http, client.safety, baseObjectUrl);
-    scopedTypes = Array.from(
-      new Set(
-        scope.entries
-          .filter((entry) => entry.count > 0 && /^TABL\//i.test(entry.objectType))
-          .map((entry) => entry.objectType),
+    collectCandidates(
+      await session.read('TABL', (options) =>
+        findWhereUsed(client.http, client.safety, baseObjectUrl, undefined, options, validateAppendIndex),
       ),
     );
-    for (const objectType of scopedTypes) {
-      try {
-        collectCandidates(await findWhereUsed(client.http, client.safety, baseObjectUrl, objectType));
-      } catch (err) {
-        if (isUnavailableWhereUsedError(err)) continue;
-        throw err;
-      }
-    }
-  } catch (err) {
-    if (!isUnavailableWhereUsedError(err)) throw err;
-    warnings.push(
-      `Where-used scope endpoint unavailable for ${baseName}; append structure discovery may be incomplete.`,
-    );
-    disableAppendDiscovery();
-    return [];
-  }
-
-  try {
-    collectCandidates(await findWhereUsed(client.http, client.safety, baseObjectUrl));
   } catch (err) {
     if (isUnavailableWhereUsedError(err)) {
-      warnings.push(`Where-used endpoint unavailable for ${baseName}; append structures were not resolved.`);
+      warnings.push(
+        `Where-used endpoint unavailable for ${baseName}; index fallback was skipped for the rest of the tree.`,
+      );
+      disableAppendDiscovery('unsupported');
     } else {
       throw err;
     }
   }
 
-  const extendRe = new RegExp(`extend\\s+type\\s+${escapeRegExp(baseName)}\\s+with`, 'i');
+  // Every candidate needs a source read; large where-used lists otherwise fan out into thousands of requests.
+  if (candidates.size > MAX_APPEND_CANDIDATES) {
+    warnings.push(
+      `Where-used returned ${candidates.size} structure candidates for ${baseName}, exceeding the append scan limit of ${MAX_APPEND_CANDIDATES}; index fallback was skipped for the rest of the tree.`,
+    );
+    session.omit('candidates', candidates.size);
+    disableAppendDiscovery('candidate_limit');
+    return [];
+  }
+
+  const extendRe = new RegExp(`^\\s*extend\\s+type\\s+${escapeRegExp(baseName)}\\s+with`, 'im');
   const refs: EmbeddedStructureRef[] = [];
   for (const candidate of [...candidates].sort()) {
     const source = await readSource(candidate);
-    if (source !== null && extendRe.test(source)) {
+    if (source !== null && extendRe.test(source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, ''))) {
       refs.push({ name: candidate, attribute: null, kind: 'append' });
     }
   }
@@ -256,5 +316,19 @@ function escapeRegExp(value: string): string {
 }
 
 function isUnavailableWhereUsedError(err: unknown): boolean {
-  return err instanceof AdtApiError && WHERE_USED_UNAVAILABLE_STATUSES.has(err.statusCode);
+  return (
+    err instanceof AdtApiError &&
+    !(err instanceof AdtCsrfBootstrapError) &&
+    WHERE_USED_UNAVAILABLE_STATUSES.has(err.statusCode)
+  );
+}
+
+function validateAppendIndex(xml: string): void {
+  try {
+    const parsed = parseRelationXml(xml);
+    if (!Object.hasOwn(parsed, 'usageReferenceResult')) throw new ExtensionProtocolError('Invalid append index.');
+  } catch (error) {
+    if (error instanceof AdtResponseLimitError) throw error;
+    throw new ExtensionProtocolError('Invalid append index.');
+  }
 }

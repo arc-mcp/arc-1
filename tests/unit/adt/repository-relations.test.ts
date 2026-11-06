@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AdtClient } from '../../../src/adt/client.js';
+import { AdtSafetyError } from '../../../src/adt/errors.js';
 import {
   NativeRelationProvider,
   normalizeRelationNetwork,
@@ -35,6 +36,22 @@ describe('native relation protocol', () => {
         direct: null,
       },
     ]);
+  });
+  it('requires exact EXTED_OBJ and preserves enhancement-to-base direction independently of hooks', () => {
+    const enhancement = { ...child, type: 'ENHO/XH', uri: '/sap/bc/adt/enhancements/enhoxh/z_enhancement' };
+    const network = normalizeRelationNetwork(relationXml(root, [enhancement], 'EXTED_OBJ'), 'EXTED_OBJ', root);
+    expect(network.objects).toContainEqual(enhancement);
+    expect(network.edges).toEqual([
+      {
+        from: enhancement.uri,
+        to: root.uri,
+        kind: 'extends',
+        context: 'EXTED_OBJ',
+        evidence: 'sap_relation_explorer',
+        direct: null,
+      },
+    ]);
+    expect(() => normalizeRelationNetwork(relationXml(root, [child], 'ENV'), 'EXTED_OBJ', root)).toThrow('context');
   });
   it('keeps same-name different-type/URI objects', () => {
     const ddl = { ...child, name: 'ZSAME', type: 'DDLS/DF', uri: '/sap/bc/adt/ddic/ddl/sources/zsame' };
@@ -133,12 +150,28 @@ describe('native relation protocol', () => {
 });
 
 describe('native provider', () => {
-  const setup = () => {
+  const setup = (denyActions: string[] = []) => {
     const get = vi.fn(),
       post = vi.fn();
-    const client = { safety: defaultSafetyConfig(), http: { get, post } } as unknown as AdtClient;
+    const client = { safety: { ...defaultSafetyConfig(), denyActions }, http: { get, post } } as unknown as AdtClient;
     return { get, post, provider: new NativeRelationProvider(client, { deadline: Date.now() + 15000 }) };
   };
+  it.each(['SAPNavigate.relations', 'SAP.navigate'])('denies %s at the native root boundary', async (deny) => {
+    const { provider, get, post } = setup([deny]);
+    get.mockResolvedValue({ body: relationMetadata(root) });
+    await expect(provider.validateRoot('CLAS', root.name)).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(get).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+  });
+  it.each(['SAPNavigate.relations', 'SAP.navigate'])('denies %s at the native POST boundary', async (deny) => {
+    const { provider, get, post } = setup([deny]);
+    post.mockResolvedValue({ body: relationXml(root, [child], 'WUL') });
+    await expect(provider.lookup(root, 'incoming')).rejects.toBeInstanceOf(AdtSafetyError);
+    post.mockResolvedValue({ body: relationXml(root, [child], 'EXTED_OBJ') });
+    await expect(provider.lookupExtending(root)).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(get).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+  });
   it('reuses discovery without an extra request; known absence is terminal', async () => {
     const { provider, get } = setup();
     await provider.discover(new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]));

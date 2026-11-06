@@ -7,7 +7,7 @@
  * Run: npm run test:integration
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, type TestContext } from 'vitest';
 import { classifyCdsImpact } from '../../src/adt/cds-impact.js';
 import type { AdtClient } from '../../src/adt/client.js';
 import { findWhereUsed } from '../../src/adt/codeintel.js';
@@ -45,6 +45,17 @@ import { getServerDrivenObject, supportsServerDrivenObject } from '../../src/adt
 import { expectSapFailureClass } from '../helpers/expected-error.js';
 import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
+
+/** These fixtures use DEFINE VIEW ENTITY, introduced in SAP_BASIS 755. */
+async function requireViewEntityFixture(ctx: TestContext, client: AdtClient): Promise<void> {
+  const basis = (await client.getInstalledComponents()).find((c) => c.name === 'SAP_BASIS');
+  expect(basis?.release).toMatch(/^\d{3}$/);
+  requireOrSkip(
+    ctx,
+    Number(basis?.release) >= 755 ? true : undefined,
+    `${SkipReason.BACKEND_UNSUPPORTED}: test fixture requires CDS view entities (SAP_BASIS >= 755)`,
+  );
+}
 
 describe('ADT Integration Tests', () => {
   let client: AdtClient;
@@ -305,150 +316,27 @@ describe('ADT Integration Tests', () => {
     });
   });
 
-  // ─── Package Listing (search-endpoint based) ────────────────────
-  //
-  // Regression coverage for the description-misalignment fix: pre-fix,
-  // SAPRead(type=DEVC) returned descriptions attributed to wrong objects
-  // (verified server-side bug in /repository/nodestructure?withShortDescriptions=true).
-  // The fix routes getPackageContents through informationsystem/search,
-  // which returns descriptions correctly aligned to names.
-  //
-  // Depends on the demo package ZDEMO_MIG existing on the test system
-  // (created by the SEGW->RAP migration demo). If the package isn't there,
-  // the test skips cleanly. See `demo/setup/` in the related demo workspace
-  // for how to create it.
-  describe('getPackageContents (search-endpoint based)', () => {
-    async function getPackageContentsFixtureOrSkip(
-      ctx: import('vitest').TestContext,
-      packageName: string,
-      maxResults?: number,
-    ) {
-      try {
-        return await client.getPackageContents(packageName, maxResults);
-      } catch (err) {
-        if (err instanceof AdtApiError && err.statusCode === 400 && /Package is invalid/i.test(err.message)) {
-          requireOrSkip(
-            ctx,
-            undefined,
-            `${SkipReason.NO_FIXTURE} (${packageName}) — demo package not on this SAP system; see SEGW->RAP demo setup`,
-          );
-          return [];
-        }
-        throw err;
-      }
-    }
-
-    it('returns objects with descriptions correctly aligned to names', async (ctx) => {
-      const contents = await getPackageContentsFixtureOrSkip(ctx, 'ZDEMO_MIG');
-      const proj = contents.find((c) => c.name === 'ZDM_PROJECT');
-      requireOrSkip(
-        ctx,
-        proj,
-        `${SkipReason.NO_FIXTURE} (ZDEMO_MIG.ZDM_PROJECT) — demo package not on test system; see SEGW->RAP demo setup`,
-      );
-      // Anchor 1: DDIC table description (we set it during demo creation).
-      expect(proj.description).toBe('Demo: Project (legacy SEGW era)');
-      expect(proj.type).toBe('TABL/DT');
-      expect(proj.uri).toContain('/sap/bc/adt/ddic/tables/zdm_project');
-    });
-
-    it('aligns sub-package description with the sub-package name (the original bug)', async (ctx) => {
-      const contents = await getPackageContentsFixtureOrSkip(ctx, 'ZDEMO_MIG');
-      const sub = contents.find((c) => c.name === 'ZDEMO_MIG_RAP');
-      requireOrSkip(ctx, sub, `${SkipReason.NO_FIXTURE} (ZDEMO_MIG_RAP sub-package) — demo workspace not fully set up`);
-      expect(sub.type).toBe('DEVC/K');
-      // The sub-package's OWN description must be on its OWN row — pre-fix,
-      // this string showed up on a CLAS row instead.
-      expect(sub.description).toBe('Demo: RAP migration outputs from migrate-segw-to-rap skill');
-    });
-
-    it('aligns SEGW-generated CLAS descriptions with their own names', async (ctx) => {
-      const contents = await getPackageContentsFixtureOrSkip(ctx, 'ZDEMO_MIG');
-      const dpc = contents.find((c) => c.name === 'ZCL_ZDEMO_MIG_PROJECTS_DPC');
-      requireOrSkip(
-        ctx,
-        dpc,
-        `${SkipReason.NO_FIXTURE} (ZCL_ZDEMO_MIG_PROJECTS_DPC) — SEGW project not built on test system`,
-      );
-      // SEGW's auto-generated description for the base DPC class.
-      // Pre-fix this row received the sub-package's description — that bug must stay dead.
-      expect(dpc.description).toBe('Data Provider Base Class');
-      expect(dpc.type).toBe('CLAS/OC');
-    });
-
-    it('returns an empty array for an existing but empty package', async (ctx) => {
-      // ZDEMO_MIG_RAP is the migration target package — empty until skill output lands.
-      // Skip if it isn't there (separate fixture from ZDEMO_MIG itself).
-      const contents = await getPackageContentsFixtureOrSkip(ctx, 'ZDEMO_MIG_RAP');
-      // The package itself may show up as a parent reference, plus there might be 0 contained objects.
-      // Either way, the response must be a typed array with zero or one entries — never an exception.
-      expect(Array.isArray(contents)).toBe(true);
-      // If the package isn't on the system at all, we'd hit the 400 error path tested below; tolerate that.
-      requireOrSkip(
-        ctx,
-        contents.length <= 1 ? true : null,
-        `${SkipReason.NO_FIXTURE} (ZDEMO_MIG_RAP empty) — package has ${contents.length} children, expected 0 or 1`,
-      );
-    });
-
-    it('throws AdtApiError 400 for a non-existent package name', async () => {
-      // The search endpoint validates package names server-side: invalid → 400.
-      // This is the documented behaviour we propagate to callers (don't silently swallow).
-      await expect(client.getPackageContents('ZNONEXISTENT_PKG_99X')).rejects.toThrow(AdtApiError);
-    });
-
-    it('honors maxResults parameter', async (ctx) => {
-      // ZDEMO_MIG has roughly 17 objects via the search endpoint.
-      // Asking for 3 must cap at 3.
-      const contents = await getPackageContentsFixtureOrSkip(ctx, 'ZDEMO_MIG', 3);
-      requireOrSkip(
-        ctx,
-        contents.length > 0 ? contents : null,
-        `${SkipReason.NO_FIXTURE} (ZDEMO_MIG) — demo package not on test system`,
-      );
-      expect(contents.length).toBeLessThanOrEqual(3);
-    });
-  });
-
   // ─── getSubpackages (repository/nodestructure) ────────────────────
   //
-  // Direct-child enumeration of a DEVCLASS. Backs `allowedPackages`
-  // subtree rules (`ZFOO/**`). The PREVIOUS implementation used
-  // `informationsystem/search?packageName=X&objectType=DEVC/K`, which
-  // live S/4HANA 2023 silently ignores the `packageName` filter on —
-  // returning ~1000 unrelated packages instead of children. The fix
-  // uses `POST /sap/bc/adt/repository/nodestructure`, which matches
-  // `SELECT devclass FROM tdevc WHERE parentcl = ?` exactly. These
-  // tests are the missing safety net that would have caught the bug.
+  // Direct children back allowedPackages subtree rules. The old search endpoint
+  // ignored packageName and returned unrelated packages; nodestructure must not.
   describe('getSubpackages (repository/nodestructure)', () => {
-    it('returns the exact 5 known DEVC/K children of SABP_UNIT', async () => {
-      // SABP_UNIT is the ABAP unit-test framework root package — present
-      // on every SAP_BASIS 7.5+ system the project supports, with five
-      // stable direct children. If your test landscape has additions,
-      // the assertion uses `arrayContaining` so it tolerates a superset.
+    it('returns the stable direct children of SABP_UNIT', async () => {
+      // Other direct children differ between 750, 758 and 816.
       const subs = await client.getSubpackages('SABP_UNIT');
-      expect(subs).toEqual(
-        expect.arrayContaining([
-          'SABP_UNIT_CORE',
-          'SABP_UNIT_EXECUTION_API',
-          'SABP_UNIT_GUI',
-          'SABP_UNIT_SCRATCH',
-          'SABP_UNIT_SHARED',
-        ]),
-      );
-      // Every entry must be uppercase and not contain the parent itself.
-      expect(subs.every((n) => n === n.toUpperCase())).toBe(true);
+      expect(subs).toEqual(expect.arrayContaining(['SABP_UNIT_CORE', 'SABP_UNIT_SCRATCH']));
+      expect(subs.every((n) => n === n.toUpperCase() && n.length > 0)).toBe(true);
+      expect(new Set(subs).size).toBe(subs.length);
       expect(subs).not.toContain('SABP_UNIT');
     });
 
-    it('returns a non-empty array for SABP_UNIT_CORE (one level deeper)', async () => {
-      // Proves BFS continuation: SABP_UNIT_CORE has its own children.
-      // We don't pin the exact set — newer SAP_BASIS releases may add
-      // more — but the array must be non-empty and uppercased.
+    it('can enumerate SABP_UNIT_CORE, including when it is a leaf', async () => {
+      // CORE is a leaf on 750; newer systems have subpackages.
       const subs = await client.getSubpackages('SABP_UNIT_CORE');
-      expect(subs.length).toBeGreaterThan(0);
+      expect(Array.isArray(subs)).toBe(true);
       expect(subs.every((n) => n === n.toUpperCase() && n.length > 0)).toBe(true);
-      expect(new Set(subs).size).toBe(subs.length); // no duplicates
+      expect(new Set(subs).size).toBe(subs.length);
+      expect(subs).not.toContain('SABP_UNIT_CORE');
     });
 
     it('returns [] for a non-existent parent (not an error — SAP responds 200 with empty body)', async () => {
@@ -531,7 +419,7 @@ describe('ADT Integration Tests', () => {
         );
         return;
       }
-      expect(result.rows.length).toBeGreaterThanOrEqual(1);
+      expect(result.rows.length).toBe(1);
     });
 
     it('returns 404 for non-existent program', async () => {
@@ -692,10 +580,14 @@ describe('ADT Integration Tests', () => {
       const { source } = await client.getTabl('T000');
       expect(source).toBeTruthy();
       expect(source.toLowerCase()).toContain('t000');
-      // Transparent-table marker — appears on both /tables/ and /structures/ readbacks.
-      expect(source).toMatch(/@AbapCatalog\.tableCategory\s*:\s*#TRANSPARENT/i);
+      expect(source).toMatch(/define\s+(?:table|type)\s+t000\b/i);
+      expect(source).toMatch(/\bmandt\b/i);
       const resolvedUrl = await client.resolveTablObjectUrl('T000');
       expect(resolvedUrl).toMatch(/\/sap\/bc\/adt\/ddic\/(tables|structures)\/T000$/);
+      // The legacy /structures response omits table annotations; T000 is still transparent.
+      if (resolvedUrl.includes('/tables/')) {
+        expect(source).toMatch(/@AbapCatalog\.tableCategory\s*:\s*#TRANSPARENT/i);
+      }
     });
 
     it('resolveTablObjectUrlForWrite returns /tables/ for TABL/DT when /tables/ endpoint is available (issue #285)', async () => {
@@ -845,16 +737,22 @@ describe('ADT Integration Tests', () => {
 
     it('SAPSearch result for V_USR_NAME emits adtcore:type="VIEW/DV"', async () => {
       const results = await client.searchObject('V_USR_NAME', 5);
-      const view = results.find((r) => r.objectName === 'V_USR_NAME');
+      const view = results.find(
+        (r) => r.uri.toLowerCase() === '/sap/bc/adt/vit/wb/object_type/viewdv/object_name/v_usr_name',
+      );
       expect(view).toBeDefined();
       expect(view!.objectType).toBe('VIEW/DV');
+      expect(view!.objectName).toMatch(/^V_USR_NAME(?: \(.+\))?$/i);
     });
 
     it('SAPSearch result for SE38 emits adtcore:type="TRAN/T"', async () => {
       const results = await client.searchObject('SE38', 5);
-      const tcode = results.find((r) => r.objectName === 'SE38');
+      const tcode = results.find(
+        (r) => r.uri.toLowerCase() === '/sap/bc/adt/vit/wb/object_type/trant/object_name/se38',
+      );
       expect(tcode).toBeDefined();
       expect(tcode!.objectType).toBe('TRAN/T');
+      expect(tcode!.objectName).toMatch(/^SE38(?: \(.+\))?$/i);
     });
 
     it('SAPSearch result for BAPI_USER_GETLIST emits adtcore:type="FUGR/FF"', async () => {
@@ -862,9 +760,12 @@ describe('ADT Integration Tests', () => {
       // entry FUGR/FF → FUNC routes correctly to client.getFunction at the
       // handler layer (covered by unit tests).
       const results = await client.searchObject('BAPI_USER_GETLIST', 5);
-      const fm = results.find((r) => r.objectName === 'BAPI_USER_GETLIST');
+      const fm = results.find((r) =>
+        /^\/sap\/bc\/adt\/functions\/groups\/[^/?#]+\/fmodules\/bapi_user_getlist$/i.test(r.uri),
+      );
       expect(fm).toBeDefined();
       expect(fm!.objectType).toBe('FUGR/FF');
+      expect(fm!.objectName).toMatch(/^BAPI_USER_GETLIST(?: \(.+\))?$/i);
     });
 
     it('reads domain metadata (MANDT)', async (ctx) => {
@@ -1868,18 +1769,32 @@ describe('ADT Integration Tests', () => {
   // (whether SAP leaves a ghost behind after delete is release-/auth-dependent).
 
   describe('SAPSearch tadir_lookup source variants', () => {
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as import('../../src/server/types.js').ServerConfig;
+
+    async function cleanupDdls(name: string): Promise<void> {
+      const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+      const objectUri = `/sap/bc/adt/ddic/ddl/sources/${name}`;
+      // A failed source PUT can leave a shell even when SAPWrite create reports an error.
+      try {
+        await client.http.get(objectUri);
+      } catch (error) {
+        if (error instanceof AdtApiError && error.statusCode === 404) return;
+        throw error;
+      }
+      const result = await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'DDLS', name });
+      expect(result.isError, JSON.stringify(result)).toBeUndefined();
+      await expect(client.http.get(objectUri)).rejects.toMatchObject({ statusCode: 404 });
+    }
+
     it('source=adt|db|both all find a freshly-created Z DDLS in $TMP (no splitBrain)', async (ctx) => {
-      requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+      await requireViewEntityFixture(ctx, client);
       const { generateUniqueName } = await import('./crud-harness.js');
       const { handleToolCall } = await import('../../src/handlers/dispatch.js');
       const ddlsName = generateUniqueName('ZRES_TADIR_');
-      const config = {
-        arc1Port: 8080,
-        arc1HttpAddr: '0.0.0.0:8080',
-        toolMode: 'standard',
-      } as unknown as Parameters<typeof handleToolCall>[1];
-
-      let created = false;
       try {
         // 1. Create a simple Z DDLS view in $TMP
         const createResult = await handleToolCall(client, config, 'SAPWrite', {
@@ -1894,7 +1809,6 @@ describe('ADT Integration Tests', () => {
           lintBeforeWrite: false,
         });
         expect(createResult.isError).toBeUndefined();
-        created = true;
 
         // 2. Activate the view so ADT can resolve it (info-system filters drafts).
         const activateResult = await handleToolCall(client, config, 'SAPActivate', {
@@ -1934,76 +1848,61 @@ describe('ADT Integration Tests', () => {
         expect(bothPayload.lookups[0]?.found).toBe(true);
         expect(bothPayload.splitBrain).toBeUndefined();
       } finally {
-        // best-effort-cleanup
-        if (created) {
-          try {
-            await handleToolCall(client, config, 'SAPWrite', {
-              action: 'delete',
-              type: 'DDLS',
-              name: ddlsName,
-            });
-          } catch {
-            // best-effort-cleanup; $TMP DDLS will time out eventually
-          }
-        }
+        await cleanupDdls(ddlsName);
       }
     });
 
     it('source variants stay shape-consistent after delete (ghost or clean)', async (ctx) => {
-      requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+      await requireViewEntityFixture(ctx, client);
       const { generateUniqueName } = await import('./crud-harness.js');
       const { handleToolCall } = await import('../../src/handlers/dispatch.js');
       const ddlsName = generateUniqueName('ZRES_TGHOST_');
-      const config = {
-        arc1Port: 8080,
-        arc1HttpAddr: '0.0.0.0:8080',
-        toolMode: 'standard',
-      } as unknown as Parameters<typeof handleToolCall>[1];
-
       // Create + delete cycle, then probe all three sources. Either outcome is a passing test:
       //  (a) ADT and DB both report `found:false` → clean delete, no splitBrain.
       //  (b) DB reports `found:true`, ADT reports `found:false` → TADIR ghost; splitBrain=[name].
       // The contract under test is response shape + consistency, not the presence of a ghost.
-      const createResult = await handleToolCall(client, config, 'SAPWrite', {
-        action: 'create',
-        type: 'DDLS',
-        name: ddlsName,
-        package: '$TMP',
-        description: 'tadir_lookup ghost-probe transient',
-        source:
-          `@AccessControl.authorizationCheck: #NOT_REQUIRED\n` +
-          `define view entity ${ddlsName} as select from t000 { key mandt as Client }`,
-        lintBeforeWrite: false,
-      });
-      expect(createResult.isError).toBeUndefined();
-      // Delete without activating — SAP's draft cleanup is the most likely ghost-producer path.
-      const deleteResult = await handleToolCall(client, config, 'SAPWrite', {
-        action: 'delete',
-        type: 'DDLS',
-        name: ddlsName,
-      });
-      // The delete may still report an error if the draft is in a tricky state — but the
-      // post-condition we care about is the lookup shape.
-      void deleteResult;
+      try {
+        const createResult = await handleToolCall(client, config, 'SAPWrite', {
+          action: 'create',
+          type: 'DDLS',
+          name: ddlsName,
+          package: '$TMP',
+          description: 'tadir_lookup ghost-probe transient',
+          source:
+            `@AccessControl.authorizationCheck: #NOT_REQUIRED\n` +
+            `define view entity ${ddlsName} as select from t000 { key mandt as Client }`,
+          lintBeforeWrite: false,
+        });
+        expect(createResult.isError).toBeUndefined();
+        // Delete without activating — SAP's draft cleanup is the most likely ghost-producer path.
+        const deleteResult = await handleToolCall(client, config, 'SAPWrite', {
+          action: 'delete',
+          type: 'DDLS',
+          name: ddlsName,
+        });
+        expect(deleteResult.isError, JSON.stringify(deleteResult)).toBeUndefined();
 
-      const bothLookup = await handleToolCall(client, config, 'SAPSearch', {
-        searchType: 'tadir_lookup',
-        names: [ddlsName],
-        source: 'both',
-      });
-      expect(bothLookup.isError).toBeUndefined();
-      const payload = JSON.parse(bothLookup.content[0]?.text ?? '{}');
+        const bothLookup = await handleToolCall(client, config, 'SAPSearch', {
+          searchType: 'tadir_lookup',
+          names: [ddlsName],
+          source: 'both',
+        });
+        expect(bothLookup.isError).toBeUndefined();
+        const payload = JSON.parse(bothLookup.content[0]?.text ?? '{}');
 
-      // Shape invariants — same regardless of ghost-vs-clean outcome:
-      expect(Array.isArray(payload.lookups)).toBe(true);
-      expect(payload.lookups[0]?.name).toBe(ddlsName);
-      // Either splitBrain reports the ghost OR both sources agree (no splitBrain field).
-      if (payload.splitBrain) {
-        expect(payload.splitBrain).toEqual([ddlsName]);
-        expect(Array.isArray(payload.warnings)).toBe(true);
-        expect(payload.warnings[0]).toContain(ddlsName);
-      } else {
-        expect(payload.lookups[0]?.found).toBe(false);
+        // Shape invariants — same regardless of ghost-vs-clean outcome:
+        expect(Array.isArray(payload.lookups)).toBe(true);
+        expect(payload.lookups[0]?.name).toBe(ddlsName);
+        // Either splitBrain reports the ghost OR both sources agree (no splitBrain field).
+        if (payload.splitBrain) {
+          expect(payload.splitBrain).toEqual([ddlsName]);
+          expect(Array.isArray(payload.warnings)).toBe(true);
+          expect(payload.warnings[0]).toContain(ddlsName);
+        } else {
+          expect(payload.lookups[0]?.found).toBe(false);
+        }
+      } finally {
+        await cleanupDdls(ddlsName);
       }
     });
   });
@@ -2017,8 +1916,18 @@ describe('ADT Integration Tests', () => {
   //   one terminal activateBatch — SAP resolves the cross-reference internally.
 
   describe('SAPWrite batch_create activateAtEnd', () => {
+    // Parent and child reference each other: per-object DELETEs 400 on both sides and leak the pair.
+    const deletePair = async (...names: string[]) => {
+      const { deleteObjectSet } = await import('./crud-harness.js');
+      return deleteObjectSet(
+        client.http,
+        client.safety,
+        names.map((name) => ({ name, objectUrl: `/sap/bc/adt/ddic/ddl/sources/${name.toLowerCase()}` })),
+      );
+    };
+
     it('default (activateAtEnd=false) fails on composition-linked DDLS — documents the failure mode', async (ctx) => {
-      requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+      await requireViewEntityFixture(ctx, client);
       const { generateUniqueName } = await import('./crud-harness.js');
       const { handleToolCall } = await import('../../src/handlers/dispatch.js');
       const parentName = generateUniqueName('ZRES_BCPAR_');
@@ -2029,6 +1938,7 @@ describe('ADT Integration Tests', () => {
         toolMode: 'standard',
       } as unknown as Parameters<typeof handleToolCall>[1];
 
+      let cleanupFailures: Awaited<ReturnType<typeof deletePair>> = [];
       try {
         const result = await handleToolCall(client, config, 'SAPWrite', {
           action: 'batch_create',
@@ -2065,22 +1975,13 @@ describe('ADT Integration Tests', () => {
         // refused the composition outright. Both confirm the failure mode this PR fixes.
         expect(text).toMatch(/does not exist or is not active|activation failed|Composition target/i);
       } finally {
-        for (const name of [parentName, childName]) {
-          try {
-            await handleToolCall(client, config, 'SAPWrite', {
-              action: 'delete',
-              type: 'DDLS',
-              name,
-            });
-          } catch {
-            // best-effort-cleanup
-          }
-        }
+        cleanupFailures = await deletePair(parentName, childName);
       }
+      expect(cleanupFailures).toEqual([]);
     });
 
     it('activateAtEnd=true activates a composition-linked DDLS pair in a single terminal batch', async (ctx) => {
-      requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
+      await requireViewEntityFixture(ctx, client);
       const { generateUniqueName } = await import('./crud-harness.js');
       const { handleToolCall } = await import('../../src/handlers/dispatch.js');
       const parentName = generateUniqueName('ZRES_AAPAR_');
@@ -2091,6 +1992,7 @@ describe('ADT Integration Tests', () => {
         toolMode: 'standard',
       } as unknown as Parameters<typeof handleToolCall>[1];
 
+      let cleanupFailures: Awaited<ReturnType<typeof deletePair>> = [];
       try {
         const result = await handleToolCall(client, config, 'SAPWrite', {
           action: 'batch_create',
@@ -2136,18 +2038,9 @@ describe('ADT Integration Tests', () => {
           expect(read.isError).toBeUndefined();
         }
       } finally {
-        for (const name of [parentName, childName]) {
-          try {
-            await handleToolCall(client, config, 'SAPWrite', {
-              action: 'delete',
-              type: 'DDLS',
-              name,
-            });
-          } catch {
-            // best-effort-cleanup
-          }
-        }
+        cleanupFailures = await deletePair(parentName, childName);
       }
+      expect(cleanupFailures).toEqual([]);
     });
   });
 
@@ -2455,6 +2348,19 @@ describe('ADT Integration Tests', () => {
       expect(src.navigation).toBeDefined();
     });
 
+    it('reads a DRTY (CDS Type) as DDL text', async (ctx) => {
+      await gateOrSkip(ctx, 'DRTY');
+      // Demo package names differ between 758 and 816. Search the type directly.
+      const objects = await client.searchObject('*', 10, 'DRTY/STY');
+      const drty = objects.find((o) => o.objectType === 'DRTY/STY');
+      requireOrSkip(ctx, drty, `${SkipReason.NO_FIXTURE}: no visible DRTY instance`);
+      const r = await getServerDrivenObject(client.http, unrestrictedSafetyConfig(), 'DRTY', drty.objectName);
+      expect(r.type).toBe('DRTY/STY');
+      expect(typeof r.package).toBe('string');
+      expect(r.source).toBeTypeOf('string');
+      expect(r.source as string).toMatch(/define\s+type/i);
+    });
+
     it('reads an EVTB (RAP Event Binding) with a populated events array', async (ctx) => {
       await gateOrSkip(ctx, 'EVTB');
       const r = await getServerDrivenObject(
@@ -2633,19 +2539,12 @@ describe('ADT Integration Tests', () => {
     // Regression guard: the old implementation hit /functions/groups/<name> (metadata only,
     // no function list) and parsed a shape ADT never emits, so it always returned
     // {name:"", functions:[]}. It now reads /objectstructure and parses the FUGR/FF
-    // (function) + FUGR/I (include) elements. Targets abapGit's parallel FUGR; skip if absent.
-    it('returns the group name + non-empty function-module list', async (ctx) => {
-      let fg: Awaited<ReturnType<typeof client.getFunctionGroup>> | undefined;
-      try {
-        fg = await client.getFunctionGroup('ZABAPGIT_PARALLEL');
-      } catch {
-        fg = undefined;
-      }
-      requireOrSkip(ctx, fg, `${SkipReason.NO_FIXTURE}: function group ZABAPGIT_PARALLEL not present`);
-
-      expect(fg.name).toBe('ZABAPGIT_PARALLEL');
+    // (function) + FUGR/I (include) elements. SUNI ships on all three on-prem test systems.
+    it('returns the group name + non-empty function-module list', async () => {
+      const fg = await client.getFunctionGroup('SUNI');
+      expect(fg.name).toBe('SUNI');
       expect(fg.functions.length).toBeGreaterThan(0);
-      expect(fg.functions).toContain('Z_ABAPGIT_SERIALIZE_PARALLEL');
+      expect(fg.functions).toContain('FUNCTION_EXISTS');
       expect(fg.includes.length).toBeGreaterThan(0);
     });
   });
@@ -2691,7 +2590,16 @@ describe('BDEF behavior extension create (#10)', () => {
       toolMode: 'standard',
     } as unknown as Parameters<typeof handleToolCall>[1];
     const client = getTestClient();
-    const tab = generateUniqueName('ZARC1_BX');
+    const { map } = await fetchDiscoveryDocument(client.http);
+    expect(map.size, 'ADT discovery must succeed before checking fixture prerequisites').toBeGreaterThan(0);
+    for (const path of ['/sap/bc/adt/ddic/tables', '/sap/bc/adt/bo/behaviordefinitions']) {
+      requireOrSkip(
+        ctx,
+        map.has(path) ? true : undefined,
+        `${SkipReason.BACKEND_UNSUPPORTED}: behavior-extension fixture requires ${path}`,
+      );
+    }
+    const tab = generateUniqueName('ZARC1B'); // At most 16 characters with a four-letter run ID.
     const root = `ZR_${tab}`;
     const ext = `${root}_X`;
     const W = async (args: Record<string, unknown>) => {
@@ -2773,6 +2681,7 @@ describe('FUGR structural include update (FEAT-18 sibling)', () => {
       toolMode: 'standard',
     } as unknown as Parameters<typeof handleToolCall>[1];
     const client = getTestClient();
+    client.http.setDiscoveryMap((await fetchDiscoveryDocument(client.http)).map);
     const group = generateUniqueName('ZARC1_FGI');
     const topInclude = `L${group}TOP`;
     const marker = `* arc-1 structural include write ${group}`;
@@ -2814,9 +2723,8 @@ describe('FUGR structural include update (FEAT-18 sibling)', () => {
       const back = await client.http.get(`${includeUrl}/source/main`);
       expect(back.body).toContain(marker);
     } finally {
-      await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'FUGR', name: group }).catch(() => {
-        // best-effort-cleanup
-      });
+      const cleanup = await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'FUGR', name: group });
+      expect(cleanup.isError, JSON.stringify(cleanup)).toBeUndefined();
     }
   }, 90_000);
 });
@@ -2872,7 +2780,7 @@ describe('Self-correcting unknown-column hint (FEAT-64)', () => {
 // The coverage measurement endpoint is standard ADT, live-verified on 7.50 + 758 + 816 (2026-06-25 —
 // identical {stmt 3/4, branch 2/3, proc 1/1} for a controlled tested class on each). This CI test
 // targets ZCL_ABAPGIT_HASH (758: stmt 61% / branch 36% / proc 38%); abapGit classes carry unit tests
-// on 758 but are absent on a4h-2025/816 + NPL 7.50, so it skips cleanly there (NOT a coverage gap).
+// where installed. Its absence is a fixture gap, not missing coverage support.
 describe('AUnit coverage (FEAT-41)', () => {
   it('unittest coverage=true returns statement/branch/procedure for a class with tests', async (ctx) => {
     requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
@@ -2882,7 +2790,17 @@ describe('AUnit coverage (FEAT-41)', () => {
       arc1HttpAddr: '0.0.0.0:8080',
       toolMode: 'standard',
     } as unknown as Parameters<typeof handleToolCall>[1];
-    const result = await handleToolCall(getTestClient(), config, 'SAPDiagnose', {
+    const client = getTestClient();
+    const fixtureUri = '/sap/bc/adt/oo/classes/zcl_abapgit_hash';
+    try {
+      await client.http.get(fixtureUri);
+    } catch (error) {
+      if (error instanceof AdtApiError && error.statusCode === 404 && error.path === fixtureUri) {
+        return skipTest(ctx, `${SkipReason.NO_FIXTURE}: ZCL_ABAPGIT_HASH`);
+      }
+      throw error;
+    }
+    const result = await handleToolCall(client, config, 'SAPDiagnose', {
       action: 'unittest',
       type: 'CLAS',
       name: 'ZCL_ABAPGIT_HASH',
@@ -2986,64 +2904,6 @@ describe('TTYP table type read + create (FEAT-65)', () => {
     expect(result.content[0]?.text).toContain('rowType');
   }, 30_000);
 });
-// ─── API release write (set_api_state) — FEAT-02 write counterpart ─────
-// Live-verified on a4h 758 (v10) + 816 (v10): create a class → release C1 → read RELEASED back →
-// revoke → delete. v10 is used for GET+PUT (v11 500s on 758).
-describe('SAPManage set_api_state (API release write)', () => {
-  it('releases a class C1 contract, reads RELEASED back via API_STATE, then revokes', async (ctx) => {
-    requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
-    const { generateUniqueName } = await import('./crud-harness.js');
-    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
-    const config = {
-      arc1Port: 8080,
-      arc1HttpAddr: '0.0.0.0:8080',
-      toolMode: 'standard',
-    } as unknown as Parameters<typeof handleToolCall>[1];
-    const client = getTestClient();
-    const name = generateUniqueName('ZCL_ARC1_ARS');
-    try {
-      const created = await handleToolCall(client, config, 'SAPWrite', {
-        action: 'create',
-        type: 'CLAS',
-        name,
-        package: '$TMP',
-        description: 'ARC-1 IT api-release',
-        source: `CLASS ${name.toLowerCase()} DEFINITION PUBLIC FINAL CREATE PUBLIC.\n  PUBLIC SECTION.\nENDCLASS.\nCLASS ${name.toLowerCase()} IMPLEMENTATION.\nENDCLASS.`,
-      });
-      expect(created.isError).toBeUndefined();
-      const activated = await handleToolCall(client, config, 'SAPActivate', { type: 'CLAS', name });
-      expect(activated.isError).toBeUndefined();
-
-      const released = await handleToolCall(client, config, 'SAPManage', {
-        action: 'set_api_state',
-        name,
-        objectType: 'CLAS',
-        apiState: 'RELEASED',
-      });
-      expect(released.isError).toBeUndefined();
-      expect(released.content[0]?.text).toContain('RELEASED');
-
-      const read = await handleToolCall(client, config, 'SAPRead', { type: 'API_STATE', name, objectType: 'CLAS' });
-      const info = JSON.parse(read.content[0]?.text ?? '{}') as {
-        contracts?: Array<{ contract: string; state: string }>;
-      };
-      expect(info.contracts?.find((c) => c.contract === 'C1')?.state).toBe('RELEASED');
-
-      const revoked = await handleToolCall(client, config, 'SAPManage', {
-        action: 'set_api_state',
-        name,
-        objectType: 'CLAS',
-        apiState: 'NOT_RELEASED',
-      });
-      expect(revoked.isError).toBeUndefined();
-    } finally {
-      await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'CLAS', name }).catch(() => {
-        // best-effort-cleanup
-      });
-    }
-  }, 90_000);
-});
-
 /**
  * Golden case on a4h: A4HK906291 lists one LIMU METH for ZCL_ARC1_DEMO_CALC, whose main
  * include feed is 00002 (this transport), 00000 (active), 00001 — in that order. The review
@@ -3071,7 +2931,7 @@ describe('SAPTransport diff (integration)', () => {
       objects: Array<{ type: string; name: string; parts: Part[] }>;
     };
 
-    expect(payload.comparison).toBe('transport-correction-to-immediate-previous');
+    expect(payload.comparison).toBe('released transport snapshot against preceding snapshot');
     // The transport lists a method, never a class — the rollup is what makes this reviewable.
     const clas = payload.objects.find((o) => o.type === 'CLAS');
     expect(clas?.name).not.toMatch(/\s|=/);

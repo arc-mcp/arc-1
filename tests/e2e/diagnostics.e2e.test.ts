@@ -13,8 +13,9 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { FixDelta, FixProposal } from '../../src/adt/types.js';
 import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
-import { callTool, connectClient, expectToolError, expectToolSuccess } from './helpers.js';
+import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
 function stripCachedMarker(text: string): string {
   return text.replace(/^\[cached(?::revalidated)?\]\n/, '');
@@ -233,7 +234,7 @@ describe('E2E Diagnostics Tests', () => {
         );
       }
 
-      const payload = JSON.parse(expectToolSuccess(result));
+      const payload = JSON.parse(expectToolSuccessOrSkip(ctx, result));
       expect(payload.trace).toContain('STUSERTRACE');
       expect(payload.filters).toEqual({ user: null, authObject: null, onlyFailures: false });
       expect(payload.traceState).toMatchObject({
@@ -266,7 +267,7 @@ describe('E2E Diagnostics Tests', () => {
         );
       }
 
-      const payload = JSON.parse(expectToolSuccess(result));
+      const payload = JSON.parse(expectToolSuccessOrSkip(ctx, result));
       expect(payload.filters.onlyFailures).toBe(true);
       expect(payload.count).toBe(payload.entries.length);
       for (const entry of payload.entries) {
@@ -314,62 +315,68 @@ describe('E2E Diagnostics Tests', () => {
   // ── Quick Fix Proposals ─────────────────────────────────────────
 
   describe('SAPDiagnose quickfix', () => {
-    it('gets fix proposals for a class', async (ctx) => {
-      const readResult = await callTool(client, 'SAPRead', {
-        type: 'CLAS',
-        name: 'ZCL_ARC1_TEST',
-      });
-      if (readResult.isError) {
-        return skipTest(
-          ctx,
-          `Fixture class ZCL_ARC1_TEST not readable: ${readResult.content?.[0]?.text ?? 'unknown error'}`,
-        );
-      }
-      const source = stripCachedMarker(expectToolSuccess(readResult));
-
-      const result = await callTool(client, 'SAPDiagnose', {
-        action: 'quickfix',
+    it('applies a local-variable proposal to an unsaved buffer without changing the stored class', async () => {
+      const readArgs = { type: 'CLAS', name: 'ZCL_ARC1_TEST', version: 'auto', force_refresh: true };
+      const stored = stripCachedMarker(expectToolSuccess(await callTool(client, 'SAPRead', readArgs)));
+      const assignment = '    rv_name = mv_name.';
+      expect(stored).toContain(assignment);
+      const source = stored.replace(
+        assignment,
+        `    lv_missing = 1.
+${assignment}`,
+      );
+      const args = {
         type: 'CLAS',
         name: 'ZCL_ARC1_TEST',
         source,
-        line: 1,
-        column: 1,
-      });
-
-      if (result.isError) {
-        const err = result.content?.[0]?.text ?? '';
-        if (/quickfix|404|406|not found|not acceptable/i.test(err)) {
-          return skipTest(ctx, `Quickfix endpoint unavailable on this system: ${err.slice(0, 200)}`);
-        }
+        line: source.split('\n').findIndex((line) => line.includes('lv_missing = 1.')) + 1,
+        column: 4,
+      };
+      const beforeSyntax = JSON.parse(
+        expectToolSuccess(await callTool(client, 'SAPDiagnose', { action: 'syntax', ...args })),
+      );
+      expect(beforeSyntax).toMatchObject({ checked: true, hasErrors: true });
+      const proposals: FixProposal[] = JSON.parse(
+        expectToolSuccess(await callTool(client, 'SAPDiagnose', { action: 'quickfix', ...args })),
+      );
+      const proposal = proposals.find((item) => item.uri.endsWith('/declare_local_variable'));
+      expect(proposal, 'SAP must offer a declaration for the undefined local variable').toBeDefined();
+      const deltas: FixDelta[] = JSON.parse(
+        expectToolSuccess(
+          await callTool(client, 'SAPDiagnose', {
+            action: 'apply_quickfix',
+            ...args,
+            proposalUri: proposal!.uri,
+            proposalUserContent: proposal!.userContent,
+            proposalAffectedObjects: proposal!.affectedObjects,
+          }),
+        ),
+      );
+      expect(deltas.length).toBeGreaterThan(0);
+      expect(deltas.some((delta) => /^\r?\n/.test(delta.content))).toBe(true);
+      const offset = (position: { line: number; column: number }) =>
+        source
+          .split('\n')
+          .slice(0, position.line - 1)
+          .reduce((length, line) => length + line.length + 1, 0) + position.column;
+      let edited = source;
+      for (const delta of [...deltas].sort((left, right) => offset(right.range.start) - offset(left.range.start))) {
+        expect(delta.uri.toLowerCase()).toContain('/sap/bc/adt/oo/classes/zcl_arc1_test/source/main');
+        edited = edited.slice(0, offset(delta.range.start)) + delta.content + edited.slice(offset(delta.range.end));
       }
-
-      const text = expectToolSuccess(result);
-      const proposals = JSON.parse(text);
-      expect(Array.isArray(proposals)).toBe(true);
-
-      if (proposals.length > 0) {
-        for (const proposal of proposals) {
-          expect(proposal).toHaveProperty('uri');
-          expect(proposal).toHaveProperty('name');
-          expect(proposal).toHaveProperty('type');
-        }
-      }
-
-      const names = proposals.map((p: { name: string }) => p.name).join(', ');
-      console.log(`    Quickfix proposals: ${proposals.length}${names ? ` (${names})` : ''}`);
+      const syntax = JSON.parse(
+        expectToolSuccess(await callTool(client, 'SAPDiagnose', { action: 'syntax', ...args, source: edited })),
+      );
+      expect(syntax).toMatchObject({ checked: true, hasErrors: false });
+      const after = stripCachedMarker(expectToolSuccess(await callTool(client, 'SAPRead', readArgs)));
+      expect(after).toBe(stored);
     });
 
-    it('returns valid proposals array for arbitrary position', async (ctx) => {
+    it('returns valid proposals array for arbitrary position', async () => {
       const readResult = await callTool(client, 'SAPRead', {
         type: 'PROG',
         name: 'ZARC1_TEST_REPORT',
       });
-      if (readResult.isError) {
-        return skipTest(
-          ctx,
-          `Fixture program ZARC1_TEST_REPORT not readable: ${readResult.content?.[0]?.text ?? 'unknown error'}`,
-        );
-      }
       const source = stripCachedMarker(expectToolSuccess(readResult));
 
       const result = await callTool(client, 'SAPDiagnose', {
@@ -380,13 +387,6 @@ describe('E2E Diagnostics Tests', () => {
         line: 2,
         column: 0,
       });
-
-      if (result.isError) {
-        const err = result.content?.[0]?.text ?? '';
-        if (/quickfix|404|406|not found|not acceptable/i.test(err)) {
-          return skipTest(ctx, `Quickfix endpoint unavailable on this system: ${err.slice(0, 200)}`);
-        }
-      }
 
       const text = expectToolSuccess(result);
       const proposals = JSON.parse(text);

@@ -1,5 +1,8 @@
 # ATC + Quickfix + Autoqf surface — live findings on A4H
 
+> **Correction (2026-10-13, #993):** The refactoring-provider HTTP 500 conclusion below was caused by ARC-1 appending SAP context query parameters to an exact-match proposal URI. Sending that context in headers allows declaration proposals to return deltas. See [the reproduction and limits](2026-10-13-quickfix-exact-uri.md). The remainder records the historical June observations, not current blanket restrictions.
+
+
 > **What:** A live smoke-test of the ABAP Test Cockpit (ATC), the quickfix engine, and the auto-quickfix batch endpoint against the A4H test system, to ground the "Semi-Automated Fixes of Clean Core ATC Findings" roadmap feature (Joule Feature 2) in what the SAP backend actually does.
 > **System:** A4H — S/4HANA 2023, SAP_BASIS 758, on-prem ABAP-cloud developer trial.
 > **Method:** `arc1-cli` tool calls + raw ADT `curl` (CSRF-authenticated), 2026-06-03. Built on top of [PR #336](https://github.com/arc-mcp/arc-1/pull/336), which fixed `runAtcCheck` so ATC returns findings at all.

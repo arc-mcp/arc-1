@@ -50,8 +50,15 @@ export interface FeatureStatus {
 /** SAP system type: BTP ABAP Environment or on-premise */
 export type SystemType = 'btp' | 'onprem';
 
-/** ADT discovery map: endpoint path -> accepted MIME types */
+/** ADT discovery map: listed endpoint path -> advertised MIME types ([] means presence only, not permission). */
 export type DiscoveryMap = Map<string, string[]>;
+
+export interface TextSearchStatus {
+  available: boolean;
+  reason?: string;
+  /** Conclusive backend absence/disablement, never a user authorization or transient failure. */
+  unsupported?: true;
+}
 
 /** Resolved features after probing */
 export interface ResolvedFeatures {
@@ -66,12 +73,14 @@ export interface ResolvedFeatures {
   flp: FeatureStatus;
   /** Detected SAP_BASIS release (e.g. "750", "757"). Populated during probe. */
   abapRelease?: string;
+  /** A gateway failure blocked release detection; keep a fresh full probe retryable. Never cached. */
+  releaseProbePending?: boolean;
   /** Detected system type: 'btp' (SAP_CLOUD component present) or 'onprem'. */
   systemType?: SystemType;
   /** Whether the probe detected the type or applied an explicit configuration override. */
   systemTypeSource?: 'probe' | 'config';
   /** Text search (source_code) probe result — available, or reason it's unavailable */
-  textSearch?: { available: boolean; reason?: string };
+  textSearch?: TextSearchStatus;
   /** Authorization probe results — search and transport access */
   authProbe?: AuthProbeResult;
   /** ADT discovery MIME map used by HTTP content negotiation */
@@ -523,6 +532,8 @@ export interface ObjectTransportHistory {
   object: { type: string; name: string; uri: string };
   /** Transport currently holding a lock on this object (if any). */
   lockedTransport?: string;
+  /** Package/lock lookup failed or SAP returned ambiguous holders; absence of a lock is unverified. */
+  lockStatusUnknown?: true;
   /** Current parent request holding the object lock; contains at most one entry. */
   relatedTransports: Array<{ id: string; description: string; owner: string; status: string }>;
   /** Requests the object could be assigned to; these do not imply object membership or history. */
@@ -688,6 +699,10 @@ export interface DumpDetail {
   sections: Record<string, string>;
   /** ADT URI to the termination source location */
   terminationUri?: string;
+  /** Set when the detail was rebuilt from the dump feed's summary (no ADT dump-detail resource, SAP_BASIS 7.50) */
+  origin?: 'feed-summary';
+  /** What a rebuilt detail leaves out */
+  note?: string;
 }
 
 /** ABAP profiler trace entry from /sap/bc/adt/runtime/traces/abaptraces */
@@ -1150,13 +1165,32 @@ export interface FeatureToggleInfo {
   }>;
 }
 
-/** Enhancement implementation metadata from /sap/bc/adt/enhancements/enhoxhb/{name} */
+/** Enhancement metadata; hook implementations also include locations and ABAP source. */
 export interface EnhancementImplementationInfo {
+  source?: string;
+  /** Set when `source` came from the enhancement include's revision feed instead of an ADT ENHO route. */
+  enhancementInclude?: {
+    name: string;
+    revision: { id: string; author: string; timestamp: string; transport?: string; versionTitle?: string };
+  };
+  /** Human-readable limitation of a fallback read, e.g. which metadata could not be obtained. */
+  note?: string;
+  enhancedObject?: { name: string; type: string; uri: string };
+  hookImplementations?: Array<{
+    id: string;
+    spotName: string;
+    programName: string;
+    method: string;
+    overwrite: boolean;
+    fullName: string;
+    description: string;
+    uri: string;
+  }>;
   name: string;
   description: string;
   package: string;
   technology: string;
-  switchSupported: boolean;
+  switchSupported?: boolean;
   badiImplementations: Array<{
     name: string;
     shortText: string;
@@ -1165,6 +1199,8 @@ export interface EnhancementImplementationInfo {
     enhancementSpot: string;
     active: boolean;
     default: boolean;
+    /** Filter condition of a filter-dependent BAdI implementation, e.g. `COUNTRY = 'BE'` (SAPWrite accepts it back). */
+    filter?: string;
   }>;
 }
 
@@ -1187,6 +1223,7 @@ export interface RevisionListResult {
     type: string;
   };
   revisions: RevisionInfo[];
+  historyComplete?: boolean;
 }
 
 // ─── Class Structure Types (objectstructure endpoint, issue #303) ─────────
@@ -1224,6 +1261,8 @@ export interface LineRange {
  */
 export interface MethodStructure {
   name: string;
+  /** SAP marks methods that retain an inherited signature and visibility. */
+  redefinition?: boolean;
   visibility: 'public' | 'protected' | 'private';
   level: 'instance' | 'static';
   abstract: boolean;

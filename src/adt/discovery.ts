@@ -1,6 +1,6 @@
 import { logger } from '../server/logger.js';
 import { AdtApiError } from './errors.js';
-import type { AdtHttpClient } from './http.js';
+import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import type { DiscoveryMap } from './types.js';
 import { parseDiscoveryDocument } from './xml-parser.js';
 
@@ -12,7 +12,7 @@ export interface DiscoveryFetchResult {
 
 /**
  * Return true when the raw ADT discovery XML contains at least one NHI collection href.
- * NHI (/sap/bc/adt/nhi/*) workspaces are only registered on HANA-based systems.
+ * NHI (/sap/bc/adt/nhi/*) workspaces also exist on non-HANA systems; this is not database evidence.
  *
  * The match is anchored to an `href="..."` attribute so that mentions of the path in
  * `<atom:title>` text, descriptions, or non-href attributes do not false-positive.
@@ -30,9 +30,16 @@ export function hasNhiWorkspace(xml: string): boolean {
  *
  * Graceful degradation: never throws, always returns a result.
  */
-export async function fetchDiscoveryDocument(client: AdtHttpClient): Promise<DiscoveryFetchResult> {
+export async function fetchDiscoveryDocument(
+  client: AdtHttpClient,
+  request?: AdtRequestOptions,
+): Promise<DiscoveryFetchResult> {
   try {
-    const resp = await client.get('/sap/bc/adt/discovery', { Accept: 'application/atomsvc+xml' }, { probe: true });
+    const resp = await client.get(
+      '/sap/bc/adt/discovery',
+      { Accept: 'application/atomsvc+xml' },
+      { ...request, probe: true },
+    );
     return { map: parseDiscoveryDocument(resp.body), nhiPresent: hasNhiWorkspace(resp.body) };
   } catch (err) {
     const reason =
@@ -65,8 +72,9 @@ function resolveTypesForPath(discoveryMap: DiscoveryMap, rawPath: string): strin
   if (!path) return undefined;
 
   let matchedPath: string | undefined;
-  for (const key of discoveryMap.keys()) {
-    if (!isShallowMatch(key, path)) continue;
+  for (const [key, types] of discoveryMap) {
+    // Presence-only collections must not shadow a usable shallow parent MIME type.
+    if (types.length === 0 || !isShallowMatch(key, path)) continue;
     if (!matchedPath || key.length > matchedPath.length) {
       matchedPath = key;
     }

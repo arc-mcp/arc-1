@@ -1,53 +1,37 @@
-# VARIANTS — Pseudo: program variants read
+# VARIANTS — program-variant read limitation
 
-## TL;DR
-`VARIANTS` is a **pseudo type** — reads the saved selection-screen variants of a classic
-ABAP program via `GET /sap/bc/adt/programs/programs/{name}/variants`. Not a TADIR type.
-Tied to PROG. BTP-excluded, correctly, because BTP has no classic programs.
+`VARIANTS` is an ARC-1 pseudo type, not a TADIR object type. Its client method requests
+`GET /sap/bc/adt/programs/programs/{name}/variants`. No tested backend below serves that resource.
+The earlier claims of successful 200/XML reads are withdrawn; they were not supported by a
+capture in this repository and conflict with these live checks.
 
-## TADIR ground truth
-- **R3TR type**: does not exist as `VARIANTS`. Variants live in tables `VARI`/`VARID`.
-  TADIR has `VARX` (variant catalog) and individual variants tracked under their parent
-  PROG.
-- **LIMU sub-objects**: variants stored under their parent program; not a top-level
-  workbench object.
-- **abap-file-formats support**: ❌ no `variants/` dir; `prog/` may include variant data
-  in the program serialization.
-- **Source URL or fixture**: `src/adt/client.ts:659-663`, `src/handlers/intent.ts:1729-1730`.
+## Verified evidence (November 1–2, 2026)
 
-## ADT slash subtypes
-| Slash code | Meaning | URL prefix | Verified on |
-|---|---|---|---|
-| (none — sub-resource) | program variants | `/sap/bc/adt/programs/programs/{name}/variants` | a4h ✅, 7.50 ✅ |
+The 758 and 816 probes used report `RSUSR002`, client 001, with writes and data preview disabled.
+The 750 row used the same report through an installed MCP instance.
 
-## SAP docs & notes
-- Maintained via tx `SE38 → Variant` or `SA38`. ADT exposes them at the sub-resource URL.
+| SAP_BASIS | Route | Observed result |
+|---|---|---|
+| 750 SP0002 | Installed ARC-1 MCP | HTTP 404, `No suitable resource found`; the program source is readable |
+| 758 SP0002 | Direct HTTPS/Basic, public tool pipeline | HTTP 404; English: `No suitable resource found`; German: `Keine geeignete Ressource gefunden` |
+| 816 SP0001 | Direct HTTPS/Basic, public tool pipeline | HTTP 404; English: `No suitable resource found`; German: `Keine geeignete Ressource gefunden` |
 
-## Other MCP servers / cross-reference
-- No competitor publishes a `VARIANTS` short form.
+On 750 and 758, reading `CL_SEDI_ADT_RES_APP_PROGRAMS->REGISTER_RESOURCES` confirmed that
+the registered program resources include metadata, source and revisions, but no `variants` route.
+[Issue #1125](https://github.com/arc-mcp/arc-1/issues/1125) independently reports the same failure
+on 750 SP23 and 758 SP04 through BTP Cloud Foundry/Cloud Connector principal propagation.
+The local checks above do not qualify that deployment route.
 
-## Live verification
-### a4h (S/4HANA 2023)
-- Test object: any classic report with saved variants.
-- ADT response: 200 XML body listing variants.
+## ARC-1 behavior
 
-### 7.50 (NW 7.50)
-- Same.
+- Preserve the HTTP error. For the exact variants path and captured EN/DE resource error,
+  explain that ARC-1 cannot read variants through this endpoint. The 404 proves neither a
+  missing program nor an empty variant list; it does not justify SICF configuration changes.
+- Inspect variants with [SE38 in SAP GUI](https://help.sap.com/saphelp_snc70/helpdata/en/c0/980389e58611d194cc00a0c94260a5/content.htm).
+- Keep the existing `getVariants` public client method and on-premises tool input for compatibility.
+  Successful responses remain unchanged. BTP ABAP Environment excludes this type.
+- No automatic table-data fallback is added. Access to `VARID`/`VARIT` metadata would require
+  the existing data permissions and separate validation; it would not decode `VARI` values.
 
-## ARC-1 current surface
-| Location | Line(s) | Form used | Correct? |
-|---|---|---|---|
-| `src/handlers/schemas.ts` | 43 (Read onprem only — correctly excluded from BTP) | `VARIANTS` | ✅ pseudo |
-| `src/handlers/intent.ts` BTP_HINTS | 1243 | "Variants are not available on BTP" hint | ✅ |
-| `src/handlers/intent.ts` Read switch | 1729-1730 | calls `getVariants(name)` | ✅ |
-| `src/adt/client.ts` getVariants | 659-663 | GET sub-resource URL | ✅ |
-
-## Verdict
-- **Status**: pseudo (legitimate)
-- **Evidence**: verified-from-source
-- **Issue**: same as `TEXT_ELEMENTS` — raw XML body, no parser.
-
-## Recommendation
-- **Keep.** Optional: add structured parser. No change to type code.
-- **Breaking change**: no.
-- **Test gap to close**: parser unit test if/when a structured shape is added.
+Current implementation: `src/adt/client.ts` (`getVariants`), `src/adt/errors.ts`
+(`program-variants-unavailable`), `src/handlers/read.ts` (`VARIANTS`).

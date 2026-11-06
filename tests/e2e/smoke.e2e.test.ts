@@ -9,6 +9,7 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { deleteProgramFixture } from '../helpers/program-cleanup.js';
 import { skipTest } from '../helpers/skip-policy.js';
 import {
   callTool,
@@ -132,7 +133,20 @@ describe('E2E Smoke Tests', () => {
 
   it('SAPRead DOMA — reads BUKRS domain metadata', async (ctx) => {
     const result = await callTool(client, 'SAPRead', { type: 'DOMA', name: 'BUKRS' });
-    const text = expectToolSuccessOrSkip(ctx, result);
+    // Domains exist in DDIC on 750, but their ADT metadata endpoint starts at 752.
+    // Never classify an arbitrary object's 404 as a missing collection.
+    if (result.isError && /status 404 at \/sap\/bc\/adt\/ddic\/domains\/BUKRS:/.test(result.content[0]?.text ?? '')) {
+      const components = JSON.parse(expectToolSuccess(await callTool(client, 'SAPRead', { type: 'COMPONENTS' })));
+      const release = components.find((c: { name: string }) => c.name === 'SAP_BASIS')?.release;
+      expect(release).toMatch(/^\d{3}$/);
+      if (Number(release) < 752) {
+        return skipTest(
+          ctx,
+          'Backend feature not supported on this SAP system: DOMA metadata requires SAP_BASIS >= 752',
+        );
+      }
+    }
+    const text = expectToolSuccess(result);
     const domain = JSON.parse(text);
     expect(domain.name).toBe('BUKRS');
     expect(domain.dataType).toBe('CHAR');
@@ -306,15 +320,7 @@ describe('E2E Smoke Tests', () => {
     const createText = expectToolSuccess(result);
     expect(createText).toContain(`Created PROG ${objectName}`);
 
-    // best-effort-cleanup
-    const deleteResult = await callTool(client, 'SAPWrite', {
-      action: 'delete',
-      type: 'PROG',
-      name: objectName,
-    });
-    if (deleteResult.isError) {
-      console.warn(`    [cleanup] Failed to delete ${objectName}: ${deleteResult.content[0]?.text ?? 'unknown error'}`);
-    }
+    expectToolSuccess(await deleteProgramFixture((tool, args) => callTool(client, tool, args), objectName));
   });
 
   it('SAPRead — 404 for non-existent program returns error with hint', async () => {

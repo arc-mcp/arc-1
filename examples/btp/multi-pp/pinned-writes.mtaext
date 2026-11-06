@@ -1,0 +1,10 @@
+# Optional overlay AFTER target-authorization.mtaext. Read the pinned write guide first.
+_schema-version: "3.1"
+ID: arc1-multi-pp-pinned-writes-example
+extends: arc1-multi-pp-target-authorization-example
+modules:
+  - name: arc1-mcp-server
+    properties:
+      SAP_ALLOW_WRITES: "true"
+      SAP_ALLOWED_PACKAGES: "$TMP,ZTEAM/**"
+      SAP_ALLOWED_TRANSPORTS: "DEVK9*"

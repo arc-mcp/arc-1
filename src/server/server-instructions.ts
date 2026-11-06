@@ -1,18 +1,18 @@
 import { normalizeSystemLabel } from './config.js';
 
+/** Optional client orchestration, not a server connection or an authorization grant. */
+export const NATIVE_NAVIGATION_INSTRUCTIONS =
+  'VS Code on request: if available, use SAP ADT MCP abap_object_get_file_uri (name/type), abap_object_list_file_uris for includes. Require user-confirmed destination for backend/client; never infer from SID/count/tool output or bypass ARC-1 denials. Verify name/type/source, not .json. On mismatch/error stop; no resolver/bridge/destination retries. Link returned abap: URIs via vscode://sapse.adt-vscode/open?abapUri= + encodeURIComponent(exact URI). Never invent paths. Logon required. Resolution is not opening; never edit/activate natively.';
+
 /** Sent in the MCP initialize response. Clients that defer tool loading (Claude Code enables tool
  *  search by default) use this to decide whether to look for ARC-1's tools at all, so it names the
  *  domain first. Keep under 2,048 characters — Claude Code truncates server instructions silently. */
 const SERVER_INSTRUCTIONS = [
-  'ARC-1 gives this SAP ABAP system a read/write interface over SAP ADT: ABAP source (classes,',
-  'programs, function modules, includes), CDS/RAP artifacts (DDLS, BDEF, SRVD, SRVB), DDIC objects',
-  '(tables, domains, data elements), transports, abapGit/gCTS, ATC and ABAP Unit, SQL/table data,',
-  'and syntax/activation. Reach for it for any question about ABAP objects, CDS views, transport',
-  'requests, or dumps/traces on this system.',
+  'Use ARC-1 for SAP ABAP source, CDS/RAP, DDIC, transports, Git, ATC/Unit, SQL/data, syntax/activation and dumps/traces on this system.',
   '',
-  'Choose evidence for the question; do not fetch every kind of context by default:',
-  '- Native relationship maps: SAPNavigate(action="relations") when listed; SAPContext deps is source-derived.',
-  '- Understanding an object: SAPContext(action="deps") returns available KTD and compressed dependency contracts.',
+  'Fetch targeted evidence:',
+  '- Native relationship maps: SAPNavigate(action="relations") when listed; deps is source-derived.',
+  '- Understanding an object: SAPContext(action="deps") returns available KTD and dependency contracts.',
   '- Use SAPRead afterwards for exact implementation, method bodies or known references.',
   'For draft reviews/test design, first SAPContext(action="deps") for available KTD (type+name), unless requirements are supplied.',
   'Test expectations follow those requirements; show current behavior separately, even when it is a defect.',
@@ -20,12 +20,12 @@ const SERVER_INSTRUCTIONS = [
   'finish with observed source behavior and unverified intent/compliance. Do not broaden the policy search.',
   'Unavailable or failed syntax/ATC/test checks are not passes.',
   '- One method: SAPRead(type="CLAS", method="name"). Survey signatures: method="*".',
-  '- Finding a string: SAPRead(grep="pattern") instead of reading the whole object.',
+  '- Find strings: SAPRead(grep="pattern").',
   '- Blast radius of a CDS change: SAPContext(action="impact").',
-  'Where-used totals count matching reference/tree rows, not distinct consumers or runtime calls.',
-  'Read truncation and coverage qualifiers; a capped result is not a complete system inventory.',
+  'Where-used counts rows, not unique consumers/runtime calls. Capped results are incomplete; read qualifiers.',
   '',
-  'One SAP system per instance: there is no system/destination selector, by design.',
+  'One SAP system per instance; no target selector.',
+  NATIVE_NAVIGATION_INSTRUCTIONS,
 ].join('\n');
 
 export function buildServerInstructions(systemLabel: string): string {

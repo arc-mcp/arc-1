@@ -76,6 +76,26 @@ describe('parseArgs', () => {
     expect(() => parseArgs([])).toThrow(/ARC1_MULTI_TARGET_ENDPOINTS/);
   });
 
+  it('requires an explicit Eclipse SID and preserves CLI precedence', () => {
+    expect(parseArgs([]).ideLinks).toBe('off');
+    process.env.ARC1_IDE_LINKS = 'eclipse';
+    expect(() => parseArgs([])).toThrow(/requires ARC1_IDE_SYSTEM_ID/);
+    process.env.ARC1_IDE_SYSTEM_ID = 'A4H';
+    expect(parseArgs([])).toMatchObject({ ideLinks: 'eclipse', ideSystemId: 'A4H' });
+    expect(parseArgs(['--ide-system-id', 'DEV']).ideSystemId).toBe('DEV');
+    expect(parseArgs(['--ide-links', 'off']).ideLinks).toBe('off');
+    expect(() => parseArgs(['--ide-system-id', 'A4H-2025'])).toThrow(/three-character SAP SID/);
+    expect(parseArgs(['--transport', 'http-streamable', '--api-keys', 'test-key:viewer']).ideLinks).toBe('eclipse');
+  });
+
+  it.each(['vscode', 'on', 'auto'])(
+    'rejects removed or unsupported IDE mode %s with native resolver guidance',
+    (mode) => {
+      process.env.ARC1_IDE_LINKS = mode;
+      expect(() => parseArgs([])).toThrow(/must be off or eclipse.*SAP ADT MCP resolver/);
+    },
+  );
+
   it('parses CLI flags (--flag value)', () => {
     const config = parseArgs(['--url', 'http://sap:8000', '--user', 'admin', '--password', 'secret']);
     expect(config.url).toBe('http://sap:8000');
@@ -117,6 +137,13 @@ describe('parseArgs', () => {
     const config = parseArgs(['--allow-writes', 'true', '--verbose', 'true']);
     expect(config.allowWrites).toBe(true);
     expect(config.verbose).toBe(true);
+  });
+
+  it('parses ARC1_LOG_LEVEL and keeps SAP_VERBOSE as a debug alias', () => {
+    process.env.ARC1_LOG_LEVEL = 'warn';
+    expect(parseArgs([]).logLevel).toBe('warn');
+    process.env.SAP_VERBOSE = 'true';
+    expect(parseArgs([]).logLevel).toBe('debug');
   });
 
   it('parses boolean env vars', () => {
@@ -1023,6 +1050,46 @@ describe('parseArgs', () => {
     process.env.ARC1_AUTH_RATE_LIMIT = '99';
     const config = parseArgs(['--auth-rate-limit', '7']);
     expect(config.authRateLimit).toBe(7);
+  });
+
+  it('allows disabling new OAuth registrations with CLI precedence over environment', () => {
+    expect(parseArgs([]).oauthDcrEnabled).toBe(true);
+    vi.stubEnv('ARC1_OAUTH_DCR_ENABLED', 'false');
+    expect(parseArgs([]).oauthDcrEnabled).toBe(false);
+    expect(parseArgs(['--oauth-dcr-enabled', 'true']).oauthDcrEnabled).toBe(true);
+    expect(parseArgs(['--oauth-dcr-enabled', 'false']).oauthDcrEnabled).toBe(false);
+  });
+
+  it('parses the OAuth redirect allowlist and records its source', () => {
+    expect(parseArgs([]).oauthDcrRedirectUriPatterns).toBeUndefined();
+    vi.stubEnv(
+      'ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS',
+      'https://vscode.dev/redirect, http://127.0.0.1:*/**\nhttps://workspace.example/callback',
+    );
+    const { config, sources } = resolveConfig([]);
+    expect(config.oauthDcrRedirectUriPatterns).toEqual([
+      'https://vscode.dev/redirect',
+      'http://127.0.0.1:*/**',
+      'https://workspace.example/callback',
+    ]);
+    expect(sources.oauthDcrRedirectUriPatterns).toEqual({ env: 'ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS' });
+    const override = resolveConfig(['--oauth-dcr-redirect-uri-patterns=https://client.example/cb']);
+    expect(override.config.oauthDcrRedirectUriPatterns).toEqual(['https://client.example/cb']);
+    expect(override.sources.oauthDcrRedirectUriPatterns).toEqual({ flag: '--oauth-dcr-redirect-uri-patterns' });
+  });
+
+  it.each(['', '  ', ', ,'])('treats an explicitly empty DCR policy as deny-all: %j', (value) => {
+    vi.stubEnv('ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS', value);
+    expect(parseArgs([]).oauthDcrRedirectUriPatterns).toEqual([]);
+    vi.stubEnv('ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS', 'https://client.example/cb');
+    expect(parseArgs(['--oauth-dcr-redirect-uri-patterns', value]).oauthDcrRedirectUriPatterns).toEqual([]);
+  });
+
+  it('keeps an empty equals-style DCR flag authoritative over the environment', () => {
+    vi.stubEnv('ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS', 'https://client.example/cb');
+    const { config, sources } = resolveConfig(['--oauth-dcr-redirect-uri-patterns=']);
+    expect(config.oauthDcrRedirectUriPatterns).toEqual([]);
+    expect(sources.oauthDcrRedirectUriPatterns).toEqual({ flag: '--oauth-dcr-redirect-uri-patterns' });
   });
 
   // --- oauthDcrTtlSeconds ---

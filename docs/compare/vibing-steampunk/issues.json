@@ -19,7 +19,7 @@
       "labels": [],
       "status": "evaluated",
       "priority": "high",
-      "relevance": "STRATEGIC: SAP's new v.4.2026 API Policy says 'every endpoint a customer or partner uses in productive use must be a Published API on Business Accelerator Hub'. ADT (`/sap/bc/adt/*`) is documented only as the Eclipse Java SDK, not as an external HTTP contract. Affects every ADT-based MCP tool including ARC-1. No direct code action — strategic question for the project's productive-use narrative.",
+      "relevance": "STRATEGIC (assessment corrected 2026-10-21; upstream state not rechecked): SAP API Policy v.4.2026a and FAQ v1.3 Q33 require clarification for ARC-1's direct ADT development channel. Q56 permits custom MCP under conditions; Q32 does not require Integration Suite. Use reference architecture 137800 as the design/control baseline. BTP hosting or developer-tool framing alone does not establish permission, including dev/test. See the updated evaluation.",
       "evaluationFile": "evaluations/issue-124-sap-api-policy-v42026.md"
     },
     {

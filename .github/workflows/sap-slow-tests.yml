@@ -49,6 +49,7 @@ jobs:
     concurrency:
       group: ${{ github.repository }}-sap-live-a4h
       cancel-in-progress: false
+      queue: max
 
     steps:
       - uses: actions/checkout@v7
@@ -72,6 +73,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Where-used fixture pin (#1057)
+        run: npx vitest run tests/unit/workflows/where-used-containment.test.ts
 
       - name: SAP auth preflight
         id: sap_auth

@@ -59,7 +59,7 @@ describe('Tool Definitions', () => {
         const read = tools.find((tool) => tool.name === 'SAPRead')!.description!;
         const context = tools.find((tool) => tool.name === 'SAPContext')!.description!;
         expect(read).toContain('specs, reviews or pre-change context, prefer SAPContext first');
-        expect(read).toContain('method="NAME" for one body');
+        expect(tools.find((tool) => tool.name === 'SAPRead')!.inputSchema.properties).toHaveProperty('method');
         expect(context).toContain('Primary tool for understanding ABAP/CDS objects');
         expect(context).toContain('KTD when available');
         expect(context).toContain('"What does <object> do?" / "Explain" / "deps before editing"');
@@ -283,8 +283,7 @@ describe('Tool Definitions', () => {
     const whereDescription = schema.properties.where.description as string;
 
     expect(whereDescription).toContain('bare comma-separated values');
-    expect(whereDescription).toContain('do NOT quote them');
-    expect(whereDescription).toContain('ARC-1 quotes and escapes values');
+    expect(whereDescription).toContain('ARC-1 quotes/escapes them');
     expect(whereDescription).toContain('"261,262"');
     expect(whereDescription).not.toContain('single-quoted literals');
   });
@@ -293,10 +292,11 @@ describe('Tool Definitions', () => {
     const sapRead = getToolDefinitions(DEFAULT_CONFIG).find((t) => t.name === 'SAPRead')!;
     const schema = sapRead.inputSchema as Record<string, any>;
 
-    expect(schema.properties.maxRows.description).toContain('On 758, TABLE_CONTENTS returns N+1');
+    expect(schema.properties.maxRows.description).toContain('Returned row cap');
     expect(schema.properties.sqlFilter.description).toContain('broken on 758');
     expect(schema.properties.sqlFilter.description).toContain('TABLE_QUERY where');
-    expect(schema.properties.where.description).toContain('use <> because 758 rejects !=');
+    expect(schema.properties.where.description).toContain('Use <>; 758 rejects !=');
+    expect(schema.properties.where.description).toContain('STARTS_WITH: literal prefix');
     expect(schema.properties.where.description).not.toContain('Ops: =, !=');
   });
 
@@ -326,7 +326,7 @@ describe('Tool Definitions', () => {
 
     expect(diagnose.description).toContain('CLAS/PROG/FUGR or DEVC');
     expect(schema.properties.type.description).toContain('DEVC');
-    expect(schema.properties.includeSubpackages).toEqual({ type: 'boolean', default: false });
+    expect(schema.properties.includeSubpackages).toEqual({ type: 'boolean' });
   });
 
   it('describes SAPRead sqlFilter as condition-only expression', () => {
@@ -346,7 +346,7 @@ describe('Tool Definitions', () => {
     const typeEnum: string[] = schema.properties.type.enum;
     for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC', 'UIAD'])
       expect(typeEnum).toContain(t);
-    expect(schema.properties.type.description).toContain('Server-driven objects');
+    expect(schema.properties.type.description).toContain('Server-driven: discovery-gated XML metadata');
   });
 
   it('SAPWrite exposes server-driven object types (write — 816)', () => {
@@ -356,7 +356,7 @@ describe('Tool Definitions', () => {
     const typeEnum: string[] = schema.properties.type.enum;
     for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC', 'UIAD'])
       expect(typeEnum).toContain(t);
-    expect(schema.properties.type.description).toContain('Server-driven objects');
+    expect(sapWrite.description).toContain('Server-driven objects');
   });
 
   it('SAPRead schema includes source version controls', () => {
@@ -365,7 +365,7 @@ describe('Tool Definitions', () => {
     const schema = sapRead.inputSchema as Record<string, any>;
     expect(schema.properties.version.enum).toEqual(['active', 'inactive', 'auto']);
     expect(schema.properties.force_refresh.type).toBe('boolean');
-    expect(sapRead.description).toContain('version parameter');
+    expect(schema.properties.version.description).toContain('Server-driven types return an error');
   });
 
   it('SAPRead schema exposes includeSignature flag for FUNC (issue #252)', () => {
@@ -442,9 +442,9 @@ describe('Tool Definitions', () => {
     const btpTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'btp' });
     const btpDescription = btpTools.find((t) => t.name === 'SAPWrite')!.description;
     const btpSchema = btpTools.find((t) => t.name === 'SAPWrite')!.inputSchema as Record<string, any>;
-    const btpTypeDescription: string = btpSchema.properties.type.description;
-    for (const type of ['DCLS', 'SRVB', 'SKTD', 'MSAG']) {
-      expect(btpTypeDescription).toContain(type);
+    // The enum is the complete type list; duplicating it in property help drifts as types are added.
+    for (const type of ['DCLS', 'SRVB', 'SKTD', 'MSAG', 'TTYP']) {
+      expect(btpSchema.properties.type.enum).toContain(type);
     }
     expect(btpDescription).toContain('DCLS');
     expect(btpSchema.properties.source.description).toContain('`extend view entity`');
@@ -463,18 +463,18 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toContain('change_method_visibility');
   });
 
-  it('SAPWrite exposes edit_unit only on-prem (issue #558)', () => {
+  it.each(['edit_unit', 'add_unit'])('SAPWrite exposes %s only on-prem', (action) => {
     const onPremTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'onprem' });
     const onPremSchema = onPremTools.find((tool) => tool.name === 'SAPWrite')!.inputSchema as Record<string, any>;
-    expect(onPremSchema.properties.action.enum).toContain('edit_unit');
+    expect(onPremSchema.properties.action.enum).toContain(action);
     expect(onPremSchema.properties.unit.description).toMatch(/FORM(?:\/| or )MODULE/i);
-    expect(onPremSchema.properties.source.description).toContain('edit_unit');
+    expect(onPremSchema.properties.source.description).toContain(action);
 
     const btpTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'btp' });
     const btpSchema = btpTools.find((tool) => tool.name === 'SAPWrite')!.inputSchema as Record<string, any>;
-    expect(btpSchema.properties.action.enum).not.toContain('edit_unit');
+    expect(btpSchema.properties.action.enum).not.toContain(action);
     expect(btpSchema.properties.unit).toBeUndefined();
-    expect(btpSchema.properties.source.description).not.toContain('edit_unit');
+    expect(btpSchema.properties.source.description).not.toContain(action);
   });
 
   it('SAPWrite schema exposes visibility + abstract for add_method (issue #303)', () => {
@@ -749,7 +749,7 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toContain('traces');
     expect(actionEnum).toContain('system_messages');
     expect(actionEnum).toContain('gateway_errors');
-    expect(sapDiagnose.description).toContain('active vs inactive source versions');
+    expect(sapDiagnose.description).toContain('No server-driven types');
     expect(schema.properties.source).toBeDefined();
     expect(schema.properties.sourceUri).toBeDefined();
     expect(schema.properties.line).toBeDefined();
@@ -894,7 +894,6 @@ describe('Tool Definitions', () => {
       expect(typeEnum).not.toContain('AUTH');
       expect(typeEnum).not.toContain('FTG2');
       expect(typeEnum).not.toContain('FEATURE_TOGGLE');
-      expect(typeEnum).not.toContain('ENHO');
     });
 
     it('keeps CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, KTD on BTP', () => {
@@ -907,6 +906,8 @@ describe('Tool Definitions', () => {
       expect(typeEnum).toContain('INTF');
       expect(typeEnum).toContain('DDLS');
       expect(typeEnum).toContain('DCLS');
+      // BAdI implementations: read and written on BTP for C1-released BAdIs.
+      expect(typeEnum).toContain('ENHO');
       expect(typeEnum).toContain('DDLX');
       expect(typeEnum).toContain('BDEF');
       expect(typeEnum).toContain('SRVD');
@@ -1041,22 +1042,22 @@ describe('Tool Definitions', () => {
       expect(sapQuery.description).toContain('I_LANGUAGE');
     });
 
-    it('on-premise SAPQuery description suggests metadata tables for reverse-engineering', () => {
+    it('on-premise SAPQuery keeps concise ABAP dialect and CDS-impact guidance', () => {
       const tools = getToolDefinitions(onpremConfig);
       const sapQuery = tools.find((t) => t.name === 'SAPQuery')!;
 
-      expect(sapQuery.description).toContain('DD02L');
-      expect(sapQuery.description).toContain('TADIR');
-      expect(sapQuery.description).toContain('reverse-engineering');
-      expect(sapQuery.description).toContain('auto-chunks long literal IN-lists in plain projection SELECTs');
+      expect(sapQuery.description).toContain('ABAP SQL SELECT');
+      expect(sapQuery.description).toContain('DD02L/DD03L/TADIR/TFDIR/SWOTLV');
+      expect(sapQuery.description).toContain('Long literal IN-lists auto-chunk in plain projection SELECTs');
       expect(sapQuery.description).toContain('alias~field');
       expect(sapQuery.description).toContain('alias~*');
       expect(sapQuery.description).toContain('ASCENDING/DESCENDING');
-      expect(sapQuery.description).toContain('no @/:/? parameters');
-      expect(sapQuery.description).toContain('maxRows (not TOP/LIMIT/OFFSET/FETCH)');
-      expect(sapQuery.description).toContain('CTEs');
+      expect(sapQuery.description).toContain('no @/:/?');
+      expect(sapQuery.description).toContain('maxRows, not TOP/LIMIT/OFFSET/FETCH');
+      expect(sapQuery.description).toContain('CTE');
       expect(sapQuery.description).toContain('FULL JOIN');
-      expect(sapQuery.description).toContain('JOINs');
+      expect(sapQuery.description).toContain('JOIN/GROUP BY');
+      expect(sapQuery.description).toContain('SAPContext(action="impact",type="DDLS")');
       expect(sapQuery.description).not.toContain('3605050');
       expect(sapQuery.description).not.toContain('stage multi-table');
     });
@@ -1092,7 +1093,7 @@ describe('Tool Definitions', () => {
 
       // method is available on both BTP and on-prem (for CLAS method-level reads)
       expect(schema.properties.method).toBeDefined();
-      // expand_includes is on-prem only (for FUGR)
+      // expand_includes is on-prem only (FUGR, PROG, INCL)
       expect(schema.properties.expand_includes).toBeUndefined();
     });
 
@@ -1224,6 +1225,11 @@ describe('Tool Definitions', () => {
         expect(item.properties.rowTypeKind).toBeDefined();
         expect(item.properties.rowTypeKind.type).toContain('string');
         expect(item.properties.rowTypeKind.enum).toEqual(['builtin', 'structure']);
+        for (const properties of [schema.properties, item.properties]) {
+          for (const field of ['rowTypeLength', 'rowTypeDecimals']) {
+            expect(properties[field]).toMatchObject({ type: 'integer', minimum: 0, maximum: 999999 });
+          }
+        }
       }
     });
 

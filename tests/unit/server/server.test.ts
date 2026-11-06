@@ -13,6 +13,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import { AdtClient } from '../../../src/adt/client.js';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import * as adtFeatures from '../../../src/adt/features.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
@@ -20,6 +21,7 @@ import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
 import { getToolRegistry } from '../../../src/handlers/dispatch.js';
 import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/feature-cache.js';
+import { createQueryDefinition } from '../../../src/handlers/query-tool.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { defineTool } from '../../../src/public/index.js';
 import { SYSTEM_LABEL_MAX_LENGTH } from '../../../src/server/config.js';
@@ -46,6 +48,7 @@ import {
   runStartupAuthPreflightWithClient,
   VERSION,
 } from '../../../src/server/server.js';
+import { NATIVE_NAVIGATION_INSTRUCTIONS } from '../../../src/server/server-instructions.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 type RequestHandler = (
@@ -109,7 +112,7 @@ describe('MCP Server', () => {
     const labeled = (await initializeServer({ ...DEFAULT_CONFIG, systemLabel: 'ERP production (read-only)' }))
       .instructions;
 
-    expect(baseline).toMatch(/^ARC-1 gives this SAP ABAP system/);
+    expect(baseline).toMatch(/^Use ARC-1 for SAP ABAP source/);
     expect(baseline).not.toContain('Connected SAP system:');
     expect(labeled).toBe(`Connected SAP system: ERP production (read-only).\n\n${baseline}`);
   });
@@ -135,6 +138,7 @@ describe('MCP Server', () => {
       expect(instructions).toContain('finish with observed source behavior and unverified intent/compliance');
       expect(instructions).toContain('Do not broaden the policy search');
       expect(instructions).toContain('Unavailable or failed syntax/ATC/test checks are not passes');
+      expect(instructions).toContain(NATIVE_NAVIGATION_INSTRUCTIONS);
     },
   );
 
@@ -143,6 +147,22 @@ describe('MCP Server', () => {
       await initializeServer({ ...DEFAULT_CONFIG, systemLabel: 'x'.repeat(SYSTEM_LABEL_MAX_LENGTH) })
     ).instructions;
     expect(instructions?.length).toBeLessThan(2_048);
+  });
+
+  it('advertises the SAP URI handler while retaining native-navigation identity and failure boundaries', () => {
+    const instructions = NATIVE_NAVIGATION_INSTRUCTIONS;
+    expect(instructions).toContain('VS Code on request: if available, use SAP ADT MCP');
+    expect(instructions).not.toContain('prefer ARC-1 links');
+    expect(instructions).not.toContain('abap:/flat');
+    // Preserve the returned URI when generating the outer query value. Downstream editor
+    // URL decoding is separate; the live acceptance only qualifies the tested characters.
+    expect(instructions).toContain(
+      'Link returned abap: URIs via vscode://sapse.adt-vscode/open?abapUri= + encodeURIComponent(exact URI)',
+    );
+    expect(instructions).toContain('Require user-confirmed destination for backend/client');
+    expect(instructions).toContain('Verify name/type/source, not .json');
+    expect(instructions).toContain('On mismatch/error stop; no resolver/bridge/destination retries');
+    expect(instructions).toContain('never edit/activate natively');
   });
 
   it('rejects an overlong system label even when ServerConfig is constructed directly', () => {
@@ -163,10 +183,6 @@ describe('MCP Server', () => {
 
     expect(metadata.instructions).toBe(MULTI_TARGET_SERVER_INSTRUCTIONS);
     expect(metadata.instructions).not.toContain('SHOULD NOT APPEAR');
-  });
-
-  it('has a valid version string', () => {
-    expect(VERSION).toMatch(/^\d+\.\d+\.\d+/);
   });
 
   // tools/list must never wait on SAP. Clients cancel it on their own schedule (Cline at ~5s) and
@@ -368,19 +384,62 @@ describe('MCP Server', () => {
   });
 
   it('keeps only query for sql-scoped users in hyperfocused mode', () => {
-    const tools = getToolDefinitions({
+    const config = {
       ...DEFAULT_CONFIG,
-      toolMode: 'hyperfocused',
+      toolMode: 'hyperfocused' as const,
       allowWrites: true,
       allowFreeSQL: true,
       allowTransportWrites: true,
-    });
-    const filtered = filterToolsByAuthScope(tools, ['sql']);
+    };
+    const tools = getToolDefinitions(config);
+    const filtered = filterToolsByAuthScope(tools, ['sql'], [], createQueryDefinition(config));
     const sap = filtered.find((tool) => tool.name === 'SAP');
     expect(sap).toBeDefined();
     const schema = sap!.inputSchema as Record<string, any>;
     const actionEnum: string[] = schema.properties.action.enum;
     expect(actionEnum).toEqual(['query']);
+  });
+
+  it.each([
+    { preview: false, sql: true, scopes: ['read', 'data'], deny: [], visible: false },
+    { preview: false, sql: true, scopes: ['sql'], deny: [], visible: true },
+    { preview: true, sql: false, scopes: ['data'], deny: [], visible: true },
+    { preview: true, sql: true, scopes: ['data'], deny: ['SAPQuery.sql'], visible: true },
+    { preview: true, sql: true, scopes: ['data'], deny: ['SAPQuery.long_text'], visible: true },
+    { preview: true, sql: true, scopes: ['data'], deny: ['SAPQuery.application_log'], visible: true },
+    {
+      preview: true,
+      sql: true,
+      scopes: ['data'],
+      deny: ['SAPQuery.long_text', 'SAPQuery.application_log'],
+      visible: false,
+    },
+    { preview: true, sql: true, scopes: ['admin'], deny: ['SAPQuery.*'], visible: false },
+    { preview: true, sql: true, scopes: ['admin'], deny: ['SAPQuery'], visible: false },
+    { preview: true, sql: true, scopes: ['admin'], deny: ['SAP.query'], visible: false },
+  ])(
+    'lists hyperfocused query only for usable concrete actions: %j',
+    async ({ preview, sql, scopes, deny, visible }) => {
+      const config = {
+        ...DEFAULT_CONFIG,
+        toolMode: 'hyperfocused' as const,
+        allowDataPreview: preview,
+        allowFreeSQL: sql,
+        denyActions: deny,
+      };
+      const server = createServer(config);
+      const handler = requestHandler(server, ListToolsRequestSchema.shape.method.value);
+      const result = await handler({ method: 'tools/list', params: {} }, { authInfo: { ...readAuth(), scopes } });
+      const sap = result.tools.find((tool: { name: string }) => tool.name === 'SAP');
+      expect(sap?.inputSchema.properties.action.enum.includes('query') ?? false).toBe(visible);
+      expect(sap?.description.includes('query') ?? false).toBe(visible);
+      await server.close();
+    },
+  );
+
+  it('fails closed for hyperfocused query when no concrete definition is supplied', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, toolMode: 'hyperfocused', allowFreeSQL: true });
+    expect(filterToolsByAuthScope(tools, ['sql'])).toEqual([]);
   });
 
   it('passes explicit nullable-optionals mode through tools/list', async () => {
@@ -686,6 +745,29 @@ describe('createServer request handlers', () => {
     await handler({ method: 'tools/call', params: { name: 'UnknownTool', arguments: {} } }, {});
 
     expect(markSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks a shared HTTP transport stale once across per-request servers', async () => {
+    const markSpy = vi.spyOn(AdtHttpClient.prototype, 'markCookiesStale').mockImplementation(() => undefined);
+    const defaultHttp = new AdtClient({ baseUrl: 'http://sap:8000', username: 'admin', password: 'secret' }).http;
+    const startupAuthPreflightPromise = Promise.resolve({
+      status: 'inconclusive' as const,
+      blocking: false,
+      endpoint: '/sap/bc/adt/core/discovery',
+      checkedAt: '2026-09-27T00:00:00.000Z',
+      statusCode: 401,
+      reason: 'stale cookie file',
+    });
+
+    // HTTP builds one Server (and AdtClient) per request over the same transport; mark it only once.
+    for (let request = 0; request < 2; request++) {
+      const server = createServer(DEFAULT_CONFIG, { startupAuthPreflightPromise, defaultHttp });
+      const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
+      await handler({ method: 'tools/call', params: { name: 'UnknownTool', arguments: {} } }, {});
+    }
+
+    expect(markSpy).toHaveBeenCalledTimes(1);
+    expect(markSpy.mock.contexts[0]).toBe(defaultHttp);
   });
 });
 

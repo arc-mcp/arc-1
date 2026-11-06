@@ -159,7 +159,7 @@ SAPDiagnose(action="apply_quickfix", type="<type>", name="<object_name>", source
 
 > **Match the proposal to the finding — don't blindly apply `proposals[0]`.** `quickfix` returns *every* proposal applicable at that source position, which often includes generic **refactorings** unrelated to the finding (verified live on S/4HANA 2023: a position returned "Rename", "Convert to attribute", "Convert to importing parameter", "Extract local variable", …). Pick the proposal whose `name`/`description` actually addresses the finding; ignore the rest.
 
-> **Refactoring-style proposals can't be auto-applied here.** Proposals whose `uri` contains `/providers/refactoring/` (rename / convert-to-X / extract / introduce) are interactive refactorings that ride the separate `/sap/bc/adt/refactorings` multi-step flow — `apply_quickfix` returns **HTTP 500** for them (verified live). They are not finding fixes; skip them for automated apply and fall back to an LLM-generated fix. Only proposals from non-refactoring providers apply cleanly through `apply_quickfix`.
+> **Review quick-fix deltas before saving.** Pass its `userContent` unchanged (including an empty string). `/providers/refactoring/` alone does not make a proposal unsupported. `apply_quickfix` returns edits without saving; inspect affected objects and run a syntax check before `SAPWrite`. Some SAP proposals need additional input or suggest types that require correction.
 
 ### Fix Options
 
@@ -208,7 +208,7 @@ SAPWrite(action="update", type="<type>", name="<object_name>", source="<fixed_so
 ### 5b. Validate after each batch of fixes
 
 ```
-SAPDiagnose(action="syntax", type="<type>", name="<object_name>")
+SAPRead(type="SYNTAX", objectType="<type>", name="<object_name>")
 ```
 
 If syntax errors are introduced: revert by writing back the original source and report the issue.

@@ -1,0 +1,45 @@
+{
+  "sourceBase": "37fece94359c8a48523af56b0ff71f52359a7c21",
+  "productionChanges": 0,
+  "route": "local real dispatcher and existing Basic identity; A4H/001 HTTPS 443",
+  "release": "758 SP02 in earlier recorded probe; release not queried again",
+  "exampleSha256": "1e365ed7995b2457bff6e690a6a944b0f80d6c0df0e45d35995a0dbbb40ec031",
+  "queries": [
+    {
+      "sqlSha256": "baaa37d31a5d8db9b5077ce4f9f010b6732d53d6205d0b85780317d1331826a1",
+      "rowsReturned": 6,
+      "totalRows": 6,
+      "columns": [
+        "AIRLINE",
+        "FLIGHTS",
+        "CAPACITY",
+        "BOOKED",
+        "OCCUPANCY_PCT"
+      ]
+    },
+    {
+      "sqlSha256": "7b746d0d04b536d429985d14ce5ee9e223224c663a87fb7c03af236540d8d1a3",
+      "rowsReturned": 1,
+      "totalRows": 40,
+      "columns": [
+        "N"
+      ],
+      "scalarValue": "40 "
+    },
+    {
+      "sqlSha256": "8fe9891dd5313f04935f88797714995ef57f6cd62b89734d3f16901ce5852401",
+      "rowsReturned": 1,
+      "totalRows": 0,
+      "columns": [
+        "N"
+      ],
+      "scalarValue": "0 "
+    }
+  ],
+  "queryPosts": 3,
+  "mutations": 0,
+  "freeSqlDisabledRefusedBeforePost": true,
+  "nativeEditorExecution": false,
+  "currentExampleSha256": "fb8b20c2650590b9bcab810f0fa6eab91e547c58f5db30681a32b9f82c613801",
+  "exampleChangeAfterProbe": "Removed final newline to match native serializer bytes; SQL cell strings and hashes unchanged."
+}

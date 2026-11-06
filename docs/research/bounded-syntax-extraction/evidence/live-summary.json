@@ -1,0 +1,118 @@
+{
+  "revision": "e3a5fd95384130149d2d4f25835e774a7615674a",
+  "at": "2026-10-18T22:18:37.788Z",
+  "target": "A4H/001",
+  "url": "https://a4h.marianzeis.de",
+  "route": "local real dispatcher, existing Basic identity",
+  "release": "758 SP02 previously recorded; not re-probed",
+  "syntaxRequests": 7,
+  "mutations": 0,
+  "activeMatchesSingles": true,
+  "absentNotPassed": true,
+  "cases": [
+    {
+      "label": "active",
+      "status": "passed",
+      "checkedObjectCount": 4,
+      "sha256": "134d5efdb2c5285eda447df6d50ffb035a5cf32c4f465ac65a4f6752affe68ec",
+      "objects": [
+        {
+          "type": "CLAS",
+          "name": "ZCL_ARC1_TD_CALC",
+          "status": "passed",
+          "checked": true,
+          "hasErrors": false,
+          "messages": 0
+        },
+        {
+          "type": "PROG",
+          "name": "ZARC1_TD_REPORT",
+          "status": "passed",
+          "checked": true,
+          "hasErrors": false,
+          "messages": 0
+        },
+        {
+          "type": "INTF",
+          "name": "ZIF_ARC1_TD_SHAPE",
+          "status": "passed",
+          "checked": true,
+          "hasErrors": false,
+          "messages": 0
+        },
+        {
+          "type": "DDLS",
+          "name": "ZARC1_TD_VIEW",
+          "status": "passed",
+          "checked": true,
+          "hasErrors": false,
+          "messages": 3
+        }
+      ]
+    },
+    {
+      "label": "inactive",
+      "status": "failed",
+      "checkedObjectCount": 4,
+      "sha256": "a7aadab4cfe2696a313dbdcd57a969880d485e35b8e86b623398c36f883afa24",
+      "objects": [
+        {
+          "type": "CLAS",
+          "name": "ZCL_ARC1_TD_CALC",
+          "status": "passed",
+          "checked": true,
+          "hasErrors": false,
+          "messages": 0
+        },
+        {
+          "type": "PROG",
+          "name": "ZARC1_TD_REPORT",
+          "status": "failed",
+          "checked": true,
+          "hasErrors": true,
+          "messages": 1
+        },
+        {
+          "type": "INTF",
+          "name": "ZIF_ARC1_TD_SHAPE",
+          "status": "passed",
+          "checked": true,
+          "hasErrors": false,
+          "messages": 0
+        },
+        {
+          "type": "DDLS",
+          "name": "ZARC1_TD_VIEW",
+          "status": "passed",
+          "checked": true,
+          "hasErrors": false,
+          "messages": 3
+        }
+      ]
+    },
+    {
+      "label": "absent",
+      "status": "failed",
+      "checkedObjectCount": 2,
+      "sha256": "9e9e53ece17da91fd378914a3784e802009b93d9dd60b60ffe80225e3a791bc9",
+      "objects": [
+        {
+          "type": "CLAS",
+          "name": "ZCL_ARC1_TD_CALC",
+          "status": "passed",
+          "checked": true,
+          "hasErrors": false,
+          "messages": 0
+        },
+        {
+          "type": "PROG",
+          "name": "ZARC1_NO_SUCH_BATCH_1011",
+          "status": "failed",
+          "checked": true,
+          "hasErrors": true,
+          "messages": 1
+        }
+      ]
+    }
+  ]
+}

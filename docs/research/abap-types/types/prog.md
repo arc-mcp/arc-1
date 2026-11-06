@@ -1,7 +1,7 @@
 # PROG — ABAP Program / Report
 
 ## TL;DR
-`PROG` is a real TADIR R3TR type. ADT exposes two slash subtypes under it: `PROG/P` (executable program / module pool) and `PROG/I` (include). ARC-1 maps both correctly: `PROG/P → PROG`, `PROG/I → INCL`. URL prefixes (`/programs/programs/`, `/programs/includes/`) are correct. No bug.
+`PROG` is a real TADIR R3TR type. Source subtypes are `PROG/P` (executable program / module pool) and `PROG/I` (include), mapped to `PROG` and `INCL`. The separate text-pool subtype `PROG/PX` maps to `REPT`; see the [2026-10-08 live evidence](rept.md) for its activation route and package metadata (#940).
 
 ## TADIR ground truth
 - **R3TR type**: `PROG` (Program)

@@ -16,6 +16,7 @@ import { dirname, resolve } from 'node:path';
 
 import { ACTION_POLICY, allPolicyKeys } from '../src/authz/policy.js';
 import { OperationType, type OperationTypeCode } from '../src/adt/safety.js';
+import { SAPQuerySchema } from '../src/handlers/query-input.js';
 import { SAPREAD_TYPES_ONPREM } from '../src/handlers/tool-registry.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -30,7 +31,7 @@ function extractToolActions(source: string): { tool: string; actions: string[] }
 
   // Match exports like:  export const SAPReadSchema = z.object({  ...  action: z.enum(['a', 'b', ...]),  ...  })
   //                  or: export const SAPTransportSchema = z.object({  action: z.enum([...]) })
-  // Tools without an action enum (SAPSearch, SAPQuery) still produce an entry with empty actions
+  // Tools without an action enum (SAPSearch) still produce an entry with empty actions
   // so that the tool itself is considered "known" for ACTION_POLICY tool-level checks.
   // SAPRead uses `type: z.enum(SAPREAD_TYPES_ONPREM)` — handled via its own regex below.
   const schemaBlockRe = /export const (SAP\w+)Schema(?:Btp)?\s*=\s*z[\s\S]*?\}\)/g;
@@ -48,7 +49,7 @@ function extractToolActions(source: string): { tool: string; actions: string[] }
       const actions = [...actionEnumMatch[1].matchAll(/'([^']+)'/g)].map((a) => a[1]);
       results.push({ tool, actions });
     } else {
-      // Tool has no action enum (e.g., SAPSearch, SAPQuery) — tool-level policy only.
+      // Tool has no action enum (e.g., SAPSearch) — tool-level policy only.
       results.push({ tool, actions: [] });
     }
   }
@@ -56,6 +57,9 @@ function extractToolActions(source: string): { tool: string; actions: string[] }
   // SAPRead types now live in tool-registry.ts (single source of truth) — import them directly
   // instead of regex-scanning schemas.ts, which no longer declares them inline.
   results.push({ tool: 'SAPRead', actions: [...SAPREAD_TYPES_ONPREM] });
+
+  // SAPQuery's action-specific validation lives in query-input.ts; use its actual enum.
+  results.push({ tool: 'SAPQuery', actions: [...SAPQuerySchema.shape.action.unwrap().options] });
 
   // SAPTargets is a synthetic aggregate-only tool defined outside handlers/schemas.ts.
   // Keep it in the same bidirectional policy validation so deleting its read policy

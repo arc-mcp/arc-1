@@ -309,6 +309,9 @@ const TTYP_BUILTIN_ROW_TYPES = new Set([
 
 const TTYP_ROW_TYPE_NAME_RE = /^(?:\/[A-Z0-9_]+\/)?[A-Z0-9_]+$/;
 
+/** Length and scale are encoded as six decimal digits in the ADT envelope. */
+export const TABLE_TYPE_DIMENSION_MAX = 999999;
+
 export interface TableTypeCreateParams {
   name: string;
   description: string;
@@ -317,6 +320,9 @@ export interface TableTypeCreateParams {
   rowType: string;
   /** Defaults to "builtin" for a known ABAP type, else "structure". */
   rowTypeKind?: 'builtin' | 'structure';
+  /** Built-in dimensions; omitted update fields retain the stored values. */
+  rowTypeLength?: string | number;
+  rowTypeDecimals?: string | number;
   language?: string;
   responsible?: string;
 }
@@ -350,9 +356,23 @@ export function buildTableTypeXml(params: TableTypeCreateParams): string {
     throw new Error(`TTYP rowType "${rowType}" is a built-in ABAP row type; omit rowTypeKind or use "builtin".`);
   }
 
+  for (const [field, value] of [
+    ['rowTypeLength', params.rowTypeLength],
+    ['rowTypeDecimals', params.rowTypeDecimals],
+  ] as const) {
+    if (value === undefined) continue;
+    if (kind !== 'builtin')
+      throw new Error(
+        `${field} requires a built-in TTYP row type; set rowTypeKind="builtin" for a built-in DDIC name.`,
+      );
+    if (!/^\d+$/.test(String(value)) || !Number.isInteger(Number(value)) || Number(value) > TABLE_TYPE_DIMENSION_MAX) {
+      throw new Error(`${field} must be a non-negative integer no greater than ${TABLE_TYPE_DIMENSION_MAX}.`);
+    }
+  }
+
   const rowTypeXml =
     kind === 'builtin'
-      ? `<ttyp:typeKind>predefinedAbapType</ttyp:typeKind><ttyp:typeName/><ttyp:builtInType><ttyp:dataType>${escapeXmlAttr(rowType)}</ttyp:dataType><ttyp:length>000000</ttyp:length><ttyp:decimals>000000</ttyp:decimals></ttyp:builtInType><ttyp:rangeType/>`
+      ? `<ttyp:typeKind>predefinedAbapType</ttyp:typeKind><ttyp:typeName/><ttyp:builtInType><ttyp:dataType>${escapeXmlAttr(rowType)}</ttyp:dataType><ttyp:length>${formatLength(params.rowTypeLength, 6)}</ttyp:length><ttyp:decimals>${formatLength(params.rowTypeDecimals, 6)}</ttyp:decimals></ttyp:builtInType><ttyp:rangeType/>`
       : `<ttyp:typeKind>dictionaryType</ttyp:typeKind><ttyp:typeName>${escapeXmlAttr(rowType)}</ttyp:typeName><ttyp:builtInType><ttyp:dataType>STRU</ttyp:dataType><ttyp:length>000000</ttyp:length><ttyp:decimals>000000</ttyp:decimals></ttyp:builtInType><ttyp:rangeType/>`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -376,8 +396,14 @@ export interface TableTypeInfo {
   description: string;
   rowType: string;
   rowTypeKind: string;
+  /** Built-in length/decimals as SAP stores them, e.g. "000030" for a CHAR 30 row. */
+  rowTypeLength: string;
+  rowTypeDecimals: string;
   accessType: string;
   keyKind: string;
+  /** Standard table, non-unique standard key, no secondary keys: all that buildTableTypeXml writes. */
+  plainStandardTable: boolean;
+  package: string;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -418,13 +444,28 @@ export function parseTableType(xml: string): TableTypeInfo {
   if (!rowType) {
     throw new Error('Invalid TTYP response: missing row type name.');
   }
+  const accessType = String(tt.accessType ?? '');
+  const keyKind = String(pk.kind ?? '');
+  const secondaryKeys = asRecord(tt.secondaryKeys) ?? {};
   return {
     name: String(tt['@_name'] ?? ''),
     description: String(tt['@_description'] ?? ''),
     rowType,
     rowTypeKind: typeKind,
-    accessType: String(tt.accessType ?? ''),
-    keyKind: String(pk.kind ?? ''),
+    rowTypeLength: String(builtIn.length ?? ''),
+    rowTypeDecimals: String(builtIn.decimals ?? ''),
+    accessType,
+    keyKind,
+    // Mirrors every value buildTableTypeXml hardcodes: an update resets whatever differs.
+    plainStandardTable:
+      Number(tt.initialRowCount ?? 0) === 0 &&
+      accessType === 'standard' &&
+      String(pk.definition ?? '') === 'standard' &&
+      keyKind === 'nonUnique' &&
+      !String(pk.alias ?? '') &&
+      String(secondaryKeys.allowed ?? '') === 'notSpecified' &&
+      secondaryKeys.secondaryKey === undefined,
+    package: String(asRecord(tt.packageRef)?.['@_name'] ?? ''),
   };
 }
 

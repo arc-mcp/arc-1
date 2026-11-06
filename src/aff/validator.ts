@@ -1,10 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { getAsset, isSea } from 'node:sea';
 import { fileURLToPath } from 'node:url';
 import type { ErrorObject } from 'ajv';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/** Single-executable builds embed the schemas as assets named `aff/<file>` (scripts/build-sea.mjs). */
+function readSchemaText(fileName: string): string {
+  if (isSea()) return getAsset(`aff/${fileName}`, 'utf8');
+  return readFileSync(join(__dirname, 'schemas', fileName), 'utf-8');
+}
 
 /** Map ARC-1 type codes to AFF type codes */
 const TYPE_MAP: Record<string, string> = {
@@ -29,8 +36,7 @@ function getAffSchema(type: string): object | null {
   const affType = TYPE_MAP[type.toUpperCase()];
   if (!affType) return null;
   try {
-    const schemaPath = join(__dirname, 'schemas', `${affType}-v1.json`);
-    const content = readFileSync(schemaPath, 'utf-8');
+    const content = readSchemaText(`${affType}-v1.json`);
     return JSON.parse(content) as object;
   } catch {
     return null;

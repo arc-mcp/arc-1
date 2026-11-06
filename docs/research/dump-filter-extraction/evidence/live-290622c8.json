@@ -1,0 +1,40 @@
+{
+  "revision": "290622c84a412e5329a986e9a187df71d36d10b5",
+  "target": "A4H/001",
+  "url": "https://a4h.marianzeis.de",
+  "route": "local real dispatcher, existing Basic identity",
+  "source": "independent dump-filter extraction from main 498c12bb",
+  "release": "758 SP02 in earlier recorded probe; release not queried again in this bounded match probe",
+  "mutationCalls": 0,
+  "maxRowsPerCall": 1,
+  "boundedTo": "20261017210000",
+  "positiveMatchedSameIdAndError": true,
+  "negativeEmpty": true,
+  "requests": [
+    {
+      "status": 200,
+      "bytes": 24700,
+      "sha256": "b4cd2b7d594bd609e9cc32bf97a99c89e1a1e5e7e06339ac776177b78f9be5f3"
+    },
+    {
+      "status": 200,
+      "bytes": 23647,
+      "sha256": "d5ef2672aec06f4eabb4e523427f1094865454f9099c9a504f1fdf7ea5407f5d"
+    },
+    {
+      "status": 200,
+      "bytes": 11238,
+      "sha256": "7f8af82ab41f20740044a302493149efd58b9f0714bff4cea04a3b5f66b46d59"
+    },
+    {
+      "status": 200,
+      "bytes": 23647,
+      "sha256": "d5ef2672aec06f4eabb4e523427f1094865454f9099c9a504f1fdf7ea5407f5d"
+    },
+    {
+      "status": 200,
+      "bytes": 681,
+      "sha256": "4d80ac2c4cd5af2647e15dda68bc8b7e3c14342498209a142be7a4902dce56cc"
+    }
+  ]
+}

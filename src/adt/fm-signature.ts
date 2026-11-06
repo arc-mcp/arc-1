@@ -16,6 +16,8 @@
  * No I/O, no client coupling. The wiring lives in the SAPWrite handlers (`src/handlers/write/`).
  */
 
+import { readFmParameterDescriptions, updateFmParameterDescriptions } from './fm-parameter-docs.js';
+
 export type FmParameterKind = 'importing' | 'exporting' | 'changing' | 'tables' | 'exceptions' | 'raising';
 
 export interface FmParameter {
@@ -28,10 +30,12 @@ export interface FmParameter {
    *   `TYPE ANY ##ADT_PARAMETER_UNTYPED`.
    * Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING.
    *
-   * For TABLES, the leading keyword (`TYPE` / `LIKE`) is part of the type expression
-   * since the older SAPGUI form uses `LIKE struct` while modern style uses `TYPE …`.
+   * Explicit TYPE/LIKE clauses are emitted as supplied; bare expressions use TYPE.
+   * Readback keeps LIKE and TABLES keywords, but otherwise omits TYPE.
    */
   type?: string;
+  /** Native synchronized short text (1–60 printable characters); data parameters only. */
+  description?: string;
   /** Emit `VALUE(name)` wrapper. Default false (pass-by-reference). EXPORTING usually byValue. */
   byValue?: boolean;
   /** Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim, no escaping. */
@@ -44,6 +48,25 @@ const KEYWORD_RE = /^\s*(IMPORTING|EXPORTING|CHANGING|TABLES|EXCEPTIONS|RAISING)
 const PARAM_LINE_RE = /^\s*(?:VALUE\s*\(\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*\)?\s+(TYPE|LIKE)\s+(.+?)\s*$/i;
 const SIMPLE_NAME_RE = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/;
 const KIND_ORDER: FmParameterKind[] = ['importing', 'exporting', 'changing', 'tables', 'exceptions', 'raising'];
+
+/** A full source starts with FUNCTION after only blanks and full-line comments. */
+export function findFmHeader(source: string): { start: number; end: number } | undefined {
+  let offset = 0;
+  for (const line of source.split(/(?<=\n)/)) {
+    if (line.trim() === '' || /^[ \t]*(?:"|\*)/.test(line)) {
+      offset += line.length;
+      continue;
+    }
+    const match = /^[ \t]*FUNCTION[ \t]+(?:\/[A-Za-z0-9_]+\/)?[A-Za-z_][A-Za-z0-9_]*/i.exec(line);
+    return match ? { start: offset, end: offset + match[0].length } : undefined;
+  }
+  return undefined;
+}
+
+function findFmEnd(source: string, bodyStart: number): number {
+  const match = /^[ \t]*ENDFUNCTION[ \t]*\./im.exec(source.slice(bodyStart));
+  return match ? bodyStart + match.index : source.length;
+}
 
 /**
  * Build an ABAP signature clause from a structured parameter array.
@@ -82,13 +105,12 @@ function formatParam(p: FmParameter): string {
   if (p.kind === 'exceptions' || p.kind === 'raising') {
     return upperName;
   }
-  // TABLES: type may be `LIKE struct` or `TYPE STANDARD TABLE …`. The user's
-  // string already contains the keyword; emit verbatim.
-  // For other kinds the type string is the bare type name; we prepend `TYPE `.
+  // Accept explicit TYPE/LIKE clauses for every data parameter kind.
+  // A bare expression (including LIKE-FIELD) still needs the TYPE keyword.
   const typeStr = (p.type ?? '').trim();
   const namePart = p.byValue ? `VALUE(${upperName})` : upperName;
   let line: string;
-  if (p.kind === 'tables' && /^(TYPE|LIKE)\b/i.test(typeStr)) {
+  if (/^(TYPE|LIKE)\s+\S/i.test(typeStr)) {
     line = `${namePart} ${typeStr}`;
   } else {
     line = `${namePart} TYPE ${typeStr}`;
@@ -128,12 +150,8 @@ export function parseFmSignature(source: string): {
 } {
   const params: FmParameter[] = [];
 
-  // Locate `FUNCTION <name>` token. Use `[A-Za-z0-9_]+` (not `\S+`) so the
-  // trailing period of `FUNCTION x.` is NOT consumed by the name capture.
-  const fnMatch = /^\s*FUNCTION\s+[A-Za-z_][A-Za-z0-9_]*/i.exec(source);
-  if (!fnMatch) {
-    return { params: [], bodyStart: 0, bodyEnd: source.length };
-  }
+  const header = findFmHeader(source);
+  if (!header) return { params: [], bodyStart: 0, bodyEnd: source.length };
 
   // Walk lines starting after `FUNCTION <name>` until the signature-terminator `.`
   // (a period that ends the FUNCTION statement). The signature-terminator is the
@@ -141,7 +159,7 @@ export function parseFmSignature(source: string): {
   // non-param line — SAP emits it on its own line after the last parameter.
   // If no keyword was seen and we hit a bare `.` (e.g. `FUNCTION x.`), that's
   // also a valid signature-terminator (parameter-less FM).
-  const cursor = fnMatch.index + fnMatch[0].length;
+  const cursor = header.end;
   let currentKind: FmParameterKind | null = null;
   let bodyStart = source.length;
 
@@ -153,11 +171,10 @@ export function parseFmSignature(source: string): {
     let bs = cursor + bareTermMatch[0].length;
     if (source[bs] === '\r') bs++;
     if (source[bs] === '\n') bs++;
-    const endMatch = /\bENDFUNCTION\b/i.exec(source);
     return {
       params: [],
       bodyStart: bs,
-      bodyEnd: endMatch ? endMatch.index : source.length,
+      bodyEnd: findFmEnd(source, bs),
     };
   }
 
@@ -178,6 +195,12 @@ export function parseFmSignature(source: string): {
     // Strip inline `"`-comments before further analysis.
     const codeOnly = stripInlineComment(line);
     const codeTrimmed = codeOnly.trim();
+
+    // SAP inserts a template comment before the bare terminator of an empty signature.
+    if (codeTrimmed === '.') {
+      bodyStart = computeBodyStartOffset(source, lineStartOffset, codeOnly, codeOnly, 0);
+      break;
+    }
 
     // Keyword line?
     const kwMatch = KEYWORD_RE.exec(codeOnly);
@@ -219,9 +242,8 @@ export function parseFmSignature(source: string): {
     lineStartOffset = lineEndOffset + 1;
   }
 
-  // Locate ENDFUNCTION (case-insensitive); body ends at the start of that line.
-  const endMatch = /\bENDFUNCTION\b/i.exec(source);
-  const bodyEnd = endMatch ? endMatch.index : source.length;
+  const bodyEnd = findFmEnd(source, bodyStart);
+  readFmParameterDescriptions(source.slice(0, header.start), params);
 
   return { params, bodyStart, bodyEnd };
 }
@@ -267,13 +289,14 @@ function computeBodyStartOffset(
   source: string,
   lineStartOffset: number,
   codeOnly: string,
-  _tailOrCode: string,
+  tailOrCode: string,
   terminatorPosInTrimmed: number,
 ): number {
   // We were given the line's "code only" (inline comments stripped) — but the
   // terminator position is relative to the *trimmed* tail. Translate it back.
-  const trimmedStart = codeOnly.length - codeOnly.trimStart().length;
-  const terminatorAbs = lineStartOffset + trimmedStart + terminatorPosInTrimmed;
+  const tailOffset = codeOnly.length - tailOrCode.length;
+  const trimmedStart = tailOrCode.length - tailOrCode.trimStart().length;
+  const terminatorAbs = lineStartOffset + tailOffset + trimmedStart + terminatorPosInTrimmed;
   // bodyStart is the offset just AFTER the `.` (and any trailing newline).
   let bodyStart = terminatorAbs + 1;
   if (source[bodyStart] === '\r') bodyStart++;
@@ -332,19 +355,18 @@ function addParamFromLine(params: FmParameter[], kind: FmParameterKind, lineCont
   // string starts with `VALUE` (case-insensitive).
   const byValue = /^\s*VALUE\s*\(/i.test(trimmed);
 
-  // For TABLES, prepend the keyword (TYPE/LIKE) so the type round-trips verbatim.
-  // For other kinds, drop the keyword (ARC-1's emit prepends `TYPE`).
+  // Keep LIKE and the existing TABLES clauses; ordinary TYPE reads stay bare.
   let typeStr: string;
   let optional = false;
   let defaultExpr: string | undefined;
 
   // Split off OPTIONAL and DEFAULT modifiers from the trailing portion.
   let remaining = rest.trim();
-  // OPTIONAL is a standalone trailing word.
-  const optMatch = /\s+OPTIONAL\s*$/i.exec(remaining);
+  // SAP may put pragmas after OPTIONAL; keep those pragmas in the type expression.
+  const optMatch = /\s+OPTIONAL(?=(?:\s+##\w+(?:\[[^\]\r\n]*\])?)*\s*$)/i.exec(remaining);
   if (optMatch) {
     optional = true;
-    remaining = remaining.slice(0, optMatch.index).trim();
+    remaining = `${remaining.slice(0, optMatch.index)}${remaining.slice(optMatch.index + optMatch[0].length)}`.trim();
   }
   // DEFAULT introduces an expression up to the end (after stripping OPTIONAL).
   const defMatch = /\s+DEFAULT\s+(.+)$/i.exec(remaining);
@@ -353,7 +375,7 @@ function addParamFromLine(params: FmParameter[], kind: FmParameterKind, lineCont
     remaining = remaining.slice(0, defMatch.index).trim();
   }
 
-  if (kind === 'tables') {
+  if (kind === 'tables' || typeKeyword.toUpperCase() === 'LIKE') {
     typeStr = `${typeKeyword.toUpperCase()} ${remaining}`.trim();
   } else {
     typeStr = remaining;
@@ -374,24 +396,19 @@ function addParamFromLine(params: FmParameter[], kind: FmParameterKind, lineCont
  * Replace the signature region of an FM source with a new clause built from
  * `params`. The body (between the signature-terminator `.` and `ENDFUNCTION.`)
  * is preserved verbatim. Throws when `source` does not start with a `FUNCTION`
- * keyword — caller is expected to fall back to the user's raw source.
+ * keyword or the signature/body boundaries cannot be found.
  */
-export function spliceFmSignature(source: string, fmName: string, params: FmParameter[]): string {
-  if (!/^\s*FUNCTION\s+/i.test(source)) {
-    throw new Error('FM source does not start with FUNCTION keyword');
-  }
+export function spliceFmSignature(source: string, fmName: string, params: FmParameter[], language?: string): string {
+  const header = findFmHeader(source);
+  if (!header) throw new Error('FM source does not start with FUNCTION keyword after leading comments');
 
   const parsed = parseFmSignature(source);
-  const body = source.slice(parsed.bodyStart, parsed.bodyEnd);
-  const upperName = fmName.toUpperCase();
-
-  if (params.length === 0) {
-    // No signature → just FUNCTION <name>. <body> ENDFUNCTION.
-    const bodyTrimmed = body.replace(/^\s*\n/, '');
-    return `FUNCTION ${upperName}.\n${bodyTrimmed}ENDFUNCTION.\n`;
+  if (parsed.bodyStart > parsed.bodyEnd || parsed.bodyEnd === source.length) {
+    throw new Error('Cannot locate the FUNCTION signature terminator and ENDFUNCTION; source was not changed');
   }
-
-  const clause = buildFmSignatureClause(params);
-  const bodyTrimmed = body.replace(/^\s*\n/, '');
-  return `FUNCTION ${upperName}\n${clause}.\n${bodyTrimmed}ENDFUNCTION.\n`;
+  const eol = source.includes('\r\n') ? '\r\n' : '\n';
+  const prefix = updateFmParameterDescriptions(source.slice(0, header.start), parsed.params, params, eol, language);
+  const clause = buildFmSignatureClause(params).replaceAll('\n', eol);
+  const signature = `FUNCTION ${fmName.toUpperCase()}${clause ? eol + clause : ''}.${eol}`;
+  return prefix + signature + source.slice(parsed.bodyStart);
 }

@@ -9,6 +9,8 @@ export interface RequestDeadlineOptions {
 }
 
 export interface AdtRequestOptions extends RequestDeadlineOptions {
+  /** Scoped mutations must not replay for auth, CSRF, negotiation or availability errors. */
+  noReplay?: boolean;
   /** Override the 120-second per-fetch cap for a known long-running ADT operation. */
   fetchTimeoutMs?: number;
   /** Optional ADT subresource: handled 404s may be logged at debug level. */
@@ -19,6 +21,8 @@ export interface AdtRequestOptions extends RequestDeadlineOptions {
   responseBudget?: DataResponseBudget;
   /** Disable availability/DB-session replays when a mutation may already have completed. */
   retryTransientErrors?: boolean;
+  /** Disable only 503 replay; retain rate-limit and DB-session recovery. */
+  retryUnavailable?: boolean;
   /** Optional request-local SAP send allowance; CSRF and retries share the same counter. */
   attemptBudget?: RequestAttemptBudget;
   /** Internal control requests need headers only; do not buffer their bodies through Connectivity. */
@@ -28,6 +32,7 @@ export interface AdtRequestOptions extends RequestDeadlineOptions {
 /** Keep request cancellation/deadline controls while excluding result-data accounting from CSRF bootstrap. */
 export function withoutResponseBudget(options?: AdtRequestOptions): AdtRequestOptions | undefined {
   if (!options) return options;
+  if (options.responseBudget?.countAllResponses) return { ...options, discardResponseBody: false };
   const { responseBudget: _responseBudget, ...rest } = options;
   return options.attemptBudget ? { ...rest, discardResponseBody: true } : rest;
 }
@@ -57,7 +62,11 @@ function requestTimeoutError(): DOMException {
 }
 
 function requestAbortError(signal: AbortSignal): AdtNetworkError {
-  const cause = signal.reason instanceof Error ? signal.reason : new Error('The ADT request was aborted.');
+  const reason = signal.reason;
+  const cause =
+    reason instanceof Error && (reason.name === 'TimeoutError' || reason.name === 'AbortError')
+      ? reason
+      : new DOMException('The ADT request was cancelled.', 'AbortError');
   return new AdtNetworkError(cause.message, cause);
 }
 

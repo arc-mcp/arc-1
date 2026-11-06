@@ -6,8 +6,8 @@ import {
   ABAPLINT_MAX_RELEASE,
   classifyAuthProbeError,
   classifyFeatureProbeStatus,
+  detectAbapRelease,
   detectHanaFromComponents,
-  detectHanaFromDiscovery,
   detectSystemType,
   isBeyondAbaplintCeiling,
   mapSapReleaseToAbaplintVersion,
@@ -283,8 +283,8 @@ describe('Feature Detection', () => {
       expect(detectSystemType(components)).toBe('onprem');
     });
 
-    it('detects on-premise when components list is empty', () => {
-      expect(detectSystemType([])).toBe('onprem');
+    it('does not classify an empty component list as on-premise', () => {
+      expect(detectSystemType([])).toBeUndefined();
     });
 
     it('detects on-premise for typical S/4HANA components', () => {
@@ -308,6 +308,19 @@ describe('Feature Detection', () => {
   // ─── detectHanaFromComponents ──────────────────────────────────────
 
   describe('detectHanaFromComponents', () => {
+    it('recognizes the captured ABAP Environment 920 identity without guessing from Cloud-looking names', () => {
+      const captured = ['%2fDMO%2fSAP', 'DW4CORE', 'HOME', 'LOCAL', 'SAP_BASIS', 'SAP_CLOUD', 'ZLOCAL'];
+      expect(detectHanaFromComponents(captured.map((name) => ({ name })))).toBe(true);
+      expect(detectHanaFromComponents(captured.map((name) => ({ name: name.toLowerCase() })))).toBe(true);
+      for (const names of [
+        ['SAP_CLOUD'],
+        ['SAP_BASIS', 'Z_SAP_CLOUD'],
+        ['SAP_BASIS', 'SAP_CLOUD', 'SAP_ABA'],
+        ['DW4CORE'],
+      ]) {
+        expect(detectHanaFromComponents(names.map((name) => ({ name })))).toBe(false);
+      }
+    });
     it('detects HANA when HDB component is present', () => {
       expect(detectHanaFromComponents([{ name: 'HDB' }])).toBe(true);
     });
@@ -378,7 +391,7 @@ describe('Feature Detection', () => {
       ).toBe(true); // S4FND triggers the rule
     });
 
-    it('returns false on real-world NetWeaver 7.50 SP02 trial (AnyDB / SAP MaxDB, no HANA)', () => {
+    it('returns false on real-world NetWeaver 7.50 SP02 trial (ASE, no HANA)', () => {
       // Captured from the NPL 7.50 SP02 dev-edition trial system
       // (tests/fixtures/probe/npl-750-sp02-dev-edition/meta.json).
       // Regression guard: the heuristic must not false-positive on plain NetWeaver +
@@ -395,18 +408,6 @@ describe('Feature Detection', () => {
           { name: 'ST-PI' },
         ]),
       ).toBe(false);
-    });
-  });
-
-  // ─── detectHanaFromDiscovery ───────────────────────────────────────
-
-  describe('detectHanaFromDiscovery', () => {
-    it('returns true when NHI is present', () => {
-      expect(detectHanaFromDiscovery(true)).toBe(true);
-    });
-
-    it('returns false when NHI is absent', () => {
-      expect(detectHanaFromDiscovery(false)).toBe(false);
     });
   });
 
@@ -638,6 +639,40 @@ describe('Feature Detection', () => {
       expect(result.abapRelease).toBeUndefined();
     });
 
+    it('detectAbapRelease reads the release like the probe, without the other probes', async () => {
+      const client = mockProbeClientWithSyntaxConfigs({ componentsBody: emptyComponentsFeed });
+      expect(await detectAbapRelease(client)).toBe('757');
+      const calls = (client as any).get.mock.calls.map((args: unknown[]) => args[0]);
+      expect(calls).toEqual(['/sap/bc/adt/system/components', '/sap/bc/adt/abapsource/syntax/configurations']);
+
+      expect(await detectAbapRelease(mockProbeClientWithSyntaxConfigs({ componentsBody: componentsXml }))).toBe('758');
+    });
+
+    it('detectAbapRelease leaves the release unknown when SAP refuses both reads', async () => {
+      const client = {
+        get: vi.fn().mockImplementation((url: string) => Promise.reject(new AdtApiError('Forbidden', 403, url))),
+      } as unknown as AdtHttpClient;
+      await expect(detectAbapRelease(client)).resolves.toBeUndefined();
+    });
+    it('carries the caller signal and deadline through both release reads', async () => {
+      const client = mockProbeClientWithSyntaxConfigs({ componentsBody: emptyComponentsFeed });
+      const request = { signal: new AbortController().signal, deadline: Date.now() + 5000 };
+      expect(await detectAbapRelease(client, request)).toBe('757');
+      for (const call of vi.mocked(client.get).mock.calls) expect(call[2]).toMatchObject({ ...request, probe: true });
+    });
+    it('does not retry release detection after caller cancellation', async () => {
+      const controller = new AbortController();
+      const get = vi.fn(async () => {
+        controller.abort();
+        throw new Error('cancelled');
+      });
+      const client = { get } as unknown as AdtHttpClient;
+      expect(await detectAbapRelease(client, { signal: controller.signal })).toBeUndefined();
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(await detectAbapRelease(client, { signal: controller.signal })).toBeUndefined();
+      expect(get).toHaveBeenCalledTimes(1);
+    });
+
     function makeComponentsXml(entries: Array<{ id: string; title: string }>): string {
       const items = entries
         .map(
@@ -677,6 +712,40 @@ describe('Feature Detection', () => {
       const result = await probeFeatures(client, defaultConfig);
       expect(result.hana.available).toBe(true);
     });
+
+    it('infers HANA from ABAP Environment identity with a missing endpoint, preserving explicit overrides', async () => {
+      const componentsXml = makeComponentsXml([
+        { id: 'SAP_BASIS', title: '920;SAPK-92004INSAPBASIS;0004;SAP Basis Component' },
+        { id: 'SAP_CLOUD', title: '920;SAPK-92004INSAPCLOUD;0004;SAP Cloud Component' },
+      ]);
+      const client = mockProbeClientHanaScenario({ componentsXml, hanaEndpoint404: true });
+      const inferred = await probeFeatures(client, defaultConfig);
+      expect(inferred.hana.available).toBe(true);
+      expect(inferred.hana.message).toContain('inferred from installed components');
+      expect((await probeFeatures(client, { ...defaultConfig, hana: 'off' })).hana.available).toBe(false);
+      expect((await probeFeatures(client, { ...defaultConfig, hana: 'on' })).hana.available).toBe(true);
+    });
+
+    it.each([401, 403])(
+      'preserves hanainfo %s diagnostics when components independently prove HANA',
+      async (status) => {
+        const client = mockProbeClientHanaScenario({
+          componentsXml: makeComponentsXml([
+            { id: 'SAP_BASIS', title: '920;SAPK-92004INSAPBASIS;0004;SAP Basis Component' },
+            { id: 'SAP_CLOUD', title: '920;SAPK-92004INSAPCLOUD;0004;SAP Cloud Component' },
+          ]),
+          hanaEndpoint404: true,
+        });
+        const get = client.get.bind(client);
+        client.get = vi.fn((...args: Parameters<AdtHttpClient['get']>) =>
+          args[0].endsWith('/hanainfo') ? Promise.reject(new AdtApiError('Denied', status, args[0])) : get(...args),
+        );
+        const result = await probeFeatures(client, defaultConfig);
+        expect(result.hana.available).toBe(true);
+        expect(result.hana.message).toContain(String(status));
+        expect(result.hana.message).not.toContain('endpoint absent');
+      },
+    );
 
     it('detects HANA via S4FND on S/4HANA 2021+ when hanainfo endpoint returns 404', async () => {
       // S/4HANA 2021+ ships S4FND instead of S4CORE — this was the scenario that originally
@@ -796,6 +865,7 @@ describe('Feature Detection', () => {
     <atom:title>HANA-Integration</atom:title>
     <app:collection href="/sap/bc/adt/nhi/repositories">
       <atom:title>NHI Repositories</atom:title>
+      <app:accept>application/vnd.sap.adt.nhi.repositories+xml</app:accept>
     </app:collection>
     <app:collection href="/sap/bc/adt/nhi/configurations">
       <atom:title>NHI Configurations</atom:title>
@@ -830,17 +900,34 @@ describe('Feature Detection', () => {
       } as unknown as AdtHttpClient;
     }
 
-    it('detects HANA via NHI workspace when components feed is empty and hanainfo 404', async () => {
-      // Regression case: systems where /sap/bc/adt/system/components returns an empty feed
-      // AND hanainfo is not activated. Discovery NHI workspace is the last resort.
+    it('does not infer HANA from NHI when components are empty and hanainfo is missing', async () => {
       const client = mockProbeClientDiscoveryScenario({
         componentsXml: emptyComponentsXml,
         discoveryXml: nhiDiscoveryXml,
         hanaEndpoint404: true,
       });
       const result = await probeFeatures(client, defaultConfig);
-      expect(result.hana.available).toBe(true);
-      expect(result.hana.message).toMatch(/NHI|Native HANA Integration/);
+      expect(result.hana.available).toBe(false);
+      expect(result.hana.message).toMatch(/not confirmed/);
+      expect(result.hana.message).toMatch(/404/);
+      expect(result.hana.message).toMatch(/NHI.*does not identify the database/);
+    });
+
+    it.each(['auto', 'on', 'off'] as const)('keeps %s mode honest on a non-HANA 750 system with NHI', async (hana) => {
+      const client = mockProbeClientDiscoveryScenario({
+        componentsXml: makeComponentsXml([
+          { id: 'SAP_BASIS', title: '750;SAPK-75002INSAPBASIS;0002;SAP Basis Component' },
+          { id: 'SAP_BW', title: '750;SAPK-75002INSAPBW;0002;SAP Business Warehouse' },
+        ]),
+        discoveryXml: nhiDiscoveryXml,
+        hanaEndpoint404: true,
+      });
+      const result = await probeFeatures(client, { ...defaultConfig, hana });
+      expect(result.hana.available).toBe(hana === 'on');
+      expect(result.hana.mode).toBe(hana);
+      if (hana === 'auto') expect(result.hana.message).toContain('not confirmed');
+      expect(result.abapRelease).toBe('750');
+      expect(result.discoveryMap?.has('/sap/bc/adt/nhi/repositories')).toBe(true);
     });
 
     it('reports HANA unavailable when all three signals are absent', async () => {
@@ -853,10 +940,7 @@ describe('Feature Detection', () => {
       expect(result.hana.available).toBe(false);
     });
 
-    it('promotes hana to available via NHI even when hanainfo returns 401', async () => {
-      // 401 on hanainfo means auth failure on THAT endpoint, not that HANA is absent.
-      // The discovery NHI signal is from a separate, independently-trusted 200 OK response
-      // and should still override the hanainfo auth failure.
+    it.each([401, 403])('does not override a hanainfo %s with NHI discovery', async (status) => {
       const client = {
         get: vi.fn().mockImplementation((url: string) => {
           if (url === '/sap/bc/adt/discovery') return Promise.resolve({ statusCode: 200, body: nhiDiscoveryXml });
@@ -864,14 +948,16 @@ describe('Feature Detection', () => {
             return Promise.resolve({ statusCode: 200, body: emptyComponentsXml });
           }
           if (url === '/sap/bc/adt/ddic/sysinfo/hanainfo') {
-            return Promise.reject(new AdtApiError('Unauthorized', 401, url));
+            return Promise.reject(new AdtApiError('Unauthorized', status, url));
           }
           return Promise.resolve({ statusCode: 200, body: '' });
         }),
       } as unknown as AdtHttpClient;
       const result = await probeFeatures(client, defaultConfig);
-      expect(result.hana.available).toBe(true);
-      expect(result.hana.message).toMatch(/NHI|Native HANA Integration/);
+      expect(result.hana.available).toBe(false);
+      expect(result.hana.message).toContain(String(status));
+      expect(result.hana.message).toMatch(/not confirmed/);
+      expect(result.hana.message).toMatch(/NHI.*does not identify the database/);
     });
   });
 
@@ -899,6 +985,14 @@ describe('Feature Detection', () => {
       const r = classifyFeatureProbeStatus('amdp', 404);
       expect(r.available).toBe(false);
       expect(r.reason).toMatch(/endpoint not found \(404\)/);
+    });
+
+    it.each([502, 503, 504])('leaves HTTP %i inconclusive instead of advertising availability', (status) => {
+      expect(classifyFeatureProbeStatus('rap', status)).toEqual({
+        id: 'rap',
+        available: false,
+        reason: expect.stringMatching(new RegExp(`\\(${status}\\).*cannot determine availability`)),
+      });
     });
 
     it('returns available=true on 400 / 405 / 500 (endpoint exists, request rejected)', () => {

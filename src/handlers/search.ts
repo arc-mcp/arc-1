@@ -6,10 +6,10 @@
 import type { AdtClient } from '../adt/client.js';
 import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import { AdtApiError } from '../adt/errors.js';
-import { classifyTextSearchError } from '../adt/features.js';
+import { classifyTextSearchError, probeTextSearch } from '../adt/features.js';
 import { internalOperationDenial } from '../adt/internal-data-operations.js';
 import type { AdtObjectLookupResult, AdtSearchResult } from '../adt/types.js';
-import { getCachedFeatures } from './feature-cache.js';
+import { cacheFeatureEvidence, getCachedFeatures } from './feature-cache.js';
 import { normalizeObjectType, normalizeSearchObjectType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
@@ -193,8 +193,10 @@ export async function handleSAPSearch(
 
   if (searchType === 'source_code') {
     // Source code search: do NOT transliterate — source can contain umlauts in strings/comments
-    const textSearch = getCachedFeatures()?.textSearch;
-    if (textSearch && !textSearch.available) {
+    const cachedTextSearch = getCachedFeatures()?.textSearch;
+    const textSearch = cachedTextSearch ?? (await probeTextSearch(client.http));
+    cacheFeatureEvidence({ textSearch }, true);
+    if (!textSearch.available && (cachedTextSearch || textSearch.unsupported)) {
       return errorResult(
         `Source code search is not available on this SAP system. ${textSearch.reason ?? ''}` +
           `\nUse SAPSearch with searchType="object" to search by object name instead, or use SAPQuery to search metadata tables.`,
@@ -204,12 +206,14 @@ export async function handleSAPSearch(
     const packageName = args.packageName as string | undefined;
     try {
       const results = await client.searchSource(rawQuery, maxResults, objectType, packageName);
+      cacheFeatureEvidence({ textSearch: { available: true } }, true);
       return textResult(toolJson(results));
     } catch (err) {
       if (err instanceof AdtApiError) {
         const permanentCodes = [401, 403, 404, 501];
-        if (permanentCodes.includes(err.statusCode)) {
-          const classified = classifyTextSearchError(err.statusCode, err.responseBody);
+        const classified = classifyTextSearchError(err.statusCode, err.responseBody);
+        if (permanentCodes.includes(err.statusCode) || classified.unsupported) {
+          cacheFeatureEvidence({ textSearch: classified }, true);
           return errorResult(
             `Source code search is not available on this SAP system. ${classified.reason ?? ''}` +
               `\nUse SAPSearch with searchType="object" to search by object name instead, or use SAPQuery to search metadata tables.`,

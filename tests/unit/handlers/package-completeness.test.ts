@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
+
+const discovery = readFileSync(new URL('../../fixtures/xml/package-search-discovery.xml', import.meta.url), 'utf8');
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 
@@ -25,7 +28,7 @@ describe('DEVC completeness through dispatch', () => {
   ])(
     'keeps the legacy array and reports the effective cap: $count/$cap',
     async ({ count, cap, effective, reached }) => {
-      mockFetch.mockResolvedValue(packageResponse(count));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, discovery)).mockResolvedValue(packageResponse(count));
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'DEVC',
         name: 'ZPKG',
@@ -47,13 +50,13 @@ describe('DEVC completeness through dispatch', () => {
       });
       expect(listing.note).toContain('omit');
       if (reached) expect(listing.note).toContain('may be truncated');
-      expect(new URL(String(mockFetch.mock.calls[0][0])).searchParams.get('maxResults')).toBe(String(effective));
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(new URL(String(mockFetch.mock.calls[1][0])).searchParams.get('maxResults')).toBe(String(effective));
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     },
   );
 
   it('offers one JSON envelope for structured consumers', async () => {
-    mockFetch.mockResolvedValue(packageResponse(1));
+    mockFetch.mockResolvedValueOnce(mockResponse(200, discovery)).mockResolvedValue(packageResponse(1));
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
       type: 'DEVC',
       name: 'ZPKG',

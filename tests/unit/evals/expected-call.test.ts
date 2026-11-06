@@ -11,6 +11,35 @@ const actual: LLMToolCall = {
 };
 
 describe('expected eval tool-call matching', () => {
+  it.each([{}, { longText: {} }, { longText: { language: undefined } }, { longText: { language: null } }])(
+    'accepts missing/null optional path values: %j',
+    (arguments_) => {
+      const expected: ExpectedToolCall = { tool: 'SAPRead', absentArgPaths: [['longText', 'language']] };
+      expect(matchesExpectedToolCall({ name: 'SAPRead', arguments: arguments_ }, expected)).toBe(true);
+      expect(scoreExpectedToolCallParameters({ name: 'SAPRead', arguments: arguments_ }, expected)).toBe(1);
+    },
+  );
+
+  it.each(['E', 'D', '', false, 0, {}, []])('rejects present optional path values: %j', (language) => {
+    const expected: ExpectedToolCall = { tool: 'SAPRead', absentArgPaths: [['longText', 'language']] };
+    const call = { name: 'SAPRead', arguments: { longText: { language } } };
+    expect(matchesExpectedToolCall(call, expected)).toBe(false);
+    expect(scoreExpectedToolCallParameters(call, expected)).toBe(0);
+  });
+
+  it('checks every absent path and rejects malformed path specifications/ancestors', () => {
+    const expected: ExpectedToolCall = {
+      tool: 'SAPRead',
+      absentArgPaths: [
+        ['longText', 'language'],
+        ['longText', 'id'],
+      ],
+    };
+    const call = { name: 'SAPRead', arguments: { longText: { id: 'ST' } } };
+    expect(scoreExpectedToolCallParameters(call, expected)).toBe(0.5);
+    expect(matchesExpectedToolCall({ name: 'SAPRead', arguments: { longText: 'invalid' } }, expected)).toBe(false);
+    expect(matchesExpectedToolCall(call, { tool: 'SAPRead', absentArgPaths: [[]] })).toBe(false);
+  });
   it('accepts required patterns and rejected-dialect forbidden patterns', () => {
     const expected: ExpectedToolCall = {
       tool: 'SAPQuery',

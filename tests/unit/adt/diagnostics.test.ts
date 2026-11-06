@@ -1057,6 +1057,20 @@ describe('Runtime Diagnostics', () => {
       expect(result[0]?.username).toBe('DEVELOPER');
     });
 
+    it('undoes the XML escaping of the summary once, leaving its HTML entities to the HTML step', () => {
+      // The cell text "<fs>" is HTML-escaped inside HTML that is itself XML-escaped. One decode too
+      // many would turn it into a tag and the tag stripper would delete it.
+      const xml = `<atom:feed xmlns:atom="http://www.w3.org/2005/Atom">
+        <atom:entry>
+          <atom:id>FrontendError/1E81ABCDEF0123456789</atom:id>
+          <atom:title>Frontend Error</atom:title>
+          <atom:summary type="html">&lt;table&gt;&lt;tr&gt;&lt;td&gt;&lt;b&gt;Short Text&lt;/b&gt;&lt;/td&gt;&lt;td&gt;Field &amp;lt;fs&amp;gt; not assigned &amp;amp;amp; more&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</atom:summary>
+        </atom:entry>
+      </atom:feed>`;
+
+      expect(parseGatewayErrors(xml)[0]?.shortText).toBe('Field <fs> not assigned &amp; more');
+    });
+
     it('decodes encoded atom:id segments before deriving detail URL', () => {
       const xml = `<atom:feed xmlns:atom="http://www.w3.org/2005/Atom">
         <atom:entry>
@@ -1120,6 +1134,23 @@ describe('Runtime Diagnostics', () => {
         name: 'RUN',
         line: 2,
       });
+    });
+
+    it('preserves long interior whitespace and indentation while trimming source-line endings', () => {
+      const content = `  DATA${' '.repeat(50000)}value.\t\u00a0`;
+      const html = `<h4 id="SOURCE">Source</h4><table><tr><td id="sourcetablecolumn"><span class="linenumber">42</span></td><td id="sourcetablecolumn"><div class="sourceline highlight">${content}</div><div class="sourceline"> \t\u00a0</div></td></tr></table><h4 id="STACK">Call Stack</h4>`;
+      const result = parseGatewayErrorDetail(html);
+      expect(result.sourceCode.lines[0]).toEqual({
+        number: 42,
+        content: `  DATA${' '.repeat(50000)}value.`,
+        isError: true,
+      });
+      expect(result.sourceCode.lines[1]?.content).toBe('');
+    });
+
+    it('skips whitespace-heavy nonmatching header labels and accepts spaced entity-prefixed labels', () => {
+      const html = `<h4 id="HEADER">Header</h4><table><tr><td><b>${' '.repeat(10000)}Unknown</b></td><td>ignored</td></tr><tr><td><b> \t&nbsp; Username </b></td><td>DEVELOPER</td></tr></table>`;
+      expect(parseGatewayErrorDetail(html).username).toBe('DEVELOPER');
     });
 
     it('parses real SAP HTML fragment detail payload', () => {

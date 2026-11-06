@@ -5,7 +5,21 @@ commands use the same schemas, dispatcher, safety policy, feature evidence, and 
 tool calls.
 
 The npm package installs three equivalent executable names: `arc1`, `arc-1`, and `arc1-cli`. This
-guide uses `arc1`.
+guide uses `arc1`. The separate `arc1-source` helper prepares local files for an
+[existing Codex MCP connection](codex-file-source.md); it does not connect to SAP.
+
+## Generate Eclipse link configuration
+
+`arc1 config ide` prints a small JSON fragment to merge into one existing MCP server entry.
+It is offline and preserves connection/authentication setup. For example:
+
+```bash
+arc1 config ide --mcp-client eclipse --system-id A4H
+arc1 config ide --mcp-client eclipse --endpoint https://YOUR-ARC1/A4H/001/mcp
+```
+
+See [IDE integration](ide-integration.md) for BTP prerequisites and Eclipse project selection.
+VS Code uses SAP ADT MCP and needs no generated ARC-1 link settings. Use `--mcp-client`, not the `--client` flag that selects the SAP logon client.
 
 ## Install reproducibly
 
@@ -87,6 +101,9 @@ The generic `call` command preserves MCP semantics. Its `--output json` value is
 `content[0].text`. Ordinary successful tool calls exit `0` even if their domain payload
 contains test failures, ATC findings, or a non-empty diff.
 
+Dump lists can append a history-window or authorization note in text mode. For scripts, use
+`--output json` and parse the list from `content[0].text`; later blocks contain the note.
+
 The headless quality actions `SAPDiagnose.atc_ci` and `SAPDiagnose.unittest_ci`
 also evaluate their CI outcome: `status: "completed"` with `fail: false` exits `0`;
 `fail: true`, tool errors, or missing/malformed/incomplete outcome fields exit `1`.
@@ -95,6 +112,8 @@ does not change MCP `isError`. ATC uses the requested severity threshold. AUnit 
 or empty evidence always fails. Use `includeReportXml:true` to request bounded XML
 reports; the default response contains summaries and result paths. These actions
 require explicit packages/packageTrees and normal ADT access; they are single-target only.
+`atc_ci` needs the BTP ABAP Environment; on-premise it is refused before any SAP request,
+so use `arc1 atc DEVC <package>` there.
 
 ```bash
 arc1 call SAPDiagnose --json '{"action":"atc_ci","packages":["ZFOO"]}' --output json
@@ -248,11 +267,10 @@ Use ABAP SQL spelling such as `alias~field` and `ASCENDING`/`DESCENDING`, not `a
 `DESC`, or `LIMIT`. Keep free SQL off unless its data-access use case is explicitly approved.
 
 With `SAP_ALLOW_DATA_PREVIEW=true`, prefer `SAPRead(type="TABLE_QUERY")` with structured `columns`,
-`where`, and `maxRows`. The legacy `TABLE_CONTENTS` path is suitable for an unfiltered sample, but on
-758 its requested limit returns `N+1` rows and its documented condition-only filter is not accepted by
-the backend. Do not use that legacy filter/limit as a CI data boundary; use TABLE_QUERY or enforce the
-final cap in your caller. On 758, spell inequality as `<>`; the currently accepted `!=` input is sent
-unchanged and SAP rejects it.
+`where`, and `maxRows`. The legacy `TABLE_CONTENTS` path is suitable for an unfiltered sample;
+ARC-1 caps returned rows even when SAP includes a lookahead row. Its condition-only filter is not
+accepted by the tested 758 backend: use TABLE_QUERY for structured filtering. On 758, spell inequality
+as `<>`; the currently accepted `!=` input is sent unchanged and SAP rejects it.
 
 For an approved but security-first deployment, `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` activates the
 experimental exact source blocklist. It performs strict SQL parsing and fresh live CDS/replacement lineage
@@ -489,8 +507,8 @@ arc1 version
 ```
 
 `extract-cookies` launches a browser and writes a Netscape-format cookie file for `SAP_COOKIE_FILE`.
-The running process hot-reloads that file after authentication failure; `SAP_COOKIE_STRING` is read
-only at startup and cannot hot-reload.
+The running process re-reads that file during authentication recovery and before CSRF bootstrap
+outside a live stateful operation; `SAP_COOKIE_STRING` cannot hot-reload.
 
 `config show` prints the effective safety policy and each value's source. Its output intentionally
 omits credential values.
@@ -501,8 +519,9 @@ ARC-1 starts read-only. SQL, data preview, object writes, transport writes, and 
 positive opt-ins. Per-user scopes can restrict the server ceiling but cannot expand it. Keep package
 and transport allowlists narrow, and use `SAP_DENY_ACTIONS` for action-level exclusions.
 
-ARC-1 primarily uses ADT REST endpoints under `/sap/bc/adt/*`. SAP does not list that complete surface
-as published APIs in SAP Business Accelerator Hub. Before production or agentic use, review the
-[SAP API Policy and architecture alignment](sap-api-policy-and-architecture.md), verify the relevant
-endpoint status with SAP for your deployment, and apply your organization's data-egress and automation
-controls. Using the deterministic CLI does not change the endpoint's publication status.
+ARC-1 primarily uses ADT REST endpoints under `/sap/bc/adt/*`. SAP's API Policy FAQ Q33 classifies
+ADT APIs as internal and limits development use to endorsed channels; ARC-1's standalone TypeScript
+client is not specifically identified as one. Follow the custom-MCP architecture and clarify this
+channel and intended use with SAP as described in [SAP API Policy and architecture alignment](sap-api-policy-and-architecture.md),
+including dev/test. A deterministic CLI does not itself establish an endorsed channel or alter the
+API's permitted use. Apply your organization's data-egress and automation controls as well.

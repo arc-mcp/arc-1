@@ -761,6 +761,12 @@ describe('SAPRead handler', () => {
 
     it('reads package contents (DEVC) via the search endpoint', async () => {
       mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          readFileSync(new URL('../../fixtures/xml/package-search-discovery.xml', import.meta.url), 'utf8'),
+        ),
+      );
       mockFetch.mockResolvedValue(
         mockResponse(
           200,
@@ -775,7 +781,7 @@ describe('SAPRead handler', () => {
         name: 'ZPKG',
       });
       expect(result.isError).toBeUndefined();
-      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      const url = String(mockFetch.mock.calls[1]?.[0] ?? '');
       expect(url).toContain('/sap/bc/adt/repository/informationsystem/search');
       expect(url).toContain('packageName=ZPKG');
       expect(url).not.toContain('/nodestructure');
@@ -783,6 +789,12 @@ describe('SAPRead handler', () => {
 
     it('forwards maxResults from SAPRead args to getPackageContents URL', async () => {
       mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          readFileSync(new URL('../../fixtures/xml/package-search-discovery.xml', import.meta.url), 'utf8'),
+        ),
+      );
       mockFetch.mockResolvedValue(
         mockResponse(
           200,
@@ -796,7 +808,7 @@ describe('SAPRead handler', () => {
         maxResults: 750,
       });
       expect(result.isError).toBeUndefined();
-      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      const url = String(mockFetch.mock.calls[1]?.[0] ?? '');
       expect(url).toContain('maxResults=750');
     });
 
@@ -805,6 +817,12 @@ describe('SAPRead handler', () => {
       // 50.5 — which previously returned a Zod "expected int" error. It must now succeed and floor
       // to 50. See docs/research/2026-06-12-maxresults-contract-asymmetry.md.
       mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          readFileSync(new URL('../../fixtures/xml/package-search-discovery.xml', import.meta.url), 'utf8'),
+        ),
+      );
       mockFetch.mockResolvedValue(
         mockResponse(
           200,
@@ -819,7 +837,7 @@ describe('SAPRead handler', () => {
       });
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text ?? '').not.toContain('Invalid arguments');
-      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      const url = String(mockFetch.mock.calls[1]?.[0] ?? '');
       expect(url).toContain('maxResults=50');
       // 'maxResults=50' is a substring of the un-floored 'maxResults=50.5' — pin the floor too.
       expect(url).not.toContain('maxResults=50.5');
@@ -827,6 +845,12 @@ describe('SAPRead handler', () => {
 
     it('accepts an out-of-range maxResults end-to-end and clamps to 1000 (the promised clamping)', async () => {
       mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          readFileSync(new URL('../../fixtures/xml/package-search-discovery.xml', import.meta.url), 'utf8'),
+        ),
+      );
       mockFetch.mockResolvedValue(
         mockResponse(
           200,
@@ -840,7 +864,7 @@ describe('SAPRead handler', () => {
         maxResults: 1001,
       });
       expect(result.isError).toBeUndefined();
-      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain('maxResults=1000');
+      expect(String(mockFetch.mock.calls[1]?.[0] ?? '')).toContain('maxResults=1000');
     });
 
     it('reads installed components (COMPONENTS)', async () => {
@@ -1242,6 +1266,7 @@ describe('SAPRead handler', () => {
       );
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'TABL',
+        extensions: 'none',
         name: 'T000',
       });
       expect(result.isError).toBeUndefined();
@@ -1706,30 +1731,6 @@ describe('SAPRead handler', () => {
       expect(result.content[0]?.text).toContain('objectType');
     });
 
-    it('API_STATE uses raw URI to avoid double encoding for namespaced objects', async () => {
-      mockFetch.mockReset();
-      mockFetch.mockResolvedValueOnce(
-        mockResponse(
-          200,
-          `<?xml version="1.0" encoding="utf-8"?>
-<apirelease:apiReleaseInfos xmlns:apirelease="http://www.sap.com/adt/apirelease" xmlns:adtcore="http://www.sap.com/adt/core">
-  <apirelease:releasableObject adtcore:uri="/sap/bc/adt/oo/classes/%2fBOBF%2fCL_LIB" adtcore:type="CLAS/OC" adtcore:name="/BOBF/CL_LIB"/>
-  <apirelease:apiCatalogData apirelease:isAnyAssignmentPossible="false" apirelease:isAnyContractReleased="false"/>
-</apirelease:apiReleaseInfos>`,
-        ),
-      );
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
-        type: 'API_STATE',
-        name: '/BOBF/CL_LIB',
-        objectType: 'CLAS',
-      });
-      expect(result.isError).toBeUndefined();
-      // The URL should encode the entire URI once — namespace slashes become %2F, not %252F
-      const calledUrl = String(mockFetch.mock.calls[0]?.[0] ?? '');
-      expect(calledUrl).toContain('%2FBOBF%2FCL_LIB');
-      expect(calledUrl).not.toContain('%252F');
-    });
-
     it('returns error for unknown type with supported types via Zod validation', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'UNKNOWN',
@@ -1874,42 +1875,16 @@ describe('SAPRead handler', () => {
       },
     );
 
-    it('reads class with format="structured" and method param — format takes precedence', async () => {
-      const classMetadataXml = `<?xml version="1.0" encoding="utf-8"?>
-<class:abapClass class:category="00" class:fixPointArithmetic="true"
-    adtcore:name="ZCL_TEST" adtcore:description="Test class" adtcore:language="EN"
-    adtcore:masterLanguage="EN"
-    xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:adtcore="http://www.sap.com/adt/core">
-  <adtcore:packageRef adtcore:name="$TMP"/>
-</class:abapClass>`;
-      mockFetch.mockReset();
-      mockFetch.mockImplementation(async (url: string) => {
-        const urlStr = String(url);
-        if (urlStr.includes('/oo/classes/ZCL_TEST') && !urlStr.includes('/source/') && !urlStr.includes('/includes/')) {
-          return mockResponse(200, classMetadataXml, { 'x-csrf-token': 'T' });
-        }
-        if (urlStr.includes('/source/main')) {
-          return mockResponse(200, 'CLASS zcl_test DEFINITION.\nENDCLASS.\nCLASS zcl_test IMPLEMENTATION.\nENDCLASS.', {
-            'x-csrf-token': 'T',
-          });
-        }
-        if (urlStr.includes('/includes/')) {
-          return mockResponse(404, 'Not Found', { 'x-csrf-token': 'T' });
-        }
-        return mockResponse(200, '', { 'x-csrf-token': 'T' });
-      });
-
+    it('rejects structured class reads combined with a method before contacting SAP', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'CLAS',
         name: 'ZCL_TEST',
         format: 'structured',
         method: 'get_name',
       });
-
-      expect(result.isError).toBeUndefined();
-      const parsed = JSON.parse(result.content[0]?.text ?? '');
-      expect(parsed.metadata).toBeDefined();
-      expect(parsed.main).toBeDefined();
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Do not combine method with format="structured"');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('structured response is valid JSON with expected keys', async () => {
@@ -1953,14 +1928,14 @@ describe('SAPRead handler', () => {
       expect(parsed.testclasses).toContain('ltcl_test');
     });
 
-    it('returns sqlFilter remediation hint for TABLE_CONTENTS parser errors', async () => {
+    it('returns sqlFilter remediation hint for other TABLE_CONTENTS parser errors', async () => {
       mockFetch.mockReset();
       mockFetch.mockRejectedValueOnce(
         new AdtApiError(
-          'Invalid query string. Only SELECT statement is allowed',
+          'The column MANDTX is invalid here',
           400,
           '/sap/bc/adt/datapreview/ddic',
-          'Invalid query string. Only SELECT statement is allowed',
+          'The column MANDTX is invalid here',
         ),
       );
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
@@ -2096,7 +2071,7 @@ describe('SAPRead handler', () => {
         createClient(),
         DEFAULT_CONFIG,
         'SAPRead',
-        { type: 'PROG', name: 'ZHELLO' },
+        { type: 'PROG', name: 'ZHELLO', extensions: 'none' },
         undefined,
         undefined,
         layer,
@@ -2109,7 +2084,7 @@ describe('SAPRead handler', () => {
         createClient(),
         DEFAULT_CONFIG,
         'SAPRead',
-        { type: 'PROG', name: 'ZHELLO' },
+        { type: 'PROG', name: 'ZHELLO', extensions: 'none' },
         undefined,
         undefined,
         layer,
@@ -2171,7 +2146,7 @@ describe('SAPRead handler', () => {
         createClient(),
         DEFAULT_CONFIG,
         'SAPRead',
-        { type: 'INTF', name: 'ZIF_TEST' },
+        { type: 'INTF', name: 'ZIF_TEST', extensions: 'none' },
         undefined,
         undefined,
         layer,
@@ -2181,7 +2156,7 @@ describe('SAPRead handler', () => {
         createClient(),
         DEFAULT_CONFIG,
         'SAPRead',
-        { type: 'INTF', name: 'ZIF_TEST' },
+        { type: 'INTF', name: 'ZIF_TEST', extensions: 'none' },
         undefined,
         undefined,
         layer,

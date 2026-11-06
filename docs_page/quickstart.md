@@ -1,6 +1,6 @@
 # Quickstart
 
-Get ARC-1 talking to your SAP system in five minutes. Zero install, Basic Auth, and a JSON config for your MCP client of choice — Claude Code or GitHub Copilot (VS Code / Eclipse). Using Claude Desktop? See [Install in Claude](install-in-claude.md).
+Connect ARC-1 to your SAP system using Basic Auth and a JSON config for your MCP client of choice — Claude Code or GitHub Copilot (VS Code / Eclipse). Using Claude Desktop? See [Install in Claude](install-in-claude.md).
 
 If this path doesn't match you — SSO-only SAP, Docker, BTP, a team server — skip straight to:
 
@@ -11,21 +11,20 @@ If this path doesn't match you — SSO-only SAP, Docker, BTP, a team server — 
 
 ## Prerequisites
 
-- Node.js 22+
+- Node.js 22.19 or newer
 - Network access to a SAP system (dev/sandbox ideally)
 - A SAP user + password with ADT authorizations
 
-That's it. No global install, no config files.
+No global npm install is needed.
 
 ---
 
-## 1. Verify ARC-1 can reach your SAP
+## 1. Start ARC-1
 
 ```bash
 npx arc-1@latest --url https://your-sap-host:44300 \
                  --user YOUR_USER --password YOUR_PASS \
-                 --client 100 \
-                 --insecure true   # only for self-signed dev certs; omit on trusted TLS
+                 --client 100
 ```
 
 You should see a startup line like:
@@ -35,11 +34,11 @@ INFO: auth: MCP=[none] SAP=basic (shared)
 INFO: ARC-1 MCP server running on stdio
 ```
 
-Hit `Ctrl+C` to stop. If this failed, check TLS, the client number, and that the user can log into SE80 via the web GUI.
+Hit `Ctrl+C` to stop. Startup confirms the process is running; the read in step 3 verifies SAP access. Use the HTTPS host and port supplied by your Basis team (`44300` is only an example). If the read fails, check TLS, the client number, credentials, and ADT authorizations.
 
 !!! warning "`--insecure` needs an explicit value"
-    Pass `--insecure true` (or `--insecure=true`), **not** a bare `--insecure`. The flag takes a value;
-    `--insecure` on its own is parsed as *off*, so a self-signed cert still fails with `fetch failed`.
+    Pass `--insecure true` (or `--insecure=true`), **not** a bare `--insecure`. The flag takes a value.
+    The published CLI rejects a bare `--insecure` as a missing-value usage error.
     The same applies to the other boolean flags (`--allow-writes true`, etc.) and to the `SAP_INSECURE=true`
     environment variable.
 
@@ -84,14 +83,14 @@ ARC-1 speaks stdio, so every client launches the same `npx arc-1@latest` subproc
     }
     ```
 
-    Or add it from the CLI: `claude mcp add sap --env SAP_URL=… --env SAP_USER=… --env SAP_PASSWORD=… --env SAP_CLIENT=100 -- npx -y arc-1@latest`. Keep secrets out of a committed `.mcp.json` — use user scope or shell env vars.
+    Or add it from the CLI: `claude mcp add --scope user sap --env SAP_URL=… --env SAP_USER=… --env SAP_PASSWORD=… --env SAP_CLIENT=100 -- npx -y arc-1@latest`. Keep secrets out of a committed `.mcp.json` — use user scope or shell env vars.
 
     !!! tip "Want the SAP skills, or using Claude Desktop?"
-        The Claude Code **plugin** bundles this server **and** the 18 SAP skills (RAP, CDS, ABAP Unit, clean-core, UI5) in one install. For that — and for Claude Desktop (`.mcpb` or direct JSON) — see **[Install in Claude](install-in-claude.md)**.
+        The Claude Code **plugin** bundles this server **and** the SAP skills (RAP, CDS, ABAP Unit, clean-core, UI5) in one install. For that — and for Claude Desktop (`.mcpb` or direct JSON) — see **[Install in Claude](install-in-claude.md)**.
 
 === "GitHub Copilot — VS Code"
 
-    Create `.vscode/mcp.json` in your workspace (or run **MCP: Open User Configuration** from the Command Palette for a global setup). VS Code uses `servers` — **not** `mcpServers`:
+    Create `.vscode/mcp.json` in your workspace (or run **MCP: Open User Configuration** from the Command Palette for a global setup). The `.vscode/mcp.json` format uses `servers`. VS Code also supports a portable `.mcp.json` with `mcpServers`; see the [VS Code configuration reference](https://code.visualstudio.com/docs/agent-customization/mcp-servers). The example below is for `.vscode/mcp.json`:
 
     ```json
     {
@@ -115,7 +114,7 @@ ARC-1 speaks stdio, so every client launches the same `npx arc-1@latest` subproc
 
 === "GitHub Copilot — Eclipse"
 
-    Requires Eclipse 2024-03 or later with the latest **GitHub Copilot** plug-in. Click the **GitHub Copilot** status-bar icon → **Edit Preferences** → expand **GitHub Copilot** → **MCP**, paste the config, then **Apply and Close** — it takes effect immediately. Eclipse uses the same `servers` shape as VS Code:
+    Requires [Eclipse 2024-09 or later](https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/extend-copilot-chat-with-mcp?tool=eclipse) with the latest **GitHub Copilot** plug-in. Click the **GitHub Copilot** status-bar icon → **Edit Preferences** → expand **GitHub Copilot** → **MCP**, paste the config, then **Apply and Close** — it takes effect immediately. Eclipse uses the same `servers` shape as VS Code:
 
     ```json
     {
@@ -149,18 +148,20 @@ ARC-1 speaks stdio, so every client launches the same `npx arc-1@latest` subproc
 
 Those four are the minimum. Any ARC-1 setting can live in this `env` block — TLS, request language, caching, rate limits, authentication, and more. For every supported variable, with its default and precedence, see the **[Configuration Reference](configuration-reference.md)** (connection variables under [SAP connection](configuration-reference.md#sap-connection)).
 
-Cursor, Gemini CLI, Goose, and other stdio clients use the same shape — see [local-development.md](local-development.md#mcp-client-configuration).
+Other stdio clients launch the same command but use their own configuration format — see [local-development.md](local-development.md#mcp-client-configuration).
 
 ### Enabling writes, SQL, and data preview
 
 Everything above is read-only. Each capability is a separate positive opt-in — add only the flags you need to the **same `env` block**, on any client. For full local development on a dev/sandbox system you are comfortable modifying:
 
 ```json
-"SAP_ALLOW_WRITES": "true",
-"SAP_ALLOW_DATA_PREVIEW": "true",
-"SAP_ALLOW_FREE_SQL": "true",
-"SAP_ALLOW_TRANSPORT_WRITES": "true",
-"SAP_ALLOWED_PACKAGES": "*"
+{
+  "SAP_ALLOW_WRITES": "true",
+  "SAP_ALLOW_DATA_PREVIEW": "true",
+  "SAP_ALLOW_FREE_SQL": "true",
+  "SAP_ALLOW_TRANSPORT_WRITES": "true",
+  "SAP_ALLOWED_PACKAGES": "*"
+}
 ```
 
 | Capability | Result |

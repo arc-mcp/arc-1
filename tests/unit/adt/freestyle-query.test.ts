@@ -9,6 +9,7 @@ vi.mock('undici', async (importOriginal) => ({
   fetch: mockFetch,
 }));
 const { AdtClient } = await import('../../../src/adt/client.js');
+const { handleSAPQuery } = await import('../../../src/handlers/query.js');
 const tableResponse = readFileSync(new URL('../../fixtures/xml/table-contents.xml', import.meta.url), 'utf8');
 
 function createClient() {
@@ -38,8 +39,8 @@ describe('freestyle SQL line preparation at the client boundary', () => {
       expect(posts).toHaveLength(method === 'runQueryBatch' ? 2 : 1);
       for (const post of posts) {
         const body = String((post[1] as RequestInit).body);
-        expect(body.replaceAll('\n', ' ')).toBe(sql);
-        expect(body.split('\n').every((line) => line.length <= 255)).toBe(true);
+        expect(body.replaceAll('\r\n', ' ')).toBe(sql);
+        expect(body.split('\r\n').every((line) => line.length <= 255)).toBe(true);
       }
     },
   );
@@ -53,8 +54,8 @@ describe('freestyle SQL line preparation at the client boundary', () => {
     const post = mockFetch.mock.calls.find((call) => String(call[0]).includes('/datapreview/freestyle'));
     expect(post).toBeDefined();
     const body = String((post![1] as RequestInit).body);
-    expect(body.split('\n').every((line) => line.length <= 255)).toBe(true);
-    expect(body.replaceAll('\n', ' ')).toBe(
+    expect(body.split('\r\n').every((line) => line.length <= 255)).toBe(true);
+    expect(body.replaceAll('\r\n', ' ')).toBe(
       `SELECT MANDT FROM T000 WHERE ${where.map((c) => `MANDT <> '${c.value}'`).join(' AND ')}`,
     );
   });
@@ -66,5 +67,29 @@ describe('freestyle SQL line preparation at the client boundary', () => {
       'Cannot fit freestyle SQL',
     );
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('sends CRLF for every generated long IN-list chunk (#955)', async () => {
+    mockFetch.mockResolvedValue(mockResponse(200, tableResponse, { 'x-csrf-token': 'T' }));
+    const prefix = `SELECT tabname FROM dd03l WHERE ${Array(10).fill("tabname <> 'ZPAD'").join(' AND ')}`;
+    const literals = Array.from({ length: 20 }, (_, i) => `'F${i.toString().padStart(3, '0')}'`);
+    const tail = "AND tabname = 'T000'";
+    const result = await handleSAPQuery(
+      createClient(),
+      { sql: `${prefix} AND fieldname IN (${literals.join(', ')}) ${tail}`, maxRows: 100 },
+      false,
+    );
+    expect(result.isError).toBeUndefined();
+    const bodies = mockFetch.mock.calls
+      .filter((call) => String(call[0]).includes('/datapreview/freestyle'))
+      .map((call) => String(call[1].body));
+    expect(bodies).toHaveLength(3);
+    for (const body of bodies) {
+      expect(body).toContain('\r\n');
+      expect(body).not.toMatch(/(?<!\r)\n/);
+      expect(body.split('\r\n').every((line) => line.length <= 255)).toBe(true);
+      expect(body).toContain(tail);
+    }
+    for (const literal of literals) expect(bodies.join('').split(literal)).toHaveLength(2);
   });
 });

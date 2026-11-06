@@ -1,0 +1,107 @@
+{
+  "at": "2026-10-17T23:17:17.795Z",
+  "route": "local Streamable HTTP MCP / viewer API key / read-only Basic SAP identity / A4H/001 HTTPS 443",
+  "mutations": 0,
+  "reads": 14,
+  "results": [
+    {
+      "id": "A4HK906371",
+      "bytes": 2207,
+      "reads": 10,
+      "elapsedMs": 2211,
+      "totalObjects": 2,
+      "shown": 2,
+      "pageSummary": {
+        "baselines": {
+          "prior-revision": 3
+        },
+        "inventoryOnly": 0,
+        "objectsWithUncomparedScope": 1
+      },
+      "objects": [
+        {
+          "type": "CLAS",
+          "name": "ZCL_ARC1_TD_CALC",
+          "parts": [
+            {
+              "part": "implementations",
+              "baselineStatus": "prior-revision",
+              "selectionMethod": "exact-transport",
+              "from": "00001 (A4HK906369)",
+              "to": "00002 (A4HK906371)",
+              "added": 1,
+              "removed": 1,
+              "diffSha256": "8c9d516b8a3c74afc0317a433c2decb21220d98ac68a50cfa8a2fe43e61876c5"
+            },
+            {
+              "part": "main",
+              "baselineStatus": "prior-revision",
+              "selectionMethod": "exact-transport",
+              "from": "00001 (A4HK906369)",
+              "to": "00002 (A4HK906371)",
+              "added": 1,
+              "removed": 1,
+              "diffSha256": "a83622ee7966716f2411bfcecf5b3c054d73e942138ec651a2a44aa96fbcd290"
+            }
+          ]
+        },
+        {
+          "type": "PROG",
+          "name": "ZARC1_TD_REPORT",
+          "notCompared": [
+            "metadata",
+            "text pool",
+            "screens",
+            "GUI status"
+          ],
+          "parts": [
+            {
+              "part": "main",
+              "baselineStatus": "prior-revision",
+              "selectionMethod": "exact-transport",
+              "from": "00001 (A4HK906369)",
+              "to": "00002 (A4HK906371)",
+              "added": 1,
+              "removed": 1,
+              "diffSha256": "be5b04fc8f4bde9b8a2541a29729650edb50d346f26f768e6aac2698e5969ee1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A4HK906373",
+      "bytes": 1090,
+      "reads": 4,
+      "elapsedMs": 875,
+      "totalObjects": 2,
+      "shown": 2,
+      "pageSummary": {
+        "baselines": {
+          "prior-revision": 1
+        },
+        "inventoryOnly": 1,
+        "objectsWithUncomparedScope": 0
+      },
+      "objects": [
+        {
+          "type": "CLAS",
+          "name": "ZCL_ARC1_DEMO_CALC",
+          "parts": [
+            {
+              "part": "main",
+              "baselineStatus": "prior-revision",
+              "selectionMethod": "exact-transport",
+              "from": "00002 (A4HK906291)",
+              "to": "00000 (A4HK906373)",
+              "note": "Inactive draft pending for this request; not compared. no source change between the selected revisions",
+              "added": 0,
+              "removed": 0,
+              "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

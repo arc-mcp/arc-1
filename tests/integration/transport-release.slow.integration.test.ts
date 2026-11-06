@@ -7,7 +7,7 @@
  * Run: TEST_TRANSPORT_RELEASE_TESTS=true npm run test:integration:slow -- tests/integration/transport-release.slow.integration.test.ts
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AdtClient } from '../../src/adt/client.js';
 import { AdtApiError } from '../../src/adt/errors.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
@@ -43,7 +43,7 @@ function getTransportEnabledClient(): AdtClient {
 
 function isUnsupportedBackend(err: unknown): boolean {
   if (err instanceof AdtApiError) {
-    return [400, 405, 501].includes(err.statusCode);
+    return err.statusCode === 400 && /user action\s+newreleasejobs\s+is not supported/i.test(err.message);
   }
   return false;
 }
@@ -97,16 +97,43 @@ describe('Transport Release Slow Integration Tests', () => {
 
     let id = '';
     let released = false;
+    let unsupportedRelease = false;
+    const post = client.http.post.bind(client.http);
+    // The convergence result intentionally redacts SAP's message. Retain only this exact known
+    // backend-gap flag from the original request; never retry a potentially committed release.
+    const postSpy = vi.spyOn(client.http, 'post').mockImplementation(async (...args) => {
+      try {
+        return await post(...args);
+      } catch (error) {
+        if (args[0].includes('/newreleasejobs') && isUnsupportedBackend(error)) unsupportedRelease = true;
+        throw error;
+      }
+    });
     try {
       id = trackTransport(
         await createTransport(client.http, client.safety, `ARC-1 IT recursive-release ${Date.now()}`),
       );
       expect(id).toBeTruthy();
 
+      const before = await getTransport(client.http, client.safety, id);
+      expect(before).toBeTruthy();
+      const ownedIds = [id, ...before!.tasks.map((task) => task.id)];
       const result = await releaseTransportRecursive(client.http, client.safety, id);
       released = result.verified && result.released.includes(id);
       if (released) createdTransportIds.delete(id);
-      expect(released).toBe(true);
+      if (!released && unsupportedRelease) {
+        expect(result.submissions).toHaveLength(1);
+        const submittedId = result.submissions[0].id;
+        expect(ownedIds).toContain(submittedId);
+        const after = await getTransport(client.http, client.safety, id);
+        expect(after?.status).toMatch(/^[DL]$/);
+        if (submittedId !== id) expect(after?.tasks.find((task) => task.id === submittedId)?.status).toMatch(/^[DL]$/);
+        skipTest(
+          ctx,
+          'NW 7.5x ADT_TM gap: release endpoint rejects /newreleasejobs path segment; no client-side workaround',
+        );
+      }
+      expect(released, JSON.stringify(result)).toBe(true);
       expect(result.outcome).toBe('released');
       expect(result.intended.length).toBeGreaterThan(0);
       expect(result.intended.every((node) => node.confirmedReleased && node.confirmation)).toBe(true);
@@ -132,6 +159,7 @@ describe('Transport Release Slow Integration Tests', () => {
       }
       throw err;
     } finally {
+      postSpy.mockRestore();
       if (id && !released) {
         await deleteTrackedTransport(id);
       }

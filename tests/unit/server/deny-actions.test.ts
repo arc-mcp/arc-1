@@ -45,6 +45,13 @@ describe('parseDenyActions', () => {
       expect(() => parseDenyActions('/nonexistent/path/deny.json')).toThrow(/cannot read file/);
     });
 
+    it('recognizes a Windows drive-letter absolute path as path-like', () => {
+      // Same proof pattern as the './' case above: if this were misdetected as inline CSV, it
+      // would parse into a single (invalid-grammar) pattern instead of throwing "cannot read file".
+      expect(() => parseDenyActions('C:\\nonexistent\\deny.json')).toThrow(/cannot read file/);
+      expect(() => parseDenyActions('D:/nonexistent/deny.json')).toThrow(/cannot read file/);
+    });
+
     it('throws on invalid JSON', () => {
       const dir = mkdtempSync(join(tmpdir(), 'deny-actions-test-'));
       const file = join(dir, 'deny.json');

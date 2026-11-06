@@ -61,9 +61,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Sole test gate for the release: release-please opens its PR with the default
-      # GITHUB_TOKEN, so test.yml never runs on it (GITHUB_TOKEN events don't trigger
-      # workflows) — nothing else tests the released commit. Do not remove.
+      # Sole guaranteed test gate for the release: release-please opens its PR with the
+      # default GITHUB_TOKEN, so test.yml runs on it only if a maintainer approves the
+      # bot-created PR's workflows, and nothing else tests the released commit. Do not remove.
       # Coverage is dropped here: it's non-gating and no one reads it at publish time.
       #
       # release-notes.test.ts is excluded for the same reason link-release-notes is
@@ -309,6 +309,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ needs.release-please.outputs.tag_name }}" arc-1-*.mcpb --clobber
 
+  # Single-file executables (Windows/Linux/macOS) — no node_modules, so far fewer files for
+  # antivirus to scan on first start. Non-gating: the tag, npm, Docker and .mcpb ship regardless.
+  build-executables:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/executables.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+
   # Publish server metadata to the Official MCP Registry.
   # This makes ARC-1 discoverable in VS Code (@mcp search), GitHub MCP Registry,
   # and other MCP clients that consume the registry API.
@@ -474,7 +485,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4
 
       - name: Login to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6  # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -574,7 +585,7 @@ jobs:
           merge-multiple: true
 
       - name: Login to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6  # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

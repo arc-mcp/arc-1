@@ -65,20 +65,9 @@
 
 ## C. `POST .../usageReferences/scope`
 
-### Contract
-
-| Item | Value |
-|------|--------|
-| Content-Type | `application/xml` |
-| Body | `usageReferences:scopeRequest` with `objectReference uri="..."` |
-
-### ARC-1
-
-- `getWhereUsedScope` — `'FindWhereUsed'`.
-
-### Verdict
-
-**OK**
+The former `getWhereUsedScope` contract was invalid and has been removed. Native
+scope responses contain selectable categories, not reference counts; see the
+[verified correction](../../../research/2026-10-17-where-used-scope-correction.md).
 
 ---
 

@@ -145,17 +145,11 @@ describe('E2E SAPNavigate — Where-Used Analysis', () => {
           '    INTERFACES zif_arc1_test.',
         ].join('\n'),
       });
-      if (result.isError) {
-        const errText = result.content?.[0]?.text ?? '';
-        // Some SAP trial backends return 400 (I::000) for navigation/target on custom class offsets.
-        if (/status 400/i.test(errText) && /navigation\/target/i.test(errText)) {
-          return skipTest(ctx, 'ADT definition API returned HTTP 400 for custom class source offset on this backend');
-        }
-      }
       const text = expectToolSuccess(result);
       const def = JSON.parse(text);
+      // ADT answers with the target uri only (#start=<line>,<column>); no type or name.
       expect(def.uri).toContain('zif_arc1_test');
-      expect(def.name).toMatch(/ZIF_ARC1_TEST/i);
+      expect(def.line).toBeGreaterThan(0);
     });
   });
 

@@ -46,7 +46,7 @@ describe('audit redaction', () => {
   it('redacts before dispatching to every sink', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      const logger = new Logger('json', true);
+      const logger = new Logger('json', 'debug');
       const sink = new CaptureSink();
       logger.addSink(sink);
 
@@ -97,7 +97,7 @@ describe('audit redaction', () => {
   it('attaches request context before redacting the event', async () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      const logger = new Logger('json', true);
+      const logger = new Logger('json', 'debug');
       const sink = new CaptureSink();
       logger.addSink(sink);
 

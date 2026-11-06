@@ -1,0 +1,155 @@
+{
+  "at": "2026-10-17T22:40:34.768Z",
+  "route": "local ADT facade / Basic / A4H/001 HTTPS 443",
+  "readCalls": 25,
+  "mutations": 0,
+  "support": [
+    {
+      "type": "CLAS",
+      "name": "ZCL_ARC1_TD_CALC",
+      "status": "feed-readable",
+      "revisions": 3,
+      "numbered": 2,
+      "samples": [
+        {
+          "id": "00002",
+          "transport": "A4HK906371",
+          "bytes": 509,
+          "sha256": "97c797a624233df76008cf6628e0b35fe421e5cea3dc556b0b771081945e98c7"
+        },
+        {
+          "id": "00001",
+          "transport": "A4HK906369",
+          "bytes": 474,
+          "sha256": "5213ac612d529823aab9cbe10d18e859c98df4a71264cb7c7135ad31f2156ab6"
+        }
+      ]
+    },
+    {
+      "type": "PROG",
+      "name": "ZARC1_TD_REPORT",
+      "status": "feed-readable",
+      "revisions": 3,
+      "numbered": 2,
+      "samples": [
+        {
+          "id": "00002",
+          "transport": "A4HK906371",
+          "bytes": 77,
+          "sha256": "f61dbbfd5b6f05502bec8e6b8cdd9290b7aabab4fb5fe7c52ef06de9b0165c1d"
+        },
+        {
+          "id": "00001",
+          "transport": "A4HK906369",
+          "bytes": 68,
+          "sha256": "1d99d5d2fde87b850827b8d76fa38a2418efc5440079437346791eec0bec9a0d"
+        }
+      ]
+    },
+    {
+      "type": "INTF",
+      "name": "ZIF_ARC1_TD_SHAPE",
+      "status": "feed-readable",
+      "revisions": 2,
+      "numbered": 1,
+      "samples": [
+        {
+          "id": "00001",
+          "transport": "A4HK906369",
+          "bytes": 94,
+          "sha256": "7fc4d8ab2d6cc4dc62021af0affe8a00742098d736886d6d59a482f98db2270e"
+        }
+      ]
+    },
+    {
+      "type": "DDLS",
+      "name": "ZARC1_TD_VIEW",
+      "status": "feed-readable",
+      "revisions": 2,
+      "numbered": 1,
+      "samples": [
+        {
+          "id": "00001",
+          "transport": "A4HK906369",
+          "bytes": 235,
+          "sha256": "9dc8943d2aa5912e0e2062e48daf53017ac16e5392109e7083b5324c7b928ba1"
+        }
+      ]
+    },
+    {
+      "type": "DCLS",
+      "name": "ZARC1_BD_INGMVQRWBCECQI",
+      "status": "feed-readable",
+      "revisions": 1,
+      "numbered": 0,
+      "samples": []
+    },
+    {
+      "type": "BDEF",
+      "name": "ZARC1_C_TRAVELDEMO",
+      "status": "feed-readable",
+      "revisions": 1,
+      "numbered": 0,
+      "samples": []
+    },
+    {
+      "type": "SRVD",
+      "name": "ZARC1_SD_INEMRGXGJBPULY",
+      "status": "feed-readable",
+      "revisions": 1,
+      "numbered": 0,
+      "samples": []
+    },
+    {
+      "type": "INCL",
+      "name": "ZABAPGIT_FORMS",
+      "status": "feed-readable",
+      "revisions": 1,
+      "numbered": 0,
+      "samples": []
+    },
+    {
+      "type": "FUNC",
+      "name": "ZARC1EMINLESLGDSBKGUP",
+      "status": "feed-readable",
+      "revisions": 1,
+      "numbered": 0,
+      "samples": []
+    }
+  ],
+  "metadata": [
+    {
+      "type": "DOMA",
+      "name": "ZARC1_TD_DOM",
+      "status": "current-metadata-readable",
+      "historyLinks": [
+        "<atom:link href=\"versions\" rel=\"http://www.sap.com/adt/relations/versions\" title=\"Historic versions\" xmlns:atom=\"http://www.w3.org/2005/Atom\"/>",
+        "<atom:link href=\"/sap/bc/adt/repository/informationsystem/abaplanguageversions?uri=%2Fsap%2Fbc%2Fadt%2Fddic%2Fdomains%2Fzarc1_td_dom\" rel=\"http://www.sap.com/adt/relations/informationsystem/abaplanguageversions\" type=\"application/vnd.sap.adt.nameditems.v1+xml\" title=\"Allowed ABAP language versions\" xmlns:atom=\"http://www.w3.org/2005/Atom\"/>"
+      ]
+    },
+    {
+      "type": "DTEL",
+      "name": "ZARC1_E_STATUS",
+      "status": "current-metadata-readable",
+      "historyLinks": [
+        "<atom:link href=\"versions\" rel=\"http://www.sap.com/adt/relations/versions\" title=\"Historic versions\" xmlns:atom=\"http://www.w3.org/2005/Atom\"/>",
+        "<atom:link href=\"/sap/bc/adt/repository/informationsystem/abaplanguageversions?uri=%2Fsap%2Fbc%2Fadt%2Fddic%2Fdataelements%2Fzarc1_e_status\" rel=\"http://www.sap.com/adt/relations/informationsystem/abaplanguageversions\" type=\"application/vnd.sap.adt.nameditems.v1+xml\" title=\"Allowed ABAP language versions\" xmlns:atom=\"http://www.w3.org/2005/Atom\"/>"
+      ]
+    },
+    {
+      "type": "TTYP",
+      "name": "ZORFC_CHAR16_T",
+      "status": "current-metadata-readable",
+      "historyLinks": [
+        "<atom:link href=\"versions\" rel=\"http://www.sap.com/adt/relations/versions\" title=\"Historic versions\" xmlns:atom=\"http://www.w3.org/2005/Atom\"/>",
+        "<atom:link href=\"/sap/bc/adt/repository/informationsystem/abaplanguageversions?uri=%2Fsap%2Fbc%2Fadt%2Fddic%2Ftabletypes%2Fzorfc_char16_t\" rel=\"http://www.sap.com/adt/relations/informationsystem/abaplanguageversions\" type=\"application/vnd.sap.adt.nameditems.v1+xml\" title=\"Allowed ABAP language versions\" xmlns:atom=\"http://www.w3.org/2005/Atom\"/>"
+      ]
+    },
+    {
+      "type": "TABL",
+      "name": "ZARC1_T_TASK",
+      "status": "current-metadata-readable",
+      "historyLinks": []
+    }
+  ]
+}

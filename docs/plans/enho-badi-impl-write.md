@@ -1,0 +1,207 @@
+# Plan: create BAdI enhancement implementations (`ENHO/XHB`) via SAPWrite
+
+> **Status (2026-10-08): implemented on-prem, including filter values, and enabled on BTP for C1-released
+> BAdIs (re-tested live on-prem and on BTP, 2026-10-09).** The sections below are the original plan; where they differ, the code,
+> [docs_page/tools.md](../../docs_page/tools.md) and the
+> [write contract](../research/2026-10-07-enho-xhb-write-contract.md) are current.
+
+## Finding (2026-10-07)
+
+In a project on S/4HANA (SAP_BASIS 816, on-prem), ARC-1 could not
+create a BAdI implementation. The whole development was one released BAdI (`SD_APM_SET_APPROVAL_REASON`,
+interface `IF_SD_APM_SET_APPROVAL_REASON`, C1) plus one implementing class:
+
+| Step | Done by | Result |
+|---|---|---|
+| Package, transport, implementing class `ZCL_MY_APPROVAL_REASON` (ABAP Cloud) | ARC-1 (`SAPManage`, `SAPTransport`, `SAPWrite`, `SAPActivate`) | ✅ |
+| Enhancement implementation `ZMY_ENH_APPROVAL_REASON` + BAdI implementation `ZMY_BADI_APPROVAL_REASON` on spot `ES_SD_SLS_EXTEND` | **manually in Eclipse ADT** | ARC-1 has no write path |
+| Verification after the manual step | ARC-1 `SAPRead type=ENHO` + `BADIIMPL_ENH` query | ✅ |
+
+So the agent had to stop and hand the last step to the user, even though everything else in the
+clean-core flow (released BAdI → class → ENHO) was automated.
+
+### Current state in `main` (v1.5.1)
+
+- `src/adt/enhancements.ts` only **reads** ENHO: `GET /sap/bc/adt/enhancements/{enhoxhb|enhoxhh|enhoxh}/{name}`.
+- `SAPWrite` has no `ENHO` type in its enum.
+- `objectBasePath` (`src/handlers/object-types.ts`) has no ENHO case. `SAPActivate`, `SAPTransport check/history`,
+  the write `objectUrl` and the package gate are URI-based, so for ENHO they fall back to
+  `/sap/bc/adt/programs/programs/<name>`.
+- Roadmap item [FEAT-03](../../docs_page/roadmap.md#feat-03) tracks enhancement authoring.
+- `docs/research/abap-types/types/enho.md`: *"There is no public slash alias or enhancement write operation."*
+- No open issue asks for ENHO write. Closed: #896 (ENHO read subtypes), #162 (gating types by release).
+
+### ADT supports it
+
+Eclipse ADT creates BAdI enhancement implementations (*New → BAdI Enhancement Implementation*, then add a
+BAdI implementation with its implementing class in the form editor). Eclipse uses the same REST resource
+ARC-1 already reads: `/sap/bc/adt/enhancements/enhoxhb`, content type
+`application/vnd.sap.adt.enh.enhoxhb.v4+xml`. Creating it is a POST to the collection; adding or changing BAdI
+implementations is a lock + PUT of the same XML. The gap is in ARC-1, not in ADT.
+
+### Live reference object (read back with the current ARC-1)
+
+`SAPRead type=ENHO name=ZMY_ENH_APPROVAL_REASON` returns:
+
+```json
+{
+  "name": "ZMY_ENH_APPROVAL_REASON",
+  "description": "Approval Reason BAdI",
+  "package": "ZMY_APPROVAL",
+  "technology": "BADI_IMPL",
+  "switchSupported": false,
+  "badiImplementations": [{
+    "name": "ZMY_BADI_APPROVAL_REASON",
+    "shortText": "",
+    "implementingClass": "ZCL_MY_APPROVAL_REASON",
+    "badiDefinition": "SD_APM_SET_APPROVAL_REASON",
+    "enhancementSpot": "ES_SD_SLS_EXTEND",
+    "active": true,
+    "default": false
+  }]
+}
+```
+
+This is the target shape a create should produce. The raw XML of this GET is the best starting
+template for the POST/PUT payload. Capture it as a fixture first (namespaces and `adtcore:type`
+included).
+
+## Proposed scope
+
+Only `ENHO/XHB` (BAdI implementations, the clean-core case). Leave hook (`XHH`) and class/legacy (`XH`)
+enhancements read-only. They are classic-ABAP only and out of clean-core scope.
+
+### SAPWrite
+
+Follow ENQU (#877): **no new tool arguments**. `source` takes the JSON that `SAPRead type=ENHO` returns.
+Read-only keys are ignored and unknown keys are rejected. This keeps the schema budget unchanged
+(`tools.ts` and `write.ts` are at their line budgets).
+
+- `type: "ENHO"`, `action: "create"`: `name`, `description`, `package`, `transport`, and in `source`:
+  - `enhancementSpot` (e.g. `ES_SD_SLS_EXTEND`)
+  - `badiImplementations: [{ name, badiDefinition, implementingClass, shortText?, active? (default true), default? (default false) }]`
+- `type: "ENHO"`, `action: "update"`: replace the BAdI implementation list. Omitted flags of known entries
+  keep their stored values.
+- `type: "ENHO"`, `action: "delete"`.
+- Then `SAPActivate type=ENHO`.
+- Filter values: each entry takes an optional `filter` text as SAPRead shows it (added after the spike
+  captured the filter XML; see the write contract).
+
+### Validation before write
+
+Implemented: JSON shape, names, one spot per implementation, no spot change on update, discovery gate,
+package allowlist. ARC-1 reads the spot (`GET /sap/bc/adt/enhancements/enhsxsb/{spot}`) and checks that each
+BAdI definition exists in it and that each filter name is declared by the BAdI. It also refuses an OR of
+different filters inside an AND (SAP answers HTTP 400) and a Z/Y create for an SAP-internal spot (SAP refuses
+it but leaves an undeletable TADIR entry); see the write contract, 2026-10-08. Left to SAP at activation:
+
+- The implementing class implements the BAdI interface.
+- On BTP / ABAP Cloud packages, the BAdI interface is released (C1).
+- Filter values pass their DDIC check.
+
+## Implementation steps
+
+1. **Spike against a live system** (an SAP_BASIS 816 test system, in `$TMP`):
+   - GET the XML of an existing XHB ENHO → fixture `tests/fixtures/xml/enho-xhb-badi-impl.xml`.
+   - Find the create template: Eclipse ADT communication log (*Window → Show View → ABAP Communication Log*)
+     while creating an ENHO by hand. Record the POST URL, headers, content type and body.
+   - Check whether create is one POST with the BAdI implementations inside, or POST of an empty
+     container followed by lock + PUT.
+   - Write the result to `docs/research/<date>-enho-xhb-write-spike.md`.
+2. New `src/adt/enhancement-impl.ts`, modelled on `src/adt/lock-object.ts`: parse/validate the JSON, merge
+   for update, build the XML. Escape with `escapeXmlAttr` (`xml-parser.ts`; `xml-entities.ts` only decodes).
+   There is no `OperationType.Write`: the CRUD helpers in `src/adt/crud.ts` already check
+   Create/Update/Delete/Lock.
+3. Wire the metadata-write branch in `src/handlers/write-helpers.ts` (`isMetadataWriteType`, content type,
+   `getMetadataWriteProperties`, `mergeMetadataWriteProperties`, `buildCreateXml`) and the discovery gate +
+   container POST followed by a locked PUT of the implementations (the Eclipse sequence) in
+   `src/handlers/write/create.ts` (single and batch create).
+4. `src/handlers/object-types.ts`: `objectBasePath('ENHO')` → `/sap/bc/adt/enhancements/enhoxhb/` and add ENHO
+   to `KNOWN_BASE_TYPES`. Activation is URI-based (no `adtcore:type`), so this fixes activation, transport,
+   delete and the package gate together.
+5. `src/handlers/tool-registry.ts`: `{ type: 'ENHO' }` for SAPWrite (first on-prem only; BTP enabled
+   2026-10-08 together with the SAPRead row); one compressed line per `tool-descriptions.ts` variant;
+   regenerate the tool-definition snapshots.
+6. Docs: `docs_page/tools.md`, `docs/research/abap-types/types/enho.md`, `01-inventory.md`, roadmap FEAT-03,
+   dev guide + AGENTS.md rows. Release notes are annotated while the release-please PR is open.
+
+## Tests
+
+1. Unit: XML builder for XHB, with one and with several BAdI implementations, escaping, and active/default flags.
+2. Unit: handler validation (invalid JSON, missing spot, spot change), discovery gate, package allowlist
+   refusal with no POST/PUT, activation URI.
+3. Unit: schema + schema-key-sync + tool-definitions snapshot.
+4. Integration: create ENHO with one BAdI implementation for an existing class → read back → update →
+   activate → delete. Uses the `ZARC1_` cleanup namespace and `TEST_ENHO_SPOT`/`TEST_ENHO_BADI`/`TEST_ENHO_CLASS`.
+5. Gates: `npm run typecheck`, `lint`, `test`, `validate:policy`, `check:sizes`, `build`, `docs:build`.
+
+## Open questions
+
+- Which BAdI on A4H to use for the integration test? It must be released, have no filter, and live in a
+  spot that ships on A4H.
+- Is enhancement implementation creation allowed on BTP ABAP Environment, or only on-prem / private cloud?
+  Answered: a BTP trial run worked for BAdIs released for cloud development (`useInSAPCloudPlatform`);
+  enabling it is the FEAT-03 follow-up.
+
+## Independent review, 2026-10-11
+
+Merged release 1.5.2 (`2bf00bf1`). Two regression tests reproduced remaining defects:
+
+- A failed post-create PUT or unlock bypassed minimal-error redaction and claimed the implementations
+  were not saved. Reuse the existing batch error formatter, report the save state as unconfirmed, and
+  preserve readback/update recovery guidance. No automatic rollback or retry is added.
+- Excessive filter nesting caused a stack overflow. Bound new filter text at 32,768 characters and
+  parenthesis nesting at 32; retain the existing parser and stored-filter preservation.
+
+Both changes are local to the confirmed failures. Roadmap scope remains FEAT-03 (remaining enhancement
+variants) and FEAT-85 (explicit language-version creation); this review adds no feature scope.
+
+Validation after these fixes: all 8,259 unit tests, typecheck, lint, policy validation, build,
+file/schema budgets and strict MkDocs passed. Fresh compiled-dispatcher testing on SAP_BASIS 758 SP02
+and 816 SP01 created a disposable `$TMP` ENHO for `/AIF/CHANGE_IDOC_STATUS`, referencing the existing
+SAP example class with the implementation disabled. Create/read/update/activate, unchanged flags,
+undeclared-filter refusal, delete and confirmed owner 404 passed. The standard example was only read;
+no business execution occurred. SAP_BASIS 750 SP02 refused before create because discovery lacks the
+collection. This run did not repeat the earlier transportable-package, filter-tree or BTP lifecycles;
+the dated evidence in the write contract remains the qualification for those scenarios.
+
+Combined review with #963/#965/#966/#967 found SAPWrite 56 bytes over its existing
+23,000-byte per-tool wall. Removed duplicate delete guidance from the on-prem and
+BTP bodies; the shared minimal-payload guide already gives the same required fields.
+Compressed the BTP introduction without dropping its language, naming, alias or lock guidance.
+Restored the existing BTP token limit of 17,350 instead of increasing it for ENHO.
+No tool input, safety guidance or runtime behavior changes.
+
+Roadmap review also found that FEAT-81 had already identified the function-group
+text-pool fix completed by #959. The deferred language-version idea now uses the
+unused FEAT-85 ID, so old issue/PR links keep their original meaning.
+
+
+## Fresh BTP follow-up, 2026-10-11
+
+The combined candidate `fadfeae5` passed native BTP 920 SP05 qualification with #939 at `bc3eff53`:
+released BAdIs with and without filters, single/batch creation, updates, activation, refusals and
+verified cleanup. All six ENHO/class fixtures were removed. The focused seven-file suite for all
+five PRs passed 202 tests. No runtime fix was needed; the stale on-premises-only developer-guide
+sentence was corrected. This supersedes the same-day BTP testing gap above. Detailed cases and the
+native mandatory-filter constraint are in the [write contract](../research/2026-10-07-enho-xhb-write-contract.md#current-combined-candidate-on-btp-2026-10-11).
+Roadmap checked: no additional impact on the remaining FEAT-03/FEAT-85 scope.
+
+## Claude review follow-up, 2026-10-11
+
+Deletion now reads XHB metadata after the write/package gates and requires `BADI_IMPL` before
+locking. Other technologies, missing technology and failed metadata reads cannot reach DELETE.
+The reader and existing lock/delete/unlock path are reused; no fallback or schema change is added.
+Six regression failures reproduced the previous missing check, then passed with the guard.
+
+Runtime commit `2ed637f9` passed all 8,265 unit tests, typecheck, lint, policy validation, build,
+file/schema budgets and strict MkDocs. Compiled public-dispatcher lifecycle tests passed on
+758 SP02 and 816 SP01 (direct HTTPS Basic auth, owned `$TMP` enhancements) and BTP 920 SP05
+(named-user OAuth, `ZARC1_PRSP_260916`). The BTP run covered filtered single creation and
+unfiltered batch creation, updates, activation, scope/package refusals and deletion. Both on-prem
+enhancements and all four BTP ENHO/class fixtures were deleted and confirmed absent; BTP directory
+queries returned zero rows. NW 750 SP02 still refused the unsupported create before writing.
+
+Deletion of a real non-XHB object through the XHB endpoint was not attempted: the risk remains
+unproven without an owned fixture. Refusal of other/unknown metadata and read failures is mock-tested.
+This follow-up does not change the remaining FEAT-03/FEAT-85 roadmap scope.

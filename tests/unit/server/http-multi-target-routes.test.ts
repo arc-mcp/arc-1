@@ -120,7 +120,7 @@ describe('multi-target HTTP route authentication', () => {
         httpAddr: '127.0.0.1:0',
         xsuaaAuth: true,
         multiTargetEndpoints: true,
-        apiKeys: [{ key: 'legacy-viewer-key', profile: 'viewer' }],
+        apiKeys: [{ key: 'standard-viewer-key', profile: 'viewer' }],
         authRateLimit: 0,
         mcpHttpRateLimit: 0,
       },
@@ -128,6 +128,7 @@ describe('multi-target HTTP route authentication', () => {
       undefined,
       {
         registry: current,
+        authorizationMode: 'standard',
         aggregateFactory: aggregateFactory as never,
         createPinnedServer: vi.fn() as never,
       },
@@ -136,6 +137,7 @@ describe('multi-target HTTP route authentication', () => {
 
   afterEach(() => {
     listenSpy.mockRestore();
+    vi.unstubAllEnvs();
   });
 
   it('authenticates syntactically valid target routes before revealing route membership', async () => {
@@ -196,16 +198,96 @@ describe('multi-target HTTP route authentication', () => {
     expect(challenge.headers['www-authenticate']).not.toContain('scope=');
   });
 
+  it.each([
+    [false, 'standard'],
+    [true, 'standard'],
+    [false, 'xsuaa-attribute'],
+    [true, 'xsuaa-attribute'],
+  ] as const)(
+    'advertises pinned write only for global opt-in and enforced mode: %s/%s',
+    async (allowWrites, authorizationMode) => {
+      await startHttpServer(
+        undefined,
+        {
+          ...DEFAULT_CONFIG,
+          transport: 'http-streamable',
+          httpAddr: '127.0.0.1:0',
+          xsuaaAuth: true,
+          multiTargetEndpoints: true,
+          multiTargetAuthorization: authorizationMode,
+          allowWrites,
+          authRateLimit: 0,
+          mcpHttpRateLimit: 0,
+        },
+        XSUAA,
+        undefined,
+        {
+          registry: registry(),
+          authorizationMode,
+          aggregateFactory: aggregateFactory as never,
+          createPinnedServer: vi.fn() as never,
+        },
+      );
+      for (const route of ['A4H/100', 'ZZZ/999']) {
+        const result = await request(app).get(`/.well-known/oauth-protected-resource/${route}/mcp`);
+        expect(result.status).toBe(200);
+        expect(result.body.scopes_supported.includes('write')).toBe(
+          allowWrites && authorizationMode === 'xsuaa-attribute',
+        );
+      }
+      const aggregate = await request(app).get('/.well-known/oauth-protected-resource/multi/mcp');
+      expect(aggregate.body.scopes_supported).not.toContain('write');
+    },
+  );
+
   it('does not expose a separate HTTP target catalog', async () => {
     expect((await request(app).get('/targets')).status).toBe(404);
     expect((await request(app).get('/targets').set('Authorization', 'Bearer read-token')).status).toBe(404);
     expect((await request(app).get('/TARGETS').set('Authorization', 'Bearer admin-token')).status).toBe(404);
   });
 
+  it.each(['https://arc1.example', 'https://gateway.example/arc1'])(
+    'omits registration while retaining multi-target discovery at %s',
+    async (publicUrl) => {
+      vi.stubEnv('ARC1_PUBLIC_URL', publicUrl);
+      await startHttpServer(
+        undefined,
+        {
+          ...DEFAULT_CONFIG,
+          transport: 'http-streamable',
+          httpAddr: '127.0.0.1:0',
+          xsuaaAuth: true,
+          oauthDcrEnabled: false,
+          multiTargetEndpoints: true,
+          multiTargetAuthorization: 'xsuaa-attribute',
+          authRateLimit: 0,
+          mcpHttpRateLimit: 0,
+        },
+        XSUAA,
+        undefined,
+        {
+          registry: registry(),
+          authorizationMode: 'xsuaa-attribute',
+          aggregateFactory: aggregateFactory as never,
+          createPinnedServer: vi.fn() as never,
+        },
+      );
+      const oauth = await request(app).get('/.well-known/oauth-authorization-server');
+      expect(oauth.status).toBe(200);
+      expect(oauth.body.authorization_endpoint).toBe(`${publicUrl}/authorize`);
+      expect(oauth.body.registration_endpoint).toBeUndefined();
+      expect((await request(app).post('/register').send({})).status).toBe(404);
+      const aggregate = await request(app).get('/.well-known/oauth-protected-resource/multi/mcp');
+      expect(aggregate.status).toBe(200);
+      expect(aggregate.body.resource).toBe(`${publicUrl}/multi/mcp`);
+      expect(aggregate.body.scopes_supported).toEqual(['read', 'data', 'sql', 'admin']);
+    },
+  );
+
   it('keeps the multi-only Copilot /authorize fallback XSUAA-only', async () => {
     const apiKey = await request(app)
       .post('/authorize')
-      .set('Authorization', 'Bearer legacy-viewer-key')
+      .set('Authorization', 'Bearer standard-viewer-key')
       .send({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
     expect(apiKey.status).toBe(401);
     expect(apiKey.headers['www-authenticate']).toContain('/.well-known/oauth-protected-resource/multi/mcp');
@@ -234,7 +316,7 @@ describe('multi-target HTTP route authentication', () => {
         httpAddr: '127.0.0.1:0',
         xsuaaAuth: true,
         multiTargetEndpoints: true,
-        apiKeys: [{ key: 'legacy-viewer-key', profile: 'viewer' }],
+        apiKeys: [{ key: 'standard-viewer-key', profile: 'viewer' }],
         authRateLimit: 0,
         mcpHttpRateLimit: 0,
       },
@@ -242,6 +324,7 @@ describe('multi-target HTTP route authentication', () => {
       undefined,
       {
         registry: current,
+        authorizationMode: 'standard',
         aggregateFactory: aggregateFactory as never,
         createPinnedServer: vi.fn() as never,
       },
@@ -249,7 +332,7 @@ describe('multi-target HTTP route authentication', () => {
 
     const apiKey = await request(app)
       .post('/authorize')
-      .set('Authorization', 'Bearer legacy-viewer-key')
+      .set('Authorization', 'Bearer standard-viewer-key')
       .send({ jsonrpc: '2.0', id: 3, method: 'tools/list' });
     expect(apiKey.status).toBe(401);
     expect(apiKey.headers['www-authenticate']).toContain('/.well-known/oauth-protected-resource/multi/mcp');

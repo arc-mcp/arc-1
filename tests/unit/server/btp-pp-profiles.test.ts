@@ -162,6 +162,33 @@ describe('actual BTP setup examples', () => {
     }
   });
 
+  it('parses the pinned write overlay chain and preserves a read-only second destination', () => {
+    resolveProfile('multi-pp');
+    let previous = profile('multi-pp').ID;
+    for (const file of ['target-authorization', 'pinned-writes']) {
+      const overlay = parse(read(`examples/btp/multi-pp/${file}.mtaext`));
+      expect(overlay.extends).toBe(previous);
+      for (const [key, value] of Object.entries(overlay.modules[0].properties)) process.env[key] = String(value);
+      previous = overlay.ID;
+    }
+    const config = parseArgs([]);
+    expect(config).toMatchObject({
+      allowWrites: true,
+      ppStrict: true,
+      multiTargetAuthorization: 'xsuaa-attribute',
+      allowedPackages: ['$TMP', 'ZTEAM/**'],
+      allowedTransports: ['DEVK9*'],
+    });
+    const result = registry([destination('multi-pp', 'dev-001-write'), destination('multi-pp', 'qas-001')], config);
+    expect(result.counts.quarantined).toBe(0);
+    expect(result.targets.find((target) => target.target === 'DEV/001')?.writePolicy).toMatchObject({
+      allowWrites: true,
+      allowedPackages: ['$TMP', 'ZTEAM_COMPONENT/**'],
+      allowedTransports: ['DEVK900123'],
+    });
+    expect(result.targets.find((target) => target.target === 'QAS/001')?.writePolicy?.allowWrites).not.toBe(true);
+  });
+
   it('detects numeric clients, accidental credentials and colliding target identities', () => {
     const raw = destination('multi-pp', 'qas-001');
     expect(() => assertFixtureFields({ ...raw, 'sap-client': 1 })).toThrow();

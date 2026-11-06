@@ -8,6 +8,10 @@
  * 4. Defaults (all `allow*` flags false — restrictive by default)
  */
 
+import type { MultiTargetWritePolicy } from '../adt/safety.js';
+import { DEFAULT_USER_AGENT } from '../adt/user-agent.js';
+import type { MultiTargetAuthorizationMode } from './multi-target-authorization.js';
+
 /** MCP transport type */
 export type TransportType = 'stdio' | 'http-streamable';
 
@@ -31,6 +35,7 @@ export interface ServerConfig {
   password: string;
   client: string;
   language: string;
+  userAgent: string;
   insecure: boolean;
   /** Gzip non-empty ADT data-preview POST bodies for approved WAF compatibility. */
   gzipDataPreviewBody: boolean;
@@ -42,6 +47,8 @@ export interface ServerConfig {
   // --- MCP Transport ---
   transport: TransportType;
   httpAddr: string;
+  /** Maximum uncompressed JSON request bytes on MCP HTTP routes. */
+  maxHttpRequestBytes: number;
   serverName: string;
   /** Human-readable single-target label prepended to model-facing MCP instructions. */
   systemLabel: string;
@@ -55,6 +62,7 @@ export interface ServerConfig {
   uiOpen: boolean;
 
   // --- Safety (positive opt-ins; defaults restrictive) ---
+  multiTargetWrite?: MultiTargetWritePolicy;
   allowWrites: boolean;
   allowDataPreview: boolean;
   allowFreeSQL: boolean;
@@ -111,6 +119,13 @@ export interface ServerConfig {
    * Positive values opt into expiry, clamped to `[60s, 90d]`. Only consulted
    * when XSUAA OAuth proxy mode is active. */
   oauthDcrTtlSeconds: number;
+  /** Allow new dynamic OAuth client registrations. Existing clients still require consent. */
+  oauthDcrEnabled: boolean;
+  /**
+   * Optional allowlist (redirect-URI globs) for dynamic client registration. Registration rejects
+   * other return addresses, and existing client_ids lose them. Unset keeps the library default.
+   */
+  oauthDcrRedirectUriPatterns?: string[];
 
   /**
    * Optional dedicated secret for HMAC-signing DCR `client_id`s. When set,
@@ -132,6 +147,8 @@ export interface ServerConfig {
   // --- Experimental destination-discovered multi-target mode ---
   /** Enable startup discovery plus pinned and aggregate multi-target endpoints. Default false. */
   multiTargetEndpoints: boolean;
+  /** Explicit target-grant enforcement; standard preserves existing deployments by default. */
+  multiTargetAuthorization: MultiTargetAuthorizationMode;
   /** Allow explicitly marked OnPremise BasicAuthentication targets in multi-target mode. Default false. */
   multiTargetAllowBasicAuth: boolean;
   /** Runtime-only: internal Destination Service name for a discovered target. */
@@ -157,6 +174,11 @@ export interface ServerConfig {
   logFormat: 'text' | 'json';
   /** Hide SAP response details from client-facing tool errors while retaining server-side correlation data. */
   minimalErrors: boolean;
+
+  // --- IDE navigation (HTTP requires explicit per-request editor preferences) ---
+  ideLinks: 'off' | 'eclipse';
+  /** Configured real SAP SID for Eclipse navigation; multi-target runtimes use the selected target's SID. */
+  ideSystemId: string;
 
   // --- Tool Mode ---
   /** Tool mode: 'standard' (12 intent tools, SAPGit feature-gated) or 'hyperfocused' (1 universal SAP tool, ~200 tokens) */
@@ -259,10 +281,12 @@ export const DEFAULT_CONFIG: ServerConfig = {
   password: '',
   client: '100',
   language: 'EN',
+  userAgent: DEFAULT_USER_AGENT,
   insecure: false,
   gzipDataPreviewBody: false,
   transport: 'stdio',
   httpAddr: '0.0.0.0:8080',
+  maxHttpRequestBytes: 100 * 1024,
   serverName: 'arc-1',
   systemLabel: '',
   uiMode: 'off',
@@ -290,15 +314,19 @@ export const DEFAULT_CONFIG: ServerConfig = {
   xsuaaAuth: false,
   allowHttpNoAuth: false,
   oidcDiscovery: true,
+  oauthDcrEnabled: true,
   oauthDcrTtlSeconds: 0, // 0 = never expire; positive opts into expiry (clamped 60s..90d) — see field JSDoc
   btpOAuthCallbackPort: 0,
   multiTargetEndpoints: false,
+  multiTargetAuthorization: 'standard',
   multiTargetAllowBasicAuth: false,
   ppEnabled: false,
   ppStrict: false,
   ppStrictExplicit: false,
   ppAllowSharedCookies: false,
   disableSaml2: false,
+  ideLinks: 'off',
+  ideSystemId: '',
   toolMode: 'standard',
   schemaNullableOptionals: 'auto',
   plugins: [],
@@ -320,3 +348,6 @@ export const DEFAULT_CONFIG: ServerConfig = {
   minimalErrors: false,
   verbose: false,
 };
+
+/** Hard ceiling for an operator-configured MCP request body. */
+export const MAX_HTTP_REQUEST_BYTES = 16 * 1024 * 1024;

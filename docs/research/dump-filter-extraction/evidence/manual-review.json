@@ -1,0 +1,218 @@
+[
+  {
+    "run": "exploratory",
+    "model": "qwen3.6:35b-mlx",
+    "arm": "baseline",
+    "caseId": "syntax-one",
+    "strictCompleted": true,
+    "requestedFactsSupported": true,
+    "note": "Requested syntax status is supported by the active check."
+  },
+  {
+    "run": "exploratory",
+    "model": "qwen3.6:35b-mlx",
+    "arm": "baseline",
+    "caseId": "dumps-recent",
+    "strictCompleted": false,
+    "requestedFactsSupported": false,
+    "note": "Invented IDs without a tool call."
+  },
+  {
+    "run": "exploratory",
+    "model": "qwen3.6:35b-mlx",
+    "arm": "baseline",
+    "caseId": "dumps-target",
+    "strictCompleted": false,
+    "requestedFactsSupported": false,
+    "note": "No final answer; an unmodeled route and near-context-limit flag make this inconclusive."
+  },
+  {
+    "run": "exploratory",
+    "model": "qwen3.6:35b-mlx",
+    "arm": "candidate",
+    "caseId": "syntax-one",
+    "strictCompleted": true,
+    "requestedFactsSupported": true,
+    "note": "Requested syntax status is supported by the active check."
+  },
+  {
+    "run": "exploratory",
+    "model": "qwen3.6:35b-mlx",
+    "arm": "candidate",
+    "caseId": "dumps-recent",
+    "strictCompleted": false,
+    "requestedFactsSupported": false,
+    "note": "Invented IDs without a tool call."
+  },
+  {
+    "run": "exploratory",
+    "model": "qwen3.6:35b-mlx",
+    "arm": "candidate",
+    "caseId": "dumps-target",
+    "strictCompleted": false,
+    "requestedFactsSupported": true,
+    "note": "Both requested IDs and order are supported. Prose excludes adjacent-day IDs; strict JSON grade remains failed."
+  },
+  {
+    "run": "exploratory",
+    "model": "llama3.1:8b",
+    "arm": "baseline",
+    "caseId": "syntax-one",
+    "strictCompleted": true,
+    "requestedFactsSupported": true,
+    "note": "Requested syntax status is supported by the active check. Extra latestAttempt=proven is unsupported and outside this task; the strict syntax grader does not inspect that field."
+  },
+  {
+    "run": "exploratory",
+    "model": "llama3.1:8b",
+    "arm": "baseline",
+    "caseId": "dumps-recent",
+    "strictCompleted": false,
+    "requestedFactsSupported": false,
+    "note": "Both boundaries are midnight, so results are empty; unavailable is not the requested result."
+  },
+  {
+    "run": "exploratory",
+    "model": "llama3.1:8b",
+    "arm": "baseline",
+    "caseId": "dumps-target",
+    "strictCompleted": false,
+    "requestedFactsSupported": false,
+    "note": "Returns D900 (wrong day) and D000 (wrong error), with unsupported failure/latest-attempt claims."
+  },
+  {
+    "run": "exploratory",
+    "model": "llama3.1:8b",
+    "arm": "candidate",
+    "caseId": "syntax-one",
+    "strictCompleted": true,
+    "requestedFactsSupported": true,
+    "note": "Requested syntax status is supported by the active check. Extra latestAttempt=proven is unsupported and outside this task; the strict syntax grader does not inspect that field."
+  },
+  {
+    "run": "exploratory",
+    "model": "llama3.1:8b",
+    "arm": "candidate",
+    "caseId": "dumps-recent",
+    "strictCompleted": false,
+    "requestedFactsSupported": false,
+    "note": "Both boundaries are midnight, so results are empty; unavailable is not the requested result."
+  },
+  {
+    "run": "exploratory",
+    "model": "llama3.1:8b",
+    "arm": "candidate",
+    "caseId": "dumps-target",
+    "strictCompleted": false,
+    "requestedFactsSupported": false,
+    "note": "Serializes filters as a string; catalog rejects it before SAP I/O. Final text only proposes another call."
+  },
+  {
+    "run": "neutral",
+    "model": "qwen3.6:35b-mlx",
+    "arm": "baseline",
+    "caseId": "syntax-one",
+    "strictCompleted": true,
+    "requestedFactsSupported": true,
+    "note": "Requested syntax status is supported by the active check."
+  },
+  {
+    "run": "neutral",
+    "model": "qwen3.6:35b-mlx",
+    "arm": "baseline",
+    "caseId": "dumps-recent",
+    "strictCompleted": false,
+    "requestedFactsSupported": false,
+    "note": "Omits date bounds, removes the adjacent-day row after fetching only three, and stops with two IDs. Candidate also overstates that only two were recorded."
+  },
+  {
+    "run": "neutral",
+    "model": "qwen3.6:35b-mlx",
+    "arm": "baseline",
+    "caseId": "dumps-target",
+    "strictCompleted": false,
+    "requestedFactsSupported": true,
+    "note": "Both requested IDs and order are supported. Prose excludes adjacent-day IDs; strict JSON grade remains failed."
+  },
+  {
+    "run": "neutral",
+    "model": "qwen3.6:35b-mlx",
+    "arm": "candidate",
+    "caseId": "syntax-one",
+    "strictCompleted": true,
+    "requestedFactsSupported": true,
+    "note": "Requested syntax status is supported by the active check."
+  },
+  {
+    "run": "neutral",
+    "model": "qwen3.6:35b-mlx",
+    "arm": "candidate",
+    "caseId": "dumps-recent",
+    "strictCompleted": false,
+    "requestedFactsSupported": false,
+    "note": "Omits date bounds, removes the adjacent-day row after fetching only three, and stops with two IDs. Candidate also overstates that only two were recorded."
+  },
+  {
+    "run": "neutral",
+    "model": "qwen3.6:35b-mlx",
+    "arm": "candidate",
+    "caseId": "dumps-target",
+    "strictCompleted": false,
+    "requestedFactsSupported": true,
+    "note": "Both requested IDs and order are supported. Prose excludes adjacent-day IDs; strict JSON grade remains failed."
+  },
+  {
+    "run": "neutral",
+    "model": "llama3.1:8b",
+    "arm": "baseline",
+    "caseId": "syntax-one",
+    "strictCompleted": true,
+    "requestedFactsSupported": true,
+    "note": "Requested syntax status is supported by the active check. Extra latestAttempt=proven is unsupported and outside this task; the strict syntax grader does not inspect that field."
+  },
+  {
+    "run": "neutral",
+    "model": "llama3.1:8b",
+    "arm": "baseline",
+    "caseId": "dumps-recent",
+    "strictCompleted": false,
+    "requestedFactsSupported": false,
+    "note": "Both boundaries are midnight, so results are empty; unavailable is not the requested result."
+  },
+  {
+    "run": "neutral",
+    "model": "llama3.1:8b",
+    "arm": "baseline",
+    "caseId": "dumps-target",
+    "strictCompleted": false,
+    "requestedFactsSupported": false,
+    "note": "Returns D900 (wrong day) and D000 (wrong error), with unsupported failure/latest-attempt claims."
+  },
+  {
+    "run": "neutral",
+    "model": "llama3.1:8b",
+    "arm": "candidate",
+    "caseId": "syntax-one",
+    "strictCompleted": true,
+    "requestedFactsSupported": true,
+    "note": "Requested syntax status is supported by the active check. Extra latestAttempt=proven is unsupported and outside this task; the strict syntax grader does not inspect that field."
+  },
+  {
+    "run": "neutral",
+    "model": "llama3.1:8b",
+    "arm": "candidate",
+    "caseId": "dumps-recent",
+    "strictCompleted": false,
+    "requestedFactsSupported": false,
+    "note": "Both boundaries are midnight, so results are empty; unavailable is not the requested result."
+  },
+  {
+    "run": "neutral",
+    "model": "llama3.1:8b",
+    "arm": "candidate",
+    "caseId": "dumps-target",
+    "strictCompleted": false,
+    "requestedFactsSupported": false,
+    "note": "Serializes filters as a string; catalog rejects it before SAP I/O. Final text only proposes another call. Also invents MESSAGE_TYPE as an attribute."
+  }
+]

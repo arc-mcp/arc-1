@@ -91,7 +91,7 @@ describe('SAPReadSchema', () => {
       version: 'inactive',
       force_refresh: true,
       maxRows: 50,
-      sqlFilter: "MANDT = '100'",
+      sqlFilter: '',
     });
     expect(result.success).toBe(true);
   });
@@ -232,6 +232,58 @@ describe('SAPReadSchema', () => {
     if (!result.success) {
       expect(result.error.issues[0]?.message).toContain('no semicolons');
     }
+  });
+
+  it('rejects sqlFilter on TABLE_QUERY and points to where', () => {
+    const result = SAPReadSchema.safeParse({ type: 'TABLE_QUERY', name: 'T000', sqlFilter: "MANDT = '000'" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['sqlFilter']);
+      expect(result.error.issues[0]?.message).toContain('Use where');
+    }
+  });
+
+  it('rejects sqlFilter on types other than TABLE_CONTENTS', () => {
+    const result = SAPReadSchema.safeParse({ type: 'PROG', name: 'ZPROG', sqlFilter: "MANDT = '000'" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toContain('only supported for type=TABLE_CONTENTS');
+    }
+  });
+
+  it.each([
+    ['where', [{ field: 'MANDT', op: '=', value: '000' }]],
+    ['columns', ['MANDT']],
+  ])('rejects %s on TABLE_CONTENTS and points to TABLE_QUERY', (key, value) => {
+    const result = SAPReadSchema.safeParse({ type: 'TABLE_CONTENTS', name: 'T000', [key]: value });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual([key]);
+      expect(result.error.issues[0]?.message).toContain('Use type=TABLE_QUERY');
+    }
+  });
+
+  it('rejects where on types other than TABLE_QUERY', () => {
+    const result = SAPReadSchema.safeParse({
+      type: 'PROG',
+      name: 'ZPROG',
+      where: [{ field: 'MANDT', op: '=', value: '000' }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts empty filter filler from strict-mode clients on every data type', () => {
+    const filler = { sqlFilter: '', columns: [], where: [] };
+    expect(SAPReadSchema.safeParse({ type: 'TABLE_QUERY', name: 'T000', ...filler, sqlFilter: '  ' }).success).toBe(
+      true,
+    );
+    expect(SAPReadSchema.safeParse({ type: 'TABLE_CONTENTS', name: 'T000', ...filler }).success).toBe(true);
+    expect(SAPReadSchema.safeParse({ type: 'PROG', name: 'ZPROG', ...filler }).success).toBe(true);
+    expect(SAPReadSchemaBtp.safeParse({ type: 'TABLE_QUERY', name: 'T000', ...filler }).success).toBe(true);
+  });
+
+  it('rejects sqlFilter on TABLE_QUERY in the BTP schema too', () => {
+    expect(SAPReadSchemaBtp.safeParse({ type: 'TABLE_QUERY', name: 'ZTAB', sqlFilter: "A = '1'" }).success).toBe(false);
   });
 
   it('coerces boolean expand_includes from string', () => {
@@ -447,7 +499,8 @@ describe('SAPReadSchemaBtp', () => {
     expect(SAPReadSchemaBtp.safeParse({ type: 'VARIANTS' }).success).toBe(false);
     expect(SAPReadSchemaBtp.safeParse({ type: 'AUTH' }).success).toBe(false);
     expect(SAPReadSchemaBtp.safeParse({ type: 'FTG2' }).success).toBe(false);
-    expect(SAPReadSchemaBtp.safeParse({ type: 'ENHO' }).success).toBe(false);
+    // ENHO (BAdI implementations) is a BTP type too.
+    expect(SAPReadSchemaBtp.safeParse({ type: 'ENHO', name: 'ZMY_ENH' }).success).toBe(true);
   });
 
   it('rejects expand_includes — the field is on-prem only', () => {
@@ -968,23 +1021,23 @@ describe('SAPWriteSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('exposes edit_unit only for on-prem PROG/INCL writes', () => {
+  it.each(['edit_unit', 'add_unit'])('exposes %s only for on-prem PROG/INCL writes', (action) => {
     const program = SAPWriteSchema.safeParse({
-      action: 'edit_unit',
+      action,
       type: 'PROG',
       name: 'ZUNIT_TEST',
       unit: 'PROCESS_ORDERS',
       source: 'FORM process_orders.\nENDFORM.',
     });
     const include = SAPWriteSchema.safeParse({
-      action: 'edit_unit',
+      action,
       type: 'INCL',
       name: 'ZUNIT_INCLUDE',
       unit: 'STATUS_0100',
       source: 'MODULE status_0100 OUTPUT.\nENDMODULE.',
     });
     const btp = SAPWriteSchemaBtp.safeParse({
-      action: 'edit_unit',
+      action,
       type: 'CLAS',
       name: 'ZCL_TEST',
       unit: 'PROCESS_ORDERS',
@@ -1631,12 +1684,12 @@ describe('SAPDiagnoseSchema', () => {
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', type }).success).toBe(false);
   });
 
-  it('accepts loose includeSubpackages only for DEVC unittest scope', () => {
+  it('accepts false includeSubpackages outside DEVC unittest scope but restricts true', () => {
     expect(
       SAPDiagnoseSchema.safeParse({ action: 'unittest', type: 'DEVC', includeSubpackages: 'false' }).data,
     ).toMatchObject({ includeSubpackages: false });
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', type: 'CLAS', includeSubpackages: false }).success).toBe(
-      false,
+      true,
     );
     expect(SAPDiagnoseSchema.safeParse({ action: 'atc', type: 'DEVC', includeSubpackages: true }).success).toBe(false);
   });

@@ -1,0 +1,58 @@
+{
+  "target": "npl",
+  "checkedAt": "2026-10-29T17:36:50.733Z",
+  "baseRead": false,
+  "baseSha256": null,
+  "rows": [
+    {
+      "mode": "summary",
+      "providers": [
+        {
+          "id": "bdef_wul_verified",
+          "family": "behavior_extension",
+          "status": "unsupported",
+          "coverage": "candidate_index",
+          "version": "provider_current",
+          "nested": "not_expanded",
+          "reason": "Behavior extension discovery is unqualified on this release; generic RAP availability is insufficient."
+        }
+      ],
+      "nodes": [],
+      "edges": [],
+      "omissions": {},
+      "issues": [],
+      "consumed": {
+        "sends": 0,
+        "responseBytes": 0,
+        "elapsedMs": 1
+      },
+      "outputBytes": 548,
+      "sources": []
+    },
+    {
+      "mode": "sources",
+      "providers": [
+        {
+          "id": "bdef_wul_verified",
+          "family": "behavior_extension",
+          "status": "unsupported",
+          "coverage": "candidate_index",
+          "version": "provider_current",
+          "nested": "not_expanded",
+          "reason": "Behavior extension discovery is unqualified on this release; generic RAP availability is insufficient."
+        }
+      ],
+      "nodes": [],
+      "edges": [],
+      "omissions": {},
+      "issues": [],
+      "consumed": {
+        "sends": 0,
+        "responseBytes": 0,
+        "elapsedMs": 0
+      },
+      "outputBytes": 548,
+      "sources": []
+    }
+  ]
+}

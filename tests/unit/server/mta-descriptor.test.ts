@@ -173,7 +173,12 @@ describe('shipped mta.yaml resolves through the config parser', () => {
       expect.arrayContaining([
         '.env*',
         '.npmrc',
-        '*service-key*.json',
+        '*key*.json',
+        'cookie*',
+        '.arc1*.json',
+        '.arc1-cache.db*',
+        '.mcp*.json',
+        'default-env*.json',
         '*.key',
         '*.pem',
         '*.p12',
@@ -195,6 +200,14 @@ describe('shipped mta.yaml resolves through the config parser', () => {
         'tsconfig*.json',
         'xs-security.json',
       ]),
+    );
+  });
+
+  it('keeps AppRouter tests and local credentials out of the UI payload', () => {
+    const mta = parse(readFileSync(join(ROOT, 'mta.yaml'), 'utf8')) as Record<string, any>;
+    const router = (mta.modules as Array<Record<string, any>>).find((module) => module.name === 'arc1-ui-router');
+    expect(router?.['build-parameters']?.ignore).toEqual(
+      expect.arrayContaining(['node_modules/', 'test/', 'default-env*.json']),
     );
   });
 

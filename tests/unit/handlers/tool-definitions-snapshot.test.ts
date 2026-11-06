@@ -77,6 +77,19 @@ const VARIANTS: Variant[] = [
 ];
 
 describe('tool-definitions snapshot (LLM-visible surface)', () => {
+  it('retains SAPRead operational hints even when long-text access is disabled', () => {
+    const read = getToolDefinitions(onprem()).find((tool) => tool.name === 'SAPRead')!;
+    const text = JSON.stringify(read);
+    for (const hint of [
+      'INACTIVE_OBJECTS: no name',
+      'TABL/DTT: technical settings',
+      'CDS needs SAP_BASIS 752+',
+      'ENQU: JSON',
+      'TABL/DTI: TABLE~INDEX, prefers pending JSON',
+      'DTSC/DSFD/DTDC/DRTY use DDL text',
+    ])
+      expect(text).toContain(hint);
+  });
   it.each([false, true])('discovery changes only navigation, BTP=%s', async (isBtp) => {
     const config = isBtp ? btp(FULL) : onprem(FULL);
     const original = getToolDefinitions({ ...config, denyActions: ['SAPNavigate.relations'] }, true, features());

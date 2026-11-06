@@ -14,6 +14,7 @@ import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import type { AuditEvent } from '../../../src/server/audit.js';
 import { FileSink } from '../../../src/server/sinks/file.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+import { createLongTextFixture } from '../../helpers/long-text-fixture.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 
 // Mock undici's fetch (used by AdtHttpClient.doFetch)
@@ -149,6 +150,41 @@ describe('Audit Logging Integration', () => {
     expect(starts).toHaveLength(1);
     expect((starts[0] as any).args.password).toBe('[REDACTED]');
     expect((starts[0] as any).args.name).toBe('ZHELLO');
+  });
+
+  it('keeps long_text business keys, search phrases and returned text out of every audit sink', async () => {
+    const events: AuditEvent[] = [];
+    const { logger } = await import('../../../src/server/logger.js');
+    const fileSink = new FileSink(tmpFile);
+    logger.addSink({ write: (event: AuditEvent) => events.push(event) });
+    logger.addSink(fileSink);
+    const fixture = createLongTextFixture();
+    const client = new AdtClient({ baseUrl: 'https://sap.invalid', client: '001', safety: unrestrictedSafetyConfig() });
+    vi.spyOn(client, 'runTableQuery').mockImplementation(fixture.query);
+    const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
+    resetCachedFeatures();
+    const result = await handleToolCall(client, { ...DEFAULT_CONFIG, allowDataPreview: true }, 'SAPQuery', {
+      action: 'long_text',
+      longText: { mode: 'search', keys: [fixture.keys.invoice], phrase: 'within 30' },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(result.content[0]?.text).toContain('Payment within 30 days.');
+    await fileSink.flush();
+    const captured = JSON.stringify(events);
+    const file = readFileSync(tmpFile, 'utf8');
+    const stderr = JSON.stringify(stderrSpy.mock.calls);
+    for (const output of [captured, file, stderr]) {
+      expect(output).not.toContain(fixture.keys.invoice.name);
+      expect(output).not.toContain('within 30');
+      expect(output).not.toContain('Payment within 30 days.');
+    }
+    expect(events.find((event) => event.event === 'tool_call_start')).toMatchObject({
+      args: { action: 'long_text', longText: { mode: 'search', keyCount: 1 } },
+    });
+    expect(events.find((event) => event.event === 'tool_call_end')).toMatchObject({
+      status: 'success',
+      resultPreview: expect.stringContaining('[REDACTED'),
+    });
   });
 
   it('writes events to file sink', async () => {

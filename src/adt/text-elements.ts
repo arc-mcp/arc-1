@@ -10,10 +10,18 @@
  * Split out of client.ts, which keeps only the thin delegating methods.
  */
 
+import { XMLValidator } from 'fast-xml-parser';
+import { getCurrentContext } from '../server/context.js';
+import { logger } from '../server/logger.js';
 import { lockObject, unlockObject } from './crud.js';
-import { AdtApiError } from './errors.js';
+import { activate } from './devtools.js';
+import { resolveAcceptType } from './discovery.js';
+import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
+import { throwIfRequestCancelled } from './http-deadline.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
+import { textPartChanges } from './text-part-changes.js';
+import { parseDiscoveryDocument, parseXml } from './xml-parser.js';
 
 /** Media type per subobject. Each is used as BOTH Content-Type and Accept on the write PUT (SAP
  *  returns 400 "Accept header missing" otherwise). */
@@ -35,6 +43,12 @@ export type TextElementPart = keyof typeof TEXT_ELEMENT_CT;
 
 /** Object types that have a text pool on the textelements service. */
 export type TextElementObjectType = keyof typeof TEXT_ELEMENT_COLLECTIONS;
+
+export interface TextElementWriteResult {
+  changes: string;
+  state: 'active' | 'inactive' | 'unknown';
+  unchanged: boolean;
+}
 
 export const TEXT_ELEMENT_PARTS = Object.keys(TEXT_ELEMENT_CT) as TextElementPart[];
 
@@ -60,12 +74,51 @@ function textElementsObject(objectType: TextElementObjectType, name: string): st
  *  A not-yet-populated map answers true, so 757/758/816 is never false-blocked and a real
  *  404 surfaces from SAP instead. */
 function serviceAvailable(http: AdtHttpClient, objectType: TextElementObjectType): boolean {
-  if (!http.hasDiscoveryData()) return true;
-  return http.discoveryAcceptFor(`/sap/bc/adt/textelements/${TEXT_ELEMENT_COLLECTIONS[objectType]}`) !== undefined;
+  const collection = `/sap/bc/adt/textelements/${TEXT_ELEMENT_COLLECTIONS[objectType]}`;
+  const listed = http.hasDiscoveryCollection(collection);
+  return listed === undefined || collectionAdvertised(listed, http.discoveryAcceptFor(collection));
+}
+
+function collectionAdvertised(listed: boolean | undefined, mime: string | undefined): boolean {
+  return listed === true || mime !== undefined;
+}
+
+type ServiceAvailability = 'present' | 'absent' | 'inconclusive';
+
+/** Only the deleted owner's own catalog can establish that its optional pool service is absent. */
+function deleteAvailability(
+  listed: boolean | undefined,
+  mime: string | undefined,
+  ownerListed: boolean | undefined,
+): ServiceAvailability {
+  if (collectionAdvertised(listed, mime)) return 'present';
+  return ownerListed === true ? 'absent' : 'inconclusive';
+}
+
+async function discoverPoolAvailability(
+  session: AdtHttpClient,
+  collection: string,
+  ownerCollection: string,
+  signal?: AbortSignal,
+): Promise<ServiceAvailability> {
+  try {
+    const response = await session.get(
+      '/sap/bc/adt/discovery',
+      { Accept: 'application/atomsvc+xml' },
+      { signal, deadline: Date.now() + 5000, noReplay: true },
+    );
+    if (XMLValidator.validate(response.body) !== true) return 'inconclusive';
+    const map = parseDiscoveryDocument(response.body);
+    return deleteAvailability(map.has(collection), resolveAcceptType(map, collection), map.has(ownerCollection));
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    // Failed optional discovery never authorizes skipping the pool lock and metadata check.
+    return 'inconclusive';
+  }
 }
 
 /** Fail clean when the ADT textelements service is absent. */
-function assertService(http: AdtHttpClient, objectType: TextElementObjectType): void {
+export function assertTextElementsService(http: AdtHttpClient, objectType: TextElementObjectType): void {
   if (!serviceAvailable(http, objectType)) {
     throw new AdtApiError(
       `Text elements for ${objectType} require the ADT textelements service (not available on this system).`,
@@ -86,7 +139,7 @@ export async function readTextElementPart(
 ): Promise<string> {
   checkOperation(safety, OperationType.Read, 'GetTextElements');
   assertPart(objectType, part);
-  assertService(http, objectType);
+  assertTextElementsService(http, objectType);
   const resp = await http.get(`${textElementsObject(objectType, name)}/source/${part}`, {
     Accept: TEXT_ELEMENT_CT[part],
   });
@@ -110,7 +163,7 @@ export async function readTextElements(
       '/sap/bc/adt/textelements',
     );
   }
-  assertService(http, objectType);
+  assertTextElementsService(http, objectType);
   if (options?.part) return readTextElementPart(http, safety, objectType, name, options.part);
 
   const chunks: string[] = [];
@@ -127,9 +180,11 @@ export async function readTextElements(
   return chunks.length > 0 ? chunks.join('\n\n') : `No text elements maintained for ${objectType} ${name}.`;
 }
 
-/** Write one subobject. Locks the textelements object (not the class/program), PUTs the body with
- *  that subobject's media type as BOTH Content-Type and Accept, then unlocks. Immediately active —
- *  no SAPActivate needed. */
+/** Write one part, unlock, then activate only the text pool in the same stateful session.
+ *  Compare native bodies under the lock to report what the replacement removed.
+ *  PUT uses the part's media type as BOTH Content-Type and Accept. SAP refuses activation
+ *  while the pool is locked; a source read alone cannot distinguish its inactive version.
+ *  A never-activated PROG still needs its first owner activation to activate the texts. */
 export async function writeTextElementPart(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -138,7 +193,7 @@ export async function writeTextElementPart(
   part: TextElementPart,
   source: string,
   transport?: string,
-): Promise<void> {
+): Promise<TextElementWriteResult> {
   checkOperation(safety, OperationType.Update, 'WriteTextElements');
   assertPart(objectType, part);
   if (objectType === 'CLAS' && part !== 'symbols') {
@@ -148,17 +203,158 @@ export async function writeTextElementPart(
       '/sap/bc/adt/textelements/classes',
     );
   }
-  assertService(http, objectType);
+  assertTextElementsService(http, objectType);
   const obj = textElementsObject(objectType, name);
+  const result: TextElementWriteResult = { changes: '', state: 'unknown', unchanged: false };
   await http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, safety, obj, 'MODIFY');
     const corr = transport ?? (lock.corrNr || undefined);
+    let saved = false;
     try {
-      let url = `${obj}/source/${part}?lockHandle=${encodeURIComponent(lock.lockHandle)}`;
-      if (corr) url += `&corrNr=${encodeURIComponent(corr)}`;
-      await session.put(url, source, TEXT_ELEMENT_CT[part], { Accept: TEXT_ELEMENT_CT[part] });
-    } finally {
-      await unlockObject(session, obj, lock.lockHandle);
+      try {
+        const before = await readTextElementPart(session, safety, objectType, name, part);
+        // Initial empty CLAS/FUGR saves can strand an inactive pool in SAP (COMPAT-15).
+        // Content equality alone is not enough: an existing draft must never be skipped.
+        if (objectType !== 'PROG' && part === 'symbols' && source === '' && before === '') {
+          const state = await readTextPoolState(session, obj, objectType, name);
+          if (state === 'active') {
+            result.state = state;
+            result.unchanged = true;
+            return;
+          }
+        }
+        let url = `${obj}/source/${part}?lockHandle=${encodeURIComponent(lock.lockHandle)}`;
+        if (corr) url += `&corrNr=${encodeURIComponent(corr)}`;
+        await session.put(url, source, TEXT_ELEMENT_CT[part], { Accept: TEXT_ELEMENT_CT[part] });
+        saved = true;
+        const after = await readTextElementPart(session, safety, objectType, name, part);
+        result.changes = textPartChanges(part, before, after);
+      } finally {
+        await unlockObject(session, obj, lock.lockHandle);
+      }
+    } catch (err) {
+      if (saved) {
+        throwTextPoolFailure(
+          err,
+          'Text elements were saved, but read-back or activation was not confirmed. Read the part before retrying.' +
+            result.changes,
+        );
+      }
+      throw err;
+    }
+    await activateTextPool(
+      session,
+      safety,
+      obj,
+      name,
+      `Text elements were saved, but activation was not confirmed. Inspect the text pool before retrying the same text write.${result.changes}`,
+    );
+    try {
+      result.state = await readTextPoolState(session, obj, objectType, name);
+    } catch {
+      // The save and activation request completed; do not turn a failed final read into a retry.
+      result.state = 'unknown';
     }
   });
+  return result;
+}
+
+/** Explicit metadata can reveal drafts omitted from the caller's inactive-object feed. */
+async function readTextPoolState(
+  http: AdtHttpClient,
+  uri: string,
+  objectType: TextElementObjectType,
+  name: string,
+): Promise<'active' | 'inactive'> {
+  const response = await http.get(`${uri}?version=inactive`);
+  const pool = parseXml(response.body).textElement as Record<string, unknown> | undefined;
+  const state = pool?.['@_version'];
+  if (
+    !pool ||
+    Array.isArray(pool) ||
+    pool['@_name'] !== name ||
+    pool['@_type'] !== (objectType === 'CLAS' ? 'CLAS/OCX' : `${objectType}/PX`) ||
+    (state !== 'active' && state !== 'inactive')
+  ) {
+    throw new AdtApiError('Cannot verify the text-pool state.', 409, uri);
+  }
+  return state;
+}
+
+/** Activate one text-pool URI only; on failure, prefix `note` to the error and keep it as the hint. */
+export async function activateTextPool(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  uri: string,
+  name: string,
+  note: string,
+): Promise<void> {
+  try {
+    // Do not add other inactive objects suggested by a preaudit response.
+    const result = await activate(http, safety, uri, { preaudit: false, name });
+    if (!result.success) {
+      throw new AdtApiError(result.messages.join('\n') || 'Text-pool activation failed.', 400, uri);
+    }
+  } catch (err) {
+    throwTextPoolFailure(err, note);
+  }
+}
+
+/** Keep confirmed save state visible even when minimal errors hide SAP diagnostics. */
+function throwTextPoolFailure(err: unknown, note: string): never {
+  if (err instanceof AdtError) err.extraHint = err.extraHint ? `${note}\n${err.extraHint}` : note;
+  if (err instanceof Error) err.message = `${note}\n${err.message}`;
+  throw err;
+}
+
+/** Caller already holds the owner lock in this session. The pool has an independent lock:
+ * hold both from the explicit inactive-version read through owner DELETE. The caller's
+ * inactive feed omits other users' drafts and cannot authorize automatic activation. */
+export async function withActiveTextPoolForDelete<T>(
+  session: AdtHttpClient,
+  safety: SafetyConfig,
+  objectType: 'PROG' | 'FUGR',
+  name: string,
+  deleteOwner: () => Promise<T>,
+): Promise<T> {
+  const collection = `/sap/bc/adt/textelements/${TEXT_ELEMENT_COLLECTIONS[objectType]}`;
+  const ownerCollection = objectType === 'PROG' ? '/sap/bc/adt/programs/programs' : '/sap/bc/adt/functions/groups';
+  const cached = deleteAvailability(
+    session.hasDiscoveryCollection(collection),
+    session.discoveryAcceptFor(collection),
+    session.hasDiscoveryCollection(ownerCollection),
+  );
+  const signal = getCurrentContext()?.signal;
+  const availability =
+    cached === 'inconclusive' ? await discoverPoolAvailability(session, collection, ownerCollection, signal) : cached;
+  throwIfRequestCancelled({ signal });
+  logger.debug('Text-pool service before deletion', {
+    objectType,
+    availability,
+    discovery: cached === 'inconclusive' ? 'fresh' : 'cached',
+  });
+  if (availability === 'absent') return deleteOwner();
+  const uri = textElementsObject(objectType, name);
+  const lock = await lockObject(session, safety, uri, 'MODIFY');
+  try {
+    const version = await readTextPoolState(session, uri, objectType, name);
+    if (version === 'inactive') {
+      const hint =
+        `${objectType} ${name} was not deleted because its text pool is inactive. ` +
+        'Review the draft with its author, then explicitly activate the pool and retry deletion. ' +
+        (objectType === 'PROG'
+          ? `A newly created program needs its first owner activation. If its source cannot compile and you intend to discard it, replace the source with REPORT ${name}., activate the program, then retry deletion.`
+          : 'SAP can leave an empty pool inactive despite a successful activation response. Stop and involve the user; ARC-1 has no verified automatic repair.');
+      const error = new AdtApiError('Deletion refused because the text pool is inactive.', 409, uri);
+      error.extraHint = hint;
+      throw error;
+    }
+    return await deleteOwner();
+  } finally {
+    try {
+      await unlockObject(session, uri, lock.lockHandle);
+    } catch {
+      // Owner DELETE also removes the pool; the stateful session closes on every path.
+    }
+  }
 }

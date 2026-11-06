@@ -3,6 +3,7 @@
  * The undici mock + AdtClient + createClient live in ./setup-undici-mock.ts — import that helper
  * and keep all other src-module imports dynamic (see its header for the ordering rules).
  */
+import { readFileSync } from 'node:fs';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FLP_TILE_PAGE_SIZE } from '../../../src/adt/flp.js';
@@ -486,6 +487,61 @@ describe('SAPManage / SAPContext handlers', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('could not determine');
       expect(result.content[0]?.text).toContain('Fail-closed');
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/apireleases/'))).toBe(false);
+    });
+
+    it('set_api_state for name + objectType FUNC resolves the function group and targets the function module URI', async () => {
+      const unreleased = readFileSync(
+        new URL('../../fixtures/xml/api-release-unreleased.xml', import.meta.url),
+        'utf-8',
+      );
+      const released = unreleased
+        .replace(
+          '<ars:status ars:state="NOT_RELEASED" ars:stateDescription="Not Released"/>',
+          '<ars:status ars:state="RELEASED" ars:stateDescription="Released"/>',
+        )
+        .replace('ars:useInSAPCloudPlatform="false"', 'ars:useInSAPCloudPlatform="true"')
+        .replace('ars:isAnyContractReleased="false"', 'ars:isAnyContractReleased="true"');
+      mockFetch.mockReset();
+      mockFetch
+        .mockResolvedValueOnce(
+          mockResponse(
+            200,
+            '<objectReferences><objectReference type="FUGR/FF" name="Z_MY_FUNC" uri="/sap/bc/adt/functions/groups/zgroup/fmodules/z_my_func" packageName="$TMP" description="Test FM"/></objectReferences>',
+            { 'x-csrf-token': 'T' },
+          ),
+        )
+        .mockResolvedValueOnce(mockResponse(200, unreleased, { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(mockResponse(200, released, { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(mockResponse(200, released, { 'x-csrf-token': 'T' }));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'set_api_state',
+        name: 'Z_MY_FUNC',
+        objectType: 'FUNC',
+        apiState: 'RELEASED',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('/sap/bc/adt/functions/groups/zgroup/fmodules/z_my_func');
+      const releaseUrls = mockFetch.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('/apireleases/'));
+      expect(releaseUrls).toHaveLength(3);
+      for (const url of releaseUrls) expect(url).toContain('functions%2Fgroups%2Fzgroup%2Ffmodules%2Fz_my_func');
+    });
+
+    it('set_api_state for FUNC refuses before any apireleases request when the function group is unknown', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<objectReferences/>', { 'x-csrf-token': 'T' }));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'set_api_state',
+        name: 'Z_NONEXIST_FM',
+        objectType: 'FUNC',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Cannot resolve function group');
+      expect(result.content[0]?.text).toContain('objectUri');
       expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/apireleases/'))).toBe(false);
     });
 
@@ -997,14 +1053,6 @@ describe('SAPManage / SAPContext handlers', () => {
         const method = opts?.method ?? 'GET';
         if (urlStr.includes('/sap/bc/adt/core/discovery')) {
           return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
-        }
-        if (method === 'POST' && urlStr.includes('/sap/bc/adt/repository/informationsystem/usageReferences/scope')) {
-          return Promise.resolve(
-            mockResponse(
-              200,
-              '<usageReferences:scopeResponse xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences"/>',
-            ),
-          );
         }
         if (method === 'POST' && urlStr.includes('/sap/bc/adt/repository/informationsystem/usageReferences')) {
           return Promise.resolve(
@@ -1688,14 +1736,8 @@ ENDCLASS.`;
   <adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/Z_ORDERDATA3" adtcore:type="DDLS/DF" adtcore:name="Z_ORDERDATA3" adtcore:packageName="ZPKG" adtcore:description="Target"/>
   <adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/Z_ORDERDATA4" adtcore:type="DDLS/DF" adtcore:name="Z_ORDERDATA4" adtcore:packageName="ZPKG" adtcore:description="Sibling"/>
 </adtcore:objectReferences>`;
-      const targetWhereUsedXml = `<?xml version="1.0" encoding="utf-8"?>
-<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
-  <usageReferences:referencedObjects>
-    <usageReferences:referencedObject uri="/sap/bc/adt/ddic/ddl/sources/zi_projection" isResult="true" canHaveChildren="false" usageInformation="gradeDirect,includeProductive">
-      <usageReferences:adtObject adtcore:name="ZI_PROJECTION" adtcore:type="DDLS/DF" xmlns:adtcore="http://www.sap.com/adt/core"/>
-    </usageReferences:referencedObject>
-  </usageReferences:referencedObjects>
-</usageReferences:usageReferenceResult>`;
+      const targetWhereUsedXml =
+        '<usageReferenceResult numberOfResults="0" resultDescription="[A4H] Where-Used List: Z_ORDERDATA3 (Data Definition)"><referencedObjects/></usageReferenceResult>';
       const siblingWhereUsedXml = `<?xml version="1.0" encoding="utf-8"?>
 <usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
   <usageReferences:referencedObjects>
@@ -1741,6 +1783,8 @@ ENDCLASS.`;
 
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.searchedFor).toContain('Where-Used List: Z_ORDERDATA3');
+      expect(parsed.downstream.summary.total).toBe(0);
       expect(parsed.consistencyHints?.[0]).toContain('Z_ORDERDATA3');
       expect(parsed.consistencyHints?.[0]).toContain('Z_ORDERDATA4');
       expect(parsed.siblingExtensionAnalysis.target.packageName).toBe('ZPKG');

@@ -31,16 +31,11 @@ request.** Everything else follows from that. Which client that is depends on to
 | Topology | Authenticates at `/oauth/token` | Needs `jwt-bearer` in |
 |---|---|---|
 | MCP client (Claude / Cursor / Eclipse) → ARC-1 | the DCR client via ARC-1's OAuth proxy, `authorization_code` | nobody — works today |
-| [`mcp-hub`](https://github.com/arc-mcp/mcp-hub) → ARC-1 backend | the **hub's** client + `granted-apps` / `foreign-scope-references` chain | the **hub's** descriptor |
 | **BTP app → ARC-1 via a service key of ARC-1's XSUAA** | **ARC-1's own client** | **ARC-1's descriptor** ← this change |
 
-Row 3 is the simplest shape: no `granted-apps` chain, and the returned token is already audienced to
-`arc1-mcp!t…`. ARC-1 declares no `granted-apps` / `grant-as-authority-to-apps` on any scope, so row 2
-requires manual descriptor work on both sides; row 3 requires only this one line.
-
-Why row 3's token is accepted: it is minted **by** ARC-1's client, so `client_id` matches ARC-1's
-own, and `@sap/xssec`'s audience validator takes the client_id-match path. (This is also why the
-match does *not* rescue row 2 — there the token carries the hub's client_id.)
+The service-key topology needs no `granted-apps` chain: the returned token is already audienced to
+`arc1-mcp!t…`. It is minted **by** ARC-1's client, so `client_id` matches ARC-1's own, and
+`@sap/xssec`'s audience validator takes the client_id-match path.
 
 ## `grant-types` is undocumented
 
@@ -104,15 +99,12 @@ Throwaway service keys on `arc1-mcp-xsuaa`, deleted afterwards.
 **The masking matters more than the rejection.** For `jwt-bearer`, XSUAA validates the assertion
 (signature → issuer → origin/user mapping) *before* consulting the grant-type allowlist. Only an
 assertion that survives all of it reaches the gate — so testing with a malformed or non-user token
-produces a misleading error and hides the real cause. This independently reproduces the caveat in
-[`mcp-hub-multi-system.md`](../mcp-hub-multi-system.md) L4, where an earlier `"Unable to map issuer"`
-had masked the same thing.
+produces a misleading error and hides the real cause.
 
 **Not verified here:** reaching the gate for `jwt-bearer` specifically needs a real **user**
 assertion (carrying an `origin` claim), which requires an interactive browser login — not run. The
-allowlist's existence and enforcement on this instance is proven via `client_credentials`; the
-`jwt-bearer` rejection with a real user token (same `"Unauthorized grant type"` wording) was recorded
-live 2026-06-17 in `mcp-hub-multi-system.md` L4.
+allowlist's existence and enforcement on this instance is proven via `client_credentials`;
+the corresponding `jwt-bearer` rejection with a real user token was not verified in this probe.
 
 ### Credential types
 
@@ -157,7 +149,5 @@ MTA redeploy). Existing bindings and service keys inherit the change without reb
 ## Related
 
 - [`docs_page/xsuaa-setup.md`](../../../docs_page/xsuaa-setup.md) — the user-facing setup.
-- [`mcp-hub-multi-system.md`](../mcp-hub-multi-system.md) L4 — the hub's different wiring; amended
-  alongside this change, since it previously stated "the hub's xsuaa, not ARC-1's" as a general rule.
 - [#434](https://github.com/arc-mcp/arc-1/issues/434) — cross-subaccount exchange fails at issuer
   mapping; unchanged by this.

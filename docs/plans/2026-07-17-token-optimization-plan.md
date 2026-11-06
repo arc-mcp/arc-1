@@ -98,6 +98,8 @@ driven 100% by `?uri=`. `marcellourbani/abap-adt-api` sends no limit either.
 - **`getWhereUsedScope` targets a 404 endpoint** — `POST …/usageReferences/scope` → *"No suitable
   resource found"* on 758, with two live callers (`structure-hierarchy.ts:183`, `cds-hints.ts:194`)
   burning round-trips on a false assumption.
+  Resolved by removing the invalid helper; see the
+  [verified correction](../research/2026-10-17-where-used-scope-correction.md).
 
 **Steps**
 1. Add `maxResults` (default 100, clamp `[1, 1000]` via the existing `clampSearchResults`) to

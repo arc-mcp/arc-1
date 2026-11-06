@@ -11,6 +11,7 @@
  */
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { deleteProgramFixture } from '../helpers/program-cleanup.js';
 import { bareObjectName } from '../helpers/test-prefixes.js';
 import { PERSISTENT_OBJECTS, readFixture } from './fixtures.js';
 import { callTool, type ToolResult } from './helpers.js';
@@ -63,6 +64,13 @@ export function classifyFixtureError(message: string): string | null {
   if (/\/sap\/bc\/adt\/ddic\/dataelements\b.*Unsupported Media Type/i.test(message)) {
     return 'DTEL v2 content type not supported on this release';
   }
+  if (
+    message.includes(
+      'Transparent table writes via ADT REST are not available on this system (/sap/bc/adt/ddic/tables/ is not exposed',
+    )
+  ) {
+    return '/ddic/tables collection not available on this release';
+  }
   if (/\/sap\/bc\/adt\/ddic\/tables(?:\?|\b).*(?:does not exist|not found)/i.test(message)) {
     return '/ddic/tables collection not available on this release';
   }
@@ -88,6 +96,13 @@ export async function syncPersistentFixtures(client: Client): Promise<FixtureSyn
 
   for (const obj of PERSISTENT_OBJECTS) {
     const label = `${obj.type} ${obj.name}`;
+    const dependency = 'dependsOn' in obj && summary.skipped.find((skip) => skip.label === obj.dependsOn);
+    if (dependency) {
+      const reason = `Required fixture ${dependency.label} was skipped: ${dependency.reason}`;
+      console.warn(`    [setup] ${label}: skipping — ${reason}`);
+      summary.skipped.push({ label, reason });
+      continue;
+    }
     const expectedType = obj.type.toUpperCase();
     const desiredSource = normalizeSource(readFixture(obj.fixture), obj.type);
     const existingTypes = await findExistingObjectTypes(client, obj.name);
@@ -313,11 +328,10 @@ async function deleteObjectTypes(client: Client, name: string, types: string[], 
       );
       continue; // best-effort-cleanup
     }
-    const deleteResult = await callTool(client, 'SAPWrite', {
-      action: 'delete',
-      type,
-      name,
-    });
+    const deleteResult =
+      type === 'PROG'
+        ? await deleteProgramFixture((tool, args) => callTool(client, tool, args), name)
+        : await callTool(client, 'SAPWrite', { action: 'delete', type, name });
     if (deleteResult.isError) {
       const text = toolText(deleteResult);
       if (/not found|does not exist|unknown/i.test(text)) continue;

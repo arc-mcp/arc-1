@@ -8,6 +8,8 @@ import {
   type TargetDescriptor,
   targetSafety,
 } from './destination-registry.js';
+import { isTargetGranted } from './multi-target-authorization.js';
+import type { MultiTargetRequestProjection } from './multi-target-request-projection.js';
 import type { ServerConfig } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 
@@ -34,7 +36,11 @@ function buildReadOnlyRuntimeConfig(
     // Wire representation only — safe to inherit. `insecure` deliberately is NOT:
     // multi-target never disables TLS verification, per-target or otherwise.
     gzipDataPreviewBody: base.gzipDataPreviewBody,
+    userAgent: base.userAgent,
     transport: 'http-streamable',
+    // Only the administrator ceiling; every caller must opt in to Eclipse links on each request.
+    ideLinks: base.ideLinks,
+    ideSystemId: target?.sid ?? '',
     httpAddr: base.httpAddr,
     allowWrites: safety.allowWrites,
     allowDataPreview: safety.allowDataPreview,
@@ -70,7 +76,8 @@ function buildReadOnlyRuntimeConfig(
     allowPluginExecute: false,
     allowPluginRawWrites: false,
     lintBeforeWrite: base.lintBeforeWrite,
-    checkBeforeWrite: false,
+    checkBeforeWrite: base.checkBeforeWrite,
+    abaplintConfig: base.abaplintConfig,
     cacheMode: 'none',
     maxConcurrent: base.maxConcurrent,
     maxDataPreviewResponseBytes: base.maxDataPreviewResponseBytes,
@@ -84,14 +91,42 @@ function buildReadOnlyRuntimeConfig(
     minimalErrors: base.minimalErrors,
     verbose: base.verbose,
     multiTargetEndpoints: true,
+    multiTargetAuthorization: base.multiTargetAuthorization,
     destinationName: target?.destinationName,
     targetId: target?.target,
   };
 }
 
 /** Build the isolated runtime for one discovered target. */
-export function buildMultiTargetConfig(base: ServerConfig, target: TargetDescriptor): ServerConfig {
-  return buildReadOnlyRuntimeConfig(base, targetSafety(target, base.blockedDataSources), target);
+export function buildMultiTargetConfig(
+  base: ServerConfig,
+  target: TargetDescriptor,
+  access: { mode: 'pinned' | 'aggregate'; authorization?: MultiTargetRequestProjection },
+): ServerConfig {
+  const authorization = access.authorization;
+  const enabled =
+    access.mode === 'pinned' &&
+    base.allowWrites &&
+    base.multiTargetAuthorization === 'xsuaa-attribute' &&
+    target.authentication === 'PrincipalPropagation' &&
+    target.writePolicy?.allowWrites === true &&
+    !!authorization?.read &&
+    !!authorization.write &&
+    isTargetGranted(authorization.grant, target.target) &&
+    isTargetGranted(authorization.writeGrant, target.target);
+  return {
+    ...buildReadOnlyRuntimeConfig(base, targetSafety(target, base.blockedDataSources), target),
+    allowWrites: enabled,
+    allowedPackages: [...base.allowedPackages],
+    allowedTransports: [], // Preserve multi-target transport reads; write policy carries the server ceiling.
+    multiTargetWrite: Object.freeze({
+      target: target.target,
+      enabled,
+      allowedPackages: target.writePolicy?.allowedPackages ?? Object.freeze([]),
+      allowedTransports: target.writePolicy?.allowedTransports ?? Object.freeze([]),
+      serverAllowedTransports: Object.freeze([...base.allowedTransports]),
+    }),
+  };
 }
 
 /**

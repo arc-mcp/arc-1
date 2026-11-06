@@ -499,7 +499,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(putCall?.body).not.toContain(ktdB64(`## ${KTD_ROOT_ID}\n\nnew root\n\n## ${KTD_FIELD_ID}\n\nnew field`));
     });
 
-    it('refuses an unaddressed body on a multi-node KTD before taking a lock (no LOCK, no PUT)', async () => {
+    it('refuses an unaddressed body on a multi-node KTD under the lock without PUT', async () => {
       const calls = recordKtdCalls(twoNodeEnvelope('root', 'field'));
 
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
@@ -513,7 +513,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(result.content[0]?.text).toContain('addresses no node');
       expect(result.content[0]?.text).toContain(KTD_FIELD_ID);
       expect(calls.some((c) => c.method === 'PUT')).toBe(false);
-      expect(calls.some((c) => c.url.includes('_action=LOCK'))).toBe(false);
+      expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
     });
 
     it('activates SKTD using the lowercased ADT URL in the objectReference', async () => {
@@ -654,7 +654,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(result.isError).toBe(true);
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('Created SKTD ZTR_C_PAYMENT_VALUE_DATE');
-      expect(text).toContain('documentation body was NOT written');
+      expect(text).toContain('documentation write state is unconfirmed');
       expect(text).toContain('verify it with SAPRead');
       expect(text).toContain('action="update"');
       expect(calls.some((call) => call.method === 'PUT')).toBe(false);
@@ -698,7 +698,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(result.isError).toBe(true);
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('Created SKTD ZTR_C_PAYMENT_VALUE_DATE');
-      expect(text).toContain('documentation body was NOT written');
+      expect(text).toContain('documentation write state is unconfirmed');
       expect(text).toContain('verify it with SAPRead');
       expect(text).toContain('action="update"');
       expect(calls.some((call) => call.method === 'PUT')).toBe(true);

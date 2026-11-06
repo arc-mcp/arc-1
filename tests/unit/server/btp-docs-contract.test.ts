@@ -31,7 +31,7 @@ function assertParity(markdown: string): void {
   const rows = documentedActions(markdown);
   const definitions = multiTargetToolDefinitions(getToolDefinitions(config), config);
   expect([...rows.keys()].sort()).toEqual(definitions.map((tool) => tool.name).sort());
-  for (const name of ['SAPLint', 'SAPDiagnose', 'SAPTransport']) {
+  for (const name of ['SAPLint', 'SAPDiagnose', 'SAPTransport', 'SAPQuery']) {
     const tool = definitions.find((item) => item.name === name)!;
     const properties = tool.inputSchema.properties as Record<string, { enum?: string[] }>;
     expect(rows.get(name)?.toSorted(), name).toEqual(properties.action?.enum?.toSorted());
@@ -85,6 +85,8 @@ describe('BTP documentation contracts', () => {
   it('keeps the maintained maximum action table in sync with the real schema', () => assertParity(guide));
 
   it('detects a missing or invented action (guard regression)', () => {
+    expect(() => assertParity(guide.replace('`long_text`, `sql`', '`sql`'))).toThrow();
+    expect(() => assertParity(guide.replace('`long_text`, `sql`', '`long_text`, `sql`, `read`'))).toThrow();
     expect(() => assertParity(guide.replace('`lint_and_fix`, ', ''))).toThrow();
     expect(() => assertParity(guide.replace('`list_rules` (offline', '`list_rules`, `format` (offline'))).toThrow();
   });

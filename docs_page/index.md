@@ -4,6 +4,10 @@
 
 ARC-1 is a TypeScript MCP server (distributed as an npm package and Docker image) that implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) and translates AI tool calls into [SAP ABAP Development Tools (ADT)](https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/about-abap-development-tools) REST API requests. It works with Claude, GitHub Copilot, VS Code, and any MCP-compatible client.
 
+!!! info "Evaluating ARC-1 for your organization?"
+
+    The [Security Review](security.md) covers where data goes, whose permissions apply, and what your team has to decide.
+
 !!! tip "Stay current with ARC-1"
 
     Get major releases, upgrade and security notes, practical guides, and occasional questions where your feedback can shape what comes next. [Join ARC-1 Updates →](newsletter.md)
@@ -24,15 +28,15 @@ As an **admin**, you control what the AI can and cannot do via positive-opt-in f
 
 ```bash
 # Run directly with npx (no install needed)
-npx arc-1@latest --url https://your-sap-host:44300 --user YOUR_USER
+npx arc-1@latest --url https://your-sap-host:44300 --user YOUR_USER --password YOUR_PASSWORD
 
 # Or install globally
 npm install -g arc-1
-arc1 --url https://your-sap-host:44300 --user YOUR_USER
+arc1 --url https://your-sap-host:44300 --user YOUR_USER --password YOUR_PASSWORD
 
 # Or use Docker
-docker run -e SAP_URL=https://host:44300 -e SAP_USER=dev -e SAP_PASSWORD=secret \
-  ghcr.io/arc-mcp/arc-1
+docker run --rm -i -e SAP_URL=https://host:44300 -e SAP_USER=dev -e SAP_PASSWORD=secret \
+  -e SAP_TRANSPORT=stdio ghcr.io/arc-mcp/arc-1
 ```
 
 ### BTP ABAP Environment
@@ -68,7 +72,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 }
 ```
 
-**ARC-1 is read-only by default** — no writes, no free SQL, no table preview, no transport actions. To change that, edit the same `env` block that starts ARC-1. For example, `SAP_ALLOW_DATA_PREVIEW=true SAP_ALLOW_FREE_SQL=true` keeps the server read-only but enables SQL + named table preview. The example below shows the "everything on" variant (writes + SQL + transports + all packages):
+**ARC-1 is read-only by default** — no writes, no free SQL, no table preview, no transport mutations. To change that, edit the same `env` block that starts ARC-1. For example, `SAP_ALLOW_DATA_PREVIEW=true SAP_ALLOW_FREE_SQL=true` keeps the server read-only but enables SQL + named table preview. The example below shows a broad-access variant (writes + SQL + transports + all packages):
 
 ```json
 {
@@ -120,7 +124,7 @@ Add `.mcp.json` to your project root:
 
 ### GitHub Copilot / VS Code
 
-For local stdio mode, use the same `npx` command shape shown above. VS Code's `servers` form looks like this:
+For local stdio mode, use the same `npx` command shape shown above. VS Code's workspace `.vscode/mcp.json` uses this `servers` form:
 
 ```json
 {
@@ -140,11 +144,14 @@ For local stdio mode, use the same `npx` command shape shown above. VS Code's `s
 }
 ```
 
-For HTTP Streamable mode, start arc1 as an HTTP server, then point your MCP client to it:
+For local HTTP Streamable mode, generate an API key, start the server, and configure
+the same key in the client. For shared access, use HTTPS as described in [Deployment](deployment.md).
 
 ```bash
+export ARC1_LOCAL_KEY="$(openssl rand -hex 32)"
+export ARC1_API_KEYS="$ARC1_LOCAL_KEY:admin"
 SAP_URL=https://host:44300 SAP_USER=dev SAP_PASSWORD=secret \
-  npx arc-1@latest --transport http-streamable --http-addr 0.0.0.0:3000
+  npx arc-1@latest --transport http-streamable --http-addr 127.0.0.1:3000
 ```
 
 Add to VS Code / Copilot MCP config:
@@ -153,7 +160,9 @@ Add to VS Code / Copilot MCP config:
 {
   "servers": {
     "sap": {
-      "url": "http://localhost:3000/mcp"
+      "type": "http",
+      "url": "http://127.0.0.1:3000/mcp",
+      "headers": { "Authorization": "Bearer YOUR_GENERATED_API_KEY" }
     }
   }
 }
@@ -207,22 +216,30 @@ The three-layer model (server flag + user scope + SAP authorization) is describe
 
 ## SAP API Policy and data access
 
-ARC-1 is a governed development-tooling proxy around ADT behavior, not a bulk data-extraction product — real user identity, SAP authorization, audit logging and rate controls throughout. Where that stands under SAP's API Policy, and what to ask your SAP contact before production, is covered in **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)**.
+For a custom MCP server such as ARC-1, use SAP's
+[Third-Party MCP Access reference architecture](https://architecture.learning.sap.com/docs/ref-arch/137800)
+as the main design and control baseline. SAP's FAQ allows custom MCP servers under conditions;
+Integration Suite is not mandatory. Our preferred shared deployment is BTP with strict principal
+propagation. **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)** explains
+the path, remaining control gaps and the specific FAQ Q33 clarification needed for ARC-1's direct
+ADT client. Architecture alignment and BTP hosting alone do not establish full adherence.
 
 ARC-1's defaults are intentionally conservative: no writes, no named table preview, no freestyle SQL, no transport mutations, no Git mutations. Two capabilities are especially sensitive and are **off by default** behind explicit opt-in env vars:
 
 | Capability | Env var to enable | Default | Why it is gated |
 | ---------- | ----------------- | ------- | --------------- |
-| Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
-| Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
+| Table previews, [saved SAPscript texts](tools.md#stored-sapscript-long-texts) and [SLG1 messages](tools.md#saved-application-logs-actionapplication_log) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Reads application data; authenticated callers also need `data` scope. |
+| Freestyle ABAP SQL (`SAPQuery(action=sql)`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; authenticated callers also need `sql` scope. |
 
-For production, combine conservative tool exposure with real user identity, SAP-side authorization, audit logging, rate limits, and review against the current SAP policy.
+FAQ Q33 places business-data reads and backend SQL outside ADT's intended development-tooling scope.
+Keep these flags off unless the specific use has a documented allowance or SAP authorization under
+the applicable agreements. Technical opt-ins and internal approval do not supply that allowance.
 
 ## Documentation
 
 | Doc | Description |
 |-----|-------------|
-| [quickstart.md](quickstart.md) | **Start here** — 5-minute npx + Claude Desktop setup |
+| [quickstart.md](quickstart.md) | **Start here** — npx + Claude Desktop setup |
 | [release-notes.md](release-notes.md) | Released changes and upgrade notes |
 | [roadmap.md](roadmap.md) | Parked ideas and future possibilities |
 | [local-development.md](local-development.md) | Full local dev — npx/npm/Docker/git, `.env`, SSO cookie extractor, MCP client configs |
@@ -235,6 +252,7 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [mcp-usage.md](mcp-usage.md) | AI agent usage guide & workflow patterns |
 | [architecture.md](architecture.md) | System architecture with Mermaid diagrams |
 | [caching.md](caching.md) | Request-driven object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, dependency parsing reuse, and live reverse-dependency lookup |
+| [security.md](security.md) | Security review questions and a copyable decision record |
 | [security-guide.md](security-guide.md) | Security hardening checklist for production |
 | [cli-guide.md](cli-guide.md) | CLI commands and configuration |
 | [docker.md](docker.md) | Full Docker reference |

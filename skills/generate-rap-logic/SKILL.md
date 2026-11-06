@@ -288,7 +288,7 @@ SAPWrite(action="edit_method", type="CLAS", name="<bp_class>", method="<method_n
 After writing all methods, run a syntax check:
 
 ```
-SAPDiagnose(action="syntax", type="CLAS", name="<bp_class>")
+SAPRead(type="SYNTAX", objectType="CLAS", name="<bp_class>")
 ```
 
 If syntax errors occur, try SAP quickfix proposals first before manual edits:

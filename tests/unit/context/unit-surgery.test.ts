@@ -1,6 +1,6 @@
 import { Version } from '@abaplint/core';
 import { describe, expect, it } from 'vitest';
-import { listEditableUnits, spliceUnit } from '../../../src/context/unit-surgery.js';
+import { insertUnit, listEditableUnits, spliceUnit } from '../../../src/context/unit-surgery.js';
 
 const PROGRAM = `REPORT zunit_surgery.
 
@@ -119,5 +119,49 @@ ENDMODULE.`,
     );
     expect(result.success).toBe(false);
     expect(result.error).toContain('exactly one complete FORM beta');
+  });
+});
+
+describe('insertUnit', () => {
+  const addition = 'FORM gamma.\n  WRITE 3.\nENDFORM.';
+  it('appends without changing existing lines or SE80 headers', () => {
+    const original = PROGRAM.replace('FORM beta.', '*& Form beta\nFORM beta.');
+    const result = insertUnit(original, 'ZUNIT', 'gamma', addition);
+    expect(result.success, result.error).toBe(true);
+    expect(result.newSource).toBe(`${original}\n${addition}\n`);
+  });
+
+  it('appends the first MODULE and leaves trailing INCLUDEs in place, preserving CRLF', () => {
+    const original = 'PROGRAM zmod.\r\nINCLUDE zmod_forms.\r\n';
+    const result = insertUnit(original, 'ZMOD', 'status', 'MODULE status OUTPUT.\nENDMODULE.');
+    expect(result.success, result.error).toBe(true);
+    expect(result.newSource).toContain(original);
+    expect(result.newSource.replace(/\r\n/g, '')).not.toContain('\n');
+    expect(result.newSource.indexOf('MODULE status')).toBeGreaterThan(result.newSource.indexOf('INCLUDE'));
+  });
+
+  it.each([
+    { label: 'duplicate', source: PROGRAM, name: 'ALPHA', block: 'FORM alpha.\nENDFORM.' },
+    { label: 'different name', source: PROGRAM, name: 'gamma', block: 'FORM other.\nENDFORM.' },
+    {
+      label: 'two units',
+      source: PROGRAM,
+      name: 'gamma',
+      block: 'FORM gamma.\nENDFORM.\nFORM delta.\nENDFORM.',
+    },
+    { label: 'missing end', source: PROGRAM, name: 'gamma', block: 'FORM gamma.\nWRITE 1.' },
+    { label: 'non-unit', source: PROGRAM, name: 'gamma', block: 'WRITE 1.' },
+    { label: 'unclosed original', source: 'FORM alpha.\nWRITE 1.', name: 'gamma', block: addition },
+    {
+      label: 'unclosed MODULE',
+      source: 'MODULE gamma OUTPUT.\nWRITE 1.',
+      name: 'gamma',
+      block: 'MODULE gamma OUTPUT.\nENDMODULE.',
+    },
+  ])('refuses $label without producing replacement source', (row) => {
+    const result = insertUnit(row.source, 'ZUNIT', row.name, row.block);
+    expect(result.success).toBe(false);
+    expect(result.newSource).toBe('');
+    expect(result.error).toBeTruthy();
   });
 });

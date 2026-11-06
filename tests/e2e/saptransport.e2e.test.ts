@@ -16,6 +16,7 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { deleteProgramFixture } from '../helpers/program-cleanup.js';
 import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
@@ -59,11 +60,7 @@ describe('E2E SAPTransport Tests', () => {
   }
 
   async function deleteTrackedTransportableProgram(name: string): Promise<void> {
-    const result = await callTool(client, 'SAPWrite', {
-      action: 'delete',
-      type: 'PROG',
-      name,
-    });
+    const result = await deleteProgramFixture((tool, args) => callTool(client, tool, args), name);
     const text = result.content?.[0]?.text ?? '';
     if (result.isError && !/not found|does not exist|unknown/i.test(text)) {
       throw new Error(text || `Failed to delete ${name}`);
@@ -283,7 +280,7 @@ describe('E2E SAPTransport Tests', () => {
       }
     });
 
-    it('reassign action changes transport owner', async (ctx) => {
+    it('reassign action accepts the same transport owner', async (ctx) => {
       if (!transportsEnabled) return skipTest(ctx, 'Transport writes not enabled on MCP server');
 
       let id = '';
@@ -301,6 +298,7 @@ describe('E2E SAPTransport Tests', () => {
         // Get current owner
         const getResult = await callTool(client, 'SAPTransport', { action: 'get', id });
         const transport = JSON.parse(expectToolSuccess(getResult));
+        expect(transport.owner).toBeTruthy();
 
         // Reassign to same user (safe)
         const reassignResult = await callTool(client, 'SAPTransport', {
@@ -310,6 +308,8 @@ describe('E2E SAPTransport Tests', () => {
         });
         const reassignText = expectToolSuccess(reassignResult);
         expect(reassignText).toContain('Reassigned transport');
+        const updated = await callTool(client, 'SAPTransport', { action: 'get', id });
+        expect(JSON.parse(expectToolSuccess(updated)).owner).toBe(transport.owner);
       } finally {
         if (id) {
           const deleteResult = await callTool(client, 'SAPTransport', { action: 'delete', id, recursive: true });

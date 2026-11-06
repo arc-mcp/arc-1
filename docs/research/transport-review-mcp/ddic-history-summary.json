@@ -1,0 +1,20 @@
+[
+  {
+    "type": "DOMA",
+    "status": "unavailable",
+    "httpStatus": 403,
+    "error": "ADT API error: status 403 at /sap/bc/adt/ddic/domains/ZARC1_TD_DOM/versions/20260803214201/00001/content: Request version for DOMA is not supported"
+  },
+  {
+    "type": "DTEL",
+    "status": "unavailable",
+    "httpStatus": 403,
+    "error": "ADT API error: status 403 at /sap/bc/adt/ddic/dataelements/ZARC1_E_STATUS/versions/19700101101123/00000/content: Request version for DTEL is not supported"
+  },
+  {
+    "type": "TTYP",
+    "status": "unavailable",
+    "httpStatus": 403,
+    "error": "ADT API error: status 403 at /sap/bc/adt/ddic/tabletypes/ZORFC_CHAR16_T/versions/19700101101123/00000/content: Request version for TTYP is not supported"
+  }
+]

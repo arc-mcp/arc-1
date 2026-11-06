@@ -1,0 +1,1407 @@
+{
+  "checkedAt": "2026-11-01",
+  "description": "Native relation denial guard after Claude review 4; fresh loopback MCP HTTP, HTTPS SAP, cache none, all write/data gates off",
+  "runtimeFiles": {
+    "src/adt/class-extensions.ts": "2e8ba8d966e879acb03a9946e28822bd8693ff1f0b2c60de3bf0f94007d451a9",
+    "src/handlers/extension-read.ts": "28e162e3238177438240476011bcaf0888ef9dea300d373c0d5315ffb46fc915",
+    "src/adt/source-plugin-discovery.ts": "8eeb79a922c10ce0d9bddde1789a3fc28690aebf0cb7b3de4f3f3cea84cb09a1"
+  },
+  "targets": {
+    "a4h": {
+      "nativeAllowed": {
+        "checkedAt": "2026-11-01T06:19:32.106Z",
+        "observations": [
+          {
+            "name": "CL_OO_ADT_ENHANCED_CLASS",
+            "extensions": "summary",
+            "baseSha256": "bda78a64018444906cc08a63933b108ba89b2038050d1c081b3432f0a0bfcf81",
+            "extraBytes": 1008,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_OO_ADT_ENHANCED_CLASS",
+                "version": "active"
+              },
+              "scope": "CLAS CL_OO_ADT_ENHANCED_CLASS full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "returned",
+                  "coverage": "bounded_traversal",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "provider_returned_EXTED_OBJ_graph; owning_object_scope; technology and runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "class_section=main; HOOK_IMPL outer/specific identities; nested expansion not performed",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [
+                {
+                  "type": "ENHO/XH",
+                  "name": "CL_OO_ADT_ENHANCED_CLASS1",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement"
+                }
+              ],
+              "applicability": "unknown",
+              "omissions": {},
+              "consumed": {
+                "sends": 6,
+                "responseBytes": 22224,
+                "elapsedMs": 607
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": []
+          },
+          {
+            "name": "CL_OO_ADT_ENHANCED_CLASS",
+            "extensions": "sources",
+            "baseSha256": "bda78a64018444906cc08a63933b108ba89b2038050d1c081b3432f0a0bfcf81",
+            "extraBytes": 2845,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_OO_ADT_ENHANCED_CLASS",
+                "version": "active"
+              },
+              "scope": "CLAS CL_OO_ADT_ENHANCED_CLASS full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "returned",
+                  "coverage": "bounded_traversal",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "provider_returned_EXTED_OBJ_graph; owning_object_scope; technology and runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "bounded_traversal",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "class_section=main; bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "class_exted_obj_source",
+                  "family": "class_bound_enhancement",
+                  "status": "returned",
+                  "coverage": "selected_source",
+                  "version": "active",
+                  "nested": "bounded",
+                  "reason": "generated_include=CL_OO_ADT_ENHANCED_CLASS1=====E; active_revision=00000; generated_method_includes_only; implementation names may be absent",
+                  "observations": 1,
+                  "scopes": [
+                    "ENHO/XH CL_OO_ADT_ENHANCED_CLASS1"
+                  ]
+                }
+              ],
+              "identities": [
+                {
+                  "type": "ENHO/XH",
+                  "name": "CL_OO_ADT_ENHANCED_CLASS1",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement"
+                },
+                {
+                  "type": "INCL",
+                  "name": "CL_OO_ADT_ENHANCED_CLASS1=====E",
+                  "version": "active",
+                  "provider": "class_exted_obj_source",
+                  "family": "class_bound_enhancement"
+                },
+                {
+                  "type": "INCL",
+                  "name": "CL_OO_ADT_ENHANCED_CLASS1=====EM001",
+                  "version": "active",
+                  "provider": "class_exted_obj_source",
+                  "family": "class_bound_enhancement"
+                }
+              ],
+              "applicability": "unknown",
+              "omissions": {
+                "nodes": 0,
+                "sources": 0
+              },
+              "consumed": {
+                "sends": 9,
+                "responseBytes": 33677,
+                "elapsedMs": 1143
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": [
+              {
+                "label": "[extension source INCL CL_OO_ADT_ENHANCED_CLASS1=====E version=active representation=generated_include_revision provider=class_exted_obj_source]",
+                "sha256": "5bd1e765e9a0446b0603204e5afb964d36ac5726206691db3dea82ad21645f98"
+              },
+              {
+                "label": "[extension source INCL CL_OO_ADT_ENHANCED_CLASS1=====EM001 version=active representation=generated_include_revision provider=class_exted_obj_source]",
+                "sha256": "559986114979348d8e29495c0357cd54004031bf319dba67bee7ea1f2cd848d6"
+              }
+            ]
+          },
+          {
+            "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+            "extensions": "summary",
+            "baseSha256": "6cd5113b4c7d4497b83d4d482556179e27c9db29cf00ad480ef71c3083676879",
+            "extraBytes": 2045,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+                "version": "active"
+              },
+              "scope": "CLAS CL_SEEF_ADT_TEST_AUNIT_1 full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "returned",
+                  "coverage": "bounded_traversal",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "provider_returned_EXTED_OBJ_graph; owning_object_scope; technology and runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "class_section=main; HOOK_IMPL outer/specific identities; nested expansion not performed",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_11",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_R",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_111",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_RR",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_111_R",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1",
+                  "version": "provider_current",
+                  "provider": "source_plugins",
+                  "family": "source_plugin",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                }
+              ],
+              "applicability": "unknown",
+              "omissions": {
+                "nodes": 1
+              },
+              "consumed": {
+                "sends": 4,
+                "responseBytes": 27780,
+                "elapsedMs": 640
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": []
+          },
+          {
+            "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+            "extensions": "sources",
+            "baseSha256": "6cd5113b4c7d4497b83d4d482556179e27c9db29cf00ad480ef71c3083676879",
+            "extraBytes": 10482,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+                "version": "active"
+              },
+              "scope": "CLAS CL_SEEF_ADT_TEST_AUNIT_1 full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "returned",
+                  "coverage": "bounded_traversal",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "provider_returned_EXTED_OBJ_graph; owning_object_scope; technology and runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "bounded_traversal",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "class_section=main; bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_11",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_R",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_111",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_RR",
+                  "version": "active",
+                  "provider": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                }
+              ],
+              "applicability": "unknown",
+              "omissions": {
+                "nodes": 0,
+                "sources": 0,
+                "output": 1
+              },
+              "consumed": {
+                "sends": 4,
+                "responseBytes": 37836,
+                "elapsedMs": 751
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": [
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_1 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "0146d6a66250804c2d1cf679f113bd23aae5735bce81d57436bf46d237c29d9a"
+              },
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_1 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "c771d42dfbff43a70dec1615db4f4ac286decdc3f0b54a1bee0db5b4b22fc645"
+              },
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_11 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "3568a655c47ac42faae73d89eb046f20415ca9eae2fe3b1ec0e24fc19b022d71"
+              },
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_111 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "0f05d83d07865a6c0ac4ae38840262bf8c5e4a0c1d1bf254d2f84ba4cc5d3332"
+              },
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_111_R version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "65c5823f7a01aaeaddf04ece4f32ffeac7da57d8ddb5bfe23a31feeb5922ac6f"
+              },
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_1A version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "c08ae437fb208f05a1e8eb3e894c1d0e8f00c073f01e658510864dc775002ae8"
+              },
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_1A_R version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "c4bf9de01fa56478d301438a146679b2c6513edeb88e90debbc8fec48ffbebf7"
+              },
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_1A_RR version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "6c014628db4019eaee8587d8b9c4a142d60e2e65d021fd22bc9c2ab02d8e9b7c"
+              }
+            ]
+          }
+        ]
+      },
+      "nativeDenied": {
+        "checkedAt": "2026-11-01T06:19:34.679Z",
+        "observations": [
+          {
+            "name": "CL_OO_ADT_ENHANCED_CLASS",
+            "extensions": "summary",
+            "baseSha256": "bda78a64018444906cc08a63933b108ba89b2038050d1c081b3432f0a0bfcf81",
+            "extraBytes": 803,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_OO_ADT_ENHANCED_CLASS",
+                "version": "active"
+              },
+              "scope": "CLAS CL_OO_ADT_ENHANCED_CLASS full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "denied",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "native_relation_action_denied",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "class_section=main; HOOK_IMPL outer/specific identities; nested expansion not performed",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [],
+              "applicability": "unknown",
+              "omissions": {},
+              "consumed": {
+                "sends": 2,
+                "responseBytes": 9678,
+                "elapsedMs": 112
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": []
+          },
+          {
+            "name": "CL_OO_ADT_ENHANCED_CLASS",
+            "extensions": "sources",
+            "baseSha256": "bda78a64018444906cc08a63933b108ba89b2038050d1c081b3432f0a0bfcf81",
+            "extraBytes": 845,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_OO_ADT_ENHANCED_CLASS",
+                "version": "active"
+              },
+              "scope": "CLAS CL_OO_ADT_ENHANCED_CLASS full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "denied",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "native_relation_action_denied",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "bounded_traversal",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "class_section=main; bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [],
+              "applicability": "unknown",
+              "omissions": {
+                "nodes": 0,
+                "sources": 0
+              },
+              "consumed": {
+                "sends": 2,
+                "responseBytes": 9658,
+                "elapsedMs": 173
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": []
+          },
+          {
+            "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+            "extensions": "summary",
+            "baseSha256": "6cd5113b4c7d4497b83d4d482556179e27c9db29cf00ad480ef71c3083676879",
+            "extraBytes": 1158,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+                "version": "active"
+              },
+              "scope": "CLAS CL_SEEF_ADT_TEST_AUNIT_1 full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "denied",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "native_relation_action_denied",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "class_section=main; HOOK_IMPL outer/specific identities; nested expansion not performed",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1",
+                  "version": "provider_current",
+                  "provider": "source_plugins",
+                  "family": "source_plugin",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A",
+                  "version": "provider_current",
+                  "provider": "source_plugins",
+                  "family": "source_plugin",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                }
+              ],
+              "applicability": "unknown",
+              "omissions": {},
+              "consumed": {
+                "sends": 2,
+                "responseBytes": 11250,
+                "elapsedMs": 180
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": []
+          },
+          {
+            "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+            "extensions": "sources",
+            "baseSha256": "6cd5113b4c7d4497b83d4d482556179e27c9db29cf00ad480ef71c3083676879",
+            "extraBytes": 9343,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+                "version": "active"
+              },
+              "scope": "CLAS CL_SEEF_ADT_TEST_AUNIT_1 full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "denied",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "native_relation_action_denied",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "bounded_traversal",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "class_section=main; bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_11",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_111",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_111_R",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_R",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                },
+                {
+                  "type": "ENHO/XHH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_RR",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin",
+                  "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+                }
+              ],
+              "applicability": "unknown",
+              "omissions": {
+                "nodes": 0,
+                "sources": 0
+              },
+              "consumed": {
+                "sends": 2,
+                "responseBytes": 21306,
+                "elapsedMs": 339
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": [
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_1 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "0146d6a66250804c2d1cf679f113bd23aae5735bce81d57436bf46d237c29d9a"
+              },
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_1 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "c771d42dfbff43a70dec1615db4f4ac286decdc3f0b54a1bee0db5b4b22fc645"
+              },
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_11 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "3568a655c47ac42faae73d89eb046f20415ca9eae2fe3b1ec0e24fc19b022d71"
+              },
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_111 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "0f05d83d07865a6c0ac4ae38840262bf8c5e4a0c1d1bf254d2f84ba4cc5d3332"
+              },
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_111_R version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "65c5823f7a01aaeaddf04ece4f32ffeac7da57d8ddb5bfe23a31feeb5922ac6f"
+              },
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_1A version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "c08ae437fb208f05a1e8eb3e894c1d0e8f00c073f01e658510864dc775002ae8"
+              },
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_1A_R version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "c4bf9de01fa56478d301438a146679b2c6513edeb88e90debbc8fec48ffbebf7"
+              },
+              {
+                "label": "[extension source ENHO/XHH SEEF_ADT_TEST_ENHO_CLASS_1A_RR version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "6c014628db4019eaee8587d8b9c4a142d60e2e65d021fd22bc9c2ab02d8e9b7c"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "npl": {
+      "nativeAllowed": {
+        "checkedAt": "2026-11-01T06:19:30.252Z",
+        "observations": [
+          {
+            "name": "CL_OO_ADT_ENHANCED_CLASS",
+            "extensions": "summary",
+            "baseSha256": "bda78a64018444906cc08a63933b108ba89b2038050d1c081b3432f0a0bfcf81",
+            "extraBytes": 798,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_OO_ADT_ENHANCED_CLASS",
+                "version": "active"
+              },
+              "scope": "CLAS CL_OO_ADT_ENHANCED_CLASS full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "unsupported",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "unsupported_provider",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "selected_source",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "class_section=main; selected_source_only; runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [],
+              "applicability": "unknown",
+              "omissions": {
+                "nodes": 0,
+                "sources": 0
+              },
+              "consumed": {
+                "sends": 6,
+                "responseBytes": 15209,
+                "elapsedMs": 403
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": []
+          },
+          {
+            "name": "CL_OO_ADT_ENHANCED_CLASS",
+            "extensions": "sources",
+            "baseSha256": "bda78a64018444906cc08a63933b108ba89b2038050d1c081b3432f0a0bfcf81",
+            "extraBytes": 842,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_OO_ADT_ENHANCED_CLASS",
+                "version": "active"
+              },
+              "scope": "CLAS CL_OO_ADT_ENHANCED_CLASS full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "unsupported",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "unsupported_provider",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "bounded_traversal",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "class_section=main; bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [],
+              "applicability": "unknown",
+              "omissions": {
+                "nodes": 0,
+                "sources": 0
+              },
+              "consumed": {
+                "sends": 4,
+                "responseBytes": 15077,
+                "elapsedMs": 217
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": []
+          },
+          {
+            "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+            "extensions": "summary",
+            "baseSha256": "6cd5113b4c7d4497b83d4d482556179e27c9db29cf00ad480ef71c3083676879",
+            "extraBytes": 1701,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+                "version": "active"
+              },
+              "scope": "CLAS CL_SEEF_ADT_TEST_AUNIT_1 full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "unsupported",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "unsupported_provider",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "selected_source",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "class_section=main; selected_source_only; runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_11",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_111",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_111_R",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_R",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_RR",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                }
+              ],
+              "applicability": "unknown",
+              "omissions": {
+                "nodes": 0,
+                "sources": 0
+              },
+              "consumed": {
+                "sends": 4,
+                "responseBytes": 26162,
+                "elapsedMs": 312
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": []
+          },
+          {
+            "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+            "extensions": "sources",
+            "baseSha256": "6cd5113b4c7d4497b83d4d482556179e27c9db29cf00ad480ef71c3083676879",
+            "extraBytes": 9357,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+                "version": "active"
+              },
+              "scope": "CLAS CL_SEEF_ADT_TEST_AUNIT_1 full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "unsupported",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "unsupported_provider",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "bounded_traversal",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "class_section=main; bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_11",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_111",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_111_R",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_R",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_RR",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                }
+              ],
+              "applicability": "unknown",
+              "omissions": {
+                "nodes": 0,
+                "sources": 0
+              },
+              "consumed": {
+                "sends": 4,
+                "responseBytes": 26162,
+                "elapsedMs": 422
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": [
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "e03a61747ea73e5507a4d011cd4fb6f912a7dfdb5cf04c4a07b9311b644a3fa9"
+              },
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "5a1a59a4d7bd9767dd121e6838fa2c579624120e1e0fea4d30e830728ccf4777"
+              },
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_11 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "0b6138d939cd068ccea218017b52eff6240053dd726719c2e30f37769b90eb17"
+              },
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_111 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "5d1c87e1b48c591b1893b00c5b25e344bbed2647fa0008903fe5087494406f68"
+              },
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_111_R version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "7a6e9e1ef468d8c75f65afb4da49fee51bcedb8b12fd3e6816b6230261d2a478"
+              },
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1A version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "fcb4fbd7edcfd7ca3824a91efe455ef49f563604ec012faba22ec5cbd8b6441a"
+              },
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1A_R version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "678c8a593afd7bf905853afba737d291ac7236d41c9a2c376bbf60834ad6b3f3"
+              },
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1A_RR version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "d8b71e01010d9efa42ce5e86fc3661923b79d7c8a252de55de4209faa785b1e5"
+              }
+            ]
+          }
+        ]
+      },
+      "nativeDenied": {
+        "checkedAt": "2026-11-01T06:19:33.093Z",
+        "observations": [
+          {
+            "name": "CL_OO_ADT_ENHANCED_CLASS",
+            "extensions": "summary",
+            "baseSha256": "bda78a64018444906cc08a63933b108ba89b2038050d1c081b3432f0a0bfcf81",
+            "extraBytes": 801,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_OO_ADT_ENHANCED_CLASS",
+                "version": "active"
+              },
+              "scope": "CLAS CL_OO_ADT_ENHANCED_CLASS full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "denied",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "native_relation_action_denied",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "selected_source",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "class_section=main; selected_source_only; runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [],
+              "applicability": "unknown",
+              "omissions": {
+                "nodes": 0,
+                "sources": 0
+              },
+              "consumed": {
+                "sends": 2,
+                "responseBytes": 7389,
+                "elapsedMs": 199
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": []
+          },
+          {
+            "name": "CL_OO_ADT_ENHANCED_CLASS",
+            "extensions": "sources",
+            "baseSha256": "bda78a64018444906cc08a63933b108ba89b2038050d1c081b3432f0a0bfcf81",
+            "extraBytes": 845,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_OO_ADT_ENHANCED_CLASS",
+                "version": "active"
+              },
+              "scope": "CLAS CL_OO_ADT_ENHANCED_CLASS full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "denied",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "native_relation_action_denied",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "bounded_traversal",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "class_section=main; bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [],
+              "applicability": "unknown",
+              "omissions": {
+                "nodes": 0,
+                "sources": 0
+              },
+              "consumed": {
+                "sends": 2,
+                "responseBytes": 7389,
+                "elapsedMs": 165
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": []
+          },
+          {
+            "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+            "extensions": "summary",
+            "baseSha256": "6cd5113b4c7d4497b83d4d482556179e27c9db29cf00ad480ef71c3083676879",
+            "extraBytes": 1705,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+                "version": "active"
+              },
+              "scope": "CLAS CL_SEEF_ADT_TEST_AUNIT_1 full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "denied",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "native_relation_action_denied",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "selected_source",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "class_section=main; selected_source_only; runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_11",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_111",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_111_R",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_R",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_RR",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                }
+              ],
+              "applicability": "unknown",
+              "omissions": {
+                "nodes": 0,
+                "sources": 0
+              },
+              "consumed": {
+                "sends": 2,
+                "responseBytes": 18451,
+                "elapsedMs": 368
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": []
+          },
+          {
+            "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+            "extensions": "sources",
+            "baseSha256": "6cd5113b4c7d4497b83d4d482556179e27c9db29cf00ad480ef71c3083676879",
+            "extraBytes": 9361,
+            "summary": {
+              "root": {
+                "type": "CLAS",
+                "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+                "version": "active"
+              },
+              "scope": "CLAS CL_SEEF_ADT_TEST_AUNIT_1 full root source",
+              "providers": [
+                {
+                  "id": "class_exted_obj",
+                  "family": "class_bound_enhancement",
+                  "status": "denied",
+                  "coverage": "direct_identities",
+                  "version": "provider_current",
+                  "nested": "not_expanded",
+                  "reason": "native_relation_action_denied",
+                  "observations": 1,
+                  "scopes": []
+                },
+                {
+                  "id": "source_plugins",
+                  "family": "source_plugin",
+                  "status": "returned",
+                  "coverage": "bounded_traversal",
+                  "version": "provider_current",
+                  "nested": "bounded",
+                  "reason": "class_section=main; bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+                  "observations": 1,
+                  "scopes": []
+                }
+              ],
+              "identities": [
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_11",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_111",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_111_R",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_R",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                },
+                {
+                  "type": "ENHO/XH",
+                  "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_RR",
+                  "version": "active",
+                  "provider": "source_plugins",
+                  "family": "source_plugin"
+                }
+              ],
+              "applicability": "unknown",
+              "omissions": {
+                "nodes": 0,
+                "sources": 0
+              },
+              "consumed": {
+                "sends": 2,
+                "responseBytes": 18451,
+                "elapsedMs": 333
+              },
+              "issues": []
+            },
+            "sourceBlockHashes": [
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "e03a61747ea73e5507a4d011cd4fb6f912a7dfdb5cf04c4a07b9311b644a3fa9"
+              },
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "5a1a59a4d7bd9767dd121e6838fa2c579624120e1e0fea4d30e830728ccf4777"
+              },
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_11 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "0b6138d939cd068ccea218017b52eff6240053dd726719c2e30f37769b90eb17"
+              },
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_111 version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "5d1c87e1b48c591b1893b00c5b25e344bbed2647fa0008903fe5087494406f68"
+              },
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_111_R version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "7a6e9e1ef468d8c75f65afb4da49fee51bcedb8b12fd3e6816b6230261d2a478"
+              },
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1A version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "fcb4fbd7edcfd7ca3824a91efe455ef49f563604ec012faba22ec5cbd8b6441a"
+              },
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1A_R version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "678c8a593afd7bf905853afba737d291ac7236d41c9a2c376bbf60834ad6b3f3"
+              },
+              {
+                "label": "[extension source ENHO/XH SEEF_ADT_TEST_ENHO_CLASS_1A_RR version=active representation=rendered_plugin_source provider=source_plugins]",
+                "sha256": "d8b71e01010d9efa42ce5e86fc3661923b79d7c8a252de55de4209faa785b1e5"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

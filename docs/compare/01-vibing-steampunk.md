@@ -195,7 +195,7 @@ mcp-go v0.17.0, Cobra, Viper, go-sqlite3, godotenv, yaml.v3, Gopher-Lua, WebSock
 
 | Date | Upstream Change | Relevant? | Decision | Status |
 |------|----------------|-----------|----------|--------|
-| 2026-04-24 | **Issue #124: SAP API Policy v.4.2026 may classify ADT REST as off-limits for productive use** | **Strategic** | **No code action** — track for project narrative; affects every ADT-based MCP. Possible mitigations: developer-tool framing, BTP-only positioning, wait for SAP clarification. | [Eval](vibing-steampunk/evaluations/issue-124-sap-api-policy-v42026.md) |
+| 2026-04-24 | **Issue #124: SAP API Policy and direct ADT access** | **Strategic** | **Assessment corrected 2026-10-21:** FAQ Q56 supports conditional custom MCP; Q33 requires ADT-channel clarification for ARC-1. Follow ref. 137800; BTP/developer framing does not supply permission. Upstream state not rechecked. | [Eval](vibing-steampunk/evaluations/issue-124-sap-api-policy-v42026.md) |
 | 2026-04-23 | Issue #123: GetRevisions 404 for INTF/DDLS (vsp uses wrong URL `oo/interfaces/{name}/includes/main/versions`) | Medium | Verify — ARC-1's path is `/source/main/versions` for INTF (likely correct). Run integration test against a4h to confirm. | — |
 | 2026-04-21 | Issue #110: Lock-handle regression on S/4HANA 758 (vsp v2.32→v2.36) | Medium | Cross-check whenever ARC-1 touches crud.ts — withStatefulSession should already cover it. | — |
 | 2026-04-20 | Issue #116: vsp's WriteSource rejects INCL | No | ARC-1 already supports INCL in SAPWRITE_TYPES_ONPREM with full case 'INCL' wiring. Win for ARC-1. | — |

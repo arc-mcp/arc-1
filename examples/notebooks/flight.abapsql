@@ -1,0 +1,18 @@
+{
+  "cells": [
+    {
+      "kind": "markdown",
+      "value": "# Flight capacity\nSelect the system for each SQL cell before running. Requires SAP /DMO demo tables.\n\nThe first query groups flights by airline; its row cap can omit airlines. The second independently counts all flight records. These are separate observations, not an atomic snapshot."
+    },
+    {
+      "kind": "sql",
+      "value": "SELECT FROM /dmo/flight AS f\n  INNER JOIN /dmo/carrier AS c ON c~carrier_id = f~carrier_id\n  FIELDS c~name AS Airline, COUNT( * ) AS Flights,\n         SUM( f~seats_max ) AS Capacity,\n         SUM( f~seats_occupied ) AS Booked,\n         DIVISION( SUM( f~seats_occupied ) * 100,\n                   SUM( f~seats_max ), 1 ) AS Occupancy_pct\n  GROUP BY c~name\n  ORDER BY Occupancy_pct DESCENDING",
+      "rowNumber": 20
+    },
+    {
+      "kind": "sql",
+      "value": "SELECT COUNT( * ) AS N FROM /DMO/FLIGHT",
+      "rowNumber": 20
+    }
+  ]
+}

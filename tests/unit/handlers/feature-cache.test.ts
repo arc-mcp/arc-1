@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ResolvedFeatures } from '../../../src/adt/types.js';
+import { parseDiscoveryDocument } from '../../../src/adt/xml-parser.js';
 import {
   getCachedDiscovery,
   getCachedFeatures,
   isBtpSystem,
   isDomainsEndpointAvailable,
+  isLockObjectsEndpointAvailable,
   isPackagesEndpointAvailable,
   isTablesEndpointAvailable,
+  isTableTypesEndpointAvailable,
   resetCachedFeatures,
   setCachedDiscovery,
   setCachedFeatures,
@@ -18,6 +21,28 @@ function features(partial: Partial<ResolvedFeatures>): ResolvedFeatures {
 }
 
 describe('feature-cache (destination keyed)', () => {
+  it.each([
+    ['/ddic/tables', isTablesEndpointAvailable],
+    ['/ddic/domains', isDomainsEndpointAvailable],
+    ['/ddic/tabletypes', isTableTypesEndpointAvailable],
+    ['/ddic/lockobjects/sources', isLockObjectsEndpointAvailable],
+    ['/packages', isPackagesEndpointAvailable],
+  ] as const)('gates %s on collection presence, independently of accepted media types', (path, available) => {
+    const absent =
+      '<app:collection href="/sap/bc/adt/oo/classes"><app:accept>application/xml</app:accept></app:collection>';
+    const present = `${absent}<app:collection href="/sap/bc/adt${path}"><app:accept/></app:collection>`;
+    const document = (collections: string) =>
+      `<app:service><app:workspace>${collections}</app:workspace></app:service>`;
+    setCachedDiscovery(parseDiscoveryDocument(document(absent)), 'ABSENT');
+    const map = parseDiscoveryDocument(document(present));
+    setCachedFeatures(features({ discoveryMap: map }), 'STARTUP');
+    setCachedDiscovery(map, 'FALLBACK');
+    expect(available('STARTUP')).toBe(true);
+    expect(available('FALLBACK')).toBe(true);
+    expect(available('ABSENT')).toBe(false);
+    expect(available('UNPROBED')).toBeUndefined();
+  });
+
   afterEach(() => {
     resetCachedFeatures();
   });

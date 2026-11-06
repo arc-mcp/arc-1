@@ -1,5 +1,9 @@
 # Dependency Security — Tier 3: Active Supply-Chain Defense
 
+> **Status (2026-11-01):** historical proposal. The Socket GitHub App already reports on PRs without
+> a `socket.yml`; remaining work is roadmap SEC-21. Recheck vendor terms before reuse, and test with
+> harmless fixtures, never real malicious packages.
+
 ## Overview
 
 Tier 1 (`dependency-security-tier1-foundation.md`) closed *known-vulnerable* dependencies. Tier 2 (`dependency-security-tier2-attestation.md`) closed *artifact authenticity*. Tier 3 closes the remaining gap: **unknown-vulnerable** and **actively malicious** dependencies — packages that don't yet appear in CVE databases because they were just published, or because they're typo-squats / takeover-victims that pass `npm audit` cleanly.

@@ -9,14 +9,20 @@ import type { DestinationRegistry, TargetDescriptor } from './destination-regist
 import { logger } from './logger.js';
 import type { McpRateLimiter } from './mcp-rate-limit.js';
 import { resolveRateLimitUserKey } from './mcp-rate-limit.js';
+import { isTargetGranted } from './multi-target-authorization.js';
+import { auditTargetGrantDenial } from './multi-target-authorization-audit.js';
 import {
   buildTargetCatalog,
   TARGET_CATALOG_MAX_OFFSET,
   TARGET_CATALOG_MAX_QUERY_LENGTH,
 } from './multi-target-catalog.js';
+import { buildEnforcedTargetCatalogResult } from './multi-target-catalog-enforced.js';
+import type { MultiTargetRequestProjection } from './multi-target-request-projection.js';
 import { buildMultiTargetConfig } from './multi-target-runtime.js';
 import type { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js';
 import { multiTargetInvocationDecision, normalizeTarget } from './multi-target-tools.js';
+import { pinnedWriteEnabled } from './multi-target-write-surface.js';
+import { NATIVE_NAVIGATION_INSTRUCTIONS } from './server-instructions.js';
 import type { ServerConfig } from './types.js';
 
 export const MULTI_TARGET_SERVER_INSTRUCTIONS = [
@@ -29,10 +35,32 @@ export const MULTI_TARGET_SERVER_INSTRUCTIONS = [
   'the same destination technical user. Never infer per-user SAP access for a shared target.',
   'Data preview and SQL are available only where the instance, destination, user scope, and SAP all allow them.',
   'Offline SAPLint, read-only transport inspection, ATC, and ABAP Unit are available; ATC and Unit execute SAP workloads.',
-  'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable in multi-target v1.',
+  'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable on this aggregate connection.',
+  NATIVE_NAVIGATION_INSTRUCTIONS,
 ].join('\n');
 
 export function buildMultiTargetServerInstructions(options: MultiTargetServerOptions): string {
+  if (options.instanceConfig.multiTargetAuthorization === 'xsuaa-attribute') {
+    const projection = options.authorization;
+    if (
+      !projection?.read ||
+      projection.targets.length === 0 ||
+      (options.mode === 'pinned' && (!options.target || !isTargetGranted(projection.grant, options.target.target)))
+    ) {
+      return (
+        'No SAP targets are available to this account. Ask your ARC-1 administrator to check target grants and target configuration/availability.' +
+        (projection?.admin ? ' SAPTargets provides operator diagnostics but does not grant SAP execution access.' : '')
+      );
+    }
+    if (options.mode === 'aggregate' && projection.targets.length === 1) {
+      const target = projection.targets[0];
+      return [
+        MULTI_TARGET_SERVER_INSTRUCTIONS,
+        `The only target available to this account is ${target.target}. Its untrusted descriptive label is ${JSON.stringify(target.description)}.`,
+        'Supply this target explicitly for every SAP call; no default target is selected.',
+      ].join('\n');
+    }
+  }
   if (options.mode === 'aggregate') return MULTI_TARGET_SERVER_INSTRUCTIONS;
   if (options.target?.identity === 'shared') {
     return [
@@ -42,14 +70,26 @@ export function buildMultiTargetServerInstructions(options: MultiTargetServerOpt
       'Data preview and SQL require instance, destination, XSUAA scope, and SAP authorization consent.',
       'Offline SAPLint, read-only transport inspection, ATC, and ABAP Unit are available; ATC and Unit run as the shared SAP user.',
       'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable.',
+      NATIVE_NAVIGATION_INSTRUCTIONS,
     ].join('\n');
   }
+  const writable =
+    options.target &&
+    pinnedWriteEnabled(
+      buildMultiTargetConfig(options.instanceConfig, options.target, {
+        mode: options.mode,
+        authorization: options.authorization,
+      }),
+    );
   return [
-    `ARC-1 provides a read-only interface to SAP target ${options.target?.target ?? 'the configured target'}.`,
+    `ARC-1 provides a ${writable ? 'scoped read/write' : 'read-only'} interface to SAP target ${options.target?.target ?? 'the configured target'}.`,
     'Principal Propagation sends each authenticated caller to SAP as their mapped SAP user.',
     'Data preview and SQL require instance, destination, XSUAA scope, and SAP authorization consent.',
     'Offline SAPLint, read-only transport inspection, ATC, and ABAP Unit are available; ATC and Unit execute SAP workloads.',
-    'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable.',
+    writable
+      ? 'CLAS/INTF main-source writes require both package policies; updates require an editable source hash. Activation affects the whole owner and its existing inactive drafts. Transport/Git management and all other mutations remain unavailable.'
+      : 'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable.',
+    NATIVE_NAVIGATION_INSTRUCTIONS,
   ].join('\n');
 }
 
@@ -60,6 +100,8 @@ export interface MultiTargetServerOptions {
   target?: TargetDescriptor;
   /** One process-wide instance injected into every fresh HTTP MCP server. */
   sharedAuthState?: MultiTargetSharedAuthState;
+  /** Created from verified HTTP auth before constructing this request's MCP server. */
+  authorization?: MultiTargetRequestProjection;
 }
 
 type FailureStage = 'target_resolution_failed' | 'pp_exchange_failed' | 'shared_auth_failed' | 'target_policy_denied';
@@ -118,9 +160,12 @@ function createErrorBuilder(
         errorCode: code,
       });
     }
+    // The enforced denial is one public response for unknown, ungranted and
+    // quarantined targets. Keep the requested target only in the audit event.
+    const genericTargetDenial = code === 'TARGET_NOT_AVAILABLE';
     return structuredToolError(code, message, {
-      ...(resolvedTarget ? { target: resolvedTarget } : {}),
-      ...(identity ? { identity } : {}),
+      ...(resolvedTarget && !genericTargetDenial ? { target: resolvedTarget } : {}),
+      ...(identity && !genericTargetDenial ? { identity } : {}),
       requestId,
       retryable: false,
       ...details,
@@ -137,8 +182,13 @@ async function handleSapTargets(
 ): Promise<Record<string, unknown>> {
   const startedAt = Date.now();
   const user = resolveRateLimitUserKey(authInfo);
-  const adminView = authInfo ? hasRequiredScope(authInfo.scopes, 'admin') : false;
-  const parsed = parseSapTargetsArguments(args, adminView);
+  const enforced = options.instanceConfig.multiTargetAuthorization === 'xsuaa-attribute';
+  const adminView = enforced
+    ? !!options.authorization?.admin
+    : authInfo
+      ? hasRequiredScope(authInfo.scopes, 'admin')
+      : false;
+  const parsed = parseSapTargetsArguments(args, adminView, enforced);
   const queryProvided = parsed.ok ? parsed.value.query !== undefined : args.query !== undefined;
   const offsetProvided = parsed.ok ? parsed.value.offset !== undefined : args.offset !== undefined;
   logger.emitAudit({
@@ -202,6 +252,57 @@ async function handleSapTargets(
   }
 
   const sharedAuthState = options.sharedAuthState;
+  if (enforced) {
+    if (!options.authorization) throw new Error('Enforced catalog requires a verified request projection');
+    const grant = options.authorization.grant;
+    const result = buildEnforcedTargetCatalogResult(options.registry, {
+      admin: adminView,
+      query: parsed.value.query,
+      pinnedWrite: (target) => {
+        const projection = options.authorization!;
+        const reason =
+          target.identity !== 'per-user'
+            ? 'PP_REQUIRED'
+            : !options.instanceConfig.allowWrites
+              ? 'GLOBAL_WRITES_DISABLED'
+              : !target.writePolicy?.allowWrites
+                ? 'DESTINATION_WRITES_DISABLED'
+                : !isTargetGranted(projection.grant, target.target)
+                  ? 'TARGET_ACCESS_REQUIRED'
+                  : !projection.write
+                    ? 'RAW_WRITE_SCOPE_REQUIRED'
+                    : projection.writeGrant.status !== 'valid'
+                      ? `WRITE_${projection.writeGrant.status}`
+                      : !isTargetGranted(projection.writeGrant, target.target)
+                        ? 'EXACT_WRITE_GRANT_REQUIRED'
+                        : 'ENABLED_ON_PINNED_URL';
+        return { enabled: reason === 'ENABLED_ON_PINNED_URL', reason };
+      },
+      runtimeAuth: adminView && sharedAuthState ? (target) => sharedAuthState.getHealth(target) : undefined,
+      enforcement: {
+        allowsTarget: (target) => isTargetGranted(grant, target),
+        authorization: {
+          mode: 'xsuaa-attribute',
+          grantMode: grant.mode,
+          status: grant.status,
+          ...(grant.mode === 'exact' ? { exactGrantCount: grant.exactGrantCount } : {}),
+        },
+      },
+    });
+    logger.emitAudit({
+      timestamp: new Date().toISOString(),
+      level: result.isError ? 'warn' : 'info',
+      event: 'tool_call_end',
+      requestId,
+      user,
+      clientId: authInfo?.clientId,
+      tool: 'SAPTargets',
+      durationMs: Date.now() - startedAt,
+      status: result.isError ? 'error' : 'success',
+      resultSize: Buffer.byteLength(JSON.stringify(result)),
+    });
+    return { ...result };
+  }
   const payload = buildTargetCatalog(options.registry, {
     admin: adminView,
     query: parsed.value.query,
@@ -228,7 +329,15 @@ type SapTargetsArguments = { query?: string; offset?: number };
 type ParsedSapTargetsArguments = { ok: true; value: SapTargetsArguments } | { ok: false; message: string };
 
 /** Runtime counterpart of the advertised SAPTargets JSON schema. */
-export function parseSapTargetsArguments(args: Record<string, unknown>, adminView: boolean): ParsedSapTargetsArguments {
+export function parseSapTargetsArguments(
+  args: Record<string, unknown>,
+  adminView: boolean,
+  enforced = false,
+): ParsedSapTargetsArguments {
+  // Rejected even when empty: offset is not part of the enforced contract.
+  if (enforced && Object.keys(args).some((key) => key !== 'query')) {
+    return { ok: false, message: 'SAPTargets accepts only the optional query argument.' };
+  }
   const normalizedArgs = stripLlmEmptyValues(args);
   const extraKeys = Object.keys(normalizedArgs).filter((key) => key !== 'query' && key !== 'offset');
   if (extraKeys.length > 0) {
@@ -261,7 +370,12 @@ export function parseSapTargetsArguments(args: Record<string, unknown>, adminVie
   return {
     ok: true,
     value: {
-      query: typeof normalizedArgs.query === 'string' ? normalizedArgs.query : undefined,
+      query:
+        typeof normalizedArgs.query === 'string'
+          ? enforced
+            ? normalizedArgs.query.trim()
+            : normalizedArgs.query
+          : undefined,
       offset: typeof normalizedArgs.offset === 'number' ? normalizedArgs.offset : undefined,
     },
   };
@@ -344,10 +458,19 @@ export async function prepareMultiTargetCall(args: {
   const { options, toolName, rawArgs, requestId, authInfo, mcpRateLimiter } = args;
   let selectedTarget: TargetDescriptor | undefined;
   const error = createErrorBuilder(toolName, authInfo, requestId, () => selectedTarget);
+  const enforced = options.instanceConfig.multiTargetAuthorization === 'xsuaa-attribute';
+  const projection = options.authorization;
+  if (enforced && (!projection?.read || !authInfo || !hasRequiredScope(authInfo.scopes, 'read'))) {
+    return {
+      handled: true,
+      result: error('INSUFFICIENT_SCOPE', 'An authenticated ARC-1 user with read scope is required.'),
+    };
+  }
 
   if (toolName === 'SAPTargets') {
-    const admin = authInfo ? hasRequiredScope(authInfo.scopes, 'admin') : false;
-    if (options.mode !== 'aggregate' || (options.registry.targets.length <= 1 && !admin)) {
+    const admin = enforced ? !!projection?.admin : authInfo ? hasRequiredScope(authInfo.scopes, 'admin') : false;
+    const visibleCount = enforced ? (projection?.targets.length ?? 0) : options.registry.targets.length;
+    if (options.mode !== 'aggregate' || (visibleCount <= 1 && !admin)) {
       return {
         handled: true,
         result: error(
@@ -399,6 +522,21 @@ export async function prepareMultiTargetCall(args: {
     };
   }
 
+  let enforcedTargetId: string | undefined;
+  if (enforced && projection) {
+    const normalized = normalizeTarget(options.mode === 'aggregate' ? rawArgs.target : options.target?.target);
+    if (!normalized.ok) {
+      return { handled: true, result: error(normalized.code, normalized.message, {}, 'target_resolution_failed') };
+    }
+    enforcedTargetId = normalized.target;
+    if (!isTargetGranted(projection.grant, enforcedTargetId)) {
+      auditTargetGrantDenial(projection.grant, authInfo, requestId, toolName, enforcedTargetId);
+      return {
+        handled: true,
+        result: error('TARGET_NOT_AVAILABLE', 'Target not available', {}, undefined, enforcedTargetId),
+      };
+    }
+  }
   if (!options.registry.available) {
     return {
       handled: true,
@@ -410,7 +548,7 @@ export async function prepareMultiTargetCall(args: {
       ),
     };
   }
-  if (options.mode === 'aggregate' && options.registry.targets.length === 0) {
+  if (!enforced && options.mode === 'aggregate' && options.registry.targets.length === 0) {
     return {
       handled: true,
       result: error(
@@ -429,6 +567,18 @@ export async function prepareMultiTargetCall(args: {
     }
     selectedTarget = options.registry.get(normalized.target);
     if (!selectedTarget) {
+      if (enforced) {
+        return {
+          handled: true,
+          result: error(
+            'TARGET_NOT_AVAILABLE',
+            'Target not available',
+            {},
+            'target_resolution_failed',
+            normalized.target,
+          ),
+        };
+      }
       return {
         handled: true,
         result: error(
@@ -443,19 +593,25 @@ export async function prepareMultiTargetCall(args: {
     callArgs = { ...rawArgs };
     delete callArgs.target;
   } else {
-    selectedTarget = options.target;
+    selectedTarget = enforced && enforcedTargetId ? options.registry.get(enforcedTargetId) : options.target;
   }
   if (!selectedTarget) {
     return {
       handled: true,
-      result: error('UNKNOWN_TARGET', 'The selected target is not configured.', {}, 'target_resolution_failed'),
+      result: enforced
+        ? error('TARGET_NOT_AVAILABLE', 'Target not available', {}, 'target_resolution_failed', enforcedTargetId)
+        : error('UNKNOWN_TARGET', 'The selected target is not configured.', {}, 'target_resolution_failed'),
     };
   }
 
   // Use the same canonical arguments as the shared dispatch pipeline. This keeps
   // the early policy/PP gate and the eventual handler decision identical.
   callArgs = normalizeTypeArgsForValidation(toolName, callArgs);
-  const activeConfig = buildMultiTargetConfig(options.instanceConfig, selectedTarget);
+  if (toolName === 'SAPActivate' && callArgs.action === undefined) callArgs = { ...callArgs, action: 'activate' };
+  const activeConfig = buildMultiTargetConfig(options.instanceConfig, selectedTarget, {
+    mode: options.mode,
+    authorization: projection,
+  });
   const action = invocationPolicyKey(toolName, callArgs);
   const invocationDecision = multiTargetInvocationDecision(toolName, callArgs, activeConfig);
   if (invocationDecision === 'forbidden') {
@@ -469,13 +625,13 @@ export async function prepareMultiTargetCall(args: {
       target: selectedTarget.target,
       identity: selectedTarget.identity,
       operation: action ? `${toolName}.${action}` : toolName,
-      reason: 'Operation unavailable in read-only multi-target v1',
+      reason: 'Operation unavailable for this multi-target route and caller policy',
     });
     return {
       handled: true,
       result: error(
         'MULTI_TARGET_OPERATION_FORBIDDEN',
-        'This tool or operation is not available in read-only multi-target v1.',
+        'This tool, input, or operation is not enabled for this multi-target connection.',
       ),
     };
   }

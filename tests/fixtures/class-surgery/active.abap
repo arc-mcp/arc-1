@@ -1,0 +1,13 @@
+CLASS zrace DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS target.
+    METHODS other.
+ENDCLASS.
+CLASS zrace IMPLEMENTATION.
+  METHOD target.
+    DATA(value) = 'old'.
+  ENDMETHOD.
+  METHOD other.
+    DATA(value) = 'original'.
+  ENDMETHOD.
+ENDCLASS.

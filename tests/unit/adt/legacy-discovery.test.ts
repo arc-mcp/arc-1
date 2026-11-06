@@ -59,10 +59,10 @@ describe('legacy ADT discovery against a real HTTP server', () => {
         res.setHeader('set-cookie', 'SAP_SESSIONID=legacy-session; Path=/; Secure; HttpOnly');
         respond(res, 200, 'LEGACY-TOKEN');
       } else {
-        respond(
-          res,
-          req.headers['x-csrf-token'] === 'LEGACY-TOKEN' && req.headers.cookie?.includes('legacy-session') ? 200 : 403,
-        );
+        const accepted =
+          req.headers['x-csrf-token'] === 'LEGACY-TOKEN' && req.headers.cookie?.includes('legacy-session');
+        res.writeHead(accepted ? 200 : 403, { 'content-type': 'application/xml' });
+        res.end(accepted ? '<checkrun/>' : '<error/>');
       }
     });
     await expect(client(baseUrl).post('/sap/bc/adt/checkruns', '<check/>')).resolves.toMatchObject({ statusCode: 200 });
@@ -188,9 +188,7 @@ describe('legacy ADT discovery against a real HTTP server', () => {
 
   it('rejects an empty HTTP 200 CTS body instead of reporting no transports', async () => {
     const baseUrl = await serve((_req, res) => respond(res));
-    await expect(listTransports(client(baseUrl), defaultSafetyConfig())).rejects.toThrow(
-      /transport API.*unavailable|unexpected CTS/i,
-    );
+    await expect(listTransports(client(baseUrl), defaultSafetyConfig())).rejects.toThrow(/unexpected empty HTML/i);
   });
 
   it.each([

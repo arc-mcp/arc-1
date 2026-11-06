@@ -1,0 +1,464 @@
+{
+  "runtimeCommit": "a2a86b74aee3b6e0b8882d70134d93f88717955c",
+  "trackedSourceSha256": "5f8058ccc1b685e0875113e5a9f820d99f47cb234d4f8f822a5475ab661cf664",
+  "hashFormat": "git ls-files -z src order; UTF-8 path + NUL + raw bytes + NUL",
+  "prerequisiteClassCommit": "eec01827088e5108cb30936e94701ca4494ffce0",
+  "mainCommit": "dd18938771dc83dad6367c2d3e4edfd7daa65bf0",
+  "unit": {
+    "files": 418,
+    "passed": 11297
+  },
+  "gates": ["typecheck", "lint", "validate:policy", "build", "check:sizes"],
+  "schemaStandardFullBytes": 74945,
+  "live": {
+    "a4hPublicDispatch": {
+      "tests": 1,
+      "skipped": 1,
+      "cases": [
+        {
+          "name": "onprem BDEF extension public dispatch preserves the base and verifies separate authored sources with fresh per-call limits",
+          "status": "passed",
+          "durationMs": 1812.200875
+        },
+        {
+          "name": "btp BDEF extension public dispatch preserves the base and verifies separate authored sources with fresh per-call limits",
+          "status": "skipped",
+          "durationMs": null
+        }
+      ]
+    },
+    "a4hMcpTransport": {
+      "tests": 2,
+      "skipped": 0,
+      "cases": [
+        {
+          "name": "BDEF extensions through MCP preserves the base across automatic, explicit and repeated reads",
+          "status": "passed",
+          "durationMs": 3312.813708
+        },
+        {
+          "name": "BDEF extensions through MCP keeps source windows unchanged and defaults them to none",
+          "status": "passed",
+          "durationMs": 1102.2651669999996
+        }
+      ]
+    },
+    "npl750": {
+      "checkedAt": "2026-11-01T06:12:01.861Z",
+      "basePreserved": true,
+      "baseSha256": "07f51b1b4805a53b66db9eb781344bb2b1e516fb0ac72a3e667f17aace7eba53",
+      "summary": {
+        "root": {
+          "type": "PROG",
+          "name": "ENH_NESTED_DEMO",
+          "version": "active"
+        },
+        "scope": "PROG ENH_NESTED_DEMO full root source",
+        "providers": [
+          {
+            "id": "source_plugins",
+            "family": "source_plugin",
+            "status": "returned",
+            "coverage": "bounded_traversal",
+            "version": "provider_current",
+            "nested": "bounded",
+            "reason": "bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown; qualified 750 unadvertised source provider",
+            "observations": 1,
+            "scopes": []
+          }
+        ],
+        "identities": [
+          {
+            "type": "ENHO/XH",
+            "name": "ENH_NESTED_DEMO_LEVEL_3",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "ENH_NESTED_DEMO_LEVEL_2",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "ENH_NESTED_DEMO_LEVEL_1",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          },
+          {
+            "type": "ENHO/XH",
+            "name": "ENH_NESTED_DEMO_LEVEL_0",
+            "version": "active",
+            "provider": "source_plugins",
+            "family": "source_plugin"
+          }
+        ],
+        "applicability": "unknown",
+        "omissions": {
+          "nodes": 0,
+          "sources": 0
+        },
+        "consumed": {
+          "sends": 2,
+          "responseBytes": 7985,
+          "elapsedMs": 162
+        },
+        "issues": []
+      }
+    },
+    "btp920": {
+      "status": "not_rerun_system_stopped",
+      "unauthenticatedDiscoveryStatus": 503,
+      "historicalRuntime": "adf69977519707d1bf643bd93e955627b049d60e",
+      "historicalEvidence": "2026-10-31-extension-final-runtime.json"
+    },
+    "a4hNativeDenials": {
+      "target": "A4H758 HTTPS443 client001 Basic, read-only public dispatch",
+      "rows": [
+        {
+          "rule": "SAPNavigate.relations",
+          "basePreserved": true,
+          "baseSha256": "6cd5113b4c7d4497b83d4d482556179e27c9db29cf00ad480ef71c3083676879",
+          "summary": {
+            "root": {
+              "type": "CLAS",
+              "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+              "version": "active"
+            },
+            "scope": "CLAS CL_SEEF_ADT_TEST_AUNIT_1 full root source",
+            "providers": [
+              {
+                "id": "class_exted_obj",
+                "family": "class_bound_enhancement",
+                "status": "denied",
+                "coverage": "direct_identities",
+                "version": "provider_current",
+                "nested": "not_expanded",
+                "reason": "native_relation_action_denied",
+                "observations": 1,
+                "scopes": []
+              },
+              {
+                "id": "source_plugins",
+                "family": "source_plugin",
+                "status": "returned",
+                "coverage": "bounded_traversal",
+                "version": "provider_current",
+                "nested": "bounded",
+                "reason": "class_section=main; bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+                "observations": 1,
+                "scopes": []
+              }
+            ],
+            "identities": [
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_1",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_11",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_111",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_111_R",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_1A",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_R",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_RR",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              }
+            ],
+            "applicability": "unknown",
+            "omissions": {
+              "nodes": 0,
+              "sources": 0
+            },
+            "consumed": {
+              "sends": 2,
+              "responseBytes": 21306,
+              "elapsedMs": 244
+            },
+            "issues": []
+          },
+          "sourceBodies": 8
+        },
+        {
+          "rule": "SAPNavigate",
+          "basePreserved": true,
+          "baseSha256": "6cd5113b4c7d4497b83d4d482556179e27c9db29cf00ad480ef71c3083676879",
+          "summary": {
+            "root": {
+              "type": "CLAS",
+              "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+              "version": "active"
+            },
+            "scope": "CLAS CL_SEEF_ADT_TEST_AUNIT_1 full root source",
+            "providers": [
+              {
+                "id": "class_exted_obj",
+                "family": "class_bound_enhancement",
+                "status": "denied",
+                "coverage": "direct_identities",
+                "version": "provider_current",
+                "nested": "not_expanded",
+                "reason": "native_relation_action_denied",
+                "observations": 1,
+                "scopes": []
+              },
+              {
+                "id": "source_plugins",
+                "family": "source_plugin",
+                "status": "returned",
+                "coverage": "bounded_traversal",
+                "version": "provider_current",
+                "nested": "bounded",
+                "reason": "class_section=main; bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+                "observations": 1,
+                "scopes": []
+              }
+            ],
+            "identities": [
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_1",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_11",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_111",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_111_R",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_1A",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_R",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_RR",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              }
+            ],
+            "applicability": "unknown",
+            "omissions": {
+              "nodes": 0,
+              "sources": 0
+            },
+            "consumed": {
+              "sends": 2,
+              "responseBytes": 21306,
+              "elapsedMs": 389
+            },
+            "issues": []
+          },
+          "sourceBodies": 8
+        },
+        {
+          "rule": "SAP.navigate",
+          "basePreserved": true,
+          "baseSha256": "6cd5113b4c7d4497b83d4d482556179e27c9db29cf00ad480ef71c3083676879",
+          "summary": {
+            "root": {
+              "type": "CLAS",
+              "name": "CL_SEEF_ADT_TEST_AUNIT_1",
+              "version": "active"
+            },
+            "scope": "CLAS CL_SEEF_ADT_TEST_AUNIT_1 full root source",
+            "providers": [
+              {
+                "id": "class_exted_obj",
+                "family": "class_bound_enhancement",
+                "status": "denied",
+                "coverage": "direct_identities",
+                "version": "provider_current",
+                "nested": "not_expanded",
+                "reason": "native_relation_action_denied",
+                "observations": 1,
+                "scopes": []
+              },
+              {
+                "id": "source_plugins",
+                "family": "source_plugin",
+                "status": "returned",
+                "coverage": "bounded_traversal",
+                "version": "provider_current",
+                "nested": "bounded",
+                "reason": "class_section=main; bounded actual-source traversal; unread deeper units may exist; runtime applicability unknown",
+                "observations": 1,
+                "scopes": []
+              }
+            ],
+            "identities": [
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_1",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_11",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_111",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_111_R",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_1A",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_R",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              },
+              {
+                "type": "ENHO/XHH",
+                "name": "SEEF_ADT_TEST_ENHO_CLASS_1A_RR",
+                "version": "active",
+                "provider": "source_plugins",
+                "family": "source_plugin",
+                "switch": "SEEF_ADT_TEST_SWITCH_01:off"
+              }
+            ],
+            "applicability": "unknown",
+            "omissions": {
+              "nodes": 0,
+              "sources": 0
+            },
+            "consumed": {
+              "sends": 2,
+              "responseBytes": 21306,
+              "elapsedMs": 329
+            },
+            "issues": []
+          },
+          "sourceBodies": 8
+        }
+      ]
+    }
+  },
+  "claudeReview": {
+    "runtimeCommit": "a2a86b74aee3b6e0b8882d70134d93f88717955c",
+    "version": "2.1.308",
+    "model": "claude-opus-5-5",
+    "tools": ["Read", "Grep", "Glob"],
+    "readSearchCalls": 54,
+    "durationMs": 378490,
+    "verdict": "No actionable findings",
+    "executionAllowed": false,
+    "mutationsAllowed": false,
+    "mcpEnabled": false
+  },
+  "githubCiCheckpoint": {
+    "runId": 41279843473,
+    "head": "a2a86b74aee3b6e0b8882d70134d93f88717955c",
+    "completedSuccessfully": ["test (22)", "test (24)", "mta-validate"],
+    "sapJobs": "not_started; a full run will execute on the documentation head"
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "timestamp": "2026-10-31T21:09:18.514269+00:00",
+  "runtime": "Node 22.21.1",
+  "sourceHashes": {
+    "src/handlers/read.ts": "940e329d0615f1c0d037feecadbc2954b3148be04ba37a5ba94520230a1ed24d",
+    "src/context/method-signature.ts": "8c5000a3d8f16e39a6c66b9bf5ddc88fce3f06c9d9ebf946e26e84673bd7ad00",
+    "src/context/method-suggestions.ts": "2df37afe4bcacd253cc7f1d306300e3e66e3f6dd72ae6d2877c2c832658c8f67",
+    "src/handlers/read-method-options.ts": "9453b195b2ed969a9b9a1bca095f9daddfe8d7c2a5c1d9b1fc844b33db0cec08",
+    "src/handlers/tools.ts": "3fb22eb53c7955d46e35e3030d740cdbb324fd8d3bfafc032e16fd7fa6822b63",
+    "src/context/method-surgery.ts": "baf6015efaf3a7ee6c8c31e36bb5eb19696f7f1b37384c71f65898e2b4e01988",
+    "src/handlers/schemas.ts": "e3dede285d084ed36818bcaca19bbe98719ba0484f02b6374c56087c4390d5a3"
+  },
+  "lockfileHashes": {
+    "package-lock.json": "08ab605eb3ee5ee053838119c9e065a7d87f7433f31cfe0021a54db1947cddd2",
+    "btp/approuter/package-lock.json": "c36c8b5cfd34b2fc525e91054fc59d4e4321d9667d536e5b31053e8ab4837886"
+  },
+  "checks": [
+    {
+      "name": "unit",
+      "startTime": 1793480821922,
+      "success": true,
+      "tests": 10682,
+      "passed": 10682,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "name": "BTP SDK MCP",
+      "startTime": 1793480819248,
+      "success": true,
+      "tests": 10,
+      "passed": 10,
+      "failed": 0,
+      "pending": 0,
+      "cases": [
+        {
+          "name": "BTP method reads (standard MCP) advertises the intended read entry point",
+          "status": "passed",
+          "durationMs": 8.427083000000039
+        },
+        {
+          "name": "BTP method reads (standard MCP) reads a real own declaration and retains full source and body after a cached read",
+          "status": "passed",
+          "durationMs": 1480.8762089999998
+        },
+        {
+          "name": "BTP method reads (standard MCP) keeps a refreshed inactive read valid JSON with an explicit scope",
+          "status": "passed",
+          "durationMs": 407.21016599999984
+        },
+        {
+          "name": "BTP method reads (standard MCP) returns bounded suggestions from the actual method inventory",
+          "status": "passed",
+          "durationMs": 389.324208
+        },
+        {
+          "name": "BTP method reads (standard MCP) rejects conflicting output selectors through MCP validation",
+          "status": "passed",
+          "durationMs": 0.7915420000003905
+        },
+        {
+          "name": "BTP method reads (hyperfocused MCP) advertises the intended read entry point",
+          "status": "passed",
+          "durationMs": 0.25166600000011385
+        },
+        {
+          "name": "BTP method reads (hyperfocused MCP) reads a real own declaration and retains full source and body after a cached read",
+          "status": "passed",
+          "durationMs": 1290.1901669999997
+        },
+        {
+          "name": "BTP method reads (hyperfocused MCP) keeps a refreshed inactive read valid JSON with an explicit scope",
+          "status": "passed",
+          "durationMs": 391.81258399999933
+        },
+        {
+          "name": "BTP method reads (hyperfocused MCP) returns bounded suggestions from the actual method inventory",
+          "status": "passed",
+          "durationMs": 384.10300000000007
+        },
+        {
+          "name": "BTP method reads (hyperfocused MCP) rejects conflicting output selectors through MCP validation",
+          "status": "passed",
+          "durationMs": 0.6217499999993379
+        }
+      ]
+    },
+    {
+      "name": "A4H HTTP MCP",
+      "startTime": 1793480868889,
+      "success": true,
+      "tests": 3,
+      "passed": 3,
+      "failed": 0,
+      "pending": 0,
+      "cases": [
+        {
+          "name": "SAPRead method response contracts (e2e) returns an own signature and preserves a later implementation/full read",
+          "status": "passed",
+          "durationMs": 504.4034590000001
+        },
+        {
+          "name": "SAPRead method response contracts (e2e) rejects structured + method through the HTTP MCP entry point",
+          "status": "passed",
+          "durationMs": 3.7086669999999913
+        },
+        {
+          "name": "SAPRead method response contracts (e2e) suggests an actual near-name without returning the whole inventory",
+          "status": "passed",
+          "durationMs": 147.81116699999984
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "BTP uses developer OAuth and linked in-memory MCP transports; no deployed CF/PP route.",
+    "HTTP MCP uses a local loopback server and the existing A4H fixture with Basic ADT authentication.",
+    "No SAP mutations or fixture synchronization; edited BTP draft selection is unit-tested only."
+  ]
+}

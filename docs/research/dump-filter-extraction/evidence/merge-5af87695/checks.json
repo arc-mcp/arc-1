@@ -1,0 +1,58 @@
+{
+  "revision": "5af876955455d2424f0068fbc2757ba11a0875f0",
+  "base": "37fece94",
+  "runtime": "Node 24.11.1",
+  "fullUnit": {
+    "passed": 9289,
+    "failed": 0,
+    "files": 329,
+    "command": "npm test -- --maxWorkers=4"
+  },
+  "focused": {
+    "passed": 470,
+    "files": 10
+  },
+  "snapshots": {
+    "passed": 13,
+    "updated": 7
+  },
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "validate:policy": "passed",
+    "check:sizes": "passed",
+    "docs:build": "passed"
+  },
+  "lintInfos": 2,
+  "localLogSha256": {
+    "arc1-dump-filter-merged-unit.log": "c9ea19a964fb8e9d18c82e8c76c5bb904da4e36944768a0c04b4eff97ed25aba",
+    "arc1-dump-filter-merged-tests.log": "df8a43189d9b428949ed1ee9b50740a080715c117057a117d1669bc79e77e250",
+    "arc1-dump-filter-merged-snapshots.log": "0c5d2e764c1298e31221dbac8df243c367979e9a97900110c9e63851a43fd3aa",
+    "arc1-dump-filter-merged-typecheck.log": "2b1e8ca5f9ac0740e7509cb1ced735eee298880b787a3b0044b5b7a34a2e8f24",
+    "arc1-dump-filter-merged-build.log": "12892a890c2ac4cc13cb1a3f82be0b7d44c3bc0796bd009f95e0596fbf21385e",
+    "arc1-dump-filter-merged-lint.log": "2a8ba36a52e139d5e5a32ed1da2fcbf2230fcd6584e28484b655656e52223425",
+    "arc1-dump-filter-merged-policy.log": "842d65a7ee23c918b0b87de5fecc2a665d9567b8189cbcc94d9df6517c907310",
+    "arc1-dump-filter-merged-docs.log": "a79f77ce1245f4ff3fe8ac7b319e8621e465cda323b1a3257e54ca839ba03051",
+    "arc1-dump-filter-merged-sizes-final.log": "10644b7567006af8e658ff650e9f8457ac84afebfa568cf1d48023e1d17e7718"
+  },
+  "earlierHeadCI": {
+    "revision": "2efb8286fa047acf7024a82f8bb030bfc01d5a2d",
+    "url": "https://github.com/arc-mcp/arc-1/actions/runs/39069997409",
+    "unitTestsPerNodeVersion": 9003,
+    "nodeVersions": [
+      22,
+      24
+    ],
+    "coverageRunsAlsoPassed": true,
+    "integration": {
+      "passed": 260,
+      "skipped": 97
+    },
+    "e2e": {
+      "passed": 143,
+      "skipped": 4
+    },
+    "qualification": "Earlier head only. Skips are not live coverage."
+  }
+}

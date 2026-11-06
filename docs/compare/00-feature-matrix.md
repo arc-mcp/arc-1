@@ -128,7 +128,7 @@ The npm-graph CycloneDX quick win is now shipped. Remaining Tier 2 work (image/M
 | Variants | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 | Structured class decomposition (metadata + includes) | ✅ | ⚠️ (LSP-side) | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ✅ (locals_def/imp/test/macros) |
 | Grep/regex search within source (SAPRead `grep`) | ✅ (matches +context, line numbers; method-annotated for CLAS; literal fallback) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
-| GetProgFullCode (include traversal) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (on-prem only; `GET /sap/bc/adt/repository/nodestructure?objecttype=PROG/P&objectname={name}` + recursive INCL fetch) | N/A | ❌ | ❌ |
+| GetProgFullCode (include traversal) | ✅ (`SAPRead expand_includes` for PROG/INCL: INCLUDE statements via abaplint, bounded breadth-first read, closing note on omissions; FUGR via its own walk) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (on-prem only; `GET /sap/bc/adt/repository/nodestructure?objecttype=PROG/P&objectname={name}` + recursive INCL fetch) | N/A | ❌ | ❌ |
 | SKTD (Knowledge Transfer Documents) | ✅ (merged PR #134 2026-04-16; `GET/PUT/POST /sap/bc/adt/documentation/ktd/documents/`) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A | ❌ | ❌ |
 
 ## 6. Write / CRUD Operations

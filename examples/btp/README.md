@@ -7,7 +7,7 @@ They are not customer-ready files or a migration procedure.
 |---|---|---|
 | [Single system, shared Basic](single-basic/README.md) | One SAP system/client through `/mcp`, with a shared SAP user | One extension and one Basic destination |
 | [Single system, Principal Propagation](single-pp/README.md) | One SAP system/client through `/mcp`, with per-user SAP identity | One extension, a Basic startup destination and a PP request destination |
-| [Multiple systems/clients](multi-pp/README.md) | Experimental, mutation-free pinned and aggregate routes | One extension and two per-user PP destinations |
+| [Multiple systems/clients](multi-pp/README.md) | Read-only pinned and aggregate routes; optional scoped pinned PP writes | Base profile, optional authorization/write overlays and PP destinations |
 
 Follow the [deployment runbook](../../docs_page/btp-cloud-foundry-deployment.md) from your selected
 checkout. Its step 4 selects one of these profiles; later steps prepare destinations, deploy and

@@ -1,14 +1,15 @@
 /**
  * Private registry of ARC-1's own fixed data reads.
  *
- * Some features read SAP metadata tables with statements ARC-1 builds itself: repository lookup,
- * class hierarchy, transaction enrichment, BOR method resolution and authorization-trace decoding.
+ * Some features read SAP tables with statements ARC-1 builds itself: repository lookup,
+ * class hierarchy, transaction enrichment, BOR method resolution, authorization-trace decoding and stored text.
  * They are declared here so that code, tests and operator documentation cannot drift apart, and so
  * that "which feature breaks if I block this table?" has one answer.
  *
  * This registry is NOT a bypass. Every entry still goes through the same
  * `checkOperation(Query|FreeSQL)` capability gate, the same caller scopes, and the same data-source
- * blocklist, in that order. There is deliberately no `internal=true` argument, no caller-settable
+ * blocklist, in that order. The replacement-lineage entry is the fixed catalog read
+ * that implements the policy itself: it checks direct catalog blocks without recursive lineage. There is deliberately no `internal=true` argument, no caller-settable
  * flag, and nothing here is reachable from an MCP tool schema — blocking a table listed below really
  * does disable the feature that reads it, which is the intended, documented behaviour.
  *
@@ -24,12 +25,14 @@
 import type { DataSourcePolicyError } from './data-source-policy.js';
 
 export type InternalDataOperationId =
+  | 'replacement_lineage'
   | 'tadir_lookup_db'
   | 'tran_program_enrichment'
   | 'class_hierarchy'
   | 'interface_implementers'
   | 'bor_method_lookup'
-  | 'authorization_trace';
+  | 'authorization_trace'
+  | 'stored_text';
 
 export interface InternalDataOperation {
   /** Exact canonical sources this server-owned operation reads. */
@@ -42,6 +45,13 @@ export interface InternalDataOperation {
 }
 
 export const INTERNAL_DATA_OPERATIONS: Record<InternalDataOperationId, InternalDataOperation> = {
+  replacement_lineage: {
+    sources: ['DD02L', 'DDLDEPENDENCY'],
+    consumer: 'Data-source policy replacement lineage',
+    criticality: 'core',
+    guidance:
+      'The policy needs both catalog tables to prove replacement lineage. Keep data access disabled if these metadata reads are not permitted.',
+  },
   tadir_lookup_db: {
     sources: ['TADIR'],
     consumer: 'SAPSearch(searchType="tadir_lookup", source="db"|"both")',
@@ -86,6 +96,14 @@ export const INTERNAL_DATA_OPERATIONS: Record<InternalDataOperationId, InternalD
     guidance:
       'The authorization trace needs SUAUTHVALTRC for the trace rows and TOBJ to decode field names. ' +
       'Both are required: returning positional values without their field names would be ambiguous and misleading, so the action is denied rather than partially answered.',
+  },
+  stored_text: {
+    sources: ['STXH', 'STXL', 'TTXOB', 'TTXID', 'T002'],
+    consumer: 'SAPQuery(action="long_text")',
+    criticality: 'core',
+    guidance:
+      'Classic stored text requires STXH/STXL and the TTXOB/TTXID/T002 configuration. ' +
+      'Use an application-specific released API when these reads are not permitted; do not bypass the policy with RFC, helpers, or free SQL.',
   },
 };
 

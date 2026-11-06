@@ -1,0 +1,7 @@
+{
+  "high": true,
+  "package-manager": "npm",
+  "extra-args": [
+    "--omit=optional"
+  ]
+}

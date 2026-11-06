@@ -41,6 +41,7 @@ import {
   scenarioPasses,
 } from '../expected-call.js';
 import type { EvalScenario, LLMToolCall, ScenarioScore } from '../types.js';
+import { unsupportedCliScenario } from './cli-scenario-support.js';
 
 /**
  * Cursor default. `cursor-agent --help` hardcodes `sonnet-4` in examples but
@@ -260,6 +261,8 @@ export async function runScenarioWithCursor(
   scenario: EvalScenario,
   options: CursorRunOptions & { passThreshold: number },
 ): Promise<ScenarioScore> {
+  const unsupported = unsupportedCliScenario(scenario, 'cursor');
+  if (unsupported) return unsupported;
   const repoRoot = resolve(options.repoRoot ?? process.cwd());
   const model = options.model ?? DEFAULT_CURSOR_MODEL;
   // Cursor's first turn includes MCP server startup + first real SAP call.
@@ -316,9 +319,9 @@ export async function runScenarioWithCursor(
 
 /**
  * Scoring mirrors claude-code.ts — only ARC-1 calls count, first call against
- * forbidden/optimal/acceptable.
+ * optimal/acceptable; forbidden calls are rejected anywhere in the trace.
  */
-function scoreArcCalls(
+export function scoreArcCalls(
   arcCalls: LLMToolCall[],
   scenario: EvalScenario,
 ): { toolSelectionScore: number; parameterScore: number; explanation: string } {
@@ -332,11 +335,12 @@ function scoreArcCalls(
 
   const first = arcCalls[0];
 
-  if (scenario.forbidden?.includes(first.name)) {
+  const forbidden = arcCalls.find((call) => scenario.forbidden?.includes(call.name));
+  if (forbidden) {
     return {
       toolSelectionScore: 0,
       parameterScore: 0,
-      explanation: `Called forbidden ARC-1 tool first: ${first.name}`,
+      explanation: `Called forbidden ARC-1 tool in trace: ${forbidden.name}`,
     };
   }
 

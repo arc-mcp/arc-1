@@ -1,0 +1,97 @@
+{
+  "sourceTreeSha256": "c9a5f320c79a1c81562bb3802e64c4f7df00ad73191613be555054e40bcc9ab1",
+  "route": "MCP SDK client \u2192 loopback HTTP Streamable server \u2192 Basic HTTPS SAP",
+  "safety": "SAP writes, data preview and free SQL disabled; no fixture synchronization",
+  "targets": [
+    {
+      "target": "a4h",
+      "sapBasis": "758 SP02",
+      "client": "001",
+      "startTime": 1793480771524,
+      "positiveFixtureCoverage": true,
+      "tests": [
+        {
+          "name": "DDIC extensions through MCP advertises modes and preserves the base in automatic and explicit summaries",
+          "status": "passed",
+          "durationMs": 863.312459
+        },
+        {
+          "name": "DDIC extensions through MCP returns append sources separately through the public sources mode",
+          "status": "passed",
+          "durationMs": 940.3652079999999
+        },
+        {
+          "name": "DDIC extensions through MCP defaults partial reads to none and labels explicit discovery with owning-source scope",
+          "status": "passed",
+          "durationMs": 599.6357500000004
+        },
+        {
+          "name": "DDIC extensions through MCP preserves repeated include suffixes and the append in structure context",
+          "status": "passed",
+          "durationMs": 1869.2034590000003
+        },
+        {
+          "name": "E2E Smoke Tests SAPRead TABL \u2014 reads T000 table structure",
+          "status": "passed",
+          "durationMs": 293.97883400000006
+        },
+        {
+          "name": "E2E Smoke Tests SAPRead TABL \u2014 reads BAPIRET2 DDIC structure via unified TABL type",
+          "status": "passed",
+          "durationMs": 317.9738749999999
+        },
+        {
+          "name": "E2E Smoke Tests SAPRead TABL \u2014 reads T000 transparent table via unified TABL type",
+          "status": "passed",
+          "durationMs": 244.1600840000001
+        }
+      ],
+      "unselectedTests": 25
+    },
+    {
+      "target": "npl",
+      "sapBasis": "750 SP02",
+      "client": "001",
+      "startTime": 1793480771616,
+      "positiveFixtureCoverage": true,
+      "tests": [
+        {
+          "name": "DDIC extensions through MCP advertises modes and preserves the base in automatic and explicit summaries",
+          "status": "passed",
+          "durationMs": 1290.528917
+        },
+        {
+          "name": "DDIC extensions through MCP returns append sources separately through the public sources mode",
+          "status": "passed",
+          "durationMs": 762.2454160000002
+        },
+        {
+          "name": "DDIC extensions through MCP defaults partial reads to none and labels explicit discovery with owning-source scope",
+          "status": "passed",
+          "durationMs": 918.3479579999998
+        },
+        {
+          "name": "DDIC extensions through MCP preserves repeated include suffixes and the append in structure context",
+          "status": "passed",
+          "durationMs": 1630.0992499999998
+        },
+        {
+          "name": "E2E Smoke Tests SAPRead TABL \u2014 reads T000 table structure",
+          "status": "passed",
+          "durationMs": 273.81679099999997
+        },
+        {
+          "name": "E2E Smoke Tests SAPRead TABL \u2014 reads BAPIRET2 DDIC structure via unified TABL type",
+          "status": "passed",
+          "durationMs": 246.601541
+        },
+        {
+          "name": "E2E Smoke Tests SAPRead TABL \u2014 reads T000 transparent table via unified TABL type",
+          "status": "passed",
+          "durationMs": 236.7990830000001
+        }
+      ],
+      "unselectedTests": 25
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "summary": {
+    "model": "qwen3.6:35b-mlx",
+    "arm": "candidate",
+    "task": "single-control",
+    "revision": "e3a5fd95384130149d2d4f25835e774a7615674a",
+    "correct": true,
+    "toolCalls": 1,
+    "nativeCalls": 1,
+    "toolErrors": 0,
+    "returnedBytes": 458,
+    "catalogBytes": 45585,
+    "maxPromptTokens": 12652,
+    "nearContextLimit": false,
+    "durationMs": 18177
+  },
+  "expected": [
+    {
+      "type": "CLAS",
+      "name": "ZCL_EVAL_OK",
+      "status": "passed"
+    }
+  ],
+  "calls": [
+    {
+      "name": "SAPDiagnose",
+      "args": {
+        "action": "syntax",
+        "objects": [
+          {
+            "name": "ZCL_EVAL_OK",
+            "type": "CLAS"
+          }
+        ]
+      },
+      "isError": false,
+      "bytes": 458,
+      "content": "{\"status\":\"passed\",\"checkedAt\":\"2026-10-18T22:19:33.436Z\",\"requestedVersion\":\"active\",\"sourceEvidence\":\"Stored-source check requested; SAP supplies no immutable source hash or independent version proof.\",\"requestedObjectCount\":1,\"checkedObjectCount\":1,\"unexpectedReports\":[],\"unattributedMessages\":[],\"results\":[{\"type\":\"CLAS\",\"name\":\"ZCL_EVAL_OK\",\"uri\":\"/sap/bc/adt/oo/classes/ZCL_EVAL_OK\",\"status\":\"passed\",\"checked\":true,\"hasErrors\":false,\"messages\":[]}]}"
+    }
+  ],
+  "turns": [
+    {
+      "model": "qwen3.6:35b-mlx",
+      "created_at": "2026-10-18T22:19:33.423595Z",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_s55qpgfg",
+            "function": {
+              "index": 0,
+              "name": "SAPDiagnose",
+              "arguments": {
+                "action": "syntax",
+                "objects": [
+                  {
+                    "name": "ZCL_EVAL_OK",
+                    "type": "CLAS"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "done": true,
+      "done_reason": "stop",
+      "total_duration": 11861163750,
+      "load_duration": 10840167,
+      "prompt_eval_count": 12459,
+      "prompt_eval_duration": 10772873792,
+      "eval_count": 57,
+      "eval_duration": 1045040042
+    },
+    {
+      "model": "qwen3.6:35b-mlx",
+      "created_at": "2026-10-18T22:19:39.721872Z",
+      "message": {
+        "role": "assistant",
+        "content": "{\"results\":[{\"name\":\"ZCL_EVAL_OK\",\"status\":\"passed\"}]}"
+      },
+      "done": true,
+      "done_reason": "stop",
+      "total_duration": 6281848084,
+      "load_duration": 59176375,
+      "prompt_eval_count": 12652,
+      "prompt_eval_duration": 1928019625,
+      "eval_count": 15,
+      "eval_duration": 1639151916
+    }
+  ],
+  "final": "{\"results\":[{\"name\":\"ZCL_EVAL_OK\",\"status\":\"passed\"}]}"
+}

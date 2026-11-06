@@ -197,7 +197,7 @@ For each object in S but not in U:
 SAPNavigate(action="references", type="<type>", name="<name>")
 ```
 
-(`references` is ARC-1's where-used action — it calls SAP's where-used scope API under the hood.)
+(`references` is ARC-1's where-used action — it calls SAP's where-used API under the hood.)
 
 Build **set W** (statically referenced objects — someone calls them in source, even if no one ran them in the observed window).
 

@@ -94,7 +94,7 @@ describe('SAPWrite KTD short texts', () => {
     expect(calls.find((call) => call.method === 'PUT')?.body).toContain(`sktd:text="${b64(normalized)}"`);
   });
 
-  it('surfaces the Eclipse limit after normalization before locking', async () => {
+  it('surfaces the Eclipse limit after normalization without writing', async () => {
     const calls = recordKtdCalls(envelope());
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
       action: 'update',
@@ -105,7 +105,8 @@ describe('SAPWrite KTD short texts', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toMatch(/Eclipse ADT allows 60/);
-    expect(calls.some((call) => call.url.includes('_action=LOCK'))).toBe(false);
+    expect(calls.some((call) => call.url.includes('_action=UNLOCK'))).toBe(true);
+    expect(calls.some((call) => call.method === 'PUT')).toBe(false);
   });
 
   it('creates a KTD and writes an initial short text without a Markdown body', async () => {
@@ -170,7 +171,7 @@ describe('SAPWrite KTD short texts', () => {
     expect(text.indexOf('<!-- arc1:ktd-meta')).toBeLessThan(text.indexOf('Short texts (read-only'));
   });
 
-  it('refuses a KTD update with neither bodies nor short texts before locking', async () => {
+  it('refuses a KTD update with neither bodies nor short texts without writing', async () => {
     const calls = recordKtdCalls(envelope());
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
       action: 'update',
@@ -179,7 +180,8 @@ describe('SAPWrite KTD short texts', () => {
     });
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toMatch(/nothing to write[\s\S]*source[\s\S]*shortTexts/);
-    expect(calls.some((call) => call.url.includes('_action=LOCK'))).toBe(false);
+    expect(calls.some((call) => call.url.includes('_action=UNLOCK'))).toBe(true);
+    expect(calls.some((call) => call.method === 'PUT')).toBe(false);
   });
 });
 
@@ -255,7 +257,7 @@ describe('SAPWrite SKTD source routing at the handler boundary', () => {
   });
 
   it.each([undefined, 'body'])(
-    'reads duplicate IDs with grep=%s while refusing writes before locking',
+    'reads duplicate IDs with grep=%s while refusing writes without writing',
     async (grep) => {
       const calls = recordKtdCalls(envelope('field label').replace(FIELD_ID, ROOT_ID));
       const read = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
@@ -279,12 +281,13 @@ describe('SAPWrite SKTD source routing at the handler boundary', () => {
         expect(write.isError).toBe(true);
         expect(write.content[0]?.text).toMatch(/duplicate.*id/i);
       }
-      expect(calls.some((call) => call.method === 'PUT' || call.url.includes('_action=LOCK'))).toBe(false);
+      expect(calls.some((call) => call.method === 'PUT')).toBe(false);
+      expect(calls.some((call) => call.url.includes('_action=UNLOCK'))).toBe(true);
     },
   );
 
   it.each([`${FIELD_ID}x`, `${FIELD_ID.toUpperCase()}X`])(
-    'aborts before the lock for an unknown route: %s',
+    'aborts under the lock for an unknown route: %s',
     async (ref) => {
       const calls = recordKtdCalls(envelope());
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
@@ -296,7 +299,8 @@ describe('SAPWrite SKTD source routing at the handler boundary', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toMatch(/does not exist[\s\S]*Known node ids/);
-      expect(calls.some((call) => call.url.includes('_action=LOCK') || call.method === 'PUT')).toBe(false);
+      expect(calls.some((call) => call.method === 'PUT')).toBe(false);
+      expect(calls.some((call) => call.url.includes('_action=UNLOCK'))).toBe(true);
     },
   );
 
@@ -342,6 +346,7 @@ describe('SAPWrite SKTD source routing at the handler boundary', () => {
     expect(changed.content[0]?.text).toContain(
       'Would change 1 node(s); 1 node(s) would keep their current text:\n  PaymentValueDate',
     );
-    expect(calls.some((call) => call.method === 'PUT' || call.url.includes('_action=LOCK'))).toBe(false);
+    expect(calls.some((call) => call.method === 'PUT')).toBe(false);
+    expect(calls.some((call) => call.url.includes('_action=LOCK'))).toBe(false);
   });
 });
