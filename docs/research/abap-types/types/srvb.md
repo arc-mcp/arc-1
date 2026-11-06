@@ -40,6 +40,14 @@ catalog explicitly calls this out.
 | `handleSAPRead` | 1526 | `case 'SRVB'` | ✅ |
 | `src/probe/catalog.ts` | 161–167 + note | `SRVB` | ✅ — explicitly notes URL diverges from `/ddic/srvb` |
 | Publish action wiring (`/sap/bc/adt/businessservices/odatav2/publishjobs`) | various | special-case in `devtools.ts` | ✅ |
+| Service information (`/sap/bc/adt/businessservices/{odatav2,odatav4}/{name}`) | all | `src/adt/service-info.ts` | ✅ |
+
+### Service information contract (SAP_BASIS 758, 2026-11-06)
+- `GET …/{odatav2,odatav4}/{binding}?servicename=&serviceversion=&srvdname=`; without `servicename` SAP answers HTTP 400.
+- V2 returns `odatav2:serviceList` (`published` per service). V4 returns `odatav4:serviceGroup` (`published` on the group).
+- Both nest `serviceInfo:serviceInformation` → `collection` (`name`, `isRoot`) → `navigation` (`name`, `target`).
+- `serviceUrl` is relative to the SAP host. An unpublished binding answers 200 with an empty `serviceUrl` and no collections.
+- A survey of 200 `Z*` bindings found only OData V2/V4 with one service and one version each; several versions and non-OData bindings were not observed live.
 
 ## Verdict
 - **Status**: correct
