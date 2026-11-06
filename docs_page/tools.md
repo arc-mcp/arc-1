@@ -1304,13 +1304,20 @@ SAPWrite(action="generate_service", type="TABL", name="ZTRAVEL", generator="uise
 
 1. Without `source`, it returns SAP's `schema` and `defaultContent` and changes nothing.
 2. With `source` and `dryRun=true`, it runs SAP's validation and lists the objects, without generating.
-3. With `source` alone, it validates, generates, and reads every object back. The result reports each object as `found`, `missing`, `other_package` or `unknown`, plus any object left inactive.
+3. With `source` alone, it validates, generates, and reads every object back. The result reports each object as `found`, `missing`, `other_package`, `other_transport` or `unknown`, plus any object left inactive.
+
+For a transportable package, also pass `package` and `transport`:
+
+```text
+SAPWrite(action="generate_service", type="TABL", name="ZTRAVEL", generator="uiservice", source="<JSON>", package="ZTRAVEL_PKG", transport="A4HK900123")
+```
 
 - **Keep SAP's field order.** SAP's parser rejects sections or fields out of order, so fill in `defaultContent` without moving anything. ARC-1 sets `metadata` and `general.referenceObjectName` itself, and refuses a `source` that names another package or table.
-- **`$TMP` only.** Other packages and any `transport` are refused, because how this SAP API receives a transport has not been verified.
+- **Packages and transports.** `package` defaults to `$TMP`, which takes no transport; other `$` packages are refused. Any other package requires an explicit open request, because SAP's generator checks neither. ARC-1 checks the package allowlist, that the package exists and records changes, and that the request exists and is modifiable.
+- **Request contents.** Each object must be found on the requested transport. `additionalRequestObjects` lists what SAP added beyond the preview, such as the `G4BA` and `SUSH` entries of the binding. Review them before releasing the request.
 - **Existing objects.** SAP's validation refuses names that already exist and reports one problem per call. The preview alone would not reveal them.
 - **Publishing.** The binding is not published. Use `SAPActivate action=publish_srvb`, then `SAPRead type=SRVB include=service_info`.
-- **Failures.** If generation fails, some objects may exist; the error lists what was read back, and ARC-1 does not delete anything.
+- **Failures.** If generation fails, some objects may exist; the error lists what was read back, and ARC-1 does not delete anything. Deleting generated objects leaves their entries on the request, so a test request should be deleted, not released.
 
 Contract and limits: [research note](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-06-rap-service-generators.md).
 

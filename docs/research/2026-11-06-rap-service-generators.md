@@ -1,8 +1,8 @@
 # RAP service generators over ADT
 
 Live contract of the generators behind Eclipse's "Generate ABAP Repository Objects" wizard, observed on
-on-premise SAP_BASIS 758 over RFC on 2026-11-06, with disposable objects in `$TMP` that were removed
-afterwards. `SAPWrite action=generate_service` implements it.
+on-premise SAP_BASIS 758 over RFC on 2026-11-06, with disposable objects in `$TMP` and in a transportable
+package, all removed afterwards. `SAPWrite action=generate_service` implements it.
 
 ## Contract
 
@@ -18,6 +18,8 @@ afterwards. `SAPWrite action=generate_service` implements it.
 | `/validation` | POST | Sends content JSON; accepts `application/vnd.sap.as+xml;charset=utf-8;dataname=com.sap.adt.StatusMessage` | HTTP 200 with `SEVERITY` and `SHORT_TEXT` |
 | `/preview` | POST | Sends content JSON; accepts `...generator.preview.v1+xml` | `adtcore:objectReferences` |
 | (none) | POST | Sends content JSON; accepts `...generator.v1+json` | Generates; HTTP 200 |
+
+Outside `$TMP`, the package travels in `metadata.package` and the request in the `corrNr` query parameter.
 
 ## Behavior ARC-1 has to compensate for
 
@@ -43,10 +45,29 @@ The binding was not published; after `SAPActivate action=publish_srvb`, `SAPRead
 returned its URL and entity set. `webapiservice` previews eight objects, without the metadata extension. Only its
 schema, defaults, validation and preview were exercised; no Web API stack was generated.
 
+## Transports
+
+Two `uiservice` generations into a transportable package, each with a new dedicated request in `corrNr`, put every
+object on that request. All 18 other open requests of the user kept their object counts, so SAP honors the parameter
+rather than picking an open request. A third generation reused the second request after its objects were deleted;
+it succeeded, but the entries already existed, so it does not add evidence about where objects land.
+
+- **More than the preview.** The request also gained an `R3TR G4BA` entry named after the binding and an
+  `R3TR SUSH` entry with a generated name. The preview lists neither, so `generate_service` reports them.
+- **After deleting.** Deleting the generated objects keeps their entries on the request and adds entries for the
+  table and draft table: 12 entries became 14. Whether the `G4BA` and `SUSH` objects themselves were removed was
+  not established. Delete a test request; do not release it.
+- **Deliberately not exercised.** A generation with an invalid `corrNr` or without one, because it could place
+  objects on another open request of the user. ARC-1 refuses both before generating.
+- **The transport check does not prove the package exists.** `/cts/transportchecks` answered `RECORDING` for a package
+  that does not exist, so ARC-1 reads the package first.
+- **The transport check must not name the table.** Asked about an existing table, it reports the request that holds
+  the table and can fail with a target mismatch, so ARC-1 asks about a new object name in the package.
+- **Generated from a table on another request.** Only validated and previewed. Both real generations used a table
+  on the same request.
+
 ## Not verified
 
-- **Transports.** How a generation receives its transport was not observed. Validation accepts any `corrNr`, so it
-  proves nothing. `generate_service` therefore accepts `$TMP` only (roadmap FEAT-98).
 - **Other routes and releases.** HTTP, BTP and other releases were not tested, so the action is on-premise only.
 - **A generation that fails midway.** ARC-1 reads the objects back and reports them, but no live partial failure
   was observed, so SAP's rollback behavior is unknown.

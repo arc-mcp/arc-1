@@ -1,7 +1,8 @@
 /**
  * ADT RAP service generators: one database table to a full RAP stack, as in the Eclipse wizard.
  * Validation is the only collision check: the preview reports CREATE even for existing objects, and
- * neither validation nor preview checks the package, the transport or the referenced table.
+ * neither validation nor preview checks the package, the transport or the referenced table. Generation honors
+ * corrNr, and SAP adds objects the preview does not list, such as G4BA and SUSH, to the request.
  * Contract: docs/research/2026-11-06-rap-service-generators.md
  */
 import { AdtError } from './errors.js';
@@ -43,8 +44,9 @@ function referenceQuery(tableUrl: string): string {
   return `referencedObject=${encodeURIComponent(tableUrl.toLowerCase())}`;
 }
 
-function generatorPath(id: ServiceGeneratorId, tableUrl: string, resource = ''): string {
-  return `/sap/bc/adt/businessservices/generators/${id}${resource}?${referenceQuery(tableUrl)}`;
+function generatorPath(id: ServiceGeneratorId, tableUrl: string, resource = '', transport?: string): string {
+  const correction = transport ? `&corrNr=${encodeURIComponent(transport)}` : '';
+  return `/sap/bc/adt/businessservices/generators/${id}${resource}?${referenceQuery(tableUrl)}${correction}`;
 }
 
 function parseJsonResponse(body: string, what: string): unknown {
@@ -63,6 +65,16 @@ async function assertGeneratorOffered(http: AdtHttpClient, id: ServiceGeneratorI
   if (!entries.some((entry) => String(entry.id ?? '') === id)) {
     throw new AdtError(`SAP does not offer generator "${id}" for this table.`);
   }
+}
+
+/** Throws when the package does not exist: neither the generator validation nor the transport check notices. */
+export async function assertGeneratorPackageExists(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  packageName: string,
+): Promise<void> {
+  checkOperation(safety, OperationType.Read, 'ReadGeneratorPackage');
+  await http.get(`/sap/bc/adt/packages/${encodeURIComponent(packageName)}`);
 }
 
 /** SAP's JSON schema and default content for one generator and table. */
@@ -110,10 +122,11 @@ export async function validateServiceGeneration(
   id: ServiceGeneratorId,
   tableUrl: string,
   content: string,
+  transport?: string,
 ): Promise<ServiceGenerationValidation> {
   checkOperation(safety, OperationType.Read, 'ValidateServiceGeneration');
   await assertGeneratorOffered(http, id, tableUrl);
-  const path = `${generatorPath(id, tableUrl, '/validation')}&checks=${encodeURIComponent(VALIDATION_CHECKS)}`;
+  const path = `${generatorPath(id, tableUrl, '/validation', transport)}&checks=${encodeURIComponent(VALIDATION_CHECKS)}`;
   const response = await http.post(path, content, CONTENT_TYPE, { Accept: VALIDATION_ACCEPT });
   return parseGeneratorValidation(response.body);
 }
@@ -125,9 +138,10 @@ export async function previewServiceGeneration(
   id: ServiceGeneratorId,
   tableUrl: string,
   content: string,
+  transport?: string,
 ): Promise<GeneratedObjectRef[]> {
   checkOperation(safety, OperationType.Read, 'PreviewServiceGeneration');
-  const response = await http.post(generatorPath(id, tableUrl, '/preview'), content, CONTENT_TYPE, {
+  const response = await http.post(generatorPath(id, tableUrl, '/preview', transport), content, CONTENT_TYPE, {
     Accept: `${GENERATOR_MEDIA}.preview.v1+xml`,
   });
   const objects = parseGeneratorPreview(response.body);
@@ -145,10 +159,11 @@ export async function generateService(
   id: ServiceGeneratorId,
   tableUrl: string,
   content: string,
+  transport?: string,
 ): Promise<void> {
   checkOperation(safety, OperationType.Create, 'GenerateService');
   await http.post(
-    generatorPath(id, tableUrl),
+    generatorPath(id, tableUrl, '', transport),
     content,
     CONTENT_TYPE,
     { Accept: `${GENERATOR_MEDIA}.v1+json` },

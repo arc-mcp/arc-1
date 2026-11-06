@@ -18,13 +18,27 @@ const searchHit = (name: string, type: string, pkg = '$TMP') =>
   `<?xml version="1.0" encoding="utf-8"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:uri="/sap/bc/adt/x/${name.toLowerCase()}" adtcore:type="${type}" adtcore:name="${name}" adtcore:packageName="${pkg}"/></adtcore:objectReferences>`;
 const EMPTY_SEARCH = `<?xml version="1.0" encoding="utf-8"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"/>`;
 const SOURCE = JSON.stringify({ businessService: { serviceBinding: { name: 'ZUI_DEMO_O4' } } });
+const REQUEST = 'S4HK900001';
+const abapObject = (type: string, name: string) =>
+  `<tm:abap_object tm:pgmid="R3TR" tm:type="${type}" tm:name="${name}"/>`;
+const requestXml = (objects: string, status = 'D') =>
+  `<?xml version="1.0" encoding="utf-8"?><tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="${REQUEST}" tm:owner="DEV" tm:desc="Test" tm:status="${status}" tm:type="K"><tm:task tm:number="S4HK900002" tm:owner="DEV" tm:status="${status}">${objects}</tm:task></tm:request></tm:root>`;
+const TRANSPORT_INFO = (recording: string, unit: string) =>
+  `<?xml version="1.0" encoding="utf-8"?><asx:abap version="1.0" xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><DLVUNIT>${unit}</DLVUNIT><RECORDING>${recording}</RECORDING></DATA></asx:values></asx:abap>`;
+const ALL_IN_REQUEST =
+  abapObject('DDLS', 'ZR_DEMO') + abapObject('SRVB', 'ZUI_DEMO_O4') + abapObject('G4BA', 'ZUI_DEMO_O4');
+const TRANSPORT_ARGS = { package: 'ZFOO', transport: REQUEST };
 
 interface Scenario {
   validation?: string;
   preview?: string;
   generate?: () => Response | Promise<Response>;
   search?: Record<string, string>;
+  searchPackage?: string;
   table?: string;
+  packageStatus?: number;
+  transportInfo?: string;
+  request?: () => Response;
 }
 
 function respond(scenario: Scenario = {}): void {
@@ -36,7 +50,16 @@ function respond(scenario: Scenario = {}): void {
       const query = searchParams.get('query') ?? '';
       if (query === 'ZDEMO_T') return Promise.resolve(mockResponse(200, scenario.table ?? SEARCH_TABLE));
       const hit = (scenario.search ?? { ZR_DEMO: 'DDLS/DF', ZUI_DEMO_O4: 'SRVB/SVB' })[query];
-      return Promise.resolve(mockResponse(200, hit ? searchHit(query, hit) : EMPTY_SEARCH));
+      return Promise.resolve(mockResponse(200, hit ? searchHit(query, hit, scenario.searchPackage) : EMPTY_SEARCH));
+    }
+    if (pathname.startsWith('/sap/bc/adt/packages/')) {
+      return Promise.resolve(mockResponse(scenario.packageStatus ?? 200, '<pak:package/>'));
+    }
+    if (pathname.endsWith('/cts/transportchecks')) {
+      return Promise.resolve(mockResponse(200, scenario.transportInfo ?? TRANSPORT_INFO('X', 'HOME')));
+    }
+    if (pathname.startsWith('/sap/bc/adt/cts/transportrequests/')) {
+      return Promise.resolve(scenario.request ? scenario.request() : mockResponse(200, requestXml('')));
     }
     if (pathname.endsWith('/activation/inactiveobjects')) return Promise.resolve(mockResponse(200, '<a/>'));
     if (pathname.endsWith('/repository/generators')) return Promise.resolve(mockResponse(200, FEED));
@@ -210,17 +233,137 @@ describe('SAPWrite generate_service', () => {
   });
 
   it.each([
-    ['another package', { package: 'ZFOO', transport: 'A4HK900001' }],
-    ['a package without transport', { package: 'ZFOO' }],
-    ['a transport in $TMP', { package: '$TMP', transport: 'A4HK900001' }],
-  ])('refuses %s before any generator POST', async (_label, args) => {
+    ['a package without transport', { package: 'ZFOO' }, 'requires transport'],
+    ['a transport in $TMP', { package: '$TMP', transport: REQUEST }, 'takes no transport'],
+    ['another local package', { package: '$FOO' }, 'only local package'],
+  ])('refuses %s before any generator POST', async (_label, args, message) => {
     respond();
     const result = await generate(args);
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]!.text).toContain('$TMP only');
+    expect(result.content[0]!.text).toContain(message);
     expect(posts('/validation')).toHaveLength(0);
     expect(generationCalls()).toHaveLength(0);
+  });
+
+  describe('in a transportable package', () => {
+    /** The first read of the request is the preflight, the second the snapshot before generating. */
+    function requestSequence(after: string): () => Response {
+      let reads = 0;
+      return () => mockResponse(200, requestXml(++reads <= 2 ? '' : after));
+    }
+
+    it('sends corrNr on validation, preview and generation, and the package in the content', async () => {
+      respond({ request: requestSequence(ALL_IN_REQUEST), searchPackage: 'ZFOO' });
+      const result = await generate(TRANSPORT_ARGS);
+
+      expect(result.isError).toBeFalsy();
+      for (const suffix of ['/validation', '/preview', '/generators/uiservice']) {
+        expect(posts(suffix)[0]?.url.searchParams.get('corrNr')).toBe(REQUEST);
+      }
+      expect(generationCalls()[0]?.body.metadata.package).toBe('ZFOO');
+    });
+
+    it('confirms every object in the request and lists what SAP added beyond the preview', async () => {
+      respond({ request: requestSequence(ALL_IN_REQUEST), searchPackage: 'ZFOO' });
+      const output = JSON.parse((await generate(TRANSPORT_ARGS)).content[0]!.text);
+
+      expect(output).toMatchObject({ package: 'ZFOO', transport: REQUEST });
+      expect(output.objects.map((object: { state: string }) => object.state)).toEqual(['found', 'found']);
+      expect(output.additionalRequestObjects).toEqual(['G4BA ZUI_DEMO_O4']);
+    });
+
+    it('fails when an object did not land on the requested transport', async () => {
+      respond({ request: requestSequence(abapObject('DDLS', 'ZR_DEMO')), searchPackage: 'ZFOO' });
+      const result = await generate(TRANSPORT_ARGS);
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]!.text).toContain('"state":"other_transport"');
+    });
+
+    it('fails when an object landed in another package', async () => {
+      respond({ request: requestSequence(ALL_IN_REQUEST), searchPackage: 'ZOTHER' });
+      const result = await generate(TRANSPORT_ARGS);
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]!.text).toContain('"state":"other_package"');
+    });
+
+    it('does not report success when the request cannot be read afterwards', async () => {
+      let reads = 0;
+      respond({
+        request: () => (++reads <= 2 ? mockResponse(200, requestXml('')) : mockResponse(500, 'boom')),
+        searchPackage: 'ZFOO',
+      });
+      const result = await generate(TRANSPORT_ARGS);
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]!.text).toContain('"state":"unknown"');
+      expect(result.content[0]!.text).toContain('"additionalRequestObjects":"unknown"');
+    });
+
+    it('checks the package with a new object, because the table may sit on another request', async () => {
+      respond();
+      await generate({ ...TRANSPORT_ARGS, dryRun: true });
+
+      const check = mockFetch.mock.calls.find(([url]) => String(url).includes('/cts/transportchecks'));
+      expect(String(check?.[1]?.body)).toContain('<DEVCLASS>ZFOO</DEVCLASS>');
+      expect(String(check?.[1]?.body)).not.toContain('zdemo_t');
+    });
+
+    it('dryRun checks the target and generates nothing', async () => {
+      respond();
+      const output = JSON.parse((await generate({ ...TRANSPORT_ARGS, dryRun: true })).content[0]!.text);
+
+      expect(output).toMatchObject({ dryRun: true, package: 'ZFOO', transport: REQUEST });
+      expect(generationCalls()).toHaveLength(0);
+    });
+
+    it.each<[string, Scenario, string]>([
+      ['a package that does not exist', { packageStatus: 404 }, 'Package ZFOO does not exist'],
+      [
+        'a request SAP does not know',
+        { request: () => mockResponse(404, 'Not found') },
+        `Transport ${REQUEST} does not exist`,
+      ],
+      ['a package that records no changes', { transportInfo: TRANSPORT_INFO('', 'HOME') }, 'does not record changes'],
+      ['a local package', { transportInfo: TRANSPORT_INFO('X', 'LOCAL') }, 'does not record changes'],
+      [
+        'a request that does not exist',
+        { request: () => mockResponse(200, '<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"/>') },
+        'not a transport request',
+      ],
+      ['a released request', { request: () => mockResponse(200, requestXml('', 'R')) }, 'not modifiable'],
+    ])('refuses %s before any generator POST', async (_label, scenario, message) => {
+      respond(scenario);
+      const result = await generate(TRANSPORT_ARGS);
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]!.text).toContain(message);
+      expect(posts('/validation')).toHaveLength(0);
+      expect(generationCalls()).toHaveLength(0);
+    });
+
+    it('honours the transport allowlist', async () => {
+      respond();
+      const client = new AdtClient({
+        baseUrl: 'http://sap:8000',
+        username: 'u',
+        password: 'p',
+        safety: { ...createClient().safety, allowedTransports: ['S4HK999999'] },
+      });
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'generate_service',
+        type: 'TABL',
+        name: 'ZDEMO_T',
+        generator: 'uiservice',
+        source: SOURCE,
+        ...TRANSPORT_ARGS,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(generationCalls()).toHaveLength(0);
+    });
   });
 
   it.each([

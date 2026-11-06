@@ -125,7 +125,6 @@ sequence.
 | [FEAT-79](#feat-79) | DDIC-aware dependency context | P2 | M | Needs research | Code intelligence |
 | [FEAT-96](#feat-96) | Bounded class overview and large-read policy | P2 | M | Needs research | Code intelligence |
 | [FEAT-97](#feat-97) | Complete SHLP definitions and effective appends | P3 | M | Needs research | Object coverage |
-| [FEAT-98](#feat-98) | RAP service generation in transportable packages | P2 | S | Needs research | Object coverage |
 | [FEAT-42](#feat-42) | Additional CI output formats | P3 | XS | Revisit on trigger | CI |
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
@@ -1243,21 +1242,6 @@ positive append fixtures covering switch/interface semantics. Preserve data/SQL 
 keep execution/export extensions outside core. BTP and live restricted-user/PP qualification remain
 separate evidence requirements. See [native evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/abap-types/types/shlp.md) and
 [implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-29-shlp-native-metadata.md).
-
-### FEAT-98 — RAP service generation in transportable packages
-
-- **Priority / effort / status:** P2 / S / Needs research
-- **Category:** Object coverage
-
-**Remaining gap.** `SAPWrite action=generate_service` generates in `$TMP` only. How SAP's generator
-receives a transport was not observed: its validation accepts any `corrNr`, so only a real generation can
-prove the contract, and a wrong guess could place objects on another open request. Generating outside
-`$TMP` would also have to confirm that every object landed on the requested transport.
-
-**Evidence.** [Contract research](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-06-rap-service-generators.md).
-
-**Resume trigger.** A disposable transportable package and request on an authorized test system. HTTP, BTP
-and other releases remain unverified, as does the `smbc` maintenance-object generator.
 
 ## CI and operations
 
