@@ -45,6 +45,7 @@ import { type CacheSecurityContext, inactiveListUserKey, invalidateInactiveList 
 import { readEditableSource } from './editable-source.js';
 import { includeSearchHint, readExpandedSource } from './expanded-read.js';
 import { getCachedFeatures, isBtpSystem } from './feature-cache.js';
+import { readGenerators } from './generators.js';
 import {
   detectLocalHandlerInclude,
   functionModuleObjectUrl,
@@ -342,6 +343,8 @@ async function handleSAPReadBase(
       return errorResult(serverDrivenUnavailableMessage('SAPRead', 'TABL/DTI'));
     return textResult(toolJson(await listTableIndexes(client.http, client.safety, name)));
   }
+
+  if (type === 'GENERATORS') return readGenerators(client, args);
 
   if (type === 'SMBC') {
     if (!name) return errorResult('"name" is required for SAPRead type=SMBC.');

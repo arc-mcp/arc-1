@@ -1,0 +1,283 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "http://sap.com/schema/mbcassistant.json",
+  "title": "Business Configuration Application",
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "package": {
+          "type": "string"
+        },
+        "masterLanguage": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "options": {
+      "title": "Scenario Options",
+      "type": "object",
+      "properties": {
+        "overwriteExistingObjects": {
+          "title": "Overwrite Existing Objects",
+          "type": "boolean"
+        },
+        "addCopyAction": {
+          "title": "Add Copy Action",
+          "type": "boolean"
+        },
+        "addDeprecateAction": {
+          "title": "Add Deprecate Actions",
+          "type": "boolean"
+        },
+        "addInputCheck": {
+          "title": "Add Data Consistency Check",
+          "type": "boolean"
+        },
+        "addIbnToExportApp": {
+          "title": "Add Intent Based Navigation to Export Customizing app",
+          "type": "boolean"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string",
+          "maxLength": 50
+        },
+        "copyAbstractEntityName": {
+          "title": "Copy Parameter Entity",
+          "type": "string",
+          "maxLength": 30
+        },
+        "transportSelectionType": {
+          "title": "Transport Selection",
+          "type": "string",
+          "enum": ["manual", "manualWithPreselection", "noTransport"],
+          "enumTitles": ["Manual", "Manual with preselection", "No transport"],
+          "enumDescriptions": [
+            "The transport request must first be created manually and selected before saving.",
+            "When the Edit action is performed, a suitable transport request is preselected.",
+            "Recording on transport request is not available. The transport object is set as adaptable in production."
+          ]
+        },
+        "showTransportSelectionStrip": {
+          "title": "Enable Transport Selection Strip",
+          "type": "boolean"
+        },
+        "createProjectionLayer": {
+          "title": "Create Projection Layer",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "businessConfManagement": {
+      "title": "BC Management",
+      "type": "object",
+      "properties": {
+        "maintenanceObjectId": {
+          "title": "BC Maintenance Object",
+          "type": "string",
+          "maxLength": 30
+        },
+        "transportObject": {
+          "title": "Transport Object",
+          "type": "string",
+          "maxLength": 30
+        }
+      },
+      "additionalProperties": false,
+      "required": ["maintenanceObjectId", "transportObject"]
+    },
+    "businessService": {
+      "title": "Business Service",
+      "type": "object",
+      "properties": {
+        "serviceDefinitionName": {
+          "title": "Service Definition",
+          "description": "Name of the service definition exposing the customizing entities",
+          "type": "string",
+          "maxLength": 30
+        },
+        "serviceBindingName": {
+          "title": "Service Binding",
+          "description": "Name of the service binding linking the service defintion to the OData V4 - UI protocol",
+          "type": "string",
+          "maxLength": 26
+        }
+      },
+      "additionalProperties": false,
+      "required": ["serviceDefinitionName", "serviceBindingName"]
+    },
+    "businessObject": {
+      "title": "Business Object",
+      "type": "object",
+      "properties": {
+        "dataModel": {
+          "title": "Data Model",
+          "type": "object",
+          "properties": {
+            "basisTableName": {
+              "type": "string",
+              "maxLength": 16
+            },
+            "singleton": {
+              "title": "Singleton Entity",
+              "type": "object",
+              "properties": {
+                "draftTableName": {
+                  "title": "Draft Table Name",
+                  "type": "string",
+                  "maxLength": 16
+                },
+                "entityName": {
+                  "title": "Entity Name",
+                  "type": "string",
+                  "maxLength": 19
+                },
+                "entityLabel": {
+                  "title": "Entity Label",
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "cdsInterfaceViewName": {
+                  "title": "Interface View",
+                  "type": "string",
+                  "maxLength": 30
+                },
+                "cdsProjectionViewName": {
+                  "title": "Projection View",
+                  "type": "string",
+                  "maxLength": 30
+                },
+                "keyFieldAlias": {
+                  "title": "Key Field Alias",
+                  "description": "The key field alias used to relate the other entities to the singleton entity",
+                  "type": "string",
+                  "maxLength": 30
+                }
+              },
+              "additionalProperties": false,
+              "required": ["draftTableName", "entityName", "entityLabel", "cdsInterfaceViewName", "keyFieldAlias"]
+            },
+            "tables": {
+              "title": "Tables",
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "title": "Table",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "title": "Table Name",
+                    "type": "string",
+                    "maxLength": 16
+                  },
+                  "draftTableName": {
+                    "title": "Draft Table Name",
+                    "type": "string",
+                    "maxLength": 16
+                  },
+                  "entityName": {
+                    "title": "Entity Name",
+                    "type": "string",
+                    "maxLength": 19
+                  },
+                  "entityLabel": {
+                    "title": "Entity Label",
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "cdsInterfaceViewName": {
+                    "title": "Interface View",
+                    "type": "string",
+                    "maxLength": 30
+                  },
+                  "cdsProjectionViewName": {
+                    "title": "Projection View",
+                    "type": "string",
+                    "maxLength": 30
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "text_tables": {
+              "title": "Text Tables",
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "title": "Text Table",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "title": "Text Table Name",
+                    "type": "string",
+                    "maxLength": 16
+                  },
+                  "draftTableName": {
+                    "title": "Draft Table Name",
+                    "type": "string",
+                    "maxLength": 16
+                  },
+                  "entityName": {
+                    "title": "Entity Name",
+                    "type": "string",
+                    "maxLength": 19
+                  },
+                  "entityLabel": {
+                    "title": "Entity Label",
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "cdsInterfaceViewName": {
+                    "title": "Interface View",
+                    "type": "string",
+                    "maxLength": 30
+                  },
+                  "cdsProjectionViewName": {
+                    "title": "Projection View",
+                    "type": "string",
+                    "maxLength": 30
+                  },
+                  "textFieldName": {
+                    "title": "Text Field",
+                    "description": "Name of the text field to be used as the business configuration entry description",
+                    "type": "string",
+                    "maxLength": 30
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": ["table"]
+        },
+        "behaviorImplementation": {
+          "title": "Behavior Implementation",
+          "type": "object",
+          "properties": {
+            "implementationClassName": {
+              "title": "Implementation Class",
+              "type": "string",
+              "maxLength": 30
+            },
+            "projImplementationClassName": {
+              "title": "Projection Implementation Class",
+              "type": "string",
+              "maxLength": 30
+            }
+          },
+          "additionalProperties": false,
+          "required": ["implementationClassName"]
+        }
+      },
+      "additionalProperties": false,
+      "required": ["dataModel", "behaviorImplementation"]
+    }
+  },
+  "additionalProperties": false,
+  "required": ["metadata", "businessConfManagement", "options", "businessObject", "businessService"]
+}

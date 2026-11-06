@@ -1,0 +1,516 @@
+<?xml version="1.0" encoding="utf-8"?><massOperation:group massOperation:name="Business Configuration Application" xmlns:massOperation="http://www.sap.com/adt/massoperation"><massOperation:group massOperation:name="BC Management"><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="application/json" xmlns:adtcore="http://www.sap.com/adt/core">{
+  "formatVersion": "1 ",
+  "header": {
+    "description": "Demo codes maintenance",
+    "originalLanguage": "de",
+    "abapLanguageVersion": "cloudDevelopment"
+  },
+  "serviceConfiguration": {
+    "serviceBinding": "ZUI_DMO_ARC1DEMO_O4",
+    "serviceName": "ZUI_DMO_ARC1DEMO_O4",
+    "serviceVersion": "0001",
+    "rootEntitySet": "Singleton",
+    "name": "Demo-Codes",
+    "configurationGroup": "",
+    "skipRootEntity": true
+  },
+  "appConfiguration": {
+    "objectPages": [
+      {
+        "entitySet": "Singleton",
+        "variantManagement": "control",
+        "showTransportSelectionStrip": true
+      }
+    ],
+    "tableSettings": [
+      {
+        "entitySet": "DmoPatternDemoCText",
+        "tableType": "gridTable",
+        "selectAll": true,
+        "creationModeName": "inlineCreationRows",
+        "createAtEnd": true,
+        "widthIncludingColumnHeader": true
+      },
+      {
+        "entitySet": "DmoPatternDemoCodes",
+        "tableType": "gridTable",
+        "selectionMode": "single",
+        "selectAll": true,
+        "rowCountMode": "auto",
+        "frozenColumnCount": 1,
+        "creationModeName": "inlineCreationRows",
+        "createAtEnd": true,
+        "widthIncludingColumnHeader": true
+      }
+    ]
+  }
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/bct/smbctyp/zarc1_codes" adtcore:type="SMBC/TYP" adtcore:name="ZARC1_CODES" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="application/json" xmlns:adtcore="http://www.sap.com/adt/core">{
+  "formatVersion": "1 ",
+  "header": {
+    "description": "Demo codes maintenance",
+    "originalLanguage": "de",
+    "abapLanguageVersion": "cloudDevelopment"
+  },
+  "clientDependent": true,
+  "languageDependent": "standard",
+  "category": "customizing",
+  "transportRecording": "automatic",
+  "adaptableInProduction": false,
+  "tableItems": [
+    {
+      "tableName": "ZTX_DMO_DCODE",
+      "isPrimaryTable": true
+    },
+    {
+      "tableName": "ZTX_DMO_DCODET"
+    }
+  ]
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/transportobject/objects/zarc1_codes" adtcore:type="TOBJ/TOB" adtcore:name="ZARC1_CODES" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object></massOperation:group><massOperation:group massOperation:name="Business Service"><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:objectReference adtcore:uri="/sap/bc/adt/businessservices/bindings/zui_dmo_arc1demo_o4" adtcore:type="SRVB/SVB" adtcore:name="ZUI_DMO_ARC1DEMO_O4" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@ObjectModel.leadingEntity.name: 'ZC_X_DMOArc1STP'
+define service ZUI_DMO_ARC1DEMO {
+  expose ZC_X_DMOARC1STP as Singleton;
+  expose ZC_X_DMOARC1TP as DmoPatternDemoCodes;
+  expose ZC_X_DMOARC1TEXTTP as DmoPatternDemoCText;
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/srvd/sources/zui_dmo_arc1demo" adtcore:type="SRVD/SRV" adtcore:name="ZUI_DMO_ARC1DEMO" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object></massOperation:group><massOperation:group massOperation:name="Business Object"><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">managed with additional save implementation in class ZBP_I_DMOPATTERNDEMOCODES_S unique;
+strict;
+with draft;
+define behavior for ZR_X_DMOARC1STP alias Singleton
+draft table ZTX_DMO_ARCS_D
+with unmanaged save
+lock master total etag LastChangedAtMax
+authorization master( global )
+{
+  field ( readonly )
+   SingletonID;
+  
+  field ( features : instance )
+   TransportRequestID;
+  
+  field ( notrigger )
+   SingletonID,
+   LastChangedAtMax;
+  
+  
+  update;
+  internal create;
+  internal delete;
+
+  draft action ( features : instance ) Edit with additional implementation;
+  draft action Activate optimized;
+  draft action Discard;
+  draft action Resume;
+  draft determine action Prepare {
+    validation DmoPatternDemoCodes ~ ValidateDataConsistency;
+    validation DmoPatternDemoCText ~ ValidateDataConsistency;
+  }
+  action ( features : instance ) SelectCustomizingTransptReq parameter D_SelectCustomizingTransptReqP result [1] $self;
+
+  association _DmoPatternDemoCodes { create ( features : instance ); with draft; }
+
+  validation ValidateTransportRequest on save ##NOT_ASSIGNED_TO_DETACT
+  {
+    create;
+    update;
+  }
+
+  side effects
+  {
+    action SelectCustomizingTransptReq affects
+        $self;
+  }
+  
+}
+
+define behavior for ZR_X_DMOArc1TP alias DmoPatternDemoCodes ##UNMAPPED_FIELD
+persistent table ZTX_DMO_DCODE
+draft table ZTX_DMO_ARC1_D
+etag master LocalLastChangedAt
+lock dependent by _Singleton
+authorization dependent by _Singleton
+{
+  field ( mandatory : create )
+   DemoCode;
+  
+  field ( readonly )
+   SingletonID,
+   CreatedBy,
+   CreatedAt,
+   LastChangedBy,
+   LastChangedAt,
+   LocalLastChangedAt;
+  
+  field ( readonly : update )
+   DemoCode;
+  
+  field ( notrigger )
+   SingletonID,
+   CreatedBy,
+   CreatedAt,
+   LastChangedBy,
+   LastChangedAt,
+   LocalLastChangedAt;
+  
+  
+  update( features : global );
+  delete( features : global );
+
+  factory action ( features : instance ) Copy parameter ZD_X_DmoPatternDemoCodesP [1];
+
+  mapping for ZTX_DMO_DCODE
+  {
+    DemoCode = DEMO_CODE;
+    IsActive = IS_ACTIVE;
+    SortOrder = SORT_ORDER;
+    CreatedBy = CREATED_BY;
+    CreatedAt = CREATED_AT;
+    LastChangedBy = LAST_CHANGED_BY;
+    LastChangedAt = LAST_CHANGED_AT;
+    LocalLastChangedAt = LOCAL_LAST_CHANGED_AT;
+  }
+
+  association _Singleton { with draft; }
+  association _DmoPatternDemoCText { create ( features : global ); with draft; }
+
+  validation ValidateTransportRequest on save ##NOT_ASSIGNED_TO_DETACT
+  {
+    create;
+    update;
+    delete;
+  }
+  validation ValidateDataConsistency on save
+  {
+    create;
+    update;
+  }
+
+}
+
+define behavior for ZR_X_DMOArc1TextTP alias DmoPatternDemoCText ##UNMAPPED_FIELD
+persistent table ZTX_DMO_DCODET
+draft table ZTX_DMO_ARC1T_D
+etag master LocalLastChangedAt
+lock dependent by _Singleton
+authorization dependent by _Singleton
+{
+  field ( mandatory : create )
+   Language;
+  
+  field ( readonly )
+   SingletonID,
+   DemoCode,
+   LocalLastChangedAt;
+  
+  field ( readonly : update )
+   Language;
+  
+  field ( notrigger )
+   SingletonID,
+   LocalLastChangedAt;
+  
+  
+  update( features : global );
+  delete( features : global );
+
+  mapping for ZTX_DMO_DCODET
+  {
+    Language = LANGUAGE;
+    DemoCode = DEMO_CODE;
+    Description = DESCRIPTION;
+    LocalLastChangedAt = LOCAL_LAST_CHANGED_AT;
+  }
+
+  association _Singleton { with draft; }
+  association _DmoPatternDemoCodes { with draft; }
+
+  validation ValidateTransportRequest on save ##NOT_ASSIGNED_TO_DETACT
+  {
+    create;
+    update;
+    delete;
+  }
+  validation ValidateDataConsistency on save
+  {
+    create;
+    update;
+  }
+
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/bo/behaviordefinitions/zr_x_dmoarc1stp" adtcore:type="BDEF/BDO" adtcore:name="ZR_X_DMOARC1STP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">projection implementation in class ZBP_C_DMOPATTERNDEMOCODES_S unique;
+strict;
+use draft;
+use side effects;
+define behavior for ZC_X_DMOARC1STP alias Singleton
+{
+  use action Edit;
+  use action Activate;
+  use action Discard;
+  use action Resume;
+  use action Prepare;
+  use action SelectCustomizingTransptReq;
+
+  use association _DmoPatternDemoCodes { create ( augment ); with draft; }
+
+}
+
+define behavior for ZC_X_DMOArc1TP alias DmoPatternDemoCodes
+{
+  field ( modify )
+   Description;
+  
+  
+  use update( augment );
+  use delete;
+
+  use action Copy;
+
+  use association _Singleton { with draft; }
+  use association _DmoPatternDemoCText { create; with draft; }
+
+}
+
+define behavior for ZC_X_DMOArc1TextTP alias DmoPatternDemoCText
+{
+  use update;
+  use delete;
+
+  use association _Singleton { with draft; }
+  use association _DmoPatternDemoCodes { with draft; }
+
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/bo/behaviordefinitions/zc_x_dmoarc1stp" adtcore:type="BDEF/BDO" adtcore:name="ZC_X_DMOARC1STP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:objectReference adtcore:uri="/sap/bc/adt/oo/classes/zbp_i_dmopatterndemocodes_s" adtcore:type="CLAS/OC" adtcore:name="ZBP_I_DMOPATTERNDEMOCODES_S" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:objectReference adtcore:uri="/sap/bc/adt/oo/classes/zbp_c_dmopatterndemocodes_s" adtcore:type="CLAS/OC" adtcore:name="ZBP_C_DMOPATTERNDEMOCODES_S" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object></massOperation:group><massOperation:group massOperation:name="Data Model"><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@EndUserText.label: 'Demo-Codes Singleton'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+define root view entity ZR_X_DMOARC1STP
+  as select from I_Language
+    left outer join ZTX_DMO_DCODE on 0 = 0
+  association [0..*] to I_ABAPTransportRequestText as _ABAPTransportRequestText on $projection.TransportRequestID = _ABAPTransportRequestText.TransportRequestID
+  composition [0..*] of ZR_X_DMOArc1TP as _DmoPatternDemoCodes
+{
+  key 1 as SingletonID,
+  _DmoPatternDemoCodes,
+  max( ZTX_DMO_DCODE.LAST_CHANGED_AT ) as LastChangedAtMax,
+  cast( '' as SXCO_TRANSPORT) as TransportRequestID,
+  _ABAPTransportRequestText
+}
+where I_Language.Language = $session.system_language</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zr_x_dmoarc1stp" adtcore:type="DDLS/DF" adtcore:name="ZR_X_DMOARC1STP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@EndUserText.label: 'Demo-Codes Singleton pflege'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@UI: {
+  headerInfo: {
+    typeName: 'Singleton'
+  }
+}
+@ObjectModel.semanticKey: [ 'SingletonID' ]
+define root view entity ZC_X_DMOARC1STP
+  provider contract TRANSACTIONAL_QUERY
+  as projection on ZR_X_DMOArc1STP
+{
+  @UI.facet: [ {
+    id: 'ZR_X_DMOArc1TP', 
+    purpose: #STANDARD, 
+    type: #LINEITEM_REFERENCE, 
+    label: 'Demo-Codes', 
+    position: 1 , 
+    targetElement: '_DmoPatternDemoCodes'
+  } ]
+  @UI.lineItem: [ {
+    position: 1 
+  } ]
+  key SingletonID,
+  @UI.hidden: true
+  LastChangedAtMax,
+  @ObjectModel.text.element: [ 'TransportRequestDescription' ]
+  TransportRequestID,
+  @UI.hidden: true
+  _ABAPTransportRequestText.TransportRequestDescription : localized,
+  _DmoPatternDemoCodes : redirected to composition child ZC_X_DMOArc1TP
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zc_x_dmoarc1stp" adtcore:type="DDLS/DF" adtcore:name="ZC_X_DMOARC1STP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@EndUserText.label: 'Demo-Codes'
+@AccessControl.authorizationCheck: #MANDATORY
+define view entity ZR_X_DMOArc1TP
+  as select from ZTX_DMO_DCODE
+  association to parent ZR_X_DMOArc1STP as _Singleton on $projection.SingletonID = _Singleton.SingletonID
+  composition [0..*] of ZR_X_DMOArc1TextTP as _DmoPatternDemoCText
+{
+  key DEMO_CODE as DemoCode,
+  IS_ACTIVE as IsActive,
+  SORT_ORDER as SortOrder,
+  @Semantics.user.createdBy: true
+  CREATED_BY as CreatedBy,
+  @Semantics.systemDateTime.createdAt: true
+  CREATED_AT as CreatedAt,
+  @Semantics.user.lastChangedBy: true
+  LAST_CHANGED_BY as LastChangedBy,
+  @Semantics.systemDateTime.lastChangedAt: true
+  LAST_CHANGED_AT as LastChangedAt,
+  @Semantics.systemDateTime.localInstanceLastChangedAt: true
+  LOCAL_LAST_CHANGED_AT as LocalLastChangedAt,
+  1 as SingletonID,
+  _Singleton,
+  _DmoPatternDemoCText
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zr_x_dmoarc1tp" adtcore:type="DDLS/DF" adtcore:name="ZR_X_DMOARC1TP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@EndUserText.label: 'Demo-Codes pflegen'
+@AccessControl.authorizationCheck: #MANDATORY
+@Metadata.allowExtensions: true
+define view entity ZC_X_DMOArc1TP
+  as projection on ZR_X_DMOArc1TP
+{
+  key DemoCode,
+  IsActive,
+  SortOrder,
+  CreatedBy,
+  CreatedAt,
+  LastChangedBy,
+  LastChangedAt,
+  @Consumption.hidden: true
+  LocalLastChangedAt,
+  @Consumption.hidden: true
+  SingletonID,
+  _Singleton : redirected to parent ZC_X_DMOArc1STP,
+  _DmoPatternDemoCText : redirected to composition child ZC_X_DMOArc1TextTP,
+  _DmoPatternDemoCText.Description : localized
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zc_x_dmoarc1tp" adtcore:type="DDLS/DF" adtcore:name="ZC_X_DMOARC1TP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@EndUserText.label: 'Demo-Codes Text'
+@AccessControl.authorizationCheck: #MANDATORY
+@ObjectModel.dataCategory: #TEXT
+define view entity ZR_X_DMOArc1TextTP
+  as select from ZTX_DMO_DCODET
+  association [1..1] to ZR_X_DMOArc1STP as _Singleton on $projection.SingletonID = _Singleton.SingletonID
+  association to parent ZR_X_DMOArc1TP as _DmoPatternDemoCodes on $projection.DemoCode = _DmoPatternDemoCodes.DemoCode
+  association [0..*] to I_LanguageText as _LanguageText on $projection.Language = _LanguageText.LanguageCode
+{
+  @Semantics.language: true
+  key LANGUAGE as Language,
+  key DEMO_CODE as DemoCode,
+  @Semantics.text: true
+  DESCRIPTION as Description,
+  @Semantics.systemDateTime.localInstanceLastChangedAt: true
+  LOCAL_LAST_CHANGED_AT as LocalLastChangedAt,
+  1 as SingletonID,
+  _Singleton,
+  _DmoPatternDemoCodes,
+  _LanguageText
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zr_x_dmoarc1texttp" adtcore:type="DDLS/DF" adtcore:name="ZR_X_DMOARC1TEXTTP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@EndUserText.label: 'Demo-Codes Text pflegen'
+@AccessControl.authorizationCheck: #MANDATORY
+@Metadata.allowExtensions: true
+define view entity ZC_X_DMOArc1TextTP
+  as projection on ZR_X_DMOArc1TextTP
+{
+  @ObjectModel.text.element: [ 'LanguageName' ]
+  @Consumption.valueHelpDefinition: [ {
+    entity: {
+      name: 'I_Language', 
+      element: 'Language'
+    }
+  } ]
+  key Language,
+  key DemoCode,
+  Description,
+  @Consumption.hidden: true
+  LocalLastChangedAt,
+  @Consumption.hidden: true
+  SingletonID,
+  _LanguageText.LanguageName : localized,
+  _DmoPatternDemoCodes : redirected to parent ZC_X_DMOArc1TP,
+  _Singleton : redirected to ZC_X_DMOArc1STP
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zc_x_dmoarc1texttp" adtcore:type="DDLS/DF" adtcore:name="ZC_X_DMOARC1TEXTTP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@EndUserText.label: 'Demo-Codes kopieren'
+define abstract entity ZD_X_DmoPatternDemoCodesP
+{
+  @EndUserText.label: 'Neu: Demo-Code'
+  @UI.defaultValue: #( 'ELEMENT_OF_REFERENCED_ENTITY: DemoCode' )
+  DemoCode : ZEX_DMO_DEMOCODE;
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zd_x_dmopatterndemocodesp" adtcore:type="DDLS/DF" adtcore:name="ZD_X_DMOPATTERNDEMOCODESP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@Metadata.layer: #CUSTOMER
+@UI: {
+  headerInfo: {
+    typeName: 'DmoPatternDemoCodes', 
+    typeNamePlural: 'DmoPatternDemoCodess', 
+    title: {
+      type: #STANDARD, 
+      label: 'Demo-Codes', 
+      value: 'DemoCode'
+    }
+  }
+}
+annotate view ZC_X_DMOArc1TP with
+{
+  @UI.identification: [ {
+    position: 1 
+  } ]
+  @UI.lineItem: [ {
+    position: 1 
+  }, 
+  {
+    type: #FOR_ACTION, 
+    dataAction: 'Copy', 
+    label: 'Ausgewählten Eintrag kopieren', 
+    invocationGrouping: #CHANGE_SET
+  } ]
+  @UI.facet: [ {
+    id: 'ZR_X_DMOArc1TP', 
+    purpose: #STANDARD, 
+    type: #IDENTIFICATION_REFERENCE, 
+    label: 'Demo-Codes', 
+    position: 1 
+  }, 
+  {
+    id: 'ZR_X_DMOArc1TextTP', 
+    type: #LINEITEM_REFERENCE, 
+    label: 'Demo-Codes Text', 
+    position: 2 , 
+    targetElement: '_DmoPatternDemoCText'
+  } ]
+  DemoCode;
+  
+  @UI.identification: [ {
+    position: 3 
+  } ]
+  @UI.lineItem: [ {
+    position: 3 
+  } ]
+  IsActive;
+  
+  @UI.identification: [ {
+    position: 4 
+  } ]
+  @UI.lineItem: [ {
+    position: 4 
+  } ]
+  SortOrder;
+  
+  @UI.identification: [ {
+    hidden: true, 
+    position: 2 
+  } ]
+  @UI.lineItem: [ {
+    position: 2 
+  } ]
+  Description;
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/ddlx/sources/zc_x_dmoarc1tp" adtcore:type="DDLX/EX" adtcore:name="ZC_X_DMOARC1TP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@Metadata.layer: #CUSTOMER
+@UI: {
+  headerInfo: {
+    typeName: 'DmoPatternDemoCText', 
+    typeNamePlural: 'DmoPatternDemoCTexts', 
+    title: {
+      type: #STANDARD, 
+      label: 'Demo-Codes Text', 
+      value: 'Language'
+    }
+  }
+}
+annotate view ZC_X_DMOArc1TextTP with
+{
+  @UI.facet: [ {
+    id: 'ZR_X_DMOArc1TextTP', 
+    purpose: #STANDARD, 
+    type: #IDENTIFICATION_REFERENCE, 
+    label: 'Demo-Codes Text', 
+    position: 1 
+  } ]
+  @UI.identification: [ {
+    position: 1 
+  } ]
+  @UI.lineItem: [ {
+    position: 1 
+  } ]
+  Language;
+  
+  @UI.identification: [ {
+    position: 2 
+  } ]
+  @UI.lineItem: [ {
+    position: 2 
+  } ]
+  Description;
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/ddlx/sources/zc_x_dmoarc1texttp" adtcore:type="DDLX/EX" adtcore:name="ZC_X_DMOARC1TEXTTP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:objectReference adtcore:uri="/sap/bc/adt/acm/dcl/sources/zr_x_dmoarc1tp" adtcore:type="DCLS/DL" adtcore:name="ZR_X_DMOARC1TP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:objectReference adtcore:uri="/sap/bc/adt/acm/dcl/sources/zc_x_dmoarc1tp" adtcore:type="DCLS/DL" adtcore:name="ZC_X_DMOARC1TP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:objectReference adtcore:uri="/sap/bc/adt/acm/dcl/sources/zr_x_dmoarc1texttp" adtcore:type="DCLS/DL" adtcore:name="ZR_X_DMOARC1TEXTTP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:objectReference adtcore:uri="/sap/bc/adt/acm/dcl/sources/zc_x_dmoarc1texttp" adtcore:type="DCLS/DL" adtcore:name="ZC_X_DMOARC1TEXTTP" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/tables/ztx_dmo_arc1_d" adtcore:type="TABL/DT" adtcore:name="ZTX_DMO_ARC1_D" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/tables/ztx_dmo_arcs_d" adtcore:type="TABL/DT" adtcore:name="ZTX_DMO_ARCS_D" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/tables/ztx_dmo_arc1t_d" adtcore:type="TABL/DT" adtcore:name="ZTX_DMO_ARC1T_D" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object></massOperation:group></massOperation:group>

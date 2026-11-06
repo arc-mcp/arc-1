@@ -917,6 +917,7 @@ export const NAME_CASE_GUARD_ACTIONS = new Set([
   'add_unit',
   'delete',
   'edit_text_symbols',
+  'generate',
 ]);
 
 /**
