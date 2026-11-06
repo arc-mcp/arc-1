@@ -31,32 +31,25 @@ describe('resolveIncludeGroup', () => {
 describe('applyIncludeGroup', () => {
   it('sets args.group for an in-scope action on INCL', async () => {
     const args: Record<string, unknown> = {};
-    expect(await applyIncludeGroup(clientWith([grouped('zarc1')]), args, 'INCL', 'LZARC1TOP', 'edit_content')).toBe(
-      undefined,
-    );
+    await applyIncludeGroup(clientWith([grouped('zarc1')]), args, 'INCL', 'LZARC1TOP', 'edit_content');
     expect(args.group).toBe('ZARC1');
   });
 
   it('leaves an explicit group, other types and create/delete untouched (no lookup)', async () => {
     const boom = { lookupObjects: async () => Promise.reject(new Error('must not be called')) } as unknown as AdtClient;
     const withGroup: Record<string, unknown> = { group: 'ZX' };
-    expect(await applyIncludeGroup(boom, withGroup, 'INCL', 'LZARC1TOP', 'update')).toBeUndefined();
+    await applyIncludeGroup(boom, withGroup, 'INCL', 'LZARC1TOP', 'update');
     expect(withGroup.group).toBe('ZX');
-    expect(await applyIncludeGroup(boom, {}, 'PROG', 'ZTEST', 'update')).toBeUndefined();
-    expect(await applyIncludeGroup(boom, {}, 'INCL', 'LZARC1TOP', 'create')).toBeUndefined();
-    expect(await applyIncludeGroup(boom, {}, 'INCL', 'LZARC1TOP', 'delete')).toBeUndefined();
+    await applyIncludeGroup(boom, {}, 'PROG', 'ZTEST', 'update');
+    await applyIncludeGroup(boom, {}, 'INCL', 'LZARC1TOP', 'create');
+    await applyIncludeGroup(boom, {}, 'INCL', 'LZARC1TOP', 'delete');
   });
 
-  it('returns an error result (no write path) when the owner cannot be verified', async () => {
+  it('throws (no write path) when the owner cannot be verified', async () => {
     const args: Record<string, unknown> = {};
-    const result = await applyIncludeGroup(
-      clientWith([grouped('za'), grouped('zb')]),
-      args,
-      'INCL',
-      'LZARC1TOP',
-      'update',
-    );
-    expect(result?.isError).toBe(true);
+    await expect(
+      applyIncludeGroup(clientWith([grouped('za'), grouped('zb')]), args, 'INCL', 'LZARC1TOP', 'update'),
+    ).rejects.toThrow('Provide "group" explicitly');
     expect(args.group).toBeUndefined();
   });
 });

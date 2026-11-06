@@ -124,8 +124,7 @@ export async function handleSAPWrite(
   // `buildCreateXml('FUNC', …, properties)` finds it.
   let objectUrl: string;
   let srcUrl: string;
-  const includeGroupError = await applyIncludeGroup(client, args, type, name, action);
-  if (includeGroupError) return includeGroupError;
+  await applyIncludeGroup(client, args, type, name, action);
   if (
     (type === 'TABL' || type === 'TABL/DT' || type === 'TABL/DS') &&
     action !== 'create' &&

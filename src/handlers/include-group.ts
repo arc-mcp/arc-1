@@ -1,6 +1,5 @@
 import type { AdtClient } from '../adt/client.js';
 import { canonicalHostRelativeAdtPath } from '../adt/path-safety.js';
-import { errorResult, type ToolResult } from './shared.js';
 
 /** Owning group of a function-group include, or undefined for a standalone include. */
 export async function resolveIncludeGroup(
@@ -44,7 +43,8 @@ const GROUP_RESOLVE_ACTIONS = new Set(['update', 'edit_unit', 'add_unit', 'edit_
 
 /**
  * Fill an omitted `args.group` for a SAPWrite INCL target from the include itself. Fail-closed: an
- * unverifiable or ambiguous owner returns an error instead of writing through the flat endpoint.
+ * unverifiable or ambiguous owner throws (formatted by dispatch, like every other handler error)
+ * instead of writing through the flat endpoint.
  */
 export async function applyIncludeGroup(
   client: AdtClient,
@@ -52,13 +52,8 @@ export async function applyIncludeGroup(
   type: string,
   name: string,
   action: string,
-): Promise<ToolResult | undefined> {
-  if (type !== 'INCL' || String(args.group ?? '').trim() || !GROUP_RESOLVE_ACTIONS.has(action)) return undefined;
-  try {
-    const owner = await resolveIncludeGroup(client, name, true);
-    if (owner) args.group = owner;
-  } catch (e) {
-    return errorResult(e instanceof Error ? e.message : String(e));
-  }
-  return undefined;
+): Promise<void> {
+  if (type !== 'INCL' || String(args.group ?? '').trim() || !GROUP_RESOLVE_ACTIONS.has(action)) return;
+  const owner = await resolveIncludeGroup(client, name, true);
+  if (owner) args.group = owner;
 }
