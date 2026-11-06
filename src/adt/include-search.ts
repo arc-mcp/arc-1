@@ -1,19 +1,22 @@
 /**
- * Include-aware repository search filtering.
- *
- * SAP's quickSearch `objectType` filter returns `[]` for include types even for an exact name
- * (live 7.57: INCL and FUGR/I; the unfiltered search finds the same objects typed FUGR/I or
- * PROG/I). Every ARC-1 path that forwards a caller-supplied type to quickSearch therefore drops
- * the filter for these types and applies it to the hits with `filterIncludeHits`.
+ * Native 757/758 quickSearch filters miss function-group includes. INCL means both include
+ * families, so INCL and FUGR/I use bounded unfiltered candidates and local type matching.
+ * PROG/I's standalone-include filter works on 758 and stays server-side.
  */
 import type { AdtSearchResult } from './types.js';
 
 const INCLUDE_HIT_TYPES = ['PROG/I', 'FUGR/I'];
 
-/** Types whose server-side quickSearch filter is unreliable. `INCL` is ARC-1's alias for both hit types. */
+/** Include search types. `INCL` is ARC-1's alias for both hit types. */
 export function isIncludeSearchType(objectType: string | undefined): boolean {
   const type = objectType?.trim().toUpperCase();
   return type === 'INCL' || INCLUDE_HIT_TYPES.includes(type ?? '');
+}
+
+/** Only these searches need candidates from both repository families. */
+export function requiresUnfilteredIncludeSearch(objectType: string | undefined): boolean {
+  const type = objectType?.trim().toUpperCase();
+  return type === 'INCL' || type === 'FUGR/I';
 }
 
 /** Keep the hits matching an include search type; any other type is returned untouched. */

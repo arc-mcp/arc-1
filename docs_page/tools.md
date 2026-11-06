@@ -629,6 +629,12 @@ SAPSearch(query="SELECT * FROM mara", searchType="source_code", objectType="CLAS
 
 **TADIR lookup:** Use `searchType="tadir_lookup"` for reset/create preflights that need to know whether objects exist anywhere, regardless of package. The default `source='adt'` uses ADT repository quick search, which avoids long `IN (...)` parser limits and works in read/search-only configurations. The endpoint deliberately filters out TADIR rows that don't resolve to a live workbench resource, so orphan/ghost entries (left behind by aborted create/delete cycles) are invisible to the default path — see the source modes section below.
 
+For object search and ADT lookup, `INCL` includes both standalone (`PROG/I`) and function-group
+(`FUGR/I`) includes; an explicit subtype keeps only that kind. `INCL` and `FUGR/I` search up to
+1000 unfiltered candidates because SAP's type filter can miss function-group includes. Broad
+object searches warn when that cap is reached; narrow the pattern if needed. `PROG/I` keeps SAP's
+standalone-include filter. This does not change the SQL-backed `db` lookup.
+
 ### TADIR lookup source modes
 
 | `source` | Underlying call | Scope required | When to use |

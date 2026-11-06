@@ -98,7 +98,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(params.getAll('maxResults')).toEqual(['2']);
     });
 
-    it.each(['INCL', 'FUGR/I', 'PROG/I'])(
+    it.each(['INCL', 'FUGR/I'])(
       'objectType=%s filters unfiltered results locally (SAP type filter returns [] for includes)',
       async (objectType) => {
         const hit = (objectType: string, objectName: string) => ({
