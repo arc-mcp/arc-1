@@ -140,6 +140,62 @@ describe('insertUnit', () => {
     expect(result.newSource.indexOf('MODULE status')).toBeGreaterThan(result.newSource.indexOf('INCLUDE'));
   });
 
+  it('keeps change-marker comments wrapped around the new unit and reports the unit lines', () => {
+    const wrapped = '* --> ZTAG 001\nFORM gamma.\n  WRITE 3.\nENDFORM.\n* <-- ZTAG 001';
+    const result = insertUnit(PROGRAM, 'ZUNIT', 'gamma', `\n\n${wrapped}\n\n`);
+    expect(result.success, result.error).toBe(true);
+    expect(result.newSource).toBe(`${PROGRAM}\n${wrapped}\n`);
+    expect(result.newUnitSource).toBe(wrapped);
+    const lines = result.newSource.split('\n');
+    expect(lines[result.unit!.startLine - 1]).toBe('FORM gamma.');
+    expect(lines[result.unit!.endLine - 1]).toBe('ENDFORM.');
+  });
+
+  it.each([
+    ['\n', '\n'],
+    ['\r\n', '\n'],
+    ['\n', '\r\n'],
+    ['\r\n', '\r\n'],
+  ])('preserves wrapper gaps with destination %j and input %j', (eol, inputEol) => {
+    const original = `REPORT zunit.${eol}`;
+    const wrapped = '* begin\n\n  " indented note  \n  FORM gamma.\n    WRITE 3.\n  ENDFORM.  \n\n* end';
+    const result = insertUnit(original, 'ZUNIT', 'gamma', `\n\n${wrapped}\n\n`.replaceAll('\n', inputEol));
+    expect(result.success, result.error).toBe(true);
+    expect(result.newSource).toBe(original + wrapped.replaceAll('\n', eol) + eol);
+    expect(result.newUnitSource).toBe(wrapped);
+    expect(result.unit).toMatchObject({ startLine: 5, endLine: 7 });
+  });
+
+  it('preserves indentation on a plain block while removing only outer blank lines', () => {
+    const block = '  FORM gamma.\n  ENDFORM.  ';
+    const result = insertUnit('REPORT zunit.\n', 'ZUNIT', 'gamma', `\n${block}\n\n`);
+    expect(result.success, result.error).toBe(true);
+    expect(result.newSource).toBe(`REPORT zunit.\n${block}\n`);
+  });
+
+  it('accepts quote comments around a MODULE and preserves CRLF', () => {
+    const result = insertUnit(
+      'PROGRAM zmod.\r\n',
+      'ZMOD',
+      'status',
+      '" begin\nMODULE status OUTPUT.\nENDMODULE.\n" end',
+    );
+    expect(result.success, result.error).toBe(true);
+    expect(result.newSource).toBe('PROGRAM zmod.\r\n" begin\r\nMODULE status OUTPUT.\r\nENDMODULE.\r\n" end\r\n');
+  });
+
+  it.each([
+    { label: 'comments only', block: '* just a note\n" another' },
+    { label: 'an indented asterisk is not a comment', block: '  * note\nFORM gamma.\nENDFORM.' },
+    { label: 'code between the marker and the unit', block: '* tag\nWRITE 1.\nFORM gamma.\nENDFORM.' },
+    { label: 'code after the unit', block: 'FORM gamma.\nENDFORM.\n* tag\nWRITE 1.' },
+    { label: 'a second unit behind a comment', block: 'FORM gamma.\nENDFORM.\n* between\nFORM delta.\nENDFORM.' },
+  ])('still refuses $label', (row) => {
+    const result = insertUnit(PROGRAM, 'ZUNIT', 'gamma', row.block);
+    expect(result.success).toBe(false);
+    expect(result.newSource).toBe('');
+  });
+
   it.each([
     { label: 'duplicate', source: PROGRAM, name: 'ALPHA', block: 'FORM alpha.\nENDFORM.' },
     { label: 'different name', source: PROGRAM, name: 'gamma', block: 'FORM other.\nENDFORM.' },

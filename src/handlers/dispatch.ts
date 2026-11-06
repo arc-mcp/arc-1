@@ -691,7 +691,9 @@ export function getToolRegistry(): ToolRegistry {
     if (!policy) throw new Error(`Built-in tool '${name}' has no ACTION_POLICY entry`);
     r.register({ name, source: 'builtin', policy, invoke });
   };
-  reg('SAPRead', (ctx) => handleSAPRead(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity, ctx.config.minimalErrors));
+  reg('SAPRead', (ctx) =>
+    handleSAPRead(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity, ctx.config.minimalErrors, ctx.config.abapRelease),
+  );
   reg('SAPSearch', (ctx) => handleSAPSearch(ctx.client, ctx.args, ctx.config.minimalErrors));
   reg('SAPQuery', (ctx) => handleSAPQuery(ctx.client, ctx.args, ctx.config.minimalErrors));
   reg('SAPWrite', (ctx) => handleSAPWrite(ctx.client, ctx.args, ctx.config, ctx.cache, ctx.cacheSecurity));

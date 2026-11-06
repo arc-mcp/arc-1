@@ -207,6 +207,26 @@ export function spliceUnit(
   return { newSource, oldUnitSource, newUnitSource, unit, success: true };
 }
 
+const COMMENT_OR_BLANK = /^(\s*$|\*|\s*")/;
+
+/** Split `source` into leading/trailing full-line comments (outer blank lines dropped) and the block between. */
+function splitCommentWrapper(source: string): { head: string[]; core: string; tail: string[] } {
+  const lines = source.replace(/\r\n/g, '\n').split('\n');
+  let first = 0;
+  let last = lines.length;
+  while (first < last && !lines[first]!.trim()) first++;
+  while (last > first && !lines[last - 1]!.trim()) last--;
+  let start = first;
+  let end = last;
+  while (start < end && COMMENT_OR_BLANK.test(lines[start]!)) start++;
+  while (end > start && COMMENT_OR_BLANK.test(lines[end - 1]!)) end--;
+  return {
+    head: lines.slice(first, start),
+    core: lines.slice(start, end).join('\n'),
+    tail: lines.slice(end, last),
+  };
+}
+
 /** Append a complete new unit at physical EOF; never reposition INCLUDEs. */
 export function insertUnit(
   source: string,
@@ -232,20 +252,24 @@ export function insertUnit(
   if (units.some((unit) => unit.name.toUpperCase() === unitName.toUpperCase())) {
     return fail(`Unit "${unitName}" already exists in ${objectName}; use edit_unit to replace it.`);
   }
-  const kind = addition
-    .trim()
-    .match(/^(FORM|MODULE)\s/i)?.[1]
-    ?.toUpperCase() as EditableUnitKind | undefined;
-  if (!kind) return fail('source must contain one complete FORM...ENDFORM or MODULE...ENDMODULE block.');
+  // Full-line comments and blank lines around the block (e.g. `* --> TAG` / `* <-- TAG` change markers)
+  // are kept verbatim; anything else outside the single block is still refused.
+  const { head, core, tail } = splitCommentWrapper(addition);
+  const kind = core.match(/^\s*(FORM|MODULE)\s/i)?.[1]?.toUpperCase() as EditableUnitKind | undefined;
+  if (!kind) {
+    return fail(
+      'source must contain one complete FORM...ENDFORM or MODULE...ENDMODULE block (full-line comments around it are allowed).',
+    );
+  }
   const unit: EditableUnitInfo = { name: unitName, kind, startLine: 1, endLine: 1 };
-  const invalid = replacementError(unit, addition, objectName, abaplintVersion);
+  const invalid = replacementError(unit, core, objectName, abaplintVersion);
   if (invalid) return fail(invalid);
 
   const prefix = normalized && !normalized.endsWith('\n') ? `${normalized}\n` : normalized;
-  const newUnitSource = addition.replace(/\r\n/g, '\n').trim();
+  const newUnitSource = [...head, core, ...tail].join('\n');
   let newSource = `${prefix}${newUnitSource}\n`;
   if (source.includes('\r\n')) newSource = newSource.replace(/\n/g, '\r\n');
-  unit.startLine = prefix.split('\n').length;
-  unit.endLine = unit.startLine + newUnitSource.split('\n').length - 1;
+  unit.startLine = prefix.split('\n').length + head.length;
+  unit.endLine = unit.startLine + core.split('\n').length - 1;
   return { success: true, newSource, newUnitSource, oldUnitSource: '', unit };
 }
