@@ -97,6 +97,8 @@ describe('analyzeSqlDataSources', () => {
       ['secondary connection (dynamic)', 'SELECT * FROM scarr CONNECTION (lv_conn)', /secondary database connection/],
       ['secondary connection (named)', 'SELECT * FROM scarr CONNECTION default', /secondary database connection/],
       ['dynamic data source', 'SELECT * FROM (lv_table)', /dynamic expression/],
+      ['association path with alias', 'SELECT * FROM i_view\\_assoc AS a', /CDS association path/],
+      ['association path before WHERE', "SELECT * FROM i_view\\_assoc WHERE carrid = 'LH'", /CDS association path/],
       ['association path in FROM', 'SELECT * FROM i_view\\_assoc', /CDS association path/],
       ['association path in the field list', 'SELECT \\_assoc-field FROM i_view', /CDS column path/],
       ['host variable', 'SELECT * FROM scarr WHERE carrid = @lv_carrid', /host expressions/],
