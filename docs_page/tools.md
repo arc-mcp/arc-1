@@ -1267,7 +1267,11 @@ Pass the complete replacement or new block so multi-line FORM signatures and MOD
 
 To add a block, pass its new name in `unit` and its complete source. ARC-1 appends
 at the physical end of the selected source; it never moves trailing `INCLUDE`
-statements or existing unit headers. Existing names and incomplete structures are
+statements or existing unit headers. Full-line comments (and blank lines) before or after
+the block, such as `* --> TAG` / `* <-- TAG` change markers, are written verbatim; any other
+code outside the single block is refused. Only outer blank lines are removed; indentation and
+internal spacing are kept, with line endings matching the destination. `edit_unit` replaces the
+block only, so keep markers inside it there. Existing names and incomplete structures are
 refused without a PUT. `SAP_DENY_ACTIONS=SAPWrite.edit_unit` does not deny `add_unit`;
 list both actions (or `SAPWrite`) when both must be blocked. The write/package gates
 apply to both actions.
