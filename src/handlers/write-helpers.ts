@@ -955,6 +955,50 @@ export async function enforceAllowedPackageForObjectUrl(
   return pkg;
 }
 
+// AFF typeCategory → the short code of SAP's RONT creation wizard (Eclipse ADT trace).
+const RONT_TYPE_CATEGORIES: Record<string, string> = {
+  businessObject: 'bo',
+  technicalObject: 'to',
+  analyticalObject: 'ao',
+  configurationObject: 'co',
+  dependentObject: 'do',
+  hierarchyObject: 'ho',
+};
+
+/**
+ * Creation properties of SAP object types (RONT) and node types (NONT), taken from the AFF source
+ * like the job references above. Returns a refusal message when SAP's required input is missing.
+ */
+function sapObjectTypeCreationProperties(
+  type: 'RONT' | 'NONT',
+  name: string,
+  pkg: string,
+  description: string,
+  source: string,
+): Record<string, unknown> | string {
+  const parsed: unknown = source ? JSON.parse(source) : {};
+  const aff = (parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}) as Record<string, unknown>;
+  const typeName = typeof aff.name === 'string' && aff.name.trim() ? aff.name : name;
+  const metadata = { name, description, package: pkg };
+  if (type === 'RONT') {
+    const key = String(aff.typeCategory ?? 'businessObject');
+    const category = Object.hasOwn(RONT_TYPE_CATEGORIES, key) ? RONT_TYPE_CATEGORIES[key] : undefined;
+    if (!category) {
+      return `Creating RONT requires source.typeCategory to be one of ${Object.keys(RONT_TYPE_CATEGORIES).join(', ')}. Nothing was created.`;
+    }
+    return { name: typeName, typeCategory: category, metadata };
+  }
+  if (typeof aff.sapObjectType !== 'string' || !aff.sapObjectType.trim()) {
+    return 'Creating NONT requires source.sapObjectType naming an existing SAP object type (RONT). Nothing was created.';
+  }
+  // SAP's create accepts a mismatched root node (816); only the wizard's validation refuses it (RAP_SONT_WB/013).
+  if (aff.rootNode === true && name.toUpperCase() !== aff.sapObjectType.toUpperCase()) {
+    return `A root node type must have the name of its SAP object type: NONT ${name} differs from source.sapObjectType ${aff.sapObjectType}. Nothing was created.`;
+  }
+  const rootNode = typeof aff.rootNode === 'boolean' ? { rootNode: aff.rootNode } : {};
+  return { name: typeName, sapObjectType: aff.sapObjectType, ...rootNode, metadata };
+}
+
 /**
  * SAPWrite for server-driven objects: create / update-source / delete via the generic server-driven
  * metadata engine (blue:blueSource for most types, dtdc:dtdcSource for DTDC). Discovery-gated (clean per-type/discovery error otherwise), allowWrites-gated
@@ -1036,7 +1080,18 @@ export async function handleServerDrivenObjectWrite(
       const validated = hasSourceArg ? validateSource() : undefined;
       if (validated && !validated.ok) return validated.result;
       // The job creation wizard requires this reference before the source PUT (notably on 758).
-      let creationProperties: Record<string, string> | undefined;
+      let creationProperties: Record<string, unknown> | undefined;
+      if (type === 'RONT' || type === 'NONT') {
+        const derived = sapObjectTypeCreationProperties(
+          type,
+          name,
+          pkg,
+          description,
+          validated?.ok ? validated.source : '',
+        );
+        if (typeof derived === 'string') return errorResult(derived);
+        creationProperties = derived;
+      }
       if (type === 'SAJC' || type === 'SAJT') {
         const field = type === 'SAJC' ? 'className' : 'catalogName';
         const reference = validated?.ok ? JSON.parse(validated.source)?.generalInformation?.[field] : undefined;
