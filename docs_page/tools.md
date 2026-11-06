@@ -633,7 +633,7 @@ For object search and ADT lookup, `INCL` includes both standalone (`PROG/I`) and
 (`FUGR/I`) includes; an explicit subtype keeps only that kind. `INCL` and `FUGR/I` search up to
 1000 unfiltered candidates because SAP's type filter can miss function-group includes. Broad
 object searches warn when that cap is reached; narrow the pattern if needed. `PROG/I` keeps SAP's
-standalone-include filter. This does not change the SQL-backed `db` lookup.
+standalone-include filter; prefer it for broad standalone scans. This does not change the SQL-backed `db` lookup.
 
 ### TADIR lookup source modes
 
