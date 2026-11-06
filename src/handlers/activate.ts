@@ -26,6 +26,7 @@ import { activationDetailMatchesObject } from './activation-results.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import { buildCdsActivationDependencyHint } from './cds-hints.js';
 import { isTablesEndpointAvailable } from './feature-cache.js';
+import { resolveIncludeGroup } from './include-group.js';
 import { functionGroupIncludeObjectUrl, normalizeObjectType, objectUrlForType } from './object-types.js';
 import { inspectServiceBindingPublishFailure } from './publish-failure.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
@@ -286,9 +287,11 @@ export async function handleSAPActivate(
           }
           const groupLc = encodeURIComponent(group.toLowerCase());
           url = `/sap/bc/adt/functions/groups/${groupLc}/fmodules/${encodeURIComponent(objName.toLowerCase())}`;
-        } else if (objType === 'INCL' && String(o.group ?? args.group ?? '').trim()) {
-          const group = String(o.group ?? args.group).trim();
-          url = functionGroupIncludeObjectUrl(group, objName);
+        } else if (objType === 'INCL') {
+          // Omitted group: resolve from the include (fail-closed); a standalone include keeps the flat URL.
+          const group =
+            String(o.group ?? args.group ?? '').trim() || (await resolveIncludeGroup(client, objName, true));
+          url = group ? functionGroupIncludeObjectUrl(group, objName) : objectUrlForType(objType, objName);
         } else {
           url = objectUrlForType(objType, objName);
         }
@@ -390,13 +393,15 @@ export async function handleSAPActivate(
     }
     const groupLc = encodeURIComponent(group.toLowerCase());
     objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/fmodules/${encodeURIComponent(name.toLowerCase())}`;
-  } else if (type === 'INCL' && String(args.group ?? '').trim()) {
+  } else if (type === 'INCL') {
     // A function-group structural include must be activated through its FUGR
     // URI. Activating the standalone /programs/includes/ alias fails on NW
     // 7.50 ("Select a master program"), while activating the FUGR container
     // can report success without promoting the include on SAP_BASIS 7.58.
-    // The structural URI is portable across both releases.
-    objectUrl = functionGroupIncludeObjectUrl(String(args.group), name);
+    // The structural URI is portable across both releases. Omitted group: resolve it from the
+    // include (fail-closed); a standalone include falls back to the generic path.
+    const group = String(args.group ?? '').trim() || (await resolveIncludeGroup(client, name, true));
+    objectUrl = group ? functionGroupIncludeObjectUrl(group, name) : objectUrlForType(type, name);
   } else if (isServerDrivenObjectType(type)) {
     // A registered path does not prove the target supports activation for this type.
     if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {

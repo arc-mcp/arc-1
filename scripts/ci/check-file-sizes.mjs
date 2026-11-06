@@ -28,7 +28,8 @@ const BUDGETS = {
   // write.ts is now a thin SAPWrite orchestrator (prologue + ctx + action dispatch) after the
   // Stage D split into src/handlers/write/{create,update-delete,class-surgery,rap}.ts. The action
   // submodules ride the default src budget; keep this tight so the dispatcher can't reabsorb them.
-  'src/handlers/write.ts': 300,
+  // +5: edit_content dispatch and include-group pre-resolution (logic lives in include-group.ts).
+  'src/handlers/write.ts': 304,
   // tools.ts holds every tool's JSON schema. The #520 description trim (write-mode tools/list
   // 87→66 KB to clear the Copilot-for-Eclipse gateway limit) shrank it; lowered to match. The
   // CLIENT-SAFETY size guard is scripts/ci/check-tool-schema-budget.ts — trim there before raising this.
@@ -43,8 +44,10 @@ const BUDGETS = {
   // +4: parent function group for SAPTransport check/history.
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
   // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
-  'src/handlers/tools.ts': 1785, // Combined SHLP/extension guidance and own-method signature selector.
-  'src/handlers/schemas.ts': 1567, // +8 for single-object ATC URL refusal (#1136); keep the guard beside batch validation.
+  // +4: edit_content arguments and action guidance.
+  'src/handlers/tools.ts': 1789, // Combined SHLP/extension guidance and own-method signature selector.
+  // +9: edit_content fields and their cross-field validation, kept beside the SAPWrite schema.
+  'src/handlers/schemas.ts': 1576, // includes +8 single-object ATC URL refusal (#1136)
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.

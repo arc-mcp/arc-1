@@ -129,7 +129,10 @@ const FULL_ACCESS_CONFIG: ServerConfig = {
 // #585 adds two source-window parameters without shortening existing guidance.
 // Full surface: 74,287 bytes; retain a 74,500-byte ceiling.
 // #1018 adds two opt-in fields (+556 bytes); retain existing model guidance per maintainer request.
-const WRITE_WIRE_WALL = 75_000;
+// #586 adds SAPWrite edit_content (oldContent/newContent/lineStart/lineEnd): +292 bytes total, +301 for SAPWrite,
+// measured against a main that had ~30 bytes of headroom. Existing guidance is protected by tests, so the wall
+// moves by the measured amount only (75,000 -> 75,300; SAPWrite 23,550 -> 23,860; tokens 18,750 -> 18,825, kept below wall/4).
+const WRITE_WIRE_WALL = 75_300;
 const READ_WIRE_WALL = 50_000;
 const PER_TOOL_WIRE_WALL = 23_000;
 
@@ -220,13 +223,13 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Raised 17_700 -> 17_800 and descriptions 265 -> 270 for structured KTD shortTexts while
       // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
       // Combined automatic relations + ATC batches; same budgets with explicit discovery below.
-      schemaTokenEstimate: 18_750,
+      schemaTokenEstimate: 18_825,
       descriptionTokenEstimate: 12_800,
       // Includes expectedSourceHash (#853) and SAPRead.source (#855).
       // LONG_TEXT adds eight field descriptions; shorter existing guidance preserves byte/token ceilings.
-      descriptionCount: 296, // Combined DDIC extension controls and own-method signature selector.
+      descriptionCount: 298, // Combined DDIC extension controls, own-method signature selector and edit_content (oldContent, lineStart).
       maxTotalWireBytes: WRITE_WIRE_WALL,
-      maxPerToolWireBytes: 23_550,
+      maxPerToolWireBytes: 23_860,
     },
   },
   {
@@ -280,11 +283,11 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: LIVE_RELATIONS_FEATURES,
     budget: {
-      schemaTokenEstimate: 18_750,
+      schemaTokenEstimate: 18_825,
       descriptionTokenEstimate: 12_800,
-      descriptionCount: 296, // Combined DDIC extension controls and own-method signature selector.
+      descriptionCount: 298, // Combined DDIC extension controls, own-method signature selector and edit_content (oldContent, lineStart).
       maxTotalWireBytes: WRITE_WIRE_WALL,
-      maxPerToolWireBytes: 23_550,
+      maxPerToolWireBytes: 23_860,
     },
   },
   {

@@ -597,7 +597,7 @@ export function getToolDefinitions(
               'update',
               'delete',
               'edit_method',
-              ...(btp ? [] : ['edit_unit', 'add_unit']),
+              ...(btp ? [] : ['edit_unit', 'add_unit', 'edit_content']),
               'edit_class_definition',
               'add_method',
               'edit_method_signature',
@@ -613,7 +613,9 @@ export function getToolDefinitions(
             description:
               'Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). ' +
               'edit_method: replace a single method body — the token-cheap path for class edits. ' +
-              (btp ? '' : 'edit_unit replaces a FORM/MODULE in PROG/INCL; add_unit appends one at EOF. ') +
+              (btp
+                ? ''
+                : 'edit_unit replaces a FORM/MODULE in PROG/INCL; add_unit appends one at EOF. edit_content replaces unique oldContent with newContent in PROG/INCL. ') +
               'batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. ' +
               'Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; ' +
               'add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); ' +
@@ -677,6 +679,10 @@ export function getToolDefinitions(
                   type: 'string',
                   description: 'edit_unit/add_unit: existing/new FORM or MODULE name (case-insensitive).',
                 },
+                oldContent: { type: 'string', description: 'edit_content: text to replace.' },
+                newContent: { type: 'string' },
+                lineStart: { type: 'integer', description: 'edit_content: search-window start; needs lineEnd.' },
+                lineEnd: { type: 'integer' },
               }),
           visibility: {
             type: 'string',
@@ -736,7 +742,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'FUNC: existing FUGR; required for create, otherwise resolved. INCL: parent FUGR for structural includes; omit for standalone.',
+              'FUNC: existing FUGR; required for create, otherwise resolved. INCL: parent FUGR for structural includes; resolved if omitted.',
           },
           ...(btp ? {} : FuncProcessing.FUNCTION_PROCESSING_TOOL_PROPERTIES),
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },

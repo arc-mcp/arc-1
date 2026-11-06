@@ -22,6 +22,9 @@ function mockEditUnitFlow(opts: { objectPath: string; activeSource: string; inac
     calls.push({ method, url: urlString, body: typeof request?.body === 'string' ? request.body : undefined });
 
     if (method === 'HEAD') return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'TOKEN' }));
+    if (method === 'GET' && parsed.pathname.endsWith('/informationsystem/search')) {
+      return Promise.resolve(mockResponse(200, '<adtcore:objectReferences/>', { 'x-csrf-token': 'TOKEN' }));
+    }
     if (method === 'GET' && parsed.pathname === opts.objectPath) {
       return Promise.resolve(
         mockResponse(

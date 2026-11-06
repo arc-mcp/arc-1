@@ -8,11 +8,15 @@ const { enforceAllowedPackageForObjectUrl } = await import('../../../src/handler
 const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 const include = '/sap/bc/adt/programs/includes/lz_grouptop';
 const grouped = '/sap/bc/adt/functions/groups/z_group/includes/lz_grouptop';
-const clientFor = (allowedPackages: string[]) =>
-  new AdtClient({
+const clientFor = (allowedPackages: string[]) => {
+  const client = new AdtClient({
     baseUrl: 'https://sap.example',
     safety: { ...unrestrictedSafetyConfig(), allowedPackages },
   });
+  // An omitted group is first resolved from the include; no match = standalone, so the guidance still applies.
+  vi.spyOn(client, 'lookupObjects').mockResolvedValue([{ name: 'LZ_GROUPTOP', found: false, matches: [] }]);
+  return client;
+};
 beforeEach(() => {
   vi.restoreAllMocks();
   mockFetch.mockReset();

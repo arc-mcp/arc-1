@@ -460,7 +460,7 @@
         },
         "group": {
           "type": "string",
-          "description": "FUNC: existing FUGR; required for create, otherwise resolved. INCL: parent FUGR for structural includes; omit for standalone."
+          "description": "FUNC: existing FUGR; required for create, otherwise resolved. INCL: parent FUGR for structural includes; resolved if omitted."
         },
         "dataType": {
           "type": "string",
