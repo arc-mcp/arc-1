@@ -151,10 +151,15 @@ describe('insertUnit', () => {
     expect(lines[result.unit!.endLine - 1]).toBe('ENDFORM.');
   });
 
-  it.each(['\n', '\r\n'])('preserves wrapper gaps and unit indentation with line ending %j', (eol) => {
+  it.each([
+    ['\n', '\n'],
+    ['\r\n', '\n'],
+    ['\n', '\r\n'],
+    ['\r\n', '\r\n'],
+  ])('preserves wrapper gaps with destination %j and input %j', (eol, inputEol) => {
     const original = `REPORT zunit.${eol}`;
     const wrapped = '* begin\n\n  " indented note  \n  FORM gamma.\n    WRITE 3.\n  ENDFORM.  \n\n* end';
-    const result = insertUnit(original, 'ZUNIT', 'gamma', `\n\n${wrapped}\n\n`);
+    const result = insertUnit(original, 'ZUNIT', 'gamma', `\n\n${wrapped}\n\n`.replaceAll('\n', inputEol));
     expect(result.success, result.error).toBe(true);
     expect(result.newSource).toBe(original + wrapped.replaceAll('\n', eol) + eol);
     expect(result.newUnitSource).toBe(wrapped);
@@ -181,6 +186,7 @@ describe('insertUnit', () => {
 
   it.each([
     { label: 'comments only', block: '* just a note\n" another' },
+    { label: 'an indented asterisk is not a comment', block: '  * note\nFORM gamma.\nENDFORM.' },
     { label: 'code between the marker and the unit', block: '* tag\nWRITE 1.\nFORM gamma.\nENDFORM.' },
     { label: 'code after the unit', block: 'FORM gamma.\nENDFORM.\n* tag\nWRITE 1.' },
     { label: 'a second unit behind a comment', block: 'FORM gamma.\nENDFORM.\n* between\nFORM delta.\nENDFORM.' },
