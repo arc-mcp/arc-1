@@ -44,7 +44,7 @@ const BUDGETS = {
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
   // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
   'src/handlers/tools.ts': 1785, // Combined SHLP/extension guidance and own-method signature selector.
-  'src/handlers/schemas.ts': 1579, // +12 for the SRVB include=service_info refusal; keep it beside include=indexes.
+  'src/handlers/schemas.ts': 1581, // +12 SRVB include=service_info refusal; +2 SAPWrite generate_service action and generator.
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.

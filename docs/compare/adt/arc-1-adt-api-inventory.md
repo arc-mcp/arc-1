@@ -200,6 +200,7 @@ verification; see [the correction](../../research/2026-10-17-where-used-scope-co
 | 43 | `POST` | `/sap/bc/adt/activation?method=activate&preauditRequested=true` | `devtools.ts` (`activate`, `activateBatch`) | XML object reference list. |
 | 44 | `POST` | `/sap/bc/adt/businessservices/odatav2/publishjobs?servicename={name}&serviceversion={version}` | `devtools.ts` (`publishServiceBinding`) | |
 | 45 | `POST` | `/sap/bc/adt/businessservices/odatav2/unpublishjobs?servicename={name}&serviceversion={version}` | `devtools.ts` (`unpublishServiceBinding`) | |
+| 45a | `GET`, `POST` | `/sap/bc/adt/repository/generators?referencedObject={uri}`; `/sap/bc/adt/businessservices/generators/{uiservice,webapiservice}[/content,/schema,/validation,/preview]?referencedObject={uri}` | `service-generator.ts` | `SAPWrite action=generate_service`; `$TMP` only; contract in `docs/research/2026-11-06-rap-service-generators.md` |
 | 46 | `POST` | `/sap/bc/adt/abapunit/testruns` | `devtools.ts` (`runUnitTests`) | `Content-Type: application/vnd.sap.adt.abapunit.testruns.config.v4+xml`; `Accept: application/vnd.sap.adt.abapunit.testruns.result.v2+xml`. |
 | 47 | `POST` | `/sap/bc/adt/atc/runs?worklistId=1` | `devtools.ts` (`runAtcCheck`) | Creates run; parses worklist id from response. |
 | 48 | `GET` | `/sap/bc/adt/atc/worklists/{worklistId}` | `devtools.ts` (`runAtcCheck`) | `Accept: application/atc.worklist.v1+xml`. |

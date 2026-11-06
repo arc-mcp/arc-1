@@ -606,6 +606,7 @@ export function getToolDefinitions(
               'batch_create',
               'scaffold_rap_handlers',
               'generate_behavior_implementation',
+              ...(btp ? [] : ['generate_service']),
               'edit_text_symbols',
             ],
             // This is where an LLM decides WHICH action to use, so every action gets a line —
@@ -625,18 +626,17 @@ export function getToolDefinitions(
                 ? ' edit_text_symbols: replace CLAS symbols (@MaxLength:NN\\nNNN=text; blank-line separated). Read first with SAPRead CLAS include=text_symbols; source="" clears the pool. Activates texts only.'
                 : ' edit_text_symbols: replace a CLAS/PROG/FUGR textpool part; read first, retain other entries. source="" clears it.'),
           },
+          ...(btp ? {} : { generator: { type: 'string', enum: ['uiservice', 'webapiservice'] } }),
           type: {
             type: 'string',
             enum: btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM,
             description: btp
               ? 'Object type. Class-section surgery actions require type=CLAS. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only.'
-              : 'Object type (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only.',
+              : 'Object type. Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions (incl. change_method_visibility) require CLAS. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only.',
           },
           name: {
             type: 'string',
-            description: btp
-              ? 'Object name.'
-              : 'Object name (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).',
+            description: btp ? 'Object name.' : 'Object name.',
           },
           expectedSourceHash: {
             type: 'string',
