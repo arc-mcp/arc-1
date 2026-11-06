@@ -28,6 +28,7 @@ import {
   isServerDrivenObjectType,
   serverDrivenUnavailableMessage,
 } from '../adt/server-driven.js';
+import { getServiceBindingInfo } from '../adt/service-info.js';
 import { listTableIndexes } from '../adt/table-index.js';
 import { getTableSettings } from '../adt/table-settings.js';
 import type { FunctionModuleProperties, InactiveObject } from '../adt/types.js';
@@ -341,6 +342,12 @@ async function handleSAPReadBase(
     if (!(await ensureServerDrivenSupport(client.http, client.safety, 'TABL/DTI')))
       return errorResult(serverDrivenUnavailableMessage('SAPRead', 'TABL/DTI'));
     return textResult(toolJson(await listTableIndexes(client.http, client.safety, name)));
+  }
+
+  // Publish state and entity sets change outside the object's source version, so this stays uncached.
+  if (type === 'SRVB' && String(args.include ?? '').toLowerCase() === 'service_info') {
+    if (!name) return errorResult('SAPRead SRVB include=service_info requires a service binding name.');
+    return textResult(toolJson(await getServiceBindingInfo(client.http, client.safety, name)));
   }
 
   if (type === 'SMBC') {
