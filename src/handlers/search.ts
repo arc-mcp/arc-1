@@ -7,7 +7,9 @@ import type { AdtClient } from '../adt/client.js';
 import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import { AdtApiError } from '../adt/errors.js';
 import { classifyTextSearchError, probeTextSearch } from '../adt/features.js';
+import { filterIncludeHits, isIncludeSearchType } from '../adt/include-search.js';
 import { internalOperationDenial } from '../adt/internal-data-operations.js';
+import { MAX_SEARCH_RESULTS } from '../adt/text-search.js';
 import type { AdtObjectLookupResult, AdtSearchResult } from '../adt/types.js';
 import { cacheFeatureEvidence, getCachedFeatures } from './feature-cache.js';
 import { normalizeObjectType, normalizeSearchObjectType } from './object-types.js';
@@ -232,8 +234,19 @@ export async function handleSAPSearch(
 
   const objectType = typeof args.objectType === 'string' ? normalizeSearchObjectType(args.objectType) : undefined;
   let results: AdtSearchResult[];
+  let truncationNote = '';
   try {
-    results = await client.searchObject(query, maxResults, objectType);
+    if (isIncludeSearchType(objectType)) {
+      // SAP's quickSearch type filter is unreliable for include types (see include-search.ts): fetch unfiltered
+      // at the cap and filter here.
+      const all = await client.searchObject(query, MAX_SEARCH_RESULTS);
+      results = filterIncludeHits(all, objectType).slice(0, maxResults);
+      if (all.length >= MAX_SEARCH_RESULTS) {
+        truncationNote = `Note: the unfiltered search hit its ${MAX_SEARCH_RESULTS}-result cap before objectType="${objectType}" was applied, so matching includes may be missing. Narrow the query pattern.\n\n`;
+      }
+    } else {
+      results = await client.searchObject(query, maxResults, objectType);
+    }
   } catch (error) {
     if (objectType && error instanceof AdtApiError && error.statusCode === 406) {
       return errorResult(
@@ -248,6 +261,7 @@ export async function handleSAPSearch(
       '[]' +
       '\n\n' +
       transliterationNote +
+      truncationNote +
       'No objects found. If searching for custom objects, try Z* or Y* prefixes (e.g., "Z*ESTIM*"). ' +
       'If you already found objects in a package, use SAPRead with type=DEVC to list all package contents instead of more searches.';
     if (objectType) hint += `\nobjectType="${objectType}" was applied; omit it to search all types.`;
@@ -257,7 +271,7 @@ export async function handleSAPSearch(
     }
     return textResult(hint);
   }
-  return textResult(transliterationNote + toolJson(results));
+  return textResult(transliterationNote + truncationNote + toolJson(results));
 }
 
 function extractLookupNames(query: string, rawNames: unknown): string[] {
