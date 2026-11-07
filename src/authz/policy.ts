@@ -120,6 +120,8 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
     opType: OperationType.Update,
     featureGate: 'rap',
   },
+  // Creates a whole RAP stack through SAP's generators; explicit so admins can deny it on its own.
+  'SAPWrite.generate_service': { scope: 'write', opType: OperationType.Create, featureGate: 'rap' },
 
   // ── SAPActivate ──────────────────────────────────────────────────
   SAPActivate: { scope: 'write', opType: OperationType.Activate },

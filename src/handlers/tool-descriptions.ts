@@ -32,6 +32,7 @@ const SAPWRITE_BODY_ONPREM =
   'edit_method: replace one CLAS method body via source (95% fewer tokens than full-class). Local-class methods use the qualified specifier (e.g. "lhc_project~approve_project"); auto-routing: lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=); zif_*~* stays on /source/main. ' +
   'edit_unit/add_unit: replace/add one FORM/MODULE in PROG/INCL using unit+source; group= supports FUGR includes. ' +
   'batch_create: preflight all objects, then create+activate in dependency order; failures report per-object persistence. scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). ' +
+  'generate_service (type=TABL, name=table, generator): RAP service via SAP generators. No source: schema + defaults. JSON source: validate, preview (dryRun stops), generate. ' +
   'Server-driven objects (discovery-gated): AFF JSON source (DTSC/DSFD/DTDC/DRTY: DDL); create/update/delete. APLO/UIAD save active; others need SAPActivate. SAJC/SAJT create require source.generalInformation.className/catalogName. ' +
   'edit_text_symbols: CLAS/PROG/FUGR textPart=symbols (default; one "@MaxLength:NN\\nNNN=text" per symbol, blank-line separated), selections ("PARAM=Label") or headings. CLAS: symbols only. Writes and requests whole-pool activation; a never-activated PROG still needs SAPActivate. Needs ADT textelements. ' +
   'Full per-type field reference: docs_page SAPWrite. ';

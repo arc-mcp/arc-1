@@ -97,6 +97,8 @@ function validateSapReadInput(
     source?: string;
     version?: string;
     packageScope?: string;
+    grep?: string;
+    format?: string;
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
@@ -178,6 +180,16 @@ function validateSapReadInput(
         code: 'custom',
         path: ['include'],
         message: 'include=indexes requires type=TABL and lists available indexes without a version or diff selector.',
+      });
+    }
+    if (
+      include === 'service_info' &&
+      (input.type !== 'SRVB' || input.action || input.version || input.grep || input.format)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['include'],
+        message: 'include=service_info requires type=SRVB, without action, version, grep or format.',
       });
     }
     if (
@@ -764,8 +776,10 @@ export const SAPWriteSchema = z
       'batch_create',
       'scaffold_rap_handlers',
       'generate_behavior_implementation',
+      'generate_service',
       'edit_text_symbols',
     ]),
+    generator: z.enum(['uiservice', 'webapiservice']).optional(),
     type: z.enum(SAPWRITE_TYPES_ONPREM).optional(),
     name: z.string().optional(),
     source: z.string().optional(),
