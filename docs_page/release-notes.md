@@ -22,6 +22,22 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
+## 1.10.1 — more reliable SAP reads and edits (2026-11-07)
+
+No new configuration is required. This patch improves existing SAP reads and edits.
+
+| Change | Impact | Action |
+|---|---|---|
+| Sessions and bounded reads ([#1187](https://github.com/arc-mcp/arc-1/pull/1187), [#1195](https://github.com/arc-mcp/arc-1/pull/1195)) | Rotated cookie files are picked up before CSRF bootstrap outside a live stateful operation. Reads with response limits can still obtain a token from SAP’s older discovery endpoint. | Use `SAP_COOKIE_FILE` for refreshed cookies; inline cookie strings still require a restart. |
+| Class enhancements ([#1197](https://github.com/arc-mcp/arc-1/pull/1197), [#1204](https://github.com/arc-mcp/arc-1/pull/1204)) | `SAPRead CLAS` extension summaries get five seconds instead of two. On SAP 758, `SAPRead CLAS extensions="sources"` uses active generated revisions instead of the failing generic enhancement serializer. Technology and runtime switch applicability remain unknown. | If sources report `class_source_release_unknown`, run `SAPManage(action="probe")` and retry, or set `SAP_ABAP_RELEASE` on a single-target deployment. |
+| Direct enhancement reads ([#1208](https://github.com/arc-mcp/arc-1/pull/1208)) | `SAPRead ENHO` avoids metadata requests that can dump on SAP 758, using active generated source where needed. | On 758, allow repository search as well as read access, including for BAdIs. If ENHO reads report an unknown SAP release, run `SAPManage(action="probe")` and retry, or set `SAP_ABAP_RELEASE` on a single-target deployment. |
+| Include search ([#1205](https://github.com/arc-mcp/arc-1/pull/1205)) | `INCL` and `FUGR/I` searches find function-group includes missed by SAP's type filter. | Narrow the query if the 1000-candidate warning appears; use `PROG/I` for broad standalone-include scans. |
+| ABAP edits ([#1203](https://github.com/arc-mcp/arc-1/pull/1203), [#1201](https://github.com/arc-mcp/arc-1/pull/1201)) | Pre-write lint accepts valid `GET PERMISSIONS`. `add_unit` now accepts full-line comment wrappers around one FORM/MODULE block and writes them verbatim. | For `edit_unit`, keep markers inside the block. |
+| Legacy deletion ([#1192](https://github.com/arc-mcp/arc-1/pull/1192)) | Program/function-group deletion verifies whether SAP exposes text-pool support before choosing its legacy path. | Where that API is absent, check inactive text drafts in SAP GUI; ARC-1 cannot inspect them. |
+
+CI now separates fresh-activation where-used diagnostics from required checks; this does not repair
+SAP's indexing behavior ([#1188](https://github.com/arc-mcp/arc-1/pull/1188)).
+
 ## 1.10.0 — security fixes and SAP compatibility (2026-11-03)
 
 Replace standalone executables, review the [HTTP upgrade guidance](updating.md#v1100-http-request-validation),
