@@ -5,6 +5,25 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.10.1](https://github.com/arc-mcp/arc-1/compare/v1.10.0...v1.10.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* accept valid GET PERMISSIONS during pre-write lint ([#1203](https://github.com/arc-mcp/arc-1/issues/1203)) ([b64bb3f](https://github.com/arc-mcp/arc-1/commit/b64bb3f83d151778375650fa40ab4552e7df6bc3))
+* allow full-line comments around add_unit blocks ([#1201](https://github.com/arc-mcp/arc-1/issues/1201)) ([d19f76b](https://github.com/arc-mcp/arc-1/commit/d19f76bc9520b945abfaadf919cbc4aa95a11461))
+* allow more time for class enhancement summaries ([#1197](https://github.com/arc-mcp/arc-1/issues/1197)) ([619df91](https://github.com/arc-mcp/arc-1/commit/619df916ae3870365f56b7d1a9f8d559d7360afb))
+* avoid dumping class enhancement source reads on 758 ([#1204](https://github.com/arc-mcp/arc-1/issues/1204)) ([5d690a8](https://github.com/arc-mcp/arc-1/commit/5d690a874a795628abe43e3f0934432ed34115da))
+* discover text-pool support before legacy deletion ([#1192](https://github.com/arc-mcp/arc-1/issues/1192)) ([f0d6b5f](https://github.com/arc-mcp/arc-1/commit/f0d6b5f64df06947a3839b704d5bafb797cb7ed7))
+* find function-group includes when SAPSearch filters by include type ([#1205](https://github.com/arc-mcp/arc-1/issues/1205)) ([2d55683](https://github.com/arc-mcp/arc-1/commit/2d55683df41da96af8fb70e5347548dcdf94c784))
+* preserve tokenless CSRF fallback for bounded reads ([#1195](https://github.com/arc-mcp/arc-1/issues/1195)) ([f994f3b](https://github.com/arc-mcp/arc-1/commit/f994f3bead338b55314ede1755c4db8f036ef4cc))
+* reload rotated cookie files before CSRF bootstrap ([#1187](https://github.com/arc-mcp/arc-1/issues/1187)) ([a7af84f](https://github.com/arc-mcp/arc-1/commit/a7af84fe7d9517d069a07b4276361bfeafbdc62f))
+
+
+### Tests
+
+* isolate fresh-activation where-used failures in CI ([#1188](https://github.com/arc-mcp/arc-1/issues/1188)) ([5ec28e3](https://github.com/arc-mcp/arc-1/commit/5ec28e38fdad416e49115be88c97347d30cd85e9))
+
 ## [1.10.0](https://github.com/arc-mcp/arc-1/compare/v1.9.0...v1.10.0) (2026-11-03)
 
 
