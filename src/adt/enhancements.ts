@@ -5,6 +5,7 @@ import type { AdtClient } from './client.js';
 import { enhancementIncludeName, readEnhancementIncludeRevision } from './enhancement-include.js';
 import { withFilterConditions } from './enho-filter.js';
 import { AdtApiError, AdtError, extractExceptionType } from './errors.js';
+import { detectAbapRelease } from './features.js';
 import type { AdtRequestOptions } from './http-deadline.js';
 import { parseReleaseNumber } from './release.js';
 import { RevisionHistoryError } from './revision-feed.js';
@@ -29,10 +30,10 @@ export function enhancementSourceUnavailable(error: unknown, release?: string): 
   const body = error.responseBody ?? '';
   const type = extractExceptionType(body);
   if (type === 'ExceptionResourceReadFailure') return true;
-  if (release === '750' && type === 'ExceptionInternalServerError')
+  if (parseReleaseNumber(release) === 750 && type === 'ExceptionInternalServerError')
     return /Enhancement technology (?:CLASENH|HOOK_IMPL) is not supported yet\./.test(body);
   return (
-    release === '758' &&
+    parseReleaseNumber(release) === 758 &&
     type === undefined &&
     /<span id="msgText">Dereferencing of the NULL reference\s*<\/span>/.test(body)
   );
@@ -109,13 +110,8 @@ export async function readActiveClassEnhancementSource(
   }
 }
 
-/**
- * Releases whose ADT serves only the generic `enhoxh` route (SAP_BASIS 750) fail inside SAP for
- * source-code plug-ins; their include's `/source/main` fails as well, but its revision feed still
- * lists the active version. Returns `undefined` when that route fails too, so the caller keeps the
- * original SAP error.
- */
-async function readSourcePlugInFromInclude(
+/** Active source when ENHO metadata is unavailable or unsafe; undefined lets the caller explain the missing source. */
+async function readGeneratedEnhancementSource(
   client: Pick<AdtClient, 'safety' | 'getRevisions' | 'getRevisionSource'>,
   name: string,
   attempted: string[],
@@ -142,8 +138,8 @@ async function readSourcePlugInFromInclude(
     source: read.source,
     enhancementInclude: { name: read.include, revision: read.revision },
     note:
-      'The direct ADT enhancement read failed; source is the active ' +
-      'revision of its enhancement include. Technology (source-code plug-in or class enhancement), ' +
+      'Source is the active revision of its enhancement include; direct enhancement metadata is unavailable. ' +
+      'Technology (source-code plug-in or class enhancement), ' +
       'description, package, enhanced object, hook positions and switch state are not available here — ' +
       'use SE19/SE80 or Eclipse for them.',
   };
@@ -209,33 +205,61 @@ export async function readEnhancementImplementation(
       result.source = (await client.http.get(`${path}/source/main`, { Accept: 'text/plain' })).body;
     return result;
   };
+  const findSubtype = async (): Promise<Subtype | undefined> => {
+    const matches = await client.searchObject(name, 100, 'ENHO');
+    const subtypes = new Set(
+      matches
+        .filter(
+          (m) =>
+            m.objectName.toUpperCase() === name.toUpperCase() ||
+            // 7.50 decorates names with a display label; its exact relative object URI still identifies the object.
+            (Object.hasOwn(ROUTES, m.objectType) &&
+              m.uri.toUpperCase() === pathFor(m.objectType as Subtype).toUpperCase()),
+        )
+        .map((m) => m.objectType),
+    );
+    const subtype = subtypes.size === 1 ? [...subtypes][0] : undefined;
+    return subtype && Object.hasOwn(ROUTES, subtype) ? (subtype as Subtype) : undefined;
+  };
+  // Public client callers and restricted startup probes can have no release yet. Resolve it as
+  // this caller before choosing a route; unavailable detection must never authorize a risky probe.
+  release ??= await detectAbapRelease(client.http, { deadline: Date.now() + 5000, retryTransientErrors: false });
+  const releaseNumber = parseReleaseNumber(release);
+  if (releaseNumber === 758 || releaseNumber === undefined) {
+    // On 758 even the wrong-subtype XHB probe dumps for a class enhancement.
+    const subtype = await findSubtype();
+    if (!subtype)
+      throw new AdtError(
+        `Repository search found no single ENHO subtype for ${name}. Check the name with SAPSearch; if it exists, inspect it in SE80/SE19.`,
+      );
+    if (subtype !== 'ENHO/XH') return read(subtype);
+    if (releaseNumber === undefined)
+      throw new AdtError(
+        'SAP did not report its ABAP release; the generic ENHO metadata route may dump. ' +
+          'Run SAPManage probe and retry, or configure SAP_ABAP_RELEASE for a single target.',
+      );
+    const source = await readGeneratedEnhancementSource(client, name, attempted);
+    if (source) return source;
+    throw new AdtError(
+      'Active enhancement include source is unavailable. Unsafe ENHO metadata was not requested on SAP 758. ' +
+        'Inspect the enhancement in SE80/SE19 or Eclipse.',
+    );
+  }
   try {
     try {
       return await read('ENHO/XHB');
     } catch (initial) {
       // These statuses include SAP's wrong-subtype transformation errors. Do not reroute auth or network failures.
       if (!(initial instanceof AdtApiError) || !REROUTE_STATUSES.includes(initial.statusCode)) throw initial;
-      const matches = await client.searchObject(name, 100, 'ENHO');
-      const subtypes = new Set(
-        matches
-          .filter(
-            (m) =>
-              m.objectName.toUpperCase() === name.toUpperCase() ||
-              // 7.50 decorates names with a display label; its exact relative object URI still identifies the object.
-              (Object.hasOwn(ROUTES, m.objectType) &&
-                m.uri.toUpperCase() === pathFor(m.objectType as Subtype).toUpperCase()),
-          )
-          .map((m) => m.objectType),
-      );
-      const subtype = subtypes.size === 1 ? [...subtypes][0] : undefined;
-      if (!subtype || subtype === 'ENHO/XHB' || !Object.hasOwn(ROUTES, subtype)) throw initial;
+      const subtype = await findSubtype();
+      if (!subtype || subtype === 'ENHO/XHB') throw initial;
       try {
-        return await read(subtype as Subtype);
+        return await read(subtype);
       } catch (generic) {
         // Only the generic route has no source resource of its own; SAP fails there for source-code
         // plug-ins on releases that advertise nothing else (750). Keep every other failure as it is.
         if (subtype !== 'ENHO/XH' || !enhancementSourceUnavailable(generic, release)) throw generic;
-        const fallback = await readSourcePlugInFromInclude(client, name, attempted);
+        const fallback = await readGeneratedEnhancementSource(client, name, attempted);
         if (fallback) return fallback;
         throw generic;
       }
