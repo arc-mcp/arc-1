@@ -117,7 +117,7 @@ original SAP error, which then lists the include route among the attempted route
 Content reads denied by SAP propagate unchanged.
 
 The current guard accepts 404, typed `ExceptionResourceReadFailure` 500s, and only the observed
-750 unsupported-technology / 758 null-reference 500 bodies when the matching release is probed.
+750 unsupported-technology / 758 null-reference 500 bodies when the matching release is known.
 Arbitrary 400/500, authentication, throttling and network failures never authorize revision fallback.
 Unqualified generated references such as EIMP are counted as missing sources, without fetching them.
 
@@ -133,7 +133,7 @@ are refused rather than silently ignored; omit `version` or use `auto`. No atomi
 metadata/source snapshot or inactive-draft contract is claimed. There is no ENHO
 source cache, grep or method extraction; writes cover XHB only.
 
-### Live observations and limits
+### Live observations and limits (before #1207)
 
 Tests used ARC-1's production `handleToolCall` over direct HTTPS/Basic, client 001,
 with no SAP mutations. Build hashes and raw comparisons are retained with the PR's

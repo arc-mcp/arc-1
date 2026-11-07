@@ -179,7 +179,9 @@ describe('direct ENHO reads avoid unsafe metadata probes on 758', () => {
     'never probes metadata without one exact subtype (%s)',
     async (references) => {
       const calls = setup({ references });
-      expect((await read()).isError).toBe(true);
+      const result = await read();
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('SAPSearch');
       expect(calls).toEqual([search]);
     },
   );

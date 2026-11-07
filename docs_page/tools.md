@@ -523,10 +523,11 @@ and `hookImplementations` (positions, program/method names, overwrite flags and
 navigation links). A failed source read returns an error, not successful partial metadata.
 
 On SAP 758, ARC-1 resolves the exact subtype through repository search before reading metadata;
-this needs search permission as well as read permission, including for BAdIs. Generic XH objects
-use their active generated include directly because even a metadata probe can dump. If the release
-is unknown, ARC-1 tries to detect it as the caller; if SAP still reports none, generic XH reads stop
-with retry/configuration guidance. Other known releases keep the BAdI-first routing.
+this needs search permission as well as read permission, including for BAdIs. Enhancements SAP lists only as `ENHO/XH`
+(e.g. class enhancements) use their active generated include directly because even a metadata probe
+can dump. If the release is unknown, ARC-1 tries to detect it as the caller; if SAP still reports none,
+`ENHO/XH` reads stop with retry/configuration guidance. This also affects 7.50 BAdIs, which SAP lists
+as `ENHO/XH`. Other known releases keep the BAdI-first routing.
 A qualified source-unavailable failure on those routes can use the implementation's generated
 include (the name padded with `=` to 30 characters plus `E`). Ordinary server errors, authorization,
 throttling and network failures do not authorize that fallback. ARC-1 requires

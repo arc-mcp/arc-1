@@ -138,8 +138,7 @@ async function readGeneratedEnhancementSource(
     source: read.source,
     enhancementInclude: { name: read.include, revision: read.revision },
     note:
-      'Source is the active ' +
-      'revision of its enhancement include; direct enhancement metadata is unavailable. ' +
+      'Source is the active revision of its enhancement include; direct enhancement metadata is unavailable. ' +
       'Technology (source-code plug-in or class enhancement), ' +
       'description, package, enhanced object, hook positions and switch state are not available here — ' +
       'use SE19/SE80 or Eclipse for them.',
@@ -229,7 +228,10 @@ export async function readEnhancementImplementation(
   if (releaseNumber === 758 || releaseNumber === undefined) {
     // On 758 even the wrong-subtype XHB probe dumps for a class enhancement.
     const subtype = await findSubtype();
-    if (!subtype) throw new AdtError('Cannot resolve one exact ENHO subtype. Inspect the enhancement in SE80/SE19.');
+    if (!subtype)
+      throw new AdtError(
+        `Repository search found no single ENHO subtype for ${name}. Check the name with SAPSearch; if it exists, inspect it in SE80/SE19.`,
+      );
     if (subtype !== 'ENHO/XH') return read(subtype);
     if (releaseNumber === undefined)
       throw new AdtError(
