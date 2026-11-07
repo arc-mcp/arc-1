@@ -98,6 +98,45 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(params.getAll('maxResults')).toEqual(['2']);
     });
 
+    it.each(['INCL', 'FUGR/I'])(
+      'objectType=%s filters unfiltered results locally (SAP type filter returns [] for includes)',
+      async (objectType) => {
+        const hit = (objectType: string, objectName: string) => ({
+          objectType,
+          objectName,
+          description: '',
+          packageName: 'ZPKG',
+          uri: `/sap/bc/adt/x/${objectName}`,
+        });
+        const client = createClient();
+        const spy = vi
+          .spyOn(client, 'searchObject')
+          .mockResolvedValue([hit('FUGR/I', 'LZGF_TEST$01'), hit('PROG/I', 'ZINCL_TEST'), hit('FUGR/FF', 'ZMF_TEST')]);
+        const result = await handleSAPSearch(client, { query: 'LZGF_TEST*', objectType }, false);
+        expect(spy.mock.calls[0]?.[2]).toBeUndefined(); // no server-side type filter
+        const names = (JSON.parse(result.content[0].text) as Array<{ objectName: string }>).map((r) => r.objectName);
+        expect(names).toEqual(
+          objectType === 'INCL'
+            ? ['LZGF_TEST$01', 'ZINCL_TEST']
+            : [objectType === 'FUGR/I' ? 'LZGF_TEST$01' : 'ZINCL_TEST'],
+        );
+      },
+    );
+
+    it('notes when the unfiltered include search hit its cap', async () => {
+      const client = createClient();
+      const filler = Array.from({ length: 1000 }, (_, i) => ({
+        objectType: 'FUGR/FF',
+        objectName: `ZMF_${i}`,
+        description: '',
+        packageName: 'ZPKG',
+        uri: `/sap/bc/adt/functions/groups/zgf_test/fmodules/zmf_${i}`,
+      }));
+      vi.spyOn(client, 'searchObject').mockResolvedValue(filler);
+      const result = await handleSAPSearch(client, { query: 'Z*', objectType: 'INCL' }, false);
+      expect(result.content[0].text).toContain('1000-result cap');
+    });
+
     it('executes search', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
         query: 'ZCL_*',

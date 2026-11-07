@@ -11,7 +11,7 @@ import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type { SourceSearchResult } from './types.js';
 import { findDeepNodes, getNestedArray, parseXml } from './xml-parser.js';
 
-const MAX_SEARCH_RESULTS = 1_000;
+export const MAX_SEARCH_RESULTS = 1_000;
 
 /** Coerce a caller-supplied search-result limit into a safe positive integer. */
 export function clampSearchResults(requested: number | undefined, fallback: number): number {
