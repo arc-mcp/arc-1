@@ -27,6 +27,7 @@ describe('SAPRead ENHO: source plug-ins via the enhancement include (SAP_BASIS 7
   beforeEach(() => {
     vi.resetAllMocks();
     resetCachedFeatures();
+    setCachedFeatures({ abapRelease: '750' });
   });
 
   function setup(
@@ -73,6 +74,10 @@ describe('SAPRead ENHO: source plug-ins via the enhancement include (SAP_BASIS 7
   it.each([
     [
       '750',
+      '<exception><type id="ExceptionInternalServerError"/><message>Enhancement technology CLASENH is not supported yet.</message></exception>',
+    ],
+    [
+      '7.50',
       '<exception><type id="ExceptionInternalServerError"/><message>Enhancement technology CLASENH is not supported yet.</message></exception>',
     ],
     ['758', '<span id="msgText">Dereferencing of the NULL reference </span>'],

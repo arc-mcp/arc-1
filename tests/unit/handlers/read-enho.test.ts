@@ -5,6 +5,7 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 const { parseEnhancementImplementation } = await import('../../../src/adt/xml-parser.js');
 const { parseEnhancementMetadata } = await import('../../../src/adt/enhancements.js');
 const hook = readFileSync(new URL('../../fixtures/xml/enhancement-hook.xml', import.meta.url), 'utf8');
@@ -14,7 +15,11 @@ const source = "ENHANCEMENT 1.\nWRITE 'sentinel &amp;'.\nENDENHANCEMENT.";
 const base = '/sap/bc/adt/enhancements/';
 
 describe('SAPRead ENHO subtype routing', () => {
-  beforeEach(() => vi.resetAllMocks());
+  beforeEach(() => {
+    vi.resetAllMocks();
+    resetCachedFeatures();
+    setCachedFeatures({ abapRelease: '816' });
+  });
 
   function setup(
     opts: {
@@ -100,6 +105,7 @@ describe('SAPRead ENHO subtype routing', () => {
   );
 
   it('reads legacy XH BAdI metadata without inventing a source endpoint', async () => {
+    setCachedFeatures({ abapRelease: '750' });
     const calls = setup({
       firstStatus: 404,
       type: 'ENHO/XH',

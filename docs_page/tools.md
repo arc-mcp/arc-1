@@ -522,11 +522,14 @@ on-prem systems. Hook implementations additionally return `source`, `enhancedObj
 and `hookImplementations` (positions, program/method names, overwrite flags and
 navigation links). A failed source read returns an error, not successful partial metadata.
 
-ARC-1 resolves a different enhancement subtype through repository search only after
-an unsupported BAdI read. This needs search permission as well as read permission.
-A qualified source-unavailable failure can use the implementation's generated enhancement include
-(the name padded with `=` to 30 characters plus `E`). The fallback is qualified on 750/758; ordinary
-server errors, authorization, throttling and network failures do not authorize it. ARC-1 requires
+On SAP 758, ARC-1 resolves the exact subtype through repository search before reading metadata;
+this needs search permission as well as read permission, including for BAdIs. Generic XH objects
+use their active generated include directly because even a metadata probe can dump. If the release
+is unknown, ARC-1 tries to detect it as the caller; if SAP still reports none, generic XH reads stop
+with retry/configuration guidance. Other known releases keep the BAdI-first routing.
+A qualified source-unavailable failure on those routes can use the implementation's generated
+include (the name padded with `=` to 30 characters plus `E`). Ordinary server errors, authorization,
+throttling and network failures do not authorize that fallback. ARC-1 requires
 one exact active revision (`00000`) with matching REPS/include identity and canonical content URI;
 missing active entries never select a historical or inactive version. The source is returned with
 `enhancementInclude` provenance and a `note`; technology, description, package, enhanced object and

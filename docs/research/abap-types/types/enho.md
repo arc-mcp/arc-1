@@ -58,10 +58,34 @@ MCP stdio. `CL_OO_ADT_ENHANCED_CLASS` returned its active generated parent and a
 the captured handler made no generic XH metadata request. Eight rendered hook sources from
 `CL_SEEF_ADT_TEST_AUNIT_1` kept their baseline identities and hashes. Summary reads remain source-free.
 The reporter's exact class is absent here; original-system and restricted-user/PP retests remain open.
-Direct ENHO reads and other known releases keep the existing routing. While the release is unknown
+Other known releases keep the existing class-source routing. While the release is unknown
 (e.g. during startup), the class read retains identities but omits generic XH sources without calling
 the serializer; retry after the feature probe completes. Single-target deployments can also
 configure `SAP_ABAP_RELEASE`; multi-target endpoints rely on the probe.
+
+## Direct ENHO reads on 758 (2026-11-07, #1207)
+
+The baseline `enhoxhb/CL_OO_ADT_ENHANCED_CLASS1` request created an ST22 dump at
+2026-11-07 06:23:05 UTC: `CX_SY_REF_IS_INITIAL` in
+`CL_ENH_ADT_ENHO_OBJ_PERSIST=>GET_DATA_FROM_TOOL`. The generic XH request was intercepted locally,
+not sent again. Native serializer source confirms it only constructs BAdI/hook result objects.
+
+On 758, direct reads therefore search for one exact subtype **before** any metadata request.
+XHB/XHH use their own endpoints; XH reads the validated active generated include. Missing or denied
+revisions never trigger either unsafe metadata probe. This adds a search request and search-permission
+requirement to 758 BAdI reads. Source remains labelled, with no inferred technology or switch state.
+
+The handler uses probed release, then configured release. Public client calls and missing startup
+information use the existing component/syntax detector as the caller, with a five-second deadline.
+If SAP still reports no release, exact XHB/XHH reads remain available but generic XH is refused with
+retry/configuration guidance. Known 750 legacy reads remain unchanged; other known releases,
+including 816, retain their existing routing and possible generic-serializer failures.
+
+Candidate verification used local MCP stdio over direct HTTPS/Basic on 758 SP02/client001:
+five tool calls, matching active source hash and exact BAdI/hook payloads, no unsafe metadata
+request and no new ST22 dump during 06:40:24–06:40:45 UTC. Unrelated startup capability probes
+returned 400/403/404; all enhancement/revision requests succeeded. The test guard blocked nothing.
+The reporter's exact class, PP and 750 SP23 were not tested by this follow-up.
 
 ## Verified read routes (2026-10-01, issue #896)
 
@@ -77,7 +101,7 @@ on 750. Collection presence alone does not prove every object can be read.
 
 ### Routing and payload
 
-The original BAdI GET remains first, preserving its one-request success path and
+On known releases other than 758, the original BAdI GET remains first, preserving its one-request success path and
 JSON shape. Only HTTP 400/404/500 triggers one bounded repository search. ARC-1
 requires a unique recognized subtype for the exact name. SAP 750 decorates search
 names with a display label, so an exact relative URI matching the constructed,

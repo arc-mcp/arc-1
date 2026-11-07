@@ -23,7 +23,7 @@ Sources remain separate labelled representations. On SAP_BASIS 758, owned ENHO/X
 their exact active generated-include revision directly: the generic ENHO serializer can dump for
 class enhancements, so it is never attempted, including when the revision is missing or denied.
 The probed release takes precedence over an explicitly configured release. Other known
-releases retain the existing route; direct SAPRead ENHO is unchanged. If the release is unknown,
+releases retain the existing route. Direct SAPRead ENHO has separate [subtype routing](../research/abap-types/types/enho.md#direct-enho-reads-on-758-2026-11-07-1207). If the release is unknown,
 XH sources are omitted as `class_source_release_unknown`; retry after `SAPManage probe` or configure
 `SAP_ABAP_RELEASE` for a single target. Multi-target endpoints rely on the probe.
 Discovery and independent hooks can still return their results. These remain qualification
