@@ -40,6 +40,7 @@ import {
 } from './write/class-surgery.js';
 import type { SapWriteContext } from './write/context.js';
 import { writeActionBatchCreate, writeActionCreate } from './write/create.js';
+import { writeActionGenerateService } from './write/generate-service.js';
 import { handlePinnedWrite } from './write/pinned.js';
 import { writeActionGenerateBehaviorImplementation, writeActionScaffoldRapHandlers } from './write/rap.js';
 import { writeTableSettings } from './write/table-settings.js';
@@ -262,14 +263,11 @@ export async function handleSAPWrite(
     case 'add_unit':
     case 'edit_unit':
       return writeActionUnit(ctx);
-
     // Class-section surgery actions (issue #303) — see write/class-surgery.ts.
     case 'edit_class_definition':
       return writeActionEditClassDefinition(ctx);
-
     case 'edit_method_signature':
       return writeActionEditMethodSignature(ctx);
-
     case 'add_method':
       return writeActionAddMethod(ctx);
 
@@ -283,6 +281,8 @@ export async function handleSAPWrite(
       return writeActionScaffoldRapHandlers(ctx);
     case 'generate_behavior_implementation':
       return writeActionGenerateBehaviorImplementation(ctx);
+    case 'generate_service':
+      return writeActionGenerateService(ctx);
     case 'delete':
       return writeActionDelete(ctx);
     case 'batch_create':

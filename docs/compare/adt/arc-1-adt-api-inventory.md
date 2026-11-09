@@ -104,6 +104,7 @@
 | 17 | `GET` | `/sap/bc/adt/ddic/srvd/sources/{name}/source/main` | `client.ts` (`getServiceDefinition`) | SRVD. |
 | 18 | `GET` | `/sap/bc/adt/ddic/ddlx/sources/{name}/source/main` | `client.ts` (`getMetadataExtension`) | DDLX. |
 | 19 | `GET` | `/sap/bc/adt/businessservices/bindings/{name}` | `client.ts` (`getServiceBinding`) | SRVB; `Accept: application/vnd.sap.adt.businessservices.v1+xml` (see code). |
+| 19a | `GET` | `/sap/bc/adt/businessservices/{odatav2,odatav4}/{name}?servicename={service}&serviceversion={version}&srvdname={srvd}` | `service-info.ts` (`getServiceBindingInfo`) | SRVB `include=service_info`; `servicename` is mandatory (HTTP 400 without it). |
 
 **Create parents (from `intent.ts` base paths):** collections under `.../ddl/sources/`, `.../bo/behaviordefinitions/`, `.../srvd/sources/`, `.../ddlx/sources/`, `.../businessservices/bindings/` as used by `createObject`.
 
@@ -199,6 +200,7 @@ verification; see [the correction](../../research/2026-10-17-where-used-scope-co
 | 43 | `POST` | `/sap/bc/adt/activation?method=activate&preauditRequested=true` | `devtools.ts` (`activate`, `activateBatch`) | XML object reference list. |
 | 44 | `POST` | `/sap/bc/adt/businessservices/odatav2/publishjobs?servicename={name}&serviceversion={version}` | `devtools.ts` (`publishServiceBinding`) | |
 | 45 | `POST` | `/sap/bc/adt/businessservices/odatav2/unpublishjobs?servicename={name}&serviceversion={version}` | `devtools.ts` (`unpublishServiceBinding`) | |
+| 45a | `GET`, `POST` | `/sap/bc/adt/repository/generators?referencedObject={uri}`; `/sap/bc/adt/businessservices/generators/{uiservice,webapiservice}[/content,/schema,/validation,/preview]?referencedObject={uri}` | `service-generator.ts` | `SAPWrite action=generate_service`; `corrNr` outside `$TMP`; contract in `docs/research/2026-11-06-rap-service-generators.md` |
 | 46 | `POST` | `/sap/bc/adt/abapunit/testruns` | `devtools.ts` (`runUnitTests`) | `Content-Type: application/vnd.sap.adt.abapunit.testruns.config.v4+xml`; `Accept: application/vnd.sap.adt.abapunit.testruns.result.v2+xml`. |
 | 47 | `POST` | `/sap/bc/adt/atc/runs?worklistId=1` | `devtools.ts` (`runAtcCheck`) | Creates run; parses worklist id from response. |
 | 48 | `GET` | `/sap/bc/adt/atc/worklists/{worklistId}` | `devtools.ts` (`runAtcCheck`) | `Accept: application/atc.worklist.v1+xml`. |
