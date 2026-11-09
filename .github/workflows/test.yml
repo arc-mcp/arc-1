@@ -50,7 +50,9 @@ jobs:
           echo "6c35294381ee2a7aa9377990a72bddd2a8adec48553dac8d8942bcd6a486cdba  $mbt_dir/mbt.tar.gz" | sha256sum --check --strict
           tar -xzf "$mbt_dir/mbt.tar.gz" -C "$mbt_dir" mbt
           "$mbt_dir/mbt" --version
-          echo "$mbt_dir" >> "$GITHUB_PATH"
+          # npx resolves project bins, not arbitrary executables added to PATH.
+          ln -s "$mbt_dir/mbt" node_modules/.bin/mbt
+          npx --no-install mbt --version
 
       - name: Validate MTA descriptors and effective target-authorization extension chain
         run: npm run btp:validate
