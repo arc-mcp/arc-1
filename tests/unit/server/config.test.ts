@@ -67,9 +67,12 @@ describe('parseArgs', () => {
     expect(() => parseArgs([])).toThrow(/Removed ARC-1 configuration/);
   });
 
-  it.each(['--cache-warmup=false', '--cache-warmup-packages=Z*'])('rejects retired CLI flag %s', (flag) => {
-    expect(() => parseArgs([flag])).toThrow(/Removed ARC-1 configuration/);
-  });
+  it.each(['--cache-warmup=false', '--cache-warmup-packages=Z*', '--feature-amdp=off'])(
+    'rejects retired CLI flag %s',
+    (flag) => {
+      expect(() => parseArgs([flag])).toThrow(/Removed ARC-1 configuration/);
+    },
+  );
 
   it('rejects the unreleased SAP_BTP_DESTINATIONS prototype variable with a migration hint', () => {
     process.env.SAP_BTP_DESTINATIONS = 'S4D,S4Q';

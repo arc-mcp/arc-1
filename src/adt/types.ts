@@ -66,7 +66,6 @@ export interface ResolvedFeatures {
   abapGit: FeatureStatus;
   gcts: FeatureStatus;
   rap: FeatureStatus;
-  amdp: FeatureStatus;
   ui5: FeatureStatus;
   transport: FeatureStatus;
   ui5repo: FeatureStatus;

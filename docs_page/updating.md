@@ -1,5 +1,11 @@
 # Updating ARC-1
 
+## v1.11.0 — AMDP feature toggle removed
+
+The AMDP toggle only reported whether SAP's AMDP debugger service responded; no tool depended on it.
+`SAPManage` feature results no longer contain `amdp`. Remove `--feature-amdp`, which now aborts
+startup. `SAP_FEATURE_AMDP` is ignored. AMDP classes are still read and written like any other class.
+
 ## v1.10.0 — HTTP request validation
 
 MCP POST requests must contain JSON with `Content-Type: application/json`.
