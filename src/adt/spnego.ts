@@ -23,6 +23,8 @@ interface KerberosClient {
 
 interface KerberosModule {
   initializeClient(service: string, options?: Record<string, unknown>): Promise<KerberosClient>;
+  /** GSS mech OID selecting SPNEGO. Read from the module rather than hard-coded. */
+  GSS_MECH_OID_SPNEGO?: number;
 }
 
 /** The optional native module is absent or cannot be loaded on this platform. */
@@ -195,13 +197,29 @@ export function recordSpnegoLogon(status: number, ok: boolean, durationMs: numbe
  * caller's existing logon session, and on Linux/macOS GSSAPI uses the ambient credential cache.
  * Passing credentials here would be plain password auth wearing a Kerberos hat — that is what
  * SAP_USER / SAP_PASSWORD already are.
+ *
+ * The mech OID is pinned to SPNEGO. This is load-bearing, not a detail: the HTTP `Negotiate`
+ * scheme (RFC 4559) carries SPNEGO tokens, but the `kerberos` module defaults to the raw Krb5
+ * mechanism — on Windows that selects the "Kerberos" SSP instead of "Negotiate", producing a bare
+ * AP-REQ. A SAP ICM configured for SPNEGO obtains the service ticket fine and then rejects the
+ * unwrapped token, which looks exactly like an SPN or ticket problem and is not one. Pinning the
+ * mechanism also matches the client that is known to work against a SPNEGO-configured ICM:
+ * PowerShell's `-UseDefaultCredentials`, which goes through "Negotiate".
+ *
+ * NOT yet live-verified end to end — no SAP system has accepted a token from this path. Treat a
+ * remaining 401 as open, and check the mechanism before blaming the SPN.
  */
-export function createSpnegoTokenAcquirer(): SpnegoTokenAcquirer {
+export function createSpnegoTokenAcquirer(
+  loadModule: () => Promise<KerberosModule> = loadKerberos,
+): SpnegoTokenAcquirer {
   return async (spn: string): Promise<string> => {
-    const kerberos = await loadKerberos();
+    const kerberos = await loadModule();
+    // Taken from the module so a constant change cannot silently reintroduce the raw-Krb5 default.
+    // If it is ever absent, fall through to the module default rather than guessing a number.
+    const options = typeof kerberos.GSS_MECH_OID_SPNEGO === 'number' ? { mechOID: kerberos.GSS_MECH_OID_SPNEGO } : {};
     let client: KerberosClient;
     try {
-      client = await kerberos.initializeClient(spn);
+      client = await kerberos.initializeClient(spn, options);
     } catch (error) {
       throw new SpnegoAuthError(
         `SPNEGO: could not initialize a Kerberos client for '${spn}'. Check that the host has a valid ticket ` +

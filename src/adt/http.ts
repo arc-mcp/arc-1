@@ -1084,8 +1084,9 @@ export class AdtHttpClient {
       headers.Authorization = `Bearer ${token}`;
     }
 
-    // Per-request SPNEGO must authenticate the CSRF fetch too: SAP binds the token to the session
-    // this probe establishes, so an unauthenticated probe yields a token bound to the wrong one.
+    // SPNEGO must authenticate the CSRF fetch too, and this path never reaches requestInner: enter
+    // the bootstrap gate here, or the startup auth preflight probes SAP uncredentialed and 401s.
+    if (this.config.spnego) await this.ensureSpnegoSession(options);
     if (this.config.spnego) await this.applySpnegoRequestHeader(headers, options);
 
     // Principal Propagation via SAP-Connectivity-Authentication header (Option 2).

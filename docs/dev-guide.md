@@ -225,16 +225,19 @@ See the [implementation evidence](research/2026-10-29-shared-mutation-infrastruc
 ## SPNEGO / Kerberos logon
 
 `src/adt/spnego.ts` owns SPN resolution and the lazy load of the optional `kerberos` module;
-`src/adt/http.ts` owns the exchange. Five rules keep it honest:
+`src/adt/http.ts` owns the exchange. Six rules keep it honest:
 
 1. **Shared identity, fail closed.** The token comes from the OS credential cache of the account
    running ARC-1, so SPNEGO cannot be per-user. `validateConfig` rejects it together with PP,
    multi-target, Basic, cookies, the BTP service key and a BTP destination, and `buildAdtConfig`
    sets it only inside the `!opts?.perUser` block. A per-user client inheriting the process ticket
    would silently widen every call to a shared identity.
-2. **Negotiate before anything else.** `ensureSpnegoSession` runs at the top of `requestInner`,
-   ahead of the CSRF bootstrap — SAP binds the CSRF token to the session cookie, so a token fetched
-   before the session exists is bound to the wrong one.
+2. **Two entry points, not one.** `ensureSpnegoSession` runs at the top of `requestInner` AND at
+   the top of `fetchCsrfToken`, which issues its own `doFetch` and never reaches `requestInner`.
+   SAP binds the CSRF token to the session cookie, so a token fetched before the session exists is
+   bound to the wrong one; worse, with no other credential the startup auth preflight — which calls
+   `fetchCsrfToken` directly — probes SAP uncredentialed and reports the 401 as a Kerberos failure.
+   Any further path that calls `doFetch` without going through `requestInner` needs the same gate.
 3. **Never inside a lock.** ADR-0006 forbids interactive work between lock and unlock.
    `withStatefulSession` copies `spnegoSessionEstablished` into the clone, so the clone reuses the
    inherited session instead of negotiating mid-write. If you add another path that clones the
@@ -246,6 +249,11 @@ See the [implementation evidence](research/2026-10-29-shared-mutation-infrastruc
    reply rides `www-authenticate`. Both are in `HTTP_DEBUG_REDACT_HEADERS`, which
    `responseHeadersToObject` applies to response headers too. The startup summary prints
    `spn=override`, never the SPN value — it names the SAP host.
+6. **Pin the mechanism to SPNEGO.** `createSpnegoTokenAcquirer` passes the module's
+   `GSS_MECH_OID_SPNEGO`. The default mech is raw Krb5, which on Windows selects the `Kerberos` SSP
+   instead of `Negotiate` and emits a bare AP-REQ; the HTTP `Negotiate` scheme (RFC 4559) carries
+   SPNEGO tokens. The constant is read from the module, never hard-coded, so a constant change
+   cannot silently restore the raw default. Not yet confirmed against a live ICM.
 
 **Platform matrix** (verified against the `kerberos@7.0.0` release assets): prebuilt N-API binaries
 for `win32-x64`, `linux-{x64,arm64,s390x}` (glibc ≥ 2.28), `darwin-{x64,arm64}` and FreeBSD. **No

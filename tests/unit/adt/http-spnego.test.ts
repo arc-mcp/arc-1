@@ -250,6 +250,53 @@ describe('SPNEGO logon in the ADT transport', () => {
     });
   });
 
+  describe('CSRF bootstrap, which the startup auth preflight calls directly', () => {
+    /** Issues a CSRF token only to a request that already carries the SPNEGO session. */
+    function csrfBackend(req: IncomingMessage, res: ServerResponse): void {
+      const authenticated =
+        typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Negotiate ');
+      res.setHeader('Content-Type', 'application/xml');
+      if (authenticated) {
+        res.setHeader('Set-Cookie', [`${SESSION_COOKIE}=live; Path=/`]);
+        res.end('<discovery/>');
+        return;
+      }
+      if (!req.headers.cookie?.includes(`${SESSION_COOKIE}=live`)) {
+        res.statusCode = 401;
+        res.setHeader('WWW-Authenticate', 'Negotiate');
+        res.end('<unauthorized/>');
+        return;
+      }
+      res.setHeader('X-CSRF-Token', 'CSRF-OK');
+      res.end('<discovery/>');
+    }
+
+    it('negotiates before probing, instead of fetching the token unauthenticated', async () => {
+      // Regression: fetchCsrfToken does not go through requestInner, so it needs its own entry into
+      // the bootstrap gate. Without it the startup auth preflight probed SAP with no credential at
+      // all and reported the resulting 401 as a Kerberos failure, which it was not.
+      reply = csrfBackend;
+
+      const token = await createClient().fetchCsrfToken();
+
+      expect(token).toBe(DISCOVERY);
+      expect(requests[0]?.headers.authorization).toMatch(/^Negotiate /);
+      // No request may go out before the negotiated one.
+      expect(requests.every(({ headers }) => headers.authorization || headers.cookie)).toBe(true);
+    });
+
+    it('reuses the established session for a later CSRF fetch', async () => {
+      reply = csrfBackend;
+      const client = createClient();
+
+      await client.fetchCsrfToken();
+      const before = tokens.length;
+      await client.fetchCsrfToken();
+
+      expect(tokens).toHaveLength(before);
+    });
+  });
+
   it('stays entirely out of the way when SPNEGO is not configured', async () => {
     reply = (_req, res) => {
       res.setHeader('Content-Type', 'application/xml');
