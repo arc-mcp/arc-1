@@ -18,6 +18,7 @@ import { AdtApiError } from '../adt/errors.js';
 import { shouldWarnPreStatefulRelease } from '../adt/release.js';
 import { deriveUserSafety, deriveUserSafetyFromProfile } from '../adt/safety.js';
 import { Semaphore } from '../adt/semaphore.js';
+import { resolveSpn } from '../adt/spnego.js';
 import { hasRequiredScope } from '../authz/policy.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { getToolRegistry, handleToolCall } from '../handlers/dispatch.js';
@@ -267,6 +268,11 @@ export function buildAdtConfig(
     }
     adtConfig.cookieFile = config.cookieFile;
     adtConfig.cookieString = config.cookieString;
+    // Shared only, by construction: a per-user principal-propagation client must never inherit the
+    // Kerberos credential of the OS account running ARC-1.
+    if (config.spnego) {
+      adtConfig.spnego = { spn: resolveSpn(config.url, config.spnegoSpn), mode: config.spnegoMode };
+    }
   }
 
   return adtConfig;
@@ -556,6 +562,14 @@ function skippedStartupAuthPreflight(config: ServerConfig): StartupAuthPreflight
 }
 
 function buildStartupAuthFailureReason(statusCode: number, config: ServerConfig): string {
+  if (statusCode === 401 && config.spnego) {
+    return (
+      'Authentication failed (401) during startup auth preflight. ' +
+      'The SPNEGO/Kerberos logon was rejected. Check that this host holds a valid ticket (`klist`), that the ' +
+      'service principal name matches the SAP host — a load-balancer alias or CNAME usually needs the physical ' +
+      'host name in SAP_SPNEGO_SPN — and that the SAP ICM accepts SPNEGO on this service.'
+    );
+  }
   if (statusCode === 401) {
     // Only SAP_COOKIE_FILE supports hot-reload: the file is re-read on the next request.
     // SAP_COOKIE_STRING is a static env var read once at process start — it cannot

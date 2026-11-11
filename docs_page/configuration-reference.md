@@ -116,6 +116,19 @@ does not ensure the next call re-authenticates; follow
 | `--cookie-file` | `SAP_COOKIE_FILE` | Netscape-format cookies, re-read during 401 recovery and before CSRF bootstrap; changed cookies replace the old session, empty/unreadable files preserve the last known cookies, and a locked stateful operation keeps its session until it finishes — refresh the file and retry the call without restarting. |
 | `--cookie-string` | `SAP_COOKIE_STRING` | Inline cookies (`k=v; k2=v2`) read once at startup. **Cannot hot-reload** — restart with a new value or switch to `SAP_COOKIE_FILE`. |
 
+### SPNEGO / Kerberos
+
+| Flag | Env | Default | Notes |
+|------|-----|---------|-------|
+| `--spnego` | `SAP_SPNEGO` | `false` | Log on with the Kerberos ticket of the OS account running ARC-1 (SSPI on Windows, GSSAPI elsewhere). The resulting SAP identity is **shared** by every MCP user of the instance. Requires `SAP_URL`. Startup fails when combined with `SAP_USER`/`SAP_PASSWORD`, `SAP_COOKIE_FILE`/`SAP_COOKIE_STRING`, `SAP_BTP_SERVICE_KEY`, `SAP_BTP_DESTINATION`, `SAP_PP_ENABLED=true` or `ARC1_MULTI_TARGET_ENDPOINTS=true`. |
+| `--spnego-spn` | `SAP_SPNEGO_SPN` | `HTTP/<host of SAP_URL>` | Service principal name. A bare host is accepted and prefixed with `HTTP/`. The host is never canonicalized, so a load-balancer alias or CNAME needs the **physical** host name here. |
+| `--spnego-mode` | `SAP_SPNEGO_MODE` | `bootstrap` | `bootstrap` negotiates once against `/sap/bc/adt/core/discovery` and reuses the SAP session cookies the ICM issues; one automatic re-negotiation recovers an expired ticket or session. `per-request` signs every request with a freshly minted token — use it only if the system issues no session cookie on SPNEGO logon. |
+
+Needs the optional `kerberos` native module. Prebuilt binaries exist for Windows x64, Linux
+x64/arm64/s390x (glibc 2.28+) and macOS; **Windows on ARM, musl/Alpine images and the `.mcpb`
+Desktop bundle have none** and report an actionable error at first use. Full walkthrough:
+[enterprise-auth.md → SPNEGO / Kerberos](enterprise-auth.md#spnego--kerberos-windows-sso-snc-only-systems).
+
 Cookie auth is not for production. See [local-development.md → SSO cookie extractor](local-development.md#sso-only-on-prem-cookie-extractor). On startup, the auth preflight is non-blocking when `SAP_COOKIE_FILE` is set, so the server starts even if cookies are about to be re-extracted out-of-band. Per-user PP clients never inherit cookie state — `cookieFile`/`cookieString` are stripped from per-user configs.
 
 #### B3. BTP ABAP Environment (direct OAuth)

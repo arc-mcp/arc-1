@@ -77,6 +77,13 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   },
   { name: 'cookie-file', valueName: 'path', description: 'Netscape-format SAP cookie file' },
   { name: 'cookie-string', valueName: 'cookies', description: 'SAP Cookie header value' },
+  { name: 'spnego', valueName: 'boolean', description: 'SPNEGO/Kerberos logon to SAP (true/false)' },
+  {
+    name: 'spnego-spn',
+    valueName: 'spn',
+    description: 'SPNEGO service principal name (default: HTTP/<host of SAP_URL>)',
+  },
+  { name: 'spnego-mode', valueName: 'mode', description: 'SPNEGO mode: bootstrap (default) or per-request' },
   { name: 'transport', valueName: 'transport', description: 'MCP transport: stdio or http-streamable' },
   { name: 'http-addr', valueName: 'host:port', description: 'HTTP transport bind address' },
   { name: 'max-http-request-bytes', valueName: 'bytes', description: 'MCP HTTP JSON body limit (1–16777216 bytes)' },
@@ -605,6 +612,15 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   // ── Cookie Auth ────────────────────────────────────────────────────
   config.cookieFile = resolveOptionalStr('cookie-file', 'SAP_COOKIE_FILE', 'cookieFile');
   config.cookieString = resolveOptionalStr('cookie-string', 'SAP_COOKIE_STRING', 'cookieString');
+
+  // ── SPNEGO / Kerberos ──────────────────────────────────────────────
+  config.spnego = resolveBool('spnego', 'SAP_SPNEGO', false, 'spnego');
+  config.spnegoSpn = resolveOptionalStr('spnego-spn', 'SAP_SPNEGO_SPN', 'spnegoSpn');
+  const spnegoMode = resolveStr('spnego-mode', 'SAP_SPNEGO_MODE', 'bootstrap', 'spnegoMode');
+  if (spnegoMode !== 'bootstrap' && spnegoMode !== 'per-request') {
+    throw new Error('Invalid SAP_SPNEGO_MODE value: expected bootstrap or per-request.');
+  }
+  config.spnegoMode = spnegoMode;
 
   // ── Transport ──────────────────────────────────────────────────────
   const transport = resolveStr('transport', 'SAP_TRANSPORT', 'stdio', 'transport');
@@ -1239,6 +1255,51 @@ export function validateConfig(config: ServerConfig): void {
   if (hasBtpServiceKey && config.ppEnabled) {
     throw new Error(
       'SAP_BTP_SERVICE_KEY (BTP ABAP) is incompatible with SAP_PP_ENABLED=true — BTP ABAP Environment is single-tenant OAuth and does not support principal propagation.',
+    );
+  }
+
+  // SPNEGO authenticates as the OS account this process runs under. That identity is shared by
+  // every MCP user of the instance and cannot be narrowed per request, so it must never coexist
+  // with a per-user model or with a second SAP credential that would silently win or lose.
+  if (config.spnego) {
+    if (!config.url) {
+      throw new Error('SAP_SPNEGO=true requires SAP_URL — the service principal name is derived from its host.');
+    }
+    if (config.ppEnabled) {
+      throw new Error(
+        'SAP_SPNEGO=true is incompatible with SAP_PP_ENABLED=true — SPNEGO authenticates as the single OS account ' +
+          'running ARC-1, so it cannot provide the per-user SAP identity principal propagation promises.',
+      );
+    }
+    if (config.multiTargetEndpoints) {
+      throw new Error(
+        'SAP_SPNEGO=true is incompatible with ARC1_MULTI_TARGET_ENDPOINTS=true — one ambient Kerberos identity ' +
+          'cannot serve discovered per-destination targets.',
+      );
+    }
+    if (hasBtpServiceKey) {
+      throw new Error('SAP_SPNEGO=true is incompatible with SAP_BTP_SERVICE_KEY — pick one SAP auth method.');
+    }
+    if (process.env.SAP_BTP_DESTINATION) {
+      throw new Error(
+        'SAP_SPNEGO=true is incompatible with SAP_BTP_DESTINATION — the destination supplies its own credential.',
+      );
+    }
+    if (config.username || config.password) {
+      throw new Error(
+        'SAP_SPNEGO=true is incompatible with SAP_USER / SAP_PASSWORD — remove the password credential, or unset ' +
+          'SAP_SPNEGO to use Basic authentication.',
+      );
+    }
+    if (hasCookieAuth) {
+      throw new Error(
+        'SAP_SPNEGO=true is incompatible with SAP_COOKIE_FILE / SAP_COOKIE_STRING — SPNEGO produces the SAP session ' +
+          'cookies itself, and a second source would silently override them.',
+      );
+    }
+  } else if (config.spnegoSpn || config.spnegoMode !== 'bootstrap') {
+    console.error(
+      '[warn] SAP_SPNEGO_SPN / SAP_SPNEGO_MODE have no effect without SAP_SPNEGO=true — ignoring them. Set SAP_SPNEGO=true if you meant to enable Kerberos logon.',
     );
   }
 

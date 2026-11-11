@@ -222,6 +222,37 @@ Focused tests: `tests/unit/adt/mutation-{compatibility,lifecycle,isolation}.test
 class using the configured direct test identity. It exercises both adapters, not real PP routing.
 See the [implementation evidence](research/2026-10-29-shared-mutation-infrastructure.md).
 
+## SPNEGO / Kerberos logon
+
+`src/adt/spnego.ts` owns SPN resolution and the lazy load of the optional `kerberos` module;
+`src/adt/http.ts` owns the exchange. Five rules keep it honest:
+
+1. **Shared identity, fail closed.** The token comes from the OS credential cache of the account
+   running ARC-1, so SPNEGO cannot be per-user. `validateConfig` rejects it together with PP,
+   multi-target, Basic, cookies, the BTP service key and a BTP destination, and `buildAdtConfig`
+   sets it only inside the `!opts?.perUser` block. A per-user client inheriting the process ticket
+   would silently widen every call to a shared identity.
+2. **Negotiate before anything else.** `ensureSpnegoSession` runs at the top of `requestInner`,
+   ahead of the CSRF bootstrap — SAP binds the CSRF token to the session cookie, so a token fetched
+   before the session exists is bound to the wrong one.
+3. **Never inside a lock.** ADR-0006 forbids interactive work between lock and unlock.
+   `withStatefulSession` copies `spnegoSessionEstablished` into the clone, so the clone reuses the
+   inherited session instead of negotiating mid-write. If you add another path that clones the
+   client, copy that flag too.
+4. **One retry, not two.** Re-negotiation reuses the existing single 401 slot
+   (`ensureSpnegoSession(options, true)` next to the cookie-file reload). A second retry dimension
+   would turn one expired ticket into a storm of logon attempts.
+5. **Both directions are secrets.** The request token rides `authorization`; the ICM's mutual-auth
+   reply rides `www-authenticate`. Both are in `HTTP_DEBUG_REDACT_HEADERS`, which
+   `responseHeadersToObject` applies to response headers too. The startup summary prints
+   `spn=override`, never the SPN value — it names the SAP host.
+
+**Platform matrix** (verified against the `kerberos@7.0.0` release assets): prebuilt N-API binaries
+for `win32-x64`, `linux-{x64,arm64,s390x}` (glibc ≥ 2.28), `darwin-{x64,arm64}` and FreeBSD. **No
+`win32-arm64`, no musl.** The published Alpine image and the `.mcpb` bundle (packed with
+`npm ci --ignore-scripts`, which skips `prebuild-install` entirely) therefore carry no binary; the
+loader reports that with the platform named. Remaining gaps are tracked as COMPAT-08.
+
 ## Key Files for Common Tasks — full reference
 
 | Task | Files |

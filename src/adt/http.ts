@@ -31,6 +31,15 @@ import { legacyContentHandlerFallback, rejectEmptyAdtHtmlResponse } from './lega
 import { fetchWithAttemptBudget } from './request-attempt-budget.js';
 import { hasSecuritySessionCookie, SecuritySessionGate } from './security-session-gate.js';
 import type { Semaphore } from './semaphore.js';
+import {
+  createSpnegoTokenAcquirer,
+  recordSpnegoLogon,
+  SPNEGO_BOOTSTRAP_PATH,
+  type SpnegoConfig,
+  type SpnegoTokenAcquirer,
+  spnegoAuthHeaders,
+  spnegoLogonHeaders,
+} from './spnego.js';
 import { resolveSapUserAgent } from './user-agent.js';
 
 export type { AdtRequestOptions } from './http-deadline.js';
@@ -55,6 +64,9 @@ const HTTP_DEBUG_REDACT_HEADERS = new Set([
   'sap-contextid',
   'sap-connectivity-authentication',
   'proxy-authorization',
+  // SPNEGO: the request token rides in `authorization`; the ICM's mutual-auth reply token rides
+  // back in `www-authenticate`. Both are credentials — neither may reach a sink.
+  'www-authenticate',
   'password', // abapGit bridge credential header (base64 is not encryption)
 ]);
 
@@ -148,6 +160,11 @@ export interface AdtHttpConfig {
   samlAuthorization?: string;
   /** Opt-in: disable SAML redirect via X-SAP-SAML2 header + saml2 query param */
   disableSaml?: boolean;
+  /**
+   * SPNEGO/Kerberos logon (shared, process-ambient identity). Set only on shared clients — never
+   * on a per-user principal-propagation client, which must not inherit the process credential.
+   */
+  spnego?: SpnegoConfig;
   /** Retry one final 401 after resetting session state. Defaults to true. */
   retryUnauthorized?: boolean;
   /** Secret-free hook invoked for the final 401 returned to the caller. */
@@ -204,6 +221,12 @@ export class AdtHttpClient {
   private readonly securitySessionGate = new SecuritySessionGate();
   /** Shared by stateful clones so one rejected Basic credential cannot fan out internally. */
   private readonly authenticationAttemptState: AuthenticationAttemptState;
+  /** Single-flight gate so a cold client negotiates SPNEGO once, not once per concurrent request. */
+  private spnegoNegotiation: Promise<void> | undefined;
+  /** True once a SPNEGO logon produced a SAP session; cleared by resetSession(). */
+  private spnegoSessionEstablished = false;
+  /** Built on first use so the optional native module is never touched while the feature is off. */
+  private spnegoAcquirer: SpnegoTokenAcquirer | undefined;
   constructor(config: AdtHttpConfig, authenticationAttemptState?: AuthenticationAttemptState) {
     this.config = config;
     this.userAgent = resolveSapUserAgent(config.userAgent);
@@ -305,6 +328,8 @@ export class AdtHttpClient {
     const sessionClient = new AdtHttpClient(sessionConfig, this.authenticationAttemptState);
     // Share CSRF token and cookies so we don't need to re-fetch
     sessionClient.csrfToken = this.csrfToken;
+    // Inherit the SPNEGO session so the clone never negotiates inside a lock window (ADR-0006).
+    sessionClient.spnegoSessionEstablished = this.spnegoSessionEstablished;
     sessionClient.cookieJar = new Map(this.cookieJar);
     sessionClient.cookieJar.delete('sap-contextid'); // A new write must open its own application context.
     sessionClient.discoveryMap = this.discoveryMap;
@@ -445,6 +470,10 @@ export class AdtHttpClient {
   ): Promise<AdtResponse> {
     throwIfRequestCancelled(options);
     const expectBody = method !== 'HEAD';
+    // SPNEGO bootstrap first: the CSRF fetch below and any lock must run on an established session.
+    // Guarded rather than awaited unconditionally — an extra microtask here would let a caller's
+    // abort overtake the first send on every request, SPNEGO or not.
+    if (this.config.spnego) await this.ensureSpnegoSession(options);
     // Auto-fetch CSRF token for modifying requests
     if (isModifyingMethod(method) && !this.csrfToken) {
       await this.fetchCsrfToken(withoutResponseBudget(options));
@@ -501,6 +530,7 @@ export class AdtHttpClient {
       const token = await awaitWithinRequestBudget(this.config.bearerTokenProvider(), options);
       headers.Authorization = `Bearer ${token}`;
     }
+    if (this.config.spnego) await this.applySpnegoRequestHeader(headers, options);
 
     // Lazy cookie reload: if cookies were cleared on a previous 401,
     // re-read the cookie file before this request.
@@ -738,6 +768,10 @@ export class AdtHttpClient {
         // the retry still replays the ticket we have.
         if (this.config.cookieFile) this.reloadCookiesFromSource();
 
+        // A SPNEGO session expires with its Kerberos ticket or the SAP session; re-negotiate once,
+        // in the same single-retry slot the cookie file reload above uses.
+        if (this.config.spnego) await this.ensureSpnegoSession(options, true);
+
         // Re-apply auth credentials
         this.applyAuthHeader(headers);
         if (this.config.bearerTokenProvider) {
@@ -745,6 +779,7 @@ export class AdtHttpClient {
           const token = await awaitWithinRequestBudget(this.config.bearerTokenProvider(), options);
           headers.Authorization = `Bearer ${token}`;
         }
+        if (this.config.spnego) await this.applySpnegoRequestHeader(headers, options);
 
         // Re-fetch CSRF token for modifying requests
         if (isModifyingMethod(method)) {
@@ -1049,6 +1084,10 @@ export class AdtHttpClient {
       headers.Authorization = `Bearer ${token}`;
     }
 
+    // Per-request SPNEGO must authenticate the CSRF fetch too: SAP binds the token to the session
+    // this probe establishes, so an unauthenticated probe yields a token bound to the wrong one.
+    if (this.config.spnego) await this.applySpnegoRequestHeader(headers, options);
+
     // Principal Propagation via SAP-Connectivity-Authentication header (Option 2).
     // Must be included on the CSRF fetch too — otherwise the Cloud Connector
     // establishes a session without user identity, and the CSRF token ends up
@@ -1250,6 +1289,8 @@ export class AdtHttpClient {
   private resetSession(): void {
     this.cookieJar.clear();
     this.csrfToken = '';
+    // The SPNEGO session lived in those cookies; the next request must negotiate a new one.
+    this.spnegoSessionEstablished = false;
     this.securitySessionGate.reset();
   }
 
@@ -1322,6 +1363,67 @@ export class AdtHttpClient {
     }
 
     return url.toString();
+  }
+
+  /** Mint one SPNEGO token for the configured SPN. */
+  private spnegoToken(spnego: SpnegoConfig): Promise<string> {
+    this.spnegoAcquirer ??= spnego.acquireToken ?? createSpnegoTokenAcquirer();
+    return this.spnegoAcquirer(spnego.spn);
+  }
+
+  /**
+   * Bootstrap mode: trade one SPNEGO token for SAP session cookies, then let every later request
+   * take the ordinary cookie path (CSRF binding, stateful clones and the single 401 retry all keep
+   * working exactly as they do for SAP_COOKIE_FILE).
+   *
+   * Called before anything else in `requestInner`, so the CSRF bootstrap and the lock of a stateful
+   * write already run against an established session. Negotiating inside a lock window would
+   * violate ADR-0006; the stateful clone therefore inherits this flag and never re-negotiates.
+   */
+  private async ensureSpnegoSession(options?: AdtRequestOptions, force = false): Promise<void> {
+    const spnego = this.config.spnego;
+    if (spnego?.mode !== 'bootstrap') return;
+    if (this.spnegoNegotiation) {
+      // Another request is already negotiating; its session is as fresh as ours would be.
+      await awaitWithinRequestBudget(this.spnegoNegotiation, options);
+      return;
+    }
+    if (!force && this.spnegoSessionEstablished) return;
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.spnegoNegotiation = gate;
+    try {
+      await this.negotiateSpnegoSession(spnego, options);
+    } finally {
+      if (this.spnegoNegotiation === gate) this.spnegoNegotiation = undefined;
+      // Waiters are released regardless of outcome: a failed negotiation surfaces to them as the
+      // ordinary 401 they would have seen anyway, through the existing recovery path.
+      release();
+    }
+  }
+
+  private async negotiateSpnegoSession(spnego: SpnegoConfig, options?: AdtRequestOptions): Promise<void> {
+    throwIfRequestCancelled(options);
+    const token = await awaitWithinRequestBudget(this.spnegoToken(spnego), options);
+    const started = Date.now();
+    const url = this.buildUrl(SPNEGO_BOOTSTRAP_PATH);
+    const response = await this.doFetch(url, 'GET', spnegoLogonHeaders(token), undefined, options);
+    // doFetch has already stored any Set-Cookie; the body itself is of no interest here.
+    await response.text();
+    recordSpnegoLogon(response.status, response.ok, Date.now() - started);
+    this.spnegoSessionEstablished = true;
+  }
+
+  /** Per-request mode only: carry the SPNEGO token on the request itself. */
+  private async applySpnegoRequestHeader(headers: Record<string, string>, options?: AdtRequestOptions): Promise<void> {
+    const spnego = this.config.spnego;
+    if (spnego?.mode !== 'per-request') return;
+    throwIfRequestCancelled(options);
+    const token = await awaitWithinRequestBudget(this.spnegoToken(spnego), options);
+    Object.assign(headers, spnegoAuthHeaders(token));
   }
 
   /** Apply Basic Auth header if username/password are configured (and no bearer provider) */

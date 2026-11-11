@@ -10,6 +10,7 @@ import type { BTPProxyConfig } from '@arc-mcp/xsuaa-auth/btp';
 import { DEFAULT_CONCURRENT_DATA_RESULTS, DEFAULT_DATA_PREVIEW_RESPONSE_BYTES } from './data-result-context.js';
 import type { SafetyConfig } from './safety.js';
 import { unrestrictedSafetyConfig } from './safety.js';
+import type { SpnegoConfig } from './spnego.js';
 
 /** Feature mode: auto detects from SAP system, on/off forces */
 export type FeatureMode = 'auto' | 'on' | 'off';
@@ -104,6 +105,11 @@ export interface AdtClientConfig {
   samlAuthorization?: string;
   /** Opt-in: disable SAML redirect via X-SAP-SAML2 header + saml2 query param */
   disableSaml?: boolean;
+  /**
+   * SPNEGO/Kerberos logon settings (shared, process-ambient identity). Set only on shared clients;
+   * a per-user principal-propagation client must never inherit the process credential.
+   */
+  spnego?: SpnegoConfig;
   /**
    * Internal authentication retry policy. Defaults to true for compatibility.
    * Multi-target shared Basic clients set this to false so one rejected

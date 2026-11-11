@@ -29,6 +29,7 @@ After starting, check the server's first INFO log line: `auth: MCP=[...] SAP=[..
 |----------------|-------------------|-------------|-------------|
 | **Local dev** (single user, `npx`) | None needed | Basic Auth | [Quickstart](quickstart.md) |
 | **Local dev + RFC/SAProuter-only access** | None needed | Local ADT-to-RFC bridge | [Local bridge](#local-adt-to-rfc-bridge-rfcsaprouter-only-local-systems) |
+| **SNC/Kerberos-only SAP** (no SAP password, domain-joined host) | None / API Key | SPNEGO (shared OS identity) | [SPNEGO / Kerberos](#spnego--kerberos-windows-sso-snc-only-systems) |
 | **Shared server** (team, quick start) | API Key | Basic Auth | [API Key Setup](api-key-setup.md) |
 | **Team server** (role-based access) | API Keys (multi) | Basic Auth | [API Key Setup](api-key-setup.md) |
 | **Enterprise** (per-user identity) | OIDC / JWT | Basic Auth (shared user) | [OAuth / JWT Setup](oauth-jwt-setup.md) |
@@ -165,6 +166,54 @@ Reuse session cookies from a browser session. Useful for one-off sessions.
 ```bash
 arc1 --url http://sap:50000 --cookie-file cookies.txt
 ```
+
+### SPNEGO / Kerberos (Windows SSO, SNC-only systems)
+
+On systems configured for SNC/Kerberos logon, developer accounts often have **no usable SAP
+password** — password logon is disabled outright. If the SAP ICM accepts SPNEGO over HTTP(S),
+ARC-1 can log on with the Kerberos ticket of the OS account it runs under.
+
+In the default `bootstrap` mode ARC-1 negotiates **once** against `/sap/bc/adt/core/discovery`,
+the ICM issues `MYSAPSSO2` and `SAP_SESSIONID_<SID>_<MANDT>`, and every later request takes the
+ordinary cookie path. Expiry (of either the Kerberos ticket or the SAP session) is recovered by a
+single automatic re-negotiation.
+
+**Upsides:** No SAP password anywhere. Nothing to rotate, no cookie file on disk. Works on systems
+where Basic authentication is disabled.
+**Downsides:** **Shared identity** — SAP sees the one OS account ARC-1 runs under, for every MCP
+user of the instance. Needs the optional `kerberos` native module. Not available on every platform
+(see below).
+**When to use:** A domain-joined workstation (or a domain-joined Windows service host) talking to
+an SNC-only on-premise system.
+
+```bash
+# Windows, domain-joined, valid TGT (check with `klist`)
+arc1 --url https://sapdev.corp.example.com --client 100 --spnego true
+```
+
+Startup prints `auth: MCP=[…] SAP=spnego (shared)`.
+
+| Variable / Flag | Meaning |
+|-----------------|---------|
+| `SAP_SPNEGO` / `--spnego` | Enable Kerberos logon (default `false`) |
+| `SAP_SPNEGO_SPN` / `--spnego-spn` | SPN override; default `HTTP/<host of SAP_URL>` |
+| `SAP_SPNEGO_MODE` / `--spnego-mode` | `bootstrap` (default) or `per-request` |
+
+**Mutually exclusive, enforced at startup.** SPNEGO is a single process-ambient identity, so it is
+rejected together with `SAP_USER`/`SAP_PASSWORD`, `SAP_COOKIE_FILE`/`SAP_COOKIE_STRING`,
+`SAP_BTP_SERVICE_KEY`, `SAP_BTP_DESTINATION`, `SAP_PP_ENABLED=true` and
+`ARC1_MULTI_TARGET_ENDPOINTS=true`. For per-user SAP identity use
+[principal propagation](principal-propagation-setup.md) instead.
+
+**Availability.** The optional `kerberos` module publishes prebuilt binaries for Windows x64,
+Linux x64/arm64/s390x (glibc 2.28+) and macOS. There is **no prebuild for Windows on ARM or for
+musl/Alpine**, and the `.mcpb` Claude Desktop bundle is packed without native binaries — on those
+platforms the feature reports an actionable error at first use. Use `SAP_COOKIE_FILE` there.
+
+**Troubleshooting.** A 401 on the SPNEGO logon is almost always the SPN. Compare the service ticket
+`klist` shows after a working `Invoke-WebRequest -UseDefaultCredentials https://<host>/sap/bc/adt/discovery`
+with `HTTP/<host of SAP_URL>`; a load-balancer alias or CNAME needs the **physical** host name in
+`SAP_SPNEGO_SPN`.
 
 ### Local ADT-to-RFC Bridge (RFC/SAProuter-only Local Systems)
 
