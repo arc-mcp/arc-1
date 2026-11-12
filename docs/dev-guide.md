@@ -253,13 +253,26 @@ See the [implementation evidence](research/2026-10-29-shared-mutation-infrastruc
    `GSS_MECH_OID_SPNEGO`. The default mech is raw Krb5, which on Windows selects the `Kerberos` SSP
    instead of `Negotiate` and emits a bare AP-REQ; the HTTP `Negotiate` scheme (RFC 4559) carries
    SPNEGO tokens. The constant is read from the module, never hard-coded, so a constant change
-   cannot silently restore the raw default. Not yet confirmed against a live ICM.
+   cannot silently restore the raw default. Whether the raw default would also be accepted was
+   never tested — the pin costs nothing and matches the client known to work. **The pin has a
+   price:** `Negotiate` falls back to NTLM when it cannot get a service ticket, so a wrong SPN
+   returns an NTLM Type 1 token instead of failing (verified directly against SSPI). The acquirer
+   refuses any token starting with `TlRMTVNTUA` (`NTLMSSP\0`) — never relax that into a warning, or
+   a configuration mistake becomes a quiet downgrade to a protocol with no mutual authentication.
 
 **Platform matrix** (verified against the `kerberos@7.0.0` release assets): prebuilt N-API binaries
 for `win32-x64`, `linux-{x64,arm64,s390x}` (glibc ≥ 2.28), `darwin-{x64,arm64}` and FreeBSD. **No
 `win32-arm64`, no musl.** The published Alpine image and the `.mcpb` bundle (packed with
 `npm ci --ignore-scripts`, which skips `prebuild-install` entirely) therefore carry no binary; the
 loader reports that with the platform named. Remaining gaps are tracked as COMPAT-08.
+
+**Live evidence.** Verified on a domain-joined Windows x64 host against an on-premise SNC/Kerberos-only
+system over direct HTTPS, default `bootstrap` mode, no SPN override: discovery 200, CSRF bootstrap
+succeeded, search and transport authorization probes passed, `SAPSearch` returned a class. **Reads
+only** — the lock→modify→unlock path, ticket/session expiry recovery and `per-request` mode have not
+been exercised against a real system. Note `npm install kerberos` is a no-op when the package is
+already unpacked without its binary (npm considers it installed and skips the install script);
+`npm rebuild kerberos` is what fetches the prebuild.
 
 ## Key Files for Common Tasks — full reference
 

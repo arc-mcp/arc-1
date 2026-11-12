@@ -6,6 +6,7 @@ import {
   resolveSpn,
   SpnegoAuthError,
   SpnegoUnavailableError,
+  spnegoUnavailableMessage,
 } from '../../../src/adt/spnego.js';
 
 describe('SPNEGO service principal names', () => {
@@ -50,20 +51,25 @@ describe('SPNEGO service principal names', () => {
 });
 
 describe('SPNEGO token acquisition without the native module', () => {
-  it('reports an actionable error naming the platform and the packagings without a prebuild', async () => {
-    // `kerberos` is an optionalDependency and is absent in this test environment, which is exactly
-    // the Alpine / win32-arm64 / .mcpb situation operators hit.
-    const acquire = createSpnegoTokenAcquirer();
-    await expect(acquire('HTTP/sap.example.com')).rejects.toBeInstanceOf(SpnegoUnavailableError);
-    await expect(acquire('HTTP/sap.example.com')).rejects.toThrow(
-      new RegExp(`optional 'kerberos' native module.*${process.platform}/${process.arch}`, 's'),
-    );
+  // These assert the Alpine / win32-arm64 / .mcpb situation. They must not depend on whether the
+  // optional module happens to be built in the environment running the suite — it is absent in CI
+  // and present on a developer box that ran `npm rebuild kerberos`.
+  it('reports an actionable error naming the platform and the packagings without a prebuild', () => {
+    const message = spnegoUnavailableMessage();
+    expect(message).toContain(`${process.platform}/${process.arch}`);
+    expect(message).toContain('npm rebuild kerberos');
+    expect(message).toMatch(/win32-x64/);
+    expect(message).toMatch(/musl|Alpine/);
+    expect(message).toContain('SAP_COOKIE_FILE');
   });
 
-  it('never falls back to an unauthenticated request', async () => {
+  it('never falls back to an unauthenticated request when the module cannot load', async () => {
     // The acquirer must reject, not resolve to an empty token: resolving would let the caller send
     // a request with no credential at all.
-    await expect(createSpnegoTokenAcquirer()('HTTP/sap.example.com')).rejects.toThrow();
+    const acquire = createSpnegoTokenAcquirer(async () => {
+      throw new SpnegoUnavailableError(spnegoUnavailableMessage());
+    });
+    await expect(acquire('HTTP/sap.example.com')).rejects.toBeInstanceOf(SpnegoUnavailableError);
   });
 });
 
@@ -108,5 +114,35 @@ describe('SPNEGO mechanism selection', () => {
     expect(calls[0]?.options).not.toHaveProperty('user');
     expect(calls[0]?.options).not.toHaveProperty('pass');
     expect(calls[0]?.options).not.toHaveProperty('principal');
+  });
+});
+
+describe('SPNEGO downgrade refusal', () => {
+  /** Base64 of "NTLMSSP\0\x01…" — what SSPI hands back when it cannot get a service ticket. */
+  const NTLM_TYPE1 = 'TlRMTVNTUAABAAAAl4II4gAAAAAAAAAAAAAAAAAAAAAKADk4AAAADw==';
+
+  it('refuses an NTLM token instead of sending a silent downgrade', async () => {
+    // Selecting the SPNEGO mech means the Windows "Negotiate" SSP, which falls back to NTLM rather
+    // than failing when the SPN has no ticket. Sending it would log the operator on over a weaker
+    // protocol with no mutual auth, and hide the real fault (almost always a wrong SPN).
+    const module = {
+      GSS_MECH_OID_SPNEGO: 6,
+      initializeClient: async () => ({ step: async () => NTLM_TYPE1 }),
+    };
+    const acquire = createSpnegoTokenAcquirer(async () => module);
+
+    await expect(acquire('HTTP/wrong.example.com')).rejects.toBeInstanceOf(SpnegoAuthError);
+    await expect(acquire('HTTP/wrong.example.com')).rejects.toThrow(/NTLM token.*not a Kerberos one/s);
+    await expect(acquire('HTTP/wrong.example.com')).rejects.toThrow(/SAP_SPNEGO_SPN/);
+  });
+
+  it('accepts a SPNEGO token, which is what a real ticket produces', async () => {
+    const module = {
+      GSS_MECH_OID_SPNEGO: 6,
+      initializeClient: async () => ({ step: async () => 'YIGyBgYrBgEFBQKggacwgaSg' }),
+    };
+    await expect(createSpnegoTokenAcquirer(async () => module)('HTTP/sap.example.com')).resolves.toBe(
+      'YIGyBgYrBgEFBQKggacwgaSg',
+    );
   });
 });

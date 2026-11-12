@@ -1,7 +1,15 @@
 # SPNEGO / Kerberos authentication toward SAP — feasibility analysis
 
 **Date:** 2026-11-11
-**Status:** Analysis only. No source file was modified, no dependency installed, no call made to a real SAP system.
+**Status:** Analysis only when written. No source file was modified, no dependency installed, no call made to a real SAP system.
+**Superseded in part (2026-11-12):** option (b) was implemented and then **verified live** on a
+domain-joined Windows x64 host against an on-premise SNC/Kerberos-only system — read path only.
+Two claims below did not survive contact. §2.3's preflight description omits that
+`runStartupAuthPreflightWithClient` calls `fetchCsrfToken` directly, bypassing `requestInner`; the
+first implementation gated negotiation only there, so the preflight probed SAP with no credential
+and reported the resulting 401 as a Kerberos rejection. §4 did not establish which SSPI package the
+module selects — it defaults to raw Krb5, not SPNEGO. Both are fixed in the branch; the current
+rules live in `docs/dev-guide.md#spnego--kerberos-logon`.
 **Scope:** ARC-1 → SAP (Layer B). MCP client → ARC-1 (Layer A) is unchanged by every option below.
 
 ---

@@ -114,6 +114,17 @@ export function resolveSpn(baseUrl: string, override?: string): string {
  * The specifier is computed so TypeScript and bundlers do not resolve it statically — the package
  * is optional and is legitimately absent in several supported packagings.
  */
+export function spnegoUnavailableMessage(): string {
+  return (
+    "SAP_SPNEGO=true requires the optional 'kerberos' native module, which could not be loaded on this host " +
+    `(${process.platform}/${process.arch}). Install it with \`npm rebuild kerberos\` — plain \`npm install\` is a ` +
+    'no-op when the package is already unpacked without its binary. Prebuilt binaries exist for win32-x64, ' +
+    'linux-x64/arm64/s390x (glibc 2.28+) and macOS; Windows on ARM, Alpine/musl images and the .mcpb Desktop ' +
+    'bundle have no prebuild and need a source build (Linux also needs the krb5 development headers). Use ' +
+    'SAP_COOKIE_FILE there instead.'
+  );
+}
+
 async function loadKerberos(): Promise<KerberosModule> {
   const specifier = 'kerberos';
   try {
@@ -124,16 +135,20 @@ async function loadKerberos(): Promise<KerberosModule> {
     }
     return resolved;
   } catch (error) {
-    throw new SpnegoUnavailableError(
-      "SAP_SPNEGO=true requires the optional 'kerberos' native module, which could not be loaded on this host " +
-        `(${process.platform}/${process.arch}). Install it with \`npm install kerberos\`. Prebuilt binaries exist for ` +
-        'win32-x64, linux-x64/arm64/s390x (glibc 2.28+) and macOS; Windows on ARM, Alpine/musl images and the ' +
-        '.mcpb Desktop bundle have no prebuild and need a source build (Linux also needs the krb5 development ' +
-        'headers). Use SAP_COOKIE_FILE there instead.',
-      error,
-    );
+    throw new SpnegoUnavailableError(spnegoUnavailableMessage(), error);
   }
 }
+
+/**
+ * Base64 prefix of an NTLM message (`NTLMSSP\0`).
+ *
+ * Selecting the SPNEGO mechanism means the Windows "Negotiate" SSP, which silently falls back to
+ * NTLM when it cannot get a Kerberos service ticket for the SPN — observed directly: a bogus SPN
+ * yields an NTLM Type 1 token instead of an error. Sending it would turn a configuration mistake
+ * (usually a wrong SPN) into a quiet downgrade to a weaker protocol with no mutual authentication,
+ * and would leave operators unable to tell which protocol actually logged them on.
+ */
+const NTLM_TOKEN_PREFIX = 'TlRMTVNTUA';
 
 /**
  * Endpoint used for the SPNEGO logon exchange. The ADT discovery document is the cheapest
@@ -206,8 +221,9 @@ export function recordSpnegoLogon(status: number, ok: boolean, durationMs: numbe
  * mechanism also matches the client that is known to work against a SPNEGO-configured ICM:
  * PowerShell's `-UseDefaultCredentials`, which goes through "Negotiate".
  *
- * NOT yet live-verified end to end — no SAP system has accepted a token from this path. Treat a
- * remaining 401 as open, and check the mechanism before blaming the SPN.
+ * Live-verified: a domain-joined Windows x64 host logs on to an on-premise SNC/Kerberos-only system
+ * through this path. Whether the raw Krb5 default would ALSO be accepted there was not tested, so
+ * this stays pinned rather than reverted — it costs nothing and matches the known-good client.
  */
 export function createSpnegoTokenAcquirer(
   loadModule: () => Promise<KerberosModule> = loadKerberos,
@@ -240,6 +256,15 @@ export function createSpnegoTokenAcquirer(
     }
     if (!token) {
       throw new SpnegoAuthError(`SPNEGO: the Kerberos exchange for '${spn}' produced no token.`);
+    }
+    if (token.startsWith(NTLM_TOKEN_PREFIX)) {
+      throw new SpnegoAuthError(
+        `SPNEGO: the OS returned an NTLM token for '${spn}', not a Kerberos one, which means it could not get a ` +
+          'service ticket for that SPN. ARC-1 refuses to send it: NTLM is a silent downgrade, not the SSO you ' +
+          'configured. Check `klist get ' +
+          spn +
+          '`; a load-balancer alias or CNAME usually needs the physical host name in SAP_SPNEGO_SPN.',
+      );
     }
     return token;
   };

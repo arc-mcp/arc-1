@@ -210,7 +210,17 @@ Linux x64/arm64/s390x (glibc 2.28+) and macOS. There is **no prebuild for Window
 musl/Alpine**, and the `.mcpb` Claude Desktop bundle is packed without native binaries — on those
 platforms the feature reports an actionable error at first use. Use `SAP_COOKIE_FILE` there.
 
-**Troubleshooting.** A 401 on the SPNEGO logon is almost always the SPN. Compare the service ticket
+**Troubleshooting.** First confirm the native module actually loads:
+`node -e "import('kerberos').then(() => console.log('ok'))"`. If it reports a missing
+`kerberos.node`, the package is unpacked without its binary — `npm install kerberos` will NOT fix
+that (npm sees the package as installed and skips its install script); run `npm rebuild kerberos`.
+With the module missing, ARC-1 reports it by name rather than sending an unauthenticated request.
+
+If ARC-1 reports that the OS returned an **NTLM** token, Windows could not get a Kerberos service
+ticket for the SPN and fell back; ARC-1 refuses to send it rather than log you on over a weaker
+protocol. That is an SPN problem, diagnosed exactly as below.
+
+A 401 on the SPNEGO logon is almost always the SPN. Compare the service ticket
 `klist` shows after a working `Invoke-WebRequest -UseDefaultCredentials https://<host>/sap/bc/adt/discovery`
 with `HTTP/<host of SAP_URL>`; a load-balancer alias or CNAME needs the **physical** host name in
 `SAP_SPNEGO_SPN`.
