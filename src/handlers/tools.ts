@@ -643,7 +643,8 @@ export function getToolDefinitions(
           expectedSourceHash: {
             type: 'string',
             description:
-              'SHA-256 from SAPRead(format=editable). Refuses changed source under the lock. Text-source update and class/procedural surgery only; whole addressed source/include, not just the edited unit. Omitted/blank: no cross-call protection.',
+              (btp ? 'Optional' : 'Required for edit_content; otherwise optional') +
+              ' SHA-256 from SAPRead(format=editable) for the whole source/include. Refuses changes under the lock. Text-source updates and class/procedural edits only.',
           },
           source: {
             type: 'string',
@@ -740,7 +741,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'FUNC: existing FUGR; required for create, otherwise resolved. INCL: parent FUGR for structural includes; omit for standalone.',
+              'FUNC: required for create; otherwise resolved. INCL: required for grouped create/delete; resolved for structural-include edits when omitted.',
           },
           ...(btp ? {} : FuncProcessing.FUNCTION_PROCESSING_TOOL_PROPERTIES),
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
@@ -1000,7 +1001,7 @@ export function getToolDefinitions(
           type: { type: 'string', description: 'Object type (PROG, CLAS, DDLS, DDLX, BDEF, SRVD, SRVB, etc.)' },
           group: {
             type: 'string',
-            description: 'Parent FUGR for FUNC or structural INCL.',
+            description: 'Parent FUGR for FUNC or structural INCL; auto-resolved if omitted.',
           },
           version: { type: 'string', description: 'Service version for publish/unpublish (default: "0001")' },
           service_type: {
