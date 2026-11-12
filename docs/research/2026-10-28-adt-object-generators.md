@@ -11,7 +11,7 @@ Evidence is ADT communication logs captured on 28 October 2026 with ADT 3.60 (Ec
 | S/4HANA 2025 FPS01, private cloud | SAP_BASIS 816 | Full `smbc` run on a customizing table with a text table: list, validation (one error, one pass), schema/content, preview, run, read-back; ADT discovery document |
 | BTP ABAP Environment 2608 | SAP_BASIS 920 | Generator list only |
 
-The fixtures in `tests/fixtures/generators/` are bodies from these logs with object, package, user and transport names anonymized. Nothing was verified on 758 or older; PR #409 reports different RAP generator ids on 758 (`uiservice`, `webapiservice`), so the framework exists there in some form.
+The fixtures in `tests/fixtures/generators/` are bodies from these logs with object, package, user and transport names anonymized. On 758 the framework exists with other ids and paths for the RAP service generators (`uiservice`, `webapiservice` under `/sap/bc/adt/businessservices/generators/`), other media types and other response shapes; see [2026-11-06-rap-service-generators.md](2026-11-06-rap-service-generators.md) (#1202). ARC-1 therefore takes endpoint paths and media types from the feed links.
 
 ## Discovery
 
@@ -69,3 +69,9 @@ On 28 October 2026 the change was deployed as a test build (`v1.9.0` plus this c
 - Duration through ARC-1 (the agent could not time calls; Eclipse showed 34 s of server time).
 - Any generator other than `smbc`, and any run on 920 or 758.
 - Behaviour when the package is local (`$TMP`) or the generator needs no transport.
+
+## Package and transport handling
+
+A `smbc` run on 816 without `transport` succeeded and placed all 24 objects on an open request of the user that had not been passed (`corrNr` was resolved by SAP from an earlier lock). Together with #1202's finding that validation answers OK for an unknown package or an invalid `corrNr`, ARC-1 requires an explicit request outside `$TMP` and checks package and request itself before running a generator.
+
+The `smbc` transport object appears in TADIR and on the request with a trailing `T` (preview `TOBJ/TOB ZX_DEMO`, repository `ZX_DEMOT`); the read-back accepts both names. Besides the previewed objects the request gained `G4BA` (Gateway artifact of the binding), `SUSH` (authorization default), one `STOB` per CDS view and the package's `DEVC` entry.

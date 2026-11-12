@@ -6,8 +6,10 @@ import {
   buildGeneratorInput,
   type GeneratorInfo,
   generatorEndpoint,
+  generatorValidationPassed,
   getGeneratorDefaults,
   hasGeneratorErrors,
+  isSupportedGenerator,
   listGenerators,
   mergeGeneratorInput,
   parseGeneratorFeed,
@@ -93,8 +95,9 @@ describe('generator feed', () => {
     });
     expect(generators.find((g) => g.id === 'ui-service')).toMatchObject({
       referencedObjectTypes: ['TABL', 'BDEF', 'DDLS'],
-      supported: false,
+      supported: true,
     });
+    expect(generators.find((g) => g.id === 'x-ui-service')).toMatchObject({ supported: false });
     expect(generators.find((g) => g.id === 'x-ui-service')?.referencedObjectTypes).toEqual([]);
   });
 
@@ -127,7 +130,7 @@ describe('generator endpoints from the feed', () => {
   });
 
   it('refuses generators outside the registry', () => {
-    const generator = { ...smbc(), id: 'ui-service', supported: false };
+    const generator = { ...smbc(), id: 'x-ui-service', supported: false };
     expect(() => generatorEndpoint(generator, 'preview')).toThrow(/not supported/);
   });
 });
@@ -172,6 +175,7 @@ describe('generator calls', () => {
     );
     expect((calls[0] as { options?: unknown }).options).toMatchObject({
       retryTransientErrors: false,
+      noReplay: true,
       fetchTimeoutMs: 300_000,
     });
   });
@@ -237,7 +241,14 @@ describe('generator input', () => {
   });
 
   it('sets package and master language and keeps the proposal elsewhere', () => {
-    const input = buildGeneratorInput('smbc', proposal, { options: { addCopyAction: true } }, 'ZARC1_DEMO', 'EN');
+    const input = buildGeneratorInput(
+      'smbc',
+      proposal,
+      { options: { addCopyAction: true } },
+      'ZARC1_DEMO',
+      'EN',
+      'ZTX_DMO_DCODE',
+    );
     expect(input.metadata).toEqual({ package: 'ZARC1_DEMO', masterLanguage: 'EN' });
     expect(input.options).toMatchObject({ addCopyAction: true, overwriteExistingObjects: false });
     expect(input.businessObject).toEqual(proposal.businessObject);
@@ -245,16 +256,23 @@ describe('generator input', () => {
 
   it('refuses metadata overrides and overwriting existing objects', () => {
     expect(() =>
-      buildGeneratorInput('smbc', proposal, { metadata: { package: 'ZOTHER' } }, 'ZARC1_DEMO', 'EN'),
+      buildGeneratorInput('smbc', proposal, { metadata: { package: 'ZOTHER' } }, 'ZARC1_DEMO', 'EN', 'ZTX_DMO_DCODE'),
     ).toThrow(AdtSafetyError);
     expect(() =>
-      buildGeneratorInput('smbc', proposal, { options: { overwriteExistingObjects: true } }, 'ZARC1_DEMO', 'EN'),
+      buildGeneratorInput(
+        'smbc',
+        proposal,
+        { options: { overwriteExistingObjects: true } },
+        'ZARC1_DEMO',
+        'EN',
+        'ZTX_DMO_DCODE',
+      ),
     ).toThrow(/overwriteExistingObjects/);
   });
 
   it('pins overwriteExistingObjects even when the proposal enables it', () => {
     const risky = { ...proposal, options: { ...(proposal.options as object), overwriteExistingObjects: true } };
-    expect(buildGeneratorInput('smbc', risky, undefined, 'ZARC1_DEMO', 'EN').options).toMatchObject({
+    expect(buildGeneratorInput('smbc', risky, undefined, 'ZARC1_DEMO', 'EN', 'ZTX_DMO_DCODE').options).toMatchObject({
       overwriteExistingObjects: false,
     });
   });
@@ -270,5 +288,133 @@ describe('generator input', () => {
     });
     expect(fields.find((f) => f.path === 'options.description')).toMatchObject({ maxLength: 50 });
     expect(fields.some((f) => f.path.startsWith('businessObject.dataModel.tables[].'))).toBe(true);
+  });
+});
+
+/**
+ * The RAP service generators on SAP_BASIS 758 (#1202): other ids and paths, the
+ * repository.generator media types, an asx:abap StatusMessage for validation and a flat
+ * objectReferences preview. Shapes follow docs/research/2026-11-06-rap-service-generators.md.
+ */
+const FEED_758 = `<?xml version="1.0" encoding="utf-8"?><atom:feed xmlns:atom="http://www.w3.org/2005/Atom"><atom:entry referencedObjectTypes="TABL"><atom:id>uiservice</atom:id><atom:title>OData UI Service</atom:title>${[
+  ['content', 'content', 'application/vnd.sap.adt.repository.generator.content.v1+json'],
+  ['schema', 'schema', 'application/vnd.sap.adt.repository.generator.schema.v1+json'],
+  ['validation', 'validation', 'application/vnd.sap.as+xml;charset=utf-8;dataname=com.sap.adt.StatusMessage'],
+  ['preview', 'preview', 'application/vnd.sap.adt.repository.generator.preview.v1+xml'],
+]
+  .map(
+    ([rel, path, type]) =>
+      `<atom:link href="/sap/bc/adt/businessservices/generators/uiservice/${path}" rel="http://www.sap.com/adt/repository/generator/${rel}" type="${type}"/>`,
+  )
+  .join(
+    '',
+  )}<atom:link href="/sap/bc/adt/businessservices/generators/uiservice" rel="http://www.sap.com/adt/repository/generator" type="application/vnd.sap.adt.repository.generator.v1+json"/></atom:entry></atom:feed>`;
+const STATUS = (severity: string, text: string) =>
+  `<?xml version="1.0" encoding="utf-8"?><asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><SEVERITY>${severity}</SEVERITY><SHORT_TEXT>${text}</SHORT_TEXT></DATA></asx:values></asx:abap>`;
+const PREVIEW_758 = `<?xml version="1.0" encoding="utf-8"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zr_travel" adtcore:type="DDLS/DF" adtcore:name="ZR_TRAVEL"/><adtcore:objectReference adtcore:uri="/sap/bc/adt/businessservices/bindings/zui_travel_o4" adtcore:type="SRVB/SVB" adtcore:name="ZUI_TRAVEL_O4"/></adtcore:objectReferences>`;
+
+describe('RAP service generators across releases', () => {
+  const uiservice = (): GeneratorInfo => {
+    const found = parseGeneratorFeed(FEED_758)[0];
+    if (!found) throw new Error('feed lost uiservice');
+    return found;
+  };
+  const rapInput = { metadata: { package: '$TMP', masterLanguage: 'EN' }, general: { referenceObjectName: 'ZTRAVEL' } };
+
+  it('supports the 816 and the 758 ids, each under its own path', () => {
+    expect(isSupportedGenerator('ui-service')).toBe(true);
+    expect(isSupportedGenerator('webapi-service')).toBe(true);
+    expect(isSupportedGenerator('uiservice')).toBe(true);
+    expect(isSupportedGenerator('webapiservice')).toBe(true);
+    expect(generatorEndpoint(uiservice(), 'preview')).toBe('/sap/bc/adt/businessservices/generators/uiservice/preview');
+    const ui816 = parseGeneratorFeed(fixture('generators-tabl-816.xml')).find((g) => g.id === 'ui-service');
+    expect(ui816 && generatorEndpoint(ui816, 'generator')).toBe('/sap/bc/adt/rap/generators/ui/ui-service');
+    const crossed = {
+      ...uiservice(),
+      links: { ...uiservice().links, preview: '/sap/bc/adt/rap/generators/ui/ui-service/preview' },
+    };
+    expect(() => generatorEndpoint(crossed, 'preview')).toThrow(AdtSafetyError);
+  });
+
+  it('sends and accepts the media types SAP declares on the feed links', async () => {
+    const { http, calls } = mockHttp({
+      '/uiservice/validation': STATUS('OK', ''),
+      '/uiservice/preview': PREVIEW_758,
+      '/generators/uiservice': '<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"/>',
+    });
+    await validateGeneratorInput(http, unrestrictedSafetyConfig(), uiservice(), REF, rapInput);
+    await previewGenerator(http, unrestrictedSafetyConfig(), uiservice(), REF, rapInput);
+    await runGenerator(http, unrestrictedSafetyConfig(), uiservice(), REF, rapInput, 'A4HK900123');
+    for (const call of calls) {
+      expect(call.contentType).toBe('application/vnd.sap.adt.repository.generator.content.v1+json');
+    }
+    expect(calls.map((c) => c.headers?.Accept)).toEqual([
+      'application/vnd.sap.as+xml;charset=utf-8;dataname=com.sap.adt.StatusMessage',
+      'application/vnd.sap.adt.repository.generator.preview.v1+xml',
+      'application/vnd.sap.adt.repository.generator.v1+json',
+    ]);
+  });
+
+  it('reads the 758 StatusMessage and fails closed on answers it cannot read', () => {
+    expect(parseGeneratorValidation(STATUS('OK', ''))).toEqual([{ severity: 'OK', text: '' }]);
+    expect(generatorValidationPassed(parseGeneratorValidation(STATUS('OK', '')))).toBe(true);
+    const error = parseGeneratorValidation(STATUS('ERROR', 'Object ZR_TRAVEL already exists'));
+    expect(generatorValidationPassed(error)).toBe(false);
+    expect(generatorValidationPassed(parseGeneratorValidation('<unexpected/>'))).toBe(false);
+    expect(generatorValidationPassed([])).toBe(false);
+    expect(generatorValidationPassed(parseGeneratorValidation(fixture('generator-validation-ok.xml')))).toBe(true);
+  });
+
+  it('reads the flat 758 preview and refuses an empty one', async () => {
+    expect(parseGeneratorPreview(PREVIEW_758)).toEqual([
+      { group: '', operation: '', type: 'DDLS/DF', name: 'ZR_TRAVEL', uri: '/sap/bc/adt/ddic/ddl/sources/zr_travel' },
+      {
+        group: '',
+        operation: '',
+        type: 'SRVB/SVB',
+        name: 'ZUI_TRAVEL_O4',
+        uri: '/sap/bc/adt/businessservices/bindings/zui_travel_o4',
+      },
+    ]);
+    const { http } = mockHttp({
+      '/uiservice/preview': '<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"/>',
+    });
+    await expect(previewGenerator(http, unrestrictedSafetyConfig(), uiservice(), REF, rapInput)).rejects.toThrow(
+      /no objects/,
+    );
+  });
+
+  it('pins the referenced table and puts metadata first, keeping SAP order elsewhere', () => {
+    const proposal = {
+      general: { referenceObjectName: 'ZTRAVEL', description: 'Travel' },
+      metadata: { package: '' },
+      businessObject: { name: 'ZR_TRAVEL' },
+    };
+    const input = buildGeneratorInput(
+      'uiservice',
+      proposal,
+      { general: { description: 'Trips', referenceObjectName: 'ztravel' }, businessObject: { name: 'ZR_TRIP' } },
+      'ZPKG',
+      'EN',
+      'ztravel',
+    );
+    expect(Object.keys(input)).toEqual(['metadata', 'general', 'businessObject']);
+    expect(Object.keys(input.general as object)).toEqual(['referenceObjectName', 'description']);
+    expect(input.general).toEqual({ referenceObjectName: 'ZTRAVEL', description: 'Trips' });
+    expect(input.metadata).toEqual({ package: 'ZPKG', masterLanguage: 'EN' });
+    expect(() =>
+      buildGeneratorInput(
+        'uiservice',
+        proposal,
+        { general: { referenceObjectName: 'ZOTHER' } },
+        'ZPKG',
+        'EN',
+        'ZTRAVEL',
+      ),
+    ).toThrow(/referenced object/);
+    // Not added where SAP's proposal has no such field.
+    expect(buildGeneratorInput('ui-service', { metadata: {} }, undefined, 'ZPKG', 'EN', 'ZTRAVEL')).toEqual({
+      metadata: { package: 'ZPKG', masterLanguage: 'EN' },
+    });
   });
 });

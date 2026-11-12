@@ -1579,7 +1579,15 @@ writes and cleanup.
 
 ### Object generators
 
-ABAP systems ship server-side object generators (Eclipse ADT: *Generate ABAP Repository Objects*). The system decides which generators exist, what input they take and what they create, so the list differs per release: SAP_BASIS 816 (S/4HANA 2025) offered 10, BTP ABAP Environment 2608 (SAP_BASIS 920) 19. `SAPRead(type="GENERATORS")` lists them; ARC-1 runs the ones it has verified (`supported: true`). Today that is `smbc`, the *Business Configuration Maintenance Object* generator: from one customizing table it creates a Fiori table maintenance app (SMBC, transport object, draft tables, CDS views, behavior definitions and pools, metadata extensions, access controls, service definition and binding).
+ABAP systems ship server-side object generators (Eclipse ADT: *Generate ABAP Repository Objects*). The system decides which generators exist, what input they take and what they create, so the list differs per release: SAP_BASIS 816 (S/4HANA 2025) offered 10, BTP ABAP Environment 2608 (SAP_BASIS 920) 19. `SAPRead(type="GENERATORS")` lists them; ARC-1 runs the ones it has verified (`supported: true`):
+
+| Generator | Starts from | Creates |
+|-----------|-------------|---------|
+| `smbc` | customizing table | *Business Configuration Maintenance Object*: a Fiori table maintenance app (SMBC, transport object, draft tables, CDS views, behavior definitions and pools, metadata extensions, access controls, service definition and binding) |
+| `ui-service` (SAP_BASIS 816, BTP), `uiservice` (758) | database table | a RAP OData UI service: CDS view entity, behavior definition and pool, draft table, projection view and behavior, metadata extension, service definition and binding |
+| `webapi-service` (816, BTP), `webapiservice` (758) | database table | the same as a Web API service, without the metadata extension |
+
+The ids and endpoint paths of the RAP service generators differ per release; use the id `SAPRead(type="GENERATORS")` lists on the system.
 
 ```
 SAPRead(type="GENERATORS", name="ZCUSTOMIZING", objectType="TABL")
@@ -1592,18 +1600,27 @@ SAPWrite(action="generate", generator="smbc", type="TABL", name="ZCUSTOMIZING",
 SAPWrite(action="generate", generator="smbc", type="TABL", name="ZCUSTOMIZING",
   package="ZMY_PACKAGE", transport="A4HK900123",
   source="{\"options\":{\"addCopyAction\":true},\"businessConfManagement\":{\"maintenanceObjectId\":\"ZMY_CUSTOMIZING\"}}")
+
+# RAP UI service from a table, then publish and inspect the binding
+SAPWrite(action="generate", generator="ui-service", type="TABL", name="ZTRAVEL",
+  package="$TMP", dryRun=true)
+SAPWrite(action="generate", generator="ui-service", type="TABL", name="ZTRAVEL", package="$TMP")
+SAPActivate(action="publish_srvb", name="ZUI_TRAVEL_O4")
+SAPRead(type="SRVB", name="ZUI_TRAVEL_O4", include="service_info")
 ```
 
 `type`/`name` name the referenced object the generator starts from. Every call fetches SAP's proposed input for that object and package, merges the JSON object in `source` into it (objects by key, arrays by position), and has SAP validate it and preview the result:
 
-- `dryRun=true` returns `valid`, SAP's `messages`, `plannedObjects`, the effective `input` and a compact `fields` list (title, type, enum values, maximum length) derived from SAP's JSON Schema. Nothing is written.
-- Without `dryRun`, a validation error stops the call before anything is created. Otherwise ARC-1 runs the generator once and returns `created` (the main object SAP reports), `generatedObjects` and `inactiveObjects`, the generated objects still waiting for activation (`"unknown"` when the inactive list could not be read). `generatedObjects` is SAP's preview; SAP may create dependent objects that the preview does not list (for smbc: authorization default, CDS `STOB` entries, the service binding's Gateway artifact), always in the same package. The smbc generator took 34 s on SAP_BASIS 816 for 24 objects.
+- `dryRun=true` returns `valid`, SAP's `messages`, `plannedObjects`, the effective `input` and a compact `fields` list (title, type, enum values, maximum length) derived from SAP's JSON Schema. It also runs the package and transport checks below. Nothing is written.
+- Without `dryRun`, a validation error stops the call before anything is created. SAP reports one problem per call. Otherwise ARC-1 runs the generator once, never replayed, and reads every previewed object back, because SAP's run response names only part of what it created. `generatedObjects` reports each with a `state`: `found`, `missing`, `other_package`, `other_transport` or `unknown`; the call is an error unless all are `found`. `additionalRequestObjects` lists what SAP put on the request beyond the preview (for example the binding's `G4BA`, `SUSH` and CDS `STOB` entries). `inactiveObjects` lists generated objects still waiting for activation (`"unknown"` when the inactive list could not be read). The smbc generator took 34 s on SAP_BASIS 816 for 24 objects.
+- After a failed run ARC-1 still reads the objects back and reports them; it deletes nothing.
+- SAP's input parser is order-sensitive (`metadata` first, `general.referenceObjectName` before `description`). ARC-1 keeps the order of SAP's proposal and merges `source` into it; a parser error (HTTP 400) is reported with that hint.
 
 Safety and scope:
 
 - The action creates many objects at once. It needs `SAP_ALLOW_WRITES`, the `write` scope, and `package` must pass `SAP_ALLOWED_PACKAGES`; every generated object lands in that package. Block it separately with `SAP_DENY_ACTIONS=SAPWrite.generate`.
-- `metadata` (package, master language from `SAP_LANGUAGE`) is set by ARC-1 and cannot be overridden. `options.overwriteExistingObjects` stays `false`, because overwriting existing objects would bypass their own package check. For the same reason the run is refused when SAP's preview plans anything other than new objects.
-- Transport handling matches `create`: without `transport`, ARC-1 runs the transport pre-flight for the main object and asks for a transport when the package records changes.
+- `metadata` (package, master language from `SAP_LANGUAGE`) is set by ARC-1 and cannot be overridden; the field naming the referenced table (`general.referenceObjectName` for the RAP service generators) is set to `name`, and input naming another table is refused. SAP's validation checks neither. `options.overwriteExistingObjects` stays `false`, because overwriting existing objects would bypass their own package check. For the same reason the run is refused when SAP's preview plans anything other than new objects. SAP's validation is the only collision check (the 758 preview reports `CREATE` even for existing objects), and an answer ARC-1 cannot read counts as failed.
+- Packages and transports: SAP's generators check neither the package nor the request, and without `corrNr` SAP picked an open request of the user by itself. `$TMP` therefore takes no `transport`, other local (`$`) packages are refused, and any other package needs an explicit `transport`. Before generating, ARC-1 checks that the package exists and records changes, and that the request exists, is a request rather than a task, and is still modifiable. Afterwards each object must be on that request (`other_transport` otherwise).
 - A system without the generator framework answers `SAPRead(type="GENERATORS")` with a clear "not available" error. Generators ARC-1 has not verified are listed with `supported: false` and are refused by `generate`.
 - Not available on pinned multi-target routes (ADR-0010 allows only scoped CLAS/INTF writes there).
 

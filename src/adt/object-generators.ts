@@ -11,12 +11,19 @@
  *   POST <preview>?referencedObject=…            → massOperation tree of the objects to create
  *   POST <generator>?referencedObject=…&corrNr=… → objectReferences of the main object
  *
- * The three POSTs take the identical input JSON. Endpoint paths differ per generator
- * (`/bct/generators/ui/smbc`, `/rap/generators/ui/ui-service`, …), so they are taken from the feed
- * and must stay under the registry entry's path. Only generators in GENERATOR_REGISTRY run; the
- * feed shows the rest as unsupported. Live-verified on SAP_BASIS 816 (S/4HANA 2025 FPS01) with
- * `smbc`; the feed was also captured on SAP_BASIS 920 (BTP ABAP Environment 2608).
- * Evidence: docs/research/2026-10-28-adt-object-generators.md.
+ * The three POSTs take the identical input JSON. Endpoint paths, ids and media types differ per
+ * generator and release (`/bct/generators/ui/smbc` and `/rap/generators/ui/ui-service` on 816,
+ * `/businessservices/generators/uiservice` on 758), so paths and media types are taken from the
+ * feed, and paths must stay under one of the registry entry's prefixes. Only generators in
+ * GENERATOR_REGISTRY run; the feed shows the rest as unsupported.
+ *
+ * SAP leaves several checks to the caller (#1202, live on 758): validation answers OK for an
+ * unknown package, an invalid corrNr or another referenced object; the preview reports CREATE for
+ * existing objects; the run response names only part of what was created; the JSON parser is
+ * order-sensitive (`metadata` first). Callers therefore pin package, language and referenced
+ * object, keep SAP's key order, fail closed on unknown validation shapes and read every previewed
+ * object back after the run.
+ * Evidence: docs/research/2026-10-28-adt-object-generators.md, docs/research/2026-11-06-rap-service-generators.md.
  */
 import { postCreate } from './create-request.js';
 import { AdtError, AdtSafetyError } from './errors.js';
@@ -45,21 +52,41 @@ const REL_PREFIX = 'http://www.sap.com/adt/repository/generator';
 export interface GeneratorRegistryEntry {
   /** SAPWrite types accepted as the referenced object. */
   referencedTypes: readonly string[];
-  /** Every endpoint the feed links for this generator must stay under this path. */
-  pathPrefix: string;
+  /** Every endpoint the feed links for this generator must stay under one of these paths. */
+  pathPrefixes: readonly string[];
   /**
    * Input values ARC-1 enforces, by dot path. `overwriteExistingObjects` would let the generator
    * replace objects whose package was never checked, so it stays false.
    */
   pinnedInput: Readonly<Record<string, unknown>>;
+  /**
+   * Dot path of the input field that names the referenced object. SAP's validation does not check
+   * it against `referencedObject`, so ARC-1 sets it and refuses overrides naming another object.
+   */
+  referencedNamePath?: string;
 }
 
+const RAP_SERVICE: Omit<GeneratorRegistryEntry, 'pathPrefixes'> = {
+  referencedTypes: ['TABL'],
+  pinnedInput: {},
+  referencedNamePath: 'general.referenceObjectName',
+};
+
+/**
+ * The RAP service generators carry different ids and paths per release: `ui-service` /
+ * `webapi-service` under `/rap/generators/ui/` (816, BTP), `uiservice` / `webapiservice` under
+ * `/businessservices/generators/` (758).
+ */
 export const GENERATOR_REGISTRY: Readonly<Record<string, GeneratorRegistryEntry>> = {
   smbc: {
     referencedTypes: ['TABL'],
-    pathPrefix: '/sap/bc/adt/bct/generators/ui/smbc',
+    pathPrefixes: ['/sap/bc/adt/bct/generators/ui/smbc'],
     pinnedInput: { 'options.overwriteExistingObjects': false },
   },
+  'ui-service': { ...RAP_SERVICE, pathPrefixes: ['/sap/bc/adt/rap/generators/ui/ui-service'] },
+  'webapi-service': { ...RAP_SERVICE, pathPrefixes: ['/sap/bc/adt/rap/generators/ui/webapi-service'] },
+  uiservice: { ...RAP_SERVICE, pathPrefixes: ['/sap/bc/adt/businessservices/generators/uiservice'] },
+  webapiservice: { ...RAP_SERVICE, pathPrefixes: ['/sap/bc/adt/businessservices/generators/webapiservice'] },
 };
 
 export function isSupportedGenerator(id: string): boolean {
@@ -76,6 +103,8 @@ export interface GeneratorInfo {
   supported: boolean;
   /** Endpoint hrefs by short rel name (content, schema, validation, preview, generator, …). */
   links: Record<string, string>;
+  /** Media type SAP declares per link, by the same short rel name. */
+  linkTypes: Record<string, string>;
 }
 
 export interface GeneratorMessage {
@@ -129,10 +158,13 @@ export function parseGeneratorFeed(xml: string): GeneratorInfo[] {
     const id = String(entry.id ?? '');
     const category = (asArray(entry.category as Record<string, unknown>[])[0] ?? {}) as Record<string, unknown>;
     const links: Record<string, string> = {};
+    const linkTypes: Record<string, string> = {};
     for (const link of asArray(entry.link as Record<string, unknown>[])) {
       const rel = String(link['@_rel'] ?? '');
       const href = String(link['@_href'] ?? '');
+      const type = String(link['@_type'] ?? '');
       if (rel && href) links[shortRel(rel)] = href;
+      if (rel && type) linkTypes[shortRel(rel)] = type;
     }
     const refTypes = String(entry['@_referencedObjectTypes'] ?? '');
     return {
@@ -146,6 +178,7 @@ export function parseGeneratorFeed(xml: string): GeneratorInfo[] {
         .filter(Boolean),
       supported: isSupportedGenerator(id),
       links,
+      linkTypes,
     };
   });
 }
@@ -178,11 +211,21 @@ export function generatorEndpoint(generator: GeneratorInfo, rel: string): string
   if (!href) {
     throw new AdtError(`Generator '${generator.id}' does not advertise a '${rel}' endpoint on this system.`);
   }
-  const canonical = canonicalHostRelativeAdtPath(href.split('?')[0] ?? '', entry.pathPrefix);
-  if (!canonical || (canonical !== entry.pathPrefix && !canonical.startsWith(`${entry.pathPrefix}/`))) {
-    throw new AdtSafetyError(`Generator '${generator.id}' advertises an unexpected '${rel}' endpoint: ${href}`);
+  for (const prefix of entry.pathPrefixes) {
+    const canonical = canonicalHostRelativeAdtPath(href.split('?')[0] ?? '', prefix);
+    if (canonical && (canonical === prefix || canonical.startsWith(`${prefix}/`))) return canonical;
   }
-  return canonical;
+  throw new AdtSafetyError(`Generator '${generator.id}' advertises an unexpected '${rel}' endpoint: ${href}`);
+}
+
+/** The media type SAP declares for one link, else the 816 default. */
+function linkType(generator: GeneratorInfo, rel: string, fallback: string): string {
+  return generator.linkTypes?.[rel] || fallback;
+}
+
+/** Content type of the input JSON for validation, preview and run: SAP's own type of the content link. */
+function inputContentType(generator: GeneratorInfo): string {
+  return linkType(generator, 'content', CONTENT_TYPE);
 }
 
 function withQuery(path: string, params: Array<[string, string]>): string {
@@ -211,10 +254,10 @@ export async function getGeneratorDefaults(
     ['package', packageName],
   ];
   const schemaResp = await http.get(withQuery(generatorEndpoint(generator, 'schema'), params), {
-    Accept: SCHEMA_ACCEPT,
+    Accept: linkType(generator, 'schema', SCHEMA_ACCEPT),
   });
   const contentResp = await http.get(withQuery(generatorEndpoint(generator, 'content'), params), {
-    Accept: CONTENT_ACCEPT,
+    Accept: linkType(generator, 'content', CONTENT_ACCEPT),
   });
   const content = parseJson(contentResp.body, 'generator content');
   if (!content || typeof content !== 'object' || Array.isArray(content)) {
@@ -223,18 +266,35 @@ export async function getGeneratorDefaults(
   return { schema: parseJson(schemaResp.body, 'generator schema'), content: content as Record<string, unknown> };
 }
 
-/** Parse `validationMessages`; an `OK` entry without text means the input passed. */
+/**
+ * Parse SAP's validation answer: `validationMessages` (816, BTP) or an `asx:abap` StatusMessage
+ * with `DATA/SEVERITY`/`SHORT_TEXT` entries (758). An `OK` entry without text means the input passed.
+ */
 export function parseGeneratorValidation(xml: string): GeneratorMessage[] {
-  const root = (parseXml(xml).validationMessages ?? {}) as Record<string, unknown>;
-  return asArray(root.validationMessage as Record<string, unknown>[]).map((msg) => ({
+  const parsed = parseXml(xml);
+  const root = (parsed.validationMessages ?? {}) as Record<string, unknown>;
+  const messages = asArray(root.validationMessage as Record<string, unknown>[]).map((msg) => ({
     severity: String(msg.severity ?? '').toUpperCase(),
     text: String(msg.shorttext ?? msg.longtext ?? ''),
   }));
+  const status = asArray(parsed.abap as Record<string, unknown>[])
+    .flatMap((abap) => asArray(abap.values as Record<string, unknown>[]))
+    .flatMap((values) => asArray(values.DATA as Record<string, unknown>[]))
+    .map((entry) => ({ severity: String(entry.SEVERITY ?? '').toUpperCase(), text: String(entry.SHORT_TEXT ?? '') }));
+  return [...messages, ...status];
 }
 
 /** True when SAP reported an error (or worse) for the input. */
 export function hasGeneratorErrors(messages: GeneratorMessage[]): boolean {
   return messages.some((m) => m.severity === 'ERROR' || m.severity === 'FATAL' || m.severity === 'ABORT');
+}
+
+/**
+ * The input passed SAP's validation: at least one recognized message and no error. An answer
+ * ARC-1 cannot read never counts as a pass, so an unknown shape cannot allow a run.
+ */
+export function generatorValidationPassed(messages: GeneratorMessage[]): boolean {
+  return messages.length > 0 && messages.every((m) => m.severity !== '') && !hasGeneratorErrors(messages);
 }
 
 /**
@@ -250,12 +310,21 @@ export async function validateGeneratorInput(
 ): Promise<GeneratorMessage[]> {
   checkOperation(safety, OperationType.Read, 'ValidateGeneratorInput');
   const path = withQuery(generatorEndpoint(generator, 'validation'), [['referencedObject', referencedObjectUri]]);
-  const resp = await http.post(path, JSON.stringify(input), CONTENT_TYPE, { Accept: VALIDATION_ACCEPT });
+  const resp = await http.post(path, JSON.stringify(input), inputContentType(generator), {
+    Accept: linkType(generator, 'validation', VALIDATION_ACCEPT),
+  });
   return parseGeneratorValidation(resp.body);
 }
 
-/** Flatten the preview's massOperation tree into the planned objects. */
+/**
+ * Flatten the preview into the planned objects: a massOperation tree with an `Operation` per object
+ * (816, BTP) or a flat `adtcore:objectReferences` list without one (758).
+ */
 export function parseGeneratorPreview(xml: string): GeneratorPlannedObject[] {
+  const parsed = parseXml(xml);
+  if (parsed.objectReferences !== undefined) {
+    return parseGeneratorRunResult(xml).map((ref) => ({ group: '', operation: '', ...ref }));
+  }
   const planned: GeneratorPlannedObject[] = [];
   const walk = (group: Record<string, unknown>, label: string): void => {
     for (const obj of asArray(group.object as Record<string, unknown>[])) {
@@ -275,7 +344,7 @@ export function parseGeneratorPreview(xml: string): GeneratorPlannedObject[] {
       walk(child, String(child['@_name'] ?? label));
     }
   };
-  walk((parseXml(xml).group ?? {}) as Record<string, unknown>, '');
+  walk((parsed.group ?? {}) as Record<string, unknown>, '');
   return planned;
 }
 
@@ -289,8 +358,12 @@ export async function previewGenerator(
 ): Promise<GeneratorPlannedObject[]> {
   checkOperation(safety, OperationType.Read, 'PreviewGenerator');
   const path = withQuery(generatorEndpoint(generator, 'preview'), [['referencedObject', referencedObjectUri]]);
-  const resp = await http.post(path, JSON.stringify(input), CONTENT_TYPE, { Accept: PREVIEW_ACCEPT });
-  return parseGeneratorPreview(resp.body);
+  const resp = await http.post(path, JSON.stringify(input), inputContentType(generator), {
+    Accept: linkType(generator, 'preview', PREVIEW_ACCEPT),
+  });
+  const planned = parseGeneratorPreview(resp.body).filter((o) => o.type !== '' && o.name !== '');
+  if (planned.length === 0) throw new AdtError('SAP returned no objects in the generator preview.');
+  return planned;
 }
 
 /** Parse the run response (`adtcore:objectReferences`). */
@@ -303,7 +376,11 @@ export function parseGeneratorRunResult(xml: string): GeneratorObjectReference[]
   }));
 }
 
-/** Run the generator. Not replayed on transient errors: SAP may already have created objects. */
+/**
+ * Run the generator. Never replayed: a lost response must not create a second set of objects. The
+ * response names only part of what was created (758: one of nine), so callers read the previewed
+ * objects back themselves.
+ */
 export async function runGenerator(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -319,11 +396,24 @@ export async function runGenerator(
     http,
     withQuery(generatorEndpoint(generator, 'generator'), params),
     JSON.stringify(input),
-    CONTENT_TYPE,
-    { Accept: RUN_ACCEPT },
-    { fetchTimeoutMs: RUN_TIMEOUT_MS },
+    inputContentType(generator),
+    { Accept: linkType(generator, 'generator', RUN_ACCEPT) },
+    { fetchTimeoutMs: RUN_TIMEOUT_MS, noReplay: true },
   );
   return parseGeneratorRunResult(resp.body);
+}
+
+/**
+ * Throws when the package does not exist: neither SAP's validation nor the transport check notices
+ * (both answered OK / RECORDING for an unknown package on 758).
+ */
+export async function assertGeneratorPackageExists(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  packageName: string,
+): Promise<void> {
+  checkOperation(safety, OperationType.Read, 'ReadGeneratorPackage');
+  await http.get(`/sap/bc/adt/packages/${encodeURIComponent(packageName)}`);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -370,8 +460,9 @@ function setPath(obj: Record<string, unknown>, path: string, value: unknown): vo
 
 /**
  * Build the input sent to SAP: proposal + overrides, then the values ARC-1 owns. `metadata`
- * carries the target package that the package gate checked, so callers may not set it, and pinned
- * inputs may not be changed.
+ * carries the target package that the package gate checked, so callers may not set it; pinned
+ * inputs and the referenced object's name may not be changed. SAP's parser is order-sensitive, so
+ * the proposal's key order is kept (overrides merge in place) and `metadata` comes first.
  */
 export function buildGeneratorInput(
   generatorId: string,
@@ -379,6 +470,7 @@ export function buildGeneratorInput(
   overrides: Record<string, unknown> | undefined,
   packageName: string,
   masterLanguage: string,
+  referencedName: string,
 ): Record<string, unknown> {
   const entry = GENERATOR_REGISTRY[generatorId];
   if (!entry) throw new AdtSafetyError(`Generator '${generatorId}' is not supported by ARC-1.`);
@@ -393,13 +485,28 @@ export function buildGeneratorInput(
       throw new AdtSafetyError(`${path} must be ${JSON.stringify(value)} in ARC-1.`);
     }
   }
-  const input = mergeGeneratorInput(proposal, overrides ?? {}) as Record<string, unknown>;
-  input.metadata = {
-    ...(isPlainObject(proposal.metadata) ? proposal.metadata : {}),
-    package: packageName,
-    masterLanguage,
+  const namePath = entry.referencedNamePath;
+  if (namePath && overrides) {
+    const requested = getPath(overrides, namePath);
+    if (requested !== undefined && String(requested).toUpperCase() !== referencedName.toUpperCase()) {
+      throw new AdtSafetyError(
+        `${namePath} names the referenced object and must be ${referencedName.toUpperCase()}; pass another object as type/name instead.`,
+      );
+    }
+  }
+  const merged = mergeGeneratorInput(proposal, overrides ?? {}) as Record<string, unknown>;
+  const { metadata: _metadata, ...rest } = merged;
+  const input: Record<string, unknown> = {
+    metadata: {
+      ...(isPlainObject(proposal.metadata) ? proposal.metadata : {}),
+      package: packageName,
+      masterLanguage,
+    },
+    ...rest,
   };
   for (const [path, value] of Object.entries(entry.pinnedInput)) setPath(input, path, value);
+  // Only where SAP's proposal has the field: adding it would change the structure SAP parses.
+  if (namePath && getPath(proposal, namePath) !== undefined) setPath(input, namePath, referencedName.toUpperCase());
   return input;
 }
 

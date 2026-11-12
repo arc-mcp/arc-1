@@ -701,9 +701,9 @@ Cloud package before any write.
 - **Priority / effort / status:** P2 / S each / Contributor-driven
 - **Category:** ABAP authoring
 
-**Idea.** Run more of the backend-driven generators that `SAPRead(type="GENERATORS")` lists, for example the RAP `ui-service`/`webapi-service`, `extfields`, the CSN-based models and the analytics generators.
+**Idea.** Run more of the backend-driven generators that `SAPRead(type="GENERATORS")` lists, for example `extfields`, `x-ui-service`, the CSN-based models and the analytics generators.
 
-**Why it remains.** `SAPWrite action="generate"` runs only generators in `GENERATOR_REGISTRY` (`src/adt/object-generators.ts`); today that is `smbc`, verified on SAP_BASIS 816 ([#1121](https://github.com/arc-mcp/arc-1/issues/1121)). The engine is generic, but each generator has its own referenced object types, input fields that may bypass ARC-1's gates (like `overwriteExistingObjects`), and some use side-effect or value-help endpoints. Ids also differ by release (`uiservice` on 758, `ui-service` on 816).
+**Why it remains.** `SAPWrite action="generate"` runs only generators in `GENERATOR_REGISTRY` (`src/adt/object-generators.ts`); today that is `smbc` and the RAP service generators (`ui-service`/`webapi-service` on SAP_BASIS 816 and BTP, `uiservice`/`webapiservice` on 758), verified on 816 and 758 ([#1121](https://github.com/arc-mcp/arc-1/issues/1121), [#1202](https://github.com/arc-mcp/arc-1/pull/1202)). The engine is generic, but each generator has its own referenced object types, input fields that may bypass ARC-1's gates (like `overwriteExistingObjects`), and some use side-effect or value-help endpoints. Ids, paths and media types differ by release.
 
 **Resume with.** Captured ADT traffic for the generator (list, schema, content, validation, preview, run) on each release it should support; then add one registry entry with its referenced types and pinned inputs, fixtures and tests. Generators without a referenced object (`x-ui-service`, the SQL service generators) need a separate decision on the target object.
 
