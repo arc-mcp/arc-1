@@ -12,7 +12,6 @@ Probes call **the same ICF services** as the real features (no separate probe co
 | 60 | `/sap/bc/adt/ddic/sysinfo/hanainfo` | DDIC/HANA info ADT — **SICF** under `ddic/sysinfo`; package often **`SDDIC_*`** / HANA info tool. |
 | 61 | `/sap/bc/adt/abapgit/repos` | abapGit ADT integration — **abapGit** SAP package (e.g. **`/ABAPGIT/*`**) + ICF under `abapgit`. |
 | 62 | `/sap/bc/adt/ddic/ddl/sources` | [`05-rap-cds-srvb.md`](05-rap-cds-srvb.md) (DDLS collection). |
-| 63 | `/sap/bc/adt/debugger/amdp` | Debugger ADT — **`SWDA_DEBUGGER_ADT`** / similar; ICF `debugger`. |
 | 64 | `/sap/bc/adt/filestore/ui5-bsp` | [`12-ui5-bsp-filestore.md`](12-ui5-bsp-filestore.md). |
 | 65, 68 | `/sap/bc/adt/cts/transportrequests` | [`14-cts-transports.md`](14-cts-transports.md). |
 | 66 | `.../textsearch/support?db=` | [`08-repository-search-and-package.md`](08-repository-search-and-package.md). |
@@ -44,7 +43,6 @@ Probes call **the same ICF services** as the real features (no separate probe co
 | 60 | `/sap/bc/adt/ddic/sysinfo/hanainfo` | `hana` |
 | 61 | `/sap/bc/adt/abapgit/repos` | `abapGit` |
 | 62 | `/sap/bc/adt/ddic/ddl/sources` | `rap` |
-| 63 | `/sap/bc/adt/debugger/amdp` | `amdp` |
 | 64 | `/sap/bc/adt/filestore/ui5-bsp` | `ui5` |
 | 65 | `/sap/bc/adt/cts/transportrequests` | `transport` |
 | 66 | `.../textsearch/support?db=` | Source-search capability; avoids running a repository scan |

@@ -17,7 +17,7 @@ The full grouped template with inline commentary is [`.env.example`](https://git
 5. [Server runtime](#server-runtime) — transport, bind address, CORS, concurrency
 6. [Caching](#caching) — request-driven source and dependency cache
 7. [Logging and observability](#logging-and-observability) — log file, level, format, HTTP debug
-8. [ABAP feature toggles](#abap-feature-toggles) — abapGit, gCTS, RAP, AMDP, UI5, HANA, FLP
+8. [ABAP feature toggles](#abap-feature-toggles) — abapGit, gCTS, RAP, UI5, HANA, FLP
 9. [Code-quality gates](#code-quality-gates) — pre-write lint/check, abaplint config, tool/schema mode
 10. [Extensions](#extensions-feat-61) — `ARC1_PLUGINS`, plugin code-execution opt-in
 
@@ -113,7 +113,7 @@ does not ensure the next call re-authenticates; follow
 
 | Flag | Env var | Effect |
 |---|---|---|
-| `--cookie-file` | `SAP_COOKIE_FILE` | Netscape-format cookie jar. ARC-1 sends these cookies on every SAP request. **Hot-reloaded**: when a request returns 401 after the standard session-reset retry, the jar is cleared and the file is re-read on the next request — no restart needed. |
+| `--cookie-file` | `SAP_COOKIE_FILE` | Netscape-format cookies, re-read during 401 recovery and before CSRF bootstrap; changed cookies replace the old session, empty/unreadable files preserve the last known cookies, and a locked stateful operation keeps its session until it finishes — refresh the file and retry the call without restarting. |
 | `--cookie-string` | `SAP_COOKIE_STRING` | Inline cookies (`k=v; k2=v2`) read once at startup. **Cannot hot-reload** — restart with a new value or switch to `SAP_COOKIE_FILE`. |
 
 Cookie auth is not for production. See [local-development.md → SSO cookie extractor](local-development.md#sso-only-on-prem-cookie-extractor). On startup, the auth preflight is non-blocking when `SAP_COOKIE_FILE` is set, so the server starts even if cookies are about to be re-extracted out-of-band. Per-user PP clients never inherit cookie state — `cookieFile`/`cookieString` are stripped from per-user configs.
@@ -380,12 +380,13 @@ Connector resource mappings.
 | `--feature-abapgit` | `SAP_FEATURE_ABAPGIT` | `auto` | abapGit ADT bridge (`/sap/bc/adt/abapgit/*`). Required for `SAPGit` actions that talk to abapGit. |
 | `--feature-gcts` | `SAP_FEATURE_GCTS` | `auto` | gCTS Git backend (`/sap/bc/cts_abapvcs/*`). Required for `SAPGit` actions that talk to gCTS. |
 | `--feature-rap` | `SAP_FEATURE_RAP` | `auto` | RAP behavior definitions, services, drafts. Required for `SAPWrite` of BDEF/SRVD/SRVB and the RAP-specific code-intel and preflight tools. |
-| `--feature-amdp` | `SAP_FEATURE_AMDP` | `auto` | ABAP Managed Database Procedures. Required for AMDP-specific read/write paths. |
 | `--feature-ui5` | `SAP_FEATURE_UI5` | `auto` | UI5 application development tools (general). |
 | `--feature-ui5repo` | `SAP_FEATURE_UI5REPO` | `auto` | UI5 ABAP Repository OData service used by `SAPRead` type `BSP_DEPLOY` to read deployed app metadata. |
 | `--feature-flp` | `SAP_FEATURE_FLP` | `auto` | FLP `PAGE_BUILDER_CUST` OData service used by `SAPManage` FLP catalog/group/tile reads and mutations. |
 | `--feature-transport` | `SAP_FEATURE_TRANSPORT` | `auto` | CTS transport endpoints. Required for `SAPTransport` (even reads). |
 | `--feature-hana` | `SAP_FEATURE_HANA` | `auto` | Report HANA availability in system features. |
+
+Legacy `--feature-amdp` and `SAP_FEATURE_AMDP` are accepted and ignored with a warning. AMDP classes still use the ordinary class tools.
 
 `auto` probes one endpoint per feature. HTTP 502/503/504 leaves availability unknown; it is not
 cached as proof that a feature exists. Responses 2xx and legacy unlisted errors (including 400/405/429/500) count as presence;

@@ -28,7 +28,7 @@ const BUDGETS = {
   // write.ts is now a thin SAPWrite orchestrator (prologue + ctx + action dispatch) after the
   // Stage D split into src/handlers/write/{create,update-delete,class-surgery,rap}.ts. The action
   // submodules ride the default src budget; keep this tight so the dispatcher can't reabsorb them.
-  'src/handlers/write.ts': 302, // +2: SOD1/SOD2 dispatch to the API catalog writer.
+  'src/handlers/write.ts': 307, // +4 for structural include owner lookup and edit_content dispatch. +3: SOD1/SOD2 dispatch to the API catalog writer.
   // tools.ts holds every tool's JSON schema. The #520 description trim (write-mode tools/list
   // 87→66 KB to clear the Copilot-for-Eclipse gateway limit) shrank it; lowered to match. The
   // CLIENT-SAFETY size guard is scripts/ci/check-tool-schema-budget.ts — trim there before raising this.
@@ -43,8 +43,8 @@ const BUDGETS = {
   // +4: parent function group for SAPTransport check/history.
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
   // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
-  'src/handlers/tools.ts': 1785, // Combined SHLP/extension guidance and own-method signature selector.
-  'src/handlers/schemas.ts': 1568, // +8 for single-object ATC URL refusal (#1136); keep the guard beside batch validation. +1: batch type enum shares SAPWRITE_BATCH_EXCLUDED (SOD1/SOD2).
+  'src/handlers/tools.ts': 1789, // Combined SHLP/extension guidance and own-method signature selector. +1: batch type enum filter isBatchCreatable import (SOD1/SOD2).
+  'src/handlers/schemas.ts': 1593, // Includes service-info validation (#1199) and exact-text edit inputs. +1: batch type enum shares SAPWRITE_BATCH_EXCLUDED (SOD1/SOD2).
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.

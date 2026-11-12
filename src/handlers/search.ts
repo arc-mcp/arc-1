@@ -7,7 +7,9 @@ import type { AdtClient } from '../adt/client.js';
 import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import { AdtApiError } from '../adt/errors.js';
 import { classifyTextSearchError, probeTextSearch } from '../adt/features.js';
+import { filterIncludeHits, isIncludeSearchType, requiresUnfilteredIncludeSearch } from '../adt/include-search.js';
 import { internalOperationDenial } from '../adt/internal-data-operations.js';
+import { clampSearchResults, MAX_SEARCH_RESULTS } from '../adt/text-search.js';
 import type { AdtObjectLookupResult, AdtSearchResult } from '../adt/types.js';
 import { cacheFeatureEvidence, getCachedFeatures } from './feature-cache.js';
 import { normalizeObjectType, normalizeSearchObjectType } from './object-types.js';
@@ -69,6 +71,7 @@ export async function handleSAPSearch(
       return errorResult('SAPSearch(searchType="tadir_lookup") requires names[] or query with at least one name.');
     }
     const objectTypes = extractLookupObjectTypes(args.objectType, args.objectTypes);
+    const dbObjectTypes = [...new Set(objectTypes.map(normalizeObjectType))];
     const rawSource = typeof args.source === 'string' ? args.source.toLowerCase() : 'adt';
     const source: 'adt' | 'db' | 'both' =
       rawSource === 'db' || rawSource === 'both' ? (rawSource as 'db' | 'both') : 'adt';
@@ -96,7 +99,7 @@ export async function handleSAPSearch(
       // tags matches with `_origin:'db'`. Safety/scope gating runs at handleToolCall
       // and in client.runQuery (FreeSQL operation), so unauthorized callers never reach here.
       try {
-        finalLookups = await client.lookupObjectsViaDb(names, { maxResults, objectTypes });
+        finalLookups = await client.lookupObjectsViaDb(names, { maxResults, objectTypes: dbObjectTypes });
       } catch (error) {
         if (error instanceof DataSourcePolicyError) {
           return errorResult(internalOperationDenial('tadir_lookup_db', error, minimalErrors));
@@ -110,7 +113,7 @@ export async function handleSAPSearch(
       try {
         [adtLookups, dbLookups] = await Promise.all([
           client.lookupObjects(names, { maxResults, objectTypes }).then((r) => tagOrigin(r, 'adt')),
-          client.lookupObjectsViaDb(names, { maxResults, objectTypes }),
+          client.lookupObjectsViaDb(names, { maxResults, objectTypes: dbObjectTypes }),
         ]);
       } catch (error) {
         if (error instanceof DataSourcePolicyError) {
@@ -232,10 +235,26 @@ export async function handleSAPSearch(
 
   const objectType = typeof args.objectType === 'string' ? normalizeSearchObjectType(args.objectType) : undefined;
   let results: AdtSearchResult[];
+  let truncationNote = '';
   try {
-    results = await client.searchObject(query, maxResults, objectType);
+    if (requiresUnfilteredIncludeSearch(objectType)) {
+      // SAP's quickSearch type filter is unreliable for include types (see include-search.ts): fetch unfiltered
+      // at the cap and filter here.
+      const all = await client.searchObject(query, MAX_SEARCH_RESULTS);
+      results = filterIncludeHits(all, objectType).slice(0, clampSearchResults(maxResults, 100));
+      if (all.length >= MAX_SEARCH_RESULTS) {
+        truncationNote = `Note: the unfiltered search hit its ${MAX_SEARCH_RESULTS}-result cap before objectType="${objectType}" was applied, so matching includes may be missing. Narrow the query pattern.\n\n`;
+      }
+    } else {
+      results = await client.searchObject(query, maxResults, objectType);
+    }
   } catch (error) {
-    if (objectType && error instanceof AdtApiError && error.statusCode === 406) {
+    if (
+      objectType &&
+      !requiresUnfilteredIncludeSearch(objectType) &&
+      error instanceof AdtApiError &&
+      error.statusCode === 406
+    ) {
       return errorResult(
         `SAP rejected the object search with objectType="${objectType}". Verify that this system supports the ADT type ` +
           '(for example CLAS, CLAS/OC, DDLS/DF or UIAC), or explicitly omit objectType to search without a type filter.',
@@ -248,6 +267,7 @@ export async function handleSAPSearch(
       '[]' +
       '\n\n' +
       transliterationNote +
+      truncationNote +
       'No objects found. If searching for custom objects, try Z* or Y* prefixes (e.g., "Z*ESTIM*"). ' +
       'If you already found objects in a package, use SAPRead with type=DEVC to list all package contents instead of more searches.';
     if (objectType) hint += `\nobjectType="${objectType}" was applied; omit it to search all types.`;
@@ -257,7 +277,7 @@ export async function handleSAPSearch(
     }
     return textResult(hint);
   }
-  return textResult(transliterationNote + toolJson(results));
+  return textResult(transliterationNote + truncationNote + toolJson(results));
 }
 
 function extractLookupNames(query: string, rawNames: unknown): string[] {
@@ -270,11 +290,13 @@ function extractLookupNames(query: string, rawNames: unknown): string[] {
 }
 
 function extractLookupObjectTypes(rawObjectType: unknown, rawObjectTypes: unknown): string[] {
+  const normalizeType = (type: string): string =>
+    isIncludeSearchType(type) ? normalizeSearchObjectType(type) : normalizeObjectType(type);
   const types = Array.isArray(rawObjectTypes)
-    ? rawObjectTypes.map((t) => normalizeObjectType(String(t))).filter(Boolean)
+    ? rawObjectTypes.map((t) => normalizeType(String(t))).filter(Boolean)
     : [];
   if (typeof rawObjectType === 'string' && rawObjectType.trim()) {
-    types.push(normalizeObjectType(rawObjectType));
+    types.push(normalizeType(rawObjectType));
   }
   return [...new Set(types)];
 }

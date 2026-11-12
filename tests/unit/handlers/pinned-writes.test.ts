@@ -500,3 +500,16 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect(requests.filter((r) => r.path.includes('/activation?'))).toHaveLength(1);
   });
 });
+
+it('refuses edit_content on pinned targets before SAP I/O', async () => {
+  const result = await handleToolCall(client(), config, 'SAPWrite', {
+    action: 'edit_content',
+    type: 'PROG',
+    name: 'ZTEST',
+    oldContent: 'old',
+    newContent: 'new',
+    expectedSourceHash: sourceHash('old'),
+  });
+  expect(result.isError).toBe(true);
+  expect(requests).toHaveLength(0);
+});

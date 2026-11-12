@@ -1504,7 +1504,7 @@ describe('SAPRead handler', () => {
         ),
       );
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, abapRelease: '816' }, 'SAPRead', {
         type: 'ENHO',
         name: 'ZMY_BADI_IMPL',
       });

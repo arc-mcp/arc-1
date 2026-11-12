@@ -298,6 +298,10 @@ export function normalizeTypeArgsForValidation(
       // A text-pool PUT replaces the selected part; an explicit empty string clears it.
       // Null/omitted source remains a missing-source error; other actions keep normal stripping.
       if (action === 'edit_text_symbols' && typeof args.source === 'string') cleaned.source = args.source;
+      if (action === 'edit_content') {
+        if (typeof args.oldContent === 'string') cleaned.oldContent = args.oldContent;
+        if (typeof args.newContent === 'string') cleaned.newContent = args.newContent;
+      }
       // SAPWrite preserves TABL/DT and TABL/DS so the create path can route by subtype.
       const normType = cleaned.type === undefined ? undefined : normalizeWriteObjectType(String(cleaned.type ?? ''));
       // Drop an inapplicable `include`: it is only meaningful for a CLAS local-include

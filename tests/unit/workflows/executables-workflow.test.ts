@@ -20,9 +20,11 @@ async function load(file: string): Promise<Workflow> {
 describe('executables workflow', () => {
   it('builds natively on every supported OS/arch and smoke-tests each executable', async () => {
     const build = (await load('executables.yml')).jobs.build;
-    const targets = (build.strategy?.matrix?.include ?? []).map((entry) => entry.target).sort();
+    const matrix = build.strategy?.matrix?.include ?? [];
+    const targets = matrix.map((entry) => entry.target).sort();
 
     expect(targets).toEqual(['linux-arm64', 'linux-x64', 'macos-arm64', 'macos-x64', 'windows-x64']);
+    expect(matrix).toContainEqual({ target: 'macos-arm64', runner: 'macos-15' });
     expect(build.strategy?.['fail-fast']).toBe(false);
     const setupNode = build.steps?.find((step) => step.uses?.startsWith('actions/setup-node@'));
     expect(String(setupNode?.with?.['node-version'])).toBe('22');

@@ -507,8 +507,8 @@ arc1 version
 ```
 
 `extract-cookies` launches a browser and writes a Netscape-format cookie file for `SAP_COOKIE_FILE`.
-The running process hot-reloads that file after authentication failure; `SAP_COOKIE_STRING` is read
-only at startup and cannot hot-reload.
+The running process re-reads that file during authentication recovery and before CSRF bootstrap
+outside a live stateful operation; `SAP_COOKIE_STRING` cannot hot-reload.
 
 `config show` prints the effective safety policy and each value's source. Its output intentionally
 omits credential values.
