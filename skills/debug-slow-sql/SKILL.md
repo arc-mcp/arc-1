@@ -79,11 +79,12 @@ entity/list request from the Network tab, not a `$batch` POST.)
   (read-only; verified on 7.50/758/816). Now you see the real joins, `CAST`s, `COALESCE`s, and whether a
   sub-view drags in extra tables.
 - `SAPQuery(sql="SELECT … FROM <cds-or-base> WHERE <the filter>")` — returns `columns`/`rows` plus datapreview
-  metrics: `queryExecutionTimeMs`, `totalRows` (total matches), `rowsReturned`, and the `executedQueryString`.
-  Run it with the **real filter values** from the slow request: a large `totalRows` / `queryExecutionTimeMs` for
-  a small useful result = a scan/selectivity problem. It does **not** expose the HANA execution plan or buffer
-  state — use ST05/HANA for those. A `SAPQuery` that **times out** is itself evidence of an unbounded scan —
-  record the timeout as the signal, don't just retry with a smaller `maxRows`. (Needs `SAP_ALLOW_FREE_SQL` for
+  metrics: `queryExecutionTimeMs`, `sapReportedTotalRows`, `rowsReturned`, and `executedQueryString`.
+  Use the **real filter values**. SAP's count is diagnostic, not a result size or proof of a scan;
+  aggregates, DISTINCT and UNION can report misleading counts. The timing excludes SAP's separate count
+  query. `maxRows` caps returned rows, not SAP work; UNION can transfer more rows than requested.
+  Confirm suspected scans with ST05/HANA plans and rows fetched. Record timeouts instead of repeatedly
+  lowering `maxRows`. (Needs `SAP_ALLOW_FREE_SQL` for
   freestyle SQL; multi-column `WHERE` via `SAPRead(type="TABLE_QUERY")` needs `SAP_ALLOW_DATA_PREVIEW`.)
 - **Equality also slow? It's the view, not your filter.** If `SAPQuery` with an exact `WHERE key = '…'` is as
   slow as a `LIKE '%…%'` (both tens of seconds), the `LIKE` is a red herring — the cost is the CDS itself: a wide
@@ -175,7 +176,7 @@ the `url` argument.
 
 | Symptom in the trace/SQL | Likely cause | Confirm | Typical fix |
 |--------------------------|--------------|---------|-------------|
-| Huge `rows fetched` ≫ rows shown; long duration | Full scan / poor selectivity | `cds_sql` shows no indexed `WHERE`; `SAPQuery totalRows` large / ST05 high rows fetched | Add a `WHERE` on indexed fields; add a secondary index (SE11); push the filter into the CDS |
+| Huge `rows fetched` ≫ rows shown; long duration | Full scan / poor selectivity | ST05 high rows fetched and execution plan; SAPQuery's count alone cannot establish a scan | Add a `WHERE` on indexed fields; add a secondary index (SE11); push the filter into the CDS |
 | `LIKE '%term%'` | Leading-wildcard = index unusable | Read DDLS/ABAP source | Search help / fuzzy (HANA) / full-text index; anchor the pattern; pre-filter |
 | Same table hit thousands of times | N+1 (SELECT in LOOP) | `traces dbAccesses` shows a giant count on one table | `FOR ALL ENTRIES` / a join / read-all-then-loop; RAP: prefetch |
 | `SELECT *` then use 2 fields | Over-fetch | `cds_sql` / source | Select only needed fields; trim the CDS projection |
@@ -192,13 +193,13 @@ A "message-text search screen is slow" complaint. The query behind it:
 
 ```
 SAPQuery(sql="SELECT sprsl, arbgb, msgnr, text FROM t100 WHERE text LIKE '%error%'")
-→ { totalRows: 12549, queryExecutionTimeMs: 49.086, rowsReturned: 100,
+→ { sapReportedTotalRows: 12549, queryExecutionTimeMs: 49.086, rowsReturned: 100, rowLimitReached: true,
     executedQueryString: "SELECT … FROM T100 WHERE TEXT LIKE '%error%' … UP TO 100 ROWS" }
 ```
 
-Read it: **12 549 rows matched** a leading-wildcard `LIKE '%…%'` on a non-indexed text column → a full table
-scan (the index is unusable because the pattern starts with `%`). The result the user actually wanted was a
-handful of rows. **Fix:** drop the leading wildcard (anchor the search) / add a search help or full-text index /
+Read it: SAP reports **12 549 matches** for this plain projection; the leading-wildcard `LIKE '%…%'`
+suggests poor selectivity. Confirm the scan and index use in ST05/HANA. The result the user actually wanted
+was a handful of rows. **Possible fix:** anchor the search / add a search help or full-text index /
 pre-filter on an indexed field first. For the HANA plan + rows-fetched, arm an ST05 trace (rung 4), reproduce,
 and open the directory deep-link.
 
@@ -217,8 +218,8 @@ Deliver a tight diagnosis, not a tool log:
    480 ms"). Cite the **SAP** figure (`gwtotal`/`gwappdb`), never `wallClockMs`: wall-clock also counts
    network/MCP/proxy (`odata_perf` returns that gap as `clientWaitMs`), so when `clientWaitMs` dwarfs `gwtotal`
    the latency is the landscape, not the query.
-2. **The statement** — the offending SQL (from `cds_sql` / ST05) and what it scans (`SAPQuery totalRows` / ST05
-   rows fetched, the table, the missing index).
+2. **The statement** — the offending SQL (from `cds_sql` / ST05), ST05 rows fetched and the execution plan.
+   Treat `SAPQuery sapReportedTotalRows` only as supporting diagnostic data.
 3. **Root cause** — one sentence, mapped to the catalog above.
 4. **Fix** — concrete and minimal (the index to add, the filter to push down, the N+1 to collapse), with the
    cheapest option first and the trade-off named.

@@ -298,9 +298,9 @@ function parseTableContentsObject(parsed: Record<string, unknown>): {
 
 /** Metrics ADT returns alongside a datapreview result (already in the body, normally discarded). */
 export interface DataPreviewMeta {
-  /** True number of rows the query matched, independent of the rowNumber cap. */
+  /** Raw SAP count: may count input rows or be zero when SAP's separate count query fails. */
   totalRows?: number;
-  /** Server-side execution time in milliseconds (ADT `queryExecutionTime`, as shown by Eclipse Data Preview). */
+  /** Data SELECT time in milliseconds; excludes SAP's separate count query and network overhead. */
   queryExecutionTimeMs?: number;
   /** The OpenSQL echo returned by SAP, without client-side whitespace normalization. */
   executedQueryString?: string;
@@ -347,7 +347,7 @@ export function parseTableContents(xml: string): { columns: string[]; rows: Reco
 /**
  * Parse the scalar metrics from a datapreview response — `totalRows`, `queryExecutionTime`,
  * `executedQueryString`. All optional: absent fields are omitted. Reads the same body
- * `parseTableContents` does; surfaced so SAPQuery can report real row counts + server-side timing.
+ * `parseTableContents` does; these are SAP diagnostics, not verified result totals or full request timings.
  */
 export function parseDataPreviewMeta(xml: string): DataPreviewMeta {
   if (!xml || xml.trim().length === 0) return {};

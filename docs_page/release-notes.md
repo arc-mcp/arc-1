@@ -22,6 +22,13 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
+## Unreleased — SQL result counts
+
+SAPQuery now caps returned rows even when SAP ignores `maxRows` for UNION ([#1219](https://github.com/arc-mcp/arc-1/issues/1219)).
+Its optional `totalRows` field is renamed to `sapReportedTotalRows`: update consumers of that field.
+It is a diagnostic SAP count, not a result total. `rowsReturned` is the output count;
+`rowLimitReached=true` means more rows may exist. SAP work and transfer can still exceed the row cap.
+
 ## 1.10.1 — more reliable SAP reads and edits (2026-11-07)
 
 No new configuration is required. This patch improves existing SAP reads and edits.

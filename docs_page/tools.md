@@ -1908,6 +1908,7 @@ including automatic `IN`-list chunks. The default is 2 MiB of decompressed trans
 before string conversion. Crossing the configured allowance returns `DATA_RESPONSE_TOO_LARGE`
 without partial rows or an automatic retry. Submit a new request with lower `maxRows`, fewer
 selected columns, or a restrictive, non-overlapping key-range `WHERE` clause.
+For `UNION`, lowering `maxRows` may not reduce the transfer; narrow each branch with `WHERE`.
 
 **Important:** Uses the ADT freestyle SQL endpoint (`/sap/bc/adt/datapreview/freestyle`) with ABAP SQL syntax, NOT standard SQL:
 - Use `alias~field` for qualified fields (not `alias.field`; a dot ends the ABAP statement)
@@ -1918,10 +1919,15 @@ selected columns, or a restrictive, non-overlapping key-range `WHERE` clause.
 
 JOINs, aggregates, and subqueries are supported. For a plain projection `SELECT`, ARC-1 automatically chunks the longest literal `IN (...)` list—even when the query has several `IN` clauses—and merges the rows. Queries with `ORDER BY`, `GROUP BY`, `HAVING`, `DISTINCT`, `UNION`, or aggregates are sent whole because concatenating per-chunk results would change their semantics. If a backend rejects a long list in one of those queries, split the list manually, union the results, and re-sort client-side when needed.
 
-`rowsReturned` counts output rows; SAP's `totalRows` can count matching input records.
-Observed on SAP_BASIS 758: a scalar `COUNT` returns one row even when `totalRows=0`;
-read the count from its result column. Cell values remain strings, including padding and leading zeros.
-Do not infer aggregate completeness by comparing these two metadata counts.
+`maxRows` caps returned rows, including `UNION`. `rowsReturned` is the actual output count;
+`rowLimitReached=true` means the cap was reached and more rows may exist; `false` means fewer rows were returned.
+The optional `sapReportedTotalRows` replaces `totalRows`: it is SAP's diagnostic count, **not the result size**.
+It may count input rows or report zero despite a non-empty result. Update consumers of the old field.
+
+The cap does not bound SAP's work: SAP may compute a separate unlimited count and ignore its row cap for `UNION`.
+`queryExecutionTimeMs` excludes that count query. Cell values remain strings, including padding and leading zeros.
+On the tested 758/816 backends, COUNT-only queries with a false `HAVING` condition can incorrectly return a row
+containing zero; ARC-1 preserves SAP's values rather than guessing a correction.
 
 See: [SAPQuery Freestyle Capability Matrix](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-04-21-sapquery-freestyle-capability-matrix.md)
 
