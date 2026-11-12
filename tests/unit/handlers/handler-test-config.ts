@@ -41,7 +41,6 @@ export function features(
     abapGit: feat('abapGit', on('abapGit')),
     gcts: feat('gcts', on('gcts')),
     rap: feat('rap', on('rap')),
-    amdp: feat('amdp', on('amdp')),
     ui5: feat('ui5', on('ui5')),
     transport: feat('transport', on('transport')),
     ui5repo: feat('ui5repo', on('ui5repo')),

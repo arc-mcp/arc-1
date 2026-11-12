@@ -1099,8 +1099,8 @@ describe('SAPWrite handler — create / batch_create', () => {
         processingType: 'rfc',
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('post-create processing update failed');
-      expect(result.content[0]?.text).toContain('normal function-module shell');
+      expect(result.content[0]?.text).toContain('processing metadata step failed');
+      expect(result.content[0]?.text).toContain('Saved state is unconfirmed');
       expect(calls.some((call) => call.method === 'POST' && call.url.includes('_action=UNLOCK'))).toBe(true);
     });
 

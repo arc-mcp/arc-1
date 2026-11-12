@@ -859,7 +859,7 @@ Next steps:
 | ETag field not found | `LocalLastChangedAt` missing or misnamed | Verify admin fields exist in CDS view with correct aliases |
 | Behavior pool not found | Class name doesn't match BDEF `implementation in class` | Ensure class name in BDEF matches the created class exactly |
 | BDEF creation/save fails with generic `[?/011]` | Behavior-pool full-class save path is unstable for RAP handler declarations | Keep class minimal, generate signatures via quickfix (MCP or ADT), then use `edit_method` for bodies |
-| Lint blocks write | Generated code has lint warnings | Review lint findings, adjust code patterns to pass lint rules |
+| Lint blocks write | Blocking finding or unsupported parser syntax | Check lint/version and ask SAP to check the proposed source. Correct genuine errors; do not rewrite SAP-accepted syntax just to satisfy abaplint. |
 | Table entity creation not supported | Older on-prem system | Create table via SE11 manually, provide field list |
 | Transport required | Non-$TMP package without transport | Use `SAPTransport(action="check")` to find or create a transport — see Step 1b |
 | Lock conflict on create | Object locked by another user/transport | Wait or use a different name; check `SAPTransport(action="list")` for conflicting transports |

@@ -1,6 +1,6 @@
 import { logger } from '../server/logger.js';
 import { AdtApiError } from './errors.js';
-import type { AdtHttpClient } from './http.js';
+import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import type { DiscoveryMap } from './types.js';
 import { parseDiscoveryDocument } from './xml-parser.js';
 
@@ -30,9 +30,16 @@ export function hasNhiWorkspace(xml: string): boolean {
  *
  * Graceful degradation: never throws, always returns a result.
  */
-export async function fetchDiscoveryDocument(client: AdtHttpClient): Promise<DiscoveryFetchResult> {
+export async function fetchDiscoveryDocument(
+  client: AdtHttpClient,
+  request?: AdtRequestOptions,
+): Promise<DiscoveryFetchResult> {
   try {
-    const resp = await client.get('/sap/bc/adt/discovery', { Accept: 'application/atomsvc+xml' }, { probe: true });
+    const resp = await client.get(
+      '/sap/bc/adt/discovery',
+      { Accept: 'application/atomsvc+xml' },
+      { ...request, probe: true },
+    );
     return { map: parseDiscoveryDocument(resp.body), nhiPresent: hasNhiWorkspace(resp.body) };
   } catch (err) {
     const reason =

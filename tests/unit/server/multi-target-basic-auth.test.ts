@@ -27,8 +27,14 @@ const featureProbeModule = await import('../../../src/adt/features.js');
 const { AdtApiError, AdtNetworkError } = await import('../../../src/adt/errors.js');
 const { AdtHttpClient } = await import('../../../src/adt/http.js');
 const { featuresOff } = await import('../handlers/handler-test-config.js');
-const { getCachedDiscovery, getCachedFeatures, resetCachedFeatures, setCachedDiscovery, setCachedFeatures } =
-  await import('../../../src/handlers/feature-cache.js');
+const {
+  getCachedDiscovery,
+  getCachedFeatures,
+  hasCompletedFeatureProbe,
+  resetCachedFeatures,
+  setCachedDiscovery,
+  setCachedFeatures,
+} = await import('../../../src/handlers/feature-cache.js');
 const { canonicalDestinationUrl, opaqueDestinationValue } = await import(
   '../../../src/server/destination-discovery.js'
 );
@@ -334,7 +340,12 @@ describe('multi-target shared Basic authentication', () => {
           method: 'tools/call',
           params: {
             name: 'SAPRead',
-            arguments: { type: 'CLAS', name: 'ZCL_TEST', ...(mode === 'aggregate' ? { target: target.target } : {}) },
+            arguments: {
+              type: 'CLAS',
+              extensions: 'none',
+              name: 'ZCL_TEST',
+              ...(mode === 'aggregate' ? { target: target.target } : {}),
+            },
           },
         };
         for (const editor of ['eclipse', 'vscode', undefined, 'eclipse']) {
@@ -730,6 +741,71 @@ describe('multi-target shared Basic authentication', () => {
     expect(recovered.isError).not.toBe(true);
     expect(canaries).toBe(2);
     expect(sharedAuthState.getHealth('A4H/100').status).toBe('healthy');
+  });
+
+  it.each([403, 404, 502, 503, 504])(
+    'handles release metadata HTTP %i after a successful Basic canary',
+    async (status) => {
+      const current = registry();
+      const target = current.targets[0];
+      const sharedAuthState = new MultiTargetSharedAuthState();
+      resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
+      vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H"}');
+      let recovered = false;
+      let fullProbes = 0;
+      vi.spyOn(AdtHttpClient.prototype, 'get').mockImplementation(async (path) => {
+        if (path.endsWith('/discovery')) return DISCOVERY_RESPONSE;
+        if (path === '/sap/bc/adt/ddic/sysinfo/hanainfo') fullProbes++;
+        if (path === '/sap/bc/adt/system/components' || path === '/sap/bc/adt/abapsource/syntax/configurations') {
+          if (!recovered) throw new AdtApiError('Metadata unavailable', status, path);
+          return {
+            statusCode: 200,
+            headers: {},
+            body: '<feed><entry><id>SAP_BASIS</id><title>758;SAPK-75802;0002;SAP Basis</title></entry></feed>',
+          };
+        }
+        throw new AdtApiError('Not found', 404, path);
+      });
+      const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
+        btpConfig: BTP_CONFIG,
+        multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
+      });
+      const call = requestHandler(server);
+      const first = await call(toolRequest('pinned'), { authInfo: READ_AUTH });
+      expect(first.isError).not.toBe(true);
+      expect(getCachedFeatures(target.target)?.abapRelease).toBeUndefined();
+      expect(getCachedFeatures(target.target)).toMatchObject({ systemType: 'onprem', systemTypeSource: 'config' });
+      expect(hasCompletedFeatureProbe(target.target)).toBe(status < 500);
+      recovered = true;
+      await call(toolRequest('pinned'), { authInfo: READ_AUTH });
+      if (status >= 500) expect(getCachedFeatures(target.target)?.abapRelease).toBe('758');
+      expect(hasCompletedFeatureProbe(target.target)).toBe(true);
+      await call(toolRequest('pinned'), { authInfo: READ_AUTH });
+      expect(fullProbes).toBe(status >= 500 ? 2 : 1);
+      expect(getCachedFeatures(target.target)).not.toHaveProperty('releaseProbePending');
+    },
+  );
+
+  it.each([502, 503, 504])('does not run feature probes when the Basic canary returns HTTP %i', async (status) => {
+    const current = registry();
+    const target = current.targets[0];
+    const sharedAuthState = new MultiTargetSharedAuthState();
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
+    const get = vi
+      .spyOn(AdtHttpClient.prototype, 'get')
+      .mockRejectedValue(new AdtApiError('Gateway failure', status, '/sap/bc/adt/core/discovery'));
+    const probe = vi.spyOn(featureProbeModule, 'probeFeatures');
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
+      btpConfig: BTP_CONFIG,
+      multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
+    });
+    const result = await requestHandler(server)(toolRequest('pinned'), { authInfo: READ_AUTH });
+    expect(JSON.parse(result.content[0].text)).toMatchObject({
+      error: 'SAP_TARGET_TEMPORARILY_UNAVAILABLE',
+      retryable: true,
+    });
+    expect(get).toHaveBeenCalledOnce();
+    expect(probe).not.toHaveBeenCalled();
   });
 
   it.each([false, true])(

@@ -9,7 +9,7 @@ type Job = {
   with?: Record<string, unknown>;
   permissions?: Record<string, string>;
   strategy?: { 'fail-fast'?: boolean; matrix?: { include?: Array<{ target: string; runner: string }> } };
-  steps?: Array<{ name?: string; run?: string }>;
+  steps?: Array<{ name?: string; run?: string; uses?: string; with?: Record<string, unknown> }>;
 };
 type Workflow = { permissions?: Record<string, string>; jobs: Record<string, Job> };
 
@@ -20,10 +20,15 @@ async function load(file: string): Promise<Workflow> {
 describe('executables workflow', () => {
   it('builds natively on every supported OS/arch and smoke-tests each executable', async () => {
     const build = (await load('executables.yml')).jobs.build;
-    const targets = (build.strategy?.matrix?.include ?? []).map((entry) => entry.target).sort();
+    const matrix = build.strategy?.matrix?.include ?? [];
+    const targets = matrix.map((entry) => entry.target).sort();
 
     expect(targets).toEqual(['linux-arm64', 'linux-x64', 'macos-arm64', 'macos-x64', 'windows-x64']);
+    expect(matrix).toContainEqual({ target: 'macos-arm64', runner: 'macos-15' });
     expect(build.strategy?.['fail-fast']).toBe(false);
+    const setupNode = build.steps?.find((step) => step.uses?.startsWith('actions/setup-node@'));
+    expect(String(setupNode?.with?.['node-version'])).toBe('22');
+    expect(setupNode?.with?.['check-latest']).toBe(true);
     const runs = (build.steps ?? []).map((step) => step.run ?? '');
     expect(runs.some((run) => run.includes('scripts/build-sea.mjs'))).toBe(true);
     expect(runs.some((run) => run.includes('scripts/ci/smoke-sea.mjs'))).toBe(true);

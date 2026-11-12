@@ -5,6 +5,71 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.10.1](https://github.com/arc-mcp/arc-1/compare/v1.10.0...v1.10.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* accept valid GET PERMISSIONS during pre-write lint ([#1203](https://github.com/arc-mcp/arc-1/issues/1203)) ([b64bb3f](https://github.com/arc-mcp/arc-1/commit/b64bb3f83d151778375650fa40ab4552e7df6bc3))
+* allow full-line comments around add_unit blocks ([#1201](https://github.com/arc-mcp/arc-1/issues/1201)) ([d19f76b](https://github.com/arc-mcp/arc-1/commit/d19f76bc9520b945abfaadf919cbc4aa95a11461))
+* allow more time for class enhancement summaries ([#1197](https://github.com/arc-mcp/arc-1/issues/1197)) ([619df91](https://github.com/arc-mcp/arc-1/commit/619df916ae3870365f56b7d1a9f8d559d7360afb))
+* avoid dumping class enhancement source reads on 758 ([#1204](https://github.com/arc-mcp/arc-1/issues/1204)) ([5d690a8](https://github.com/arc-mcp/arc-1/commit/5d690a874a795628abe43e3f0934432ed34115da))
+* avoid unsafe direct ENHO metadata probes on SAP 758 ([#1208](https://github.com/arc-mcp/arc-1/issues/1208)) ([d022613](https://github.com/arc-mcp/arc-1/commit/d0226136f84ce1310943cc544ee55f69e5ef1a83))
+* discover text-pool support before legacy deletion ([#1192](https://github.com/arc-mcp/arc-1/issues/1192)) ([f0d6b5f](https://github.com/arc-mcp/arc-1/commit/f0d6b5f64df06947a3839b704d5bafb797cb7ed7))
+* find function-group includes when SAPSearch filters by include type ([#1205](https://github.com/arc-mcp/arc-1/issues/1205)) ([2d55683](https://github.com/arc-mcp/arc-1/commit/2d55683df41da96af8fb70e5347548dcdf94c784))
+* preserve tokenless CSRF fallback for bounded reads ([#1195](https://github.com/arc-mcp/arc-1/issues/1195)) ([f994f3b](https://github.com/arc-mcp/arc-1/commit/f994f3bead338b55314ede1755c4db8f036ef4cc))
+* reload rotated cookie files before CSRF bootstrap ([#1187](https://github.com/arc-mcp/arc-1/issues/1187)) ([a7af84f](https://github.com/arc-mcp/arc-1/commit/a7af84fe7d9517d069a07b4276361bfeafbdc62f))
+
+
+### Tests
+
+* isolate fresh-activation where-used failures in CI ([#1188](https://github.com/arc-mcp/arc-1/issues/1188)) ([5ec28e3](https://github.com/arc-mcp/arc-1/commit/5ec28e38fdad416e49115be88c97347d30cd85e9))
+
+## [1.10.0](https://github.com/arc-mcp/arc-1/compare/v1.9.0...v1.10.0) (2026-11-03)
+
+
+### Features
+
+* add bounded DDIC extension discovery to SAPRead ([#1143](https://github.com/arc-mcp/arc-1/issues/1143)) ([e21b715](https://github.com/arc-mcp/arc-1/commit/e21b7159e7ffdc6db1eb43942e447b429c0cd2ea))
+* discover class enhancements in bounded SAPRead results ([#1146](https://github.com/arc-mcp/arc-1/issues/1146)) ([8b795da](https://github.com/arc-mcp/arc-1/commit/8b795daad8c086fe6f3ac9999208b61ffd151916))
+* discover source plug-ins in bounded SAPRead output ([#1158](https://github.com/arc-mcp/arc-1/issues/1158)) ([987ac5c](https://github.com/arc-mcp/arc-1/commit/987ac5c5a53bf4f5db3425e16a95a2ad1b84c0f1))
+* discover source-verified BDEF extensions ([#1145](https://github.com/arc-mcp/arc-1/issues/1145)) ([f30ed83](https://github.com/arc-mcp/arc-1/commit/f30ed83e2ef6c9e6ce0a3a867c7484cf44260135))
+* read partial SHLP metadata through SAPRead and SAPContext ([#1141](https://github.com/arc-mcp/arc-1/issues/1141)) ([2e1aa1f](https://github.com/arc-mcp/arc-1/commit/2e1aa1ff3fa33348b6c41e791dbba63554185768))
+* reduce SAPRead method response costs ([#1144](https://github.com/arc-mcp/arc-1/issues/1144)) ([98fef79](https://github.com/arc-mcp/arc-1/commit/98fef79c7753eb8841f6548acffae5238b08309d))
+
+
+### Bug Fixes
+
+* accept harmless SAPDiagnose includeSubpackages defaults ([#1137](https://github.com/arc-mcp/arc-1/issues/1137)) ([0ea21e5](https://github.com/arc-mcp/arc-1/commit/0ea21e575062e13cea514c84493bc63c53ea7733))
+* build executables with the latest Node 22 patch ([#1114](https://github.com/arc-mcp/arc-1/issues/1114)) ([66e6b4d](https://github.com/arc-mcp/arc-1/commit/66e6b4d4f4f98575f0e7890f716f44d1392569f3))
+* **deps:** patch body-parser and extend Forge exception ([#1102](https://github.com/arc-mcp/arc-1/issues/1102)) ([0ad22f9](https://github.com/arc-mcp/arc-1/commit/0ad22f9bf0f4fe7538f6cc0601073217803b9869))
+* **deps:** patch follow-redirects to 1.16.2 ([#1155](https://github.com/arc-mcp/arc-1/issues/1155)) ([8941bd0](https://github.com/arc-mcp/arc-1/commit/8941bd0b3e08335ba53da2e936d918624ee39cee))
+* **deps:** update node-forge and retire audit exception ([#1129](https://github.com/arc-mcp/arc-1/issues/1129)) ([721755d](https://github.com/arc-mcp/arc-1/commit/721755d51b9fa955becc50673f420eb3916c69f9))
+* **dumps:** note when a dump list may miss dumps older than 24 hours ([#1120](https://github.com/arc-mcp/arc-1/issues/1120)) ([a937581](https://github.com/arc-mcp/arc-1/commit/a937581e85981bcd00413465ad83976264e06759))
+* **dumps:** restore SAP 7.50 dump details from the feed ([#1103](https://github.com/arc-mcp/arc-1/issues/1103)) ([b6213ec](https://github.com/arc-mcp/arc-1/commit/b6213ec80edecf92edda5113d7751bbb581af5b9))
+* exclude built-in OBJECT from context dependencies ([#1157](https://github.com/arc-mcp/arc-1/issues/1157)) ([dd18938](https://github.com/arc-mcp/arc-1/commit/dd18938771dc83dad6367c2d3e4edfd7daa65bf0))
+* explain missing function group for include operations ([#1166](https://github.com/arc-mcp/arc-1/issues/1166)) ([83f7f7a](https://github.com/arc-mcp/arc-1/commit/83f7f7aa1cc79d9177a4bf15adf62c39fd5f21a8))
+* explain unavailable program variant resources ([#1172](https://github.com/arc-mcp/arc-1/issues/1172)) ([9ae16cd](https://github.com/arc-mcp/arc-1/commit/9ae16cd3768042fd51abe13cba4d1b581564ded6))
+* isolate negotiated media types to the exact resource ([#1126](https://github.com/arc-mcp/arc-1/issues/1126)) ([5530aca](https://github.com/arc-mcp/arc-1/commit/5530aca006670d924372f900227d2b541fa3174e))
+* keep gateway-failed feature probes retryable ([#1181](https://github.com/arc-mcp/arc-1/issues/1181)) ([744064c](https://github.com/arc-mcp/arc-1/commit/744064c49aceaf1cb5bcc17c9d1ca310f2d302dd))
+* keep table key includes in SAPContext structure trees ([#1100](https://github.com/arc-mcp/arc-1/issues/1100)) ([58346fb](https://github.com/arc-mcp/arc-1/commit/58346fb7e993b77697698fdeec90522cd81eadc5))
+* **long_text:** read texts where TTXOB/TTXID have no HANDLER_CLASS column ([#1078](https://github.com/arc-mcp/arc-1/issues/1078)) ([11126cd](https://github.com/arc-mcp/arc-1/commit/11126cd3d22e4c215bc85449084bc706bf9a01a0))
+* preserve function parameter typing through round trips ([#1162](https://github.com/arc-mcp/arc-1/issues/1162)) ([d1ebdae](https://github.com/arc-mcp/arc-1/commit/d1ebdaebb4476568cc25f4505f2df2f4f4a0b27c))
+* preserve minimal diagnostics in post-create recovery ([#1168](https://github.com/arc-mcp/arc-1/issues/1168)) ([a048ada](https://github.com/arc-mcp/arc-1/commit/a048ada5c6d2daa894f7dcb554e4c6d5320c2b6f))
+* preserve recovery guidance after partial FUNC creation ([#1165](https://github.com/arc-mcp/arc-1/issues/1165)) ([2b28c0d](https://github.com/arc-mcp/arc-1/commit/2b28c0dedc056efea2580a73d81fb0d31c3810ec))
+* **read:** report enhancement fallback metadata and provenance accurately ([#1124](https://github.com/arc-mcp/arc-1/issues/1124)) ([99953ff](https://github.com/arc-mcp/arc-1/commit/99953ff01c3a22fd44ed8f176673eacbb6d8e553))
+* reject compressed HTTP request bodies ([#1184](https://github.com/arc-mcp/arc-1/issues/1184)) ([d9befa9](https://github.com/arc-mcp/arc-1/commit/d9befa9c45091d33120d41e650956aab806b90c7))
+* reject SAPRead data filters the requested type ignores ([#1150](https://github.com/arc-mcp/arc-1/issues/1150)) ([e8b8833](https://github.com/arc-mcp/arc-1/commit/e8b8833183d63271f074b6eaf24342ad676eea09))
+* reject unsupported ATC URL selectors ([#1171](https://github.com/arc-mcp/arc-1/issues/1171)) ([9c7283c](https://github.com/arc-mcp/arc-1/commit/9c7283ca3d53dab1bcc2e58088b5a6b680536253))
+* require parsed bodies for MCP POST requests ([#1185](https://github.com/arc-mcp/arc-1/issues/1185)) ([42a5839](https://github.com/arc-mcp/arc-1/commit/42a583994edfe826bfa87a02fc3dc5a47d3912e7))
+* require type and name for single-object SAPDiagnose atc ([#1118](https://github.com/arc-mcp/arc-1/issues/1118)) ([90abdfc](https://github.com/arc-mcp/arc-1/commit/90abdfc3dcd2b9ac04c4c2d4c21dd07d4dec0d98))
+* resolve function groups for FUNC syntax checks ([#1164](https://github.com/arc-mcp/arc-1/issues/1164)) ([421a908](https://github.com/arc-mcp/arc-1/commit/421a908191d100b046afa1cadcb79a447c22e102))
+* stop SAPTransport reporting locked function-group includes as free ([#1151](https://github.com/arc-mcp/arc-1/issues/1151)) ([3f9d813](https://github.com/arc-mcp/arc-1/commit/3f9d813418ad84edab6bb800bcc4b448a4acf0b1))
+* stop waiting for ATC CI runs that SAP never starts ([#1140](https://github.com/arc-mcp/arc-1/issues/1140)) ([e58f589](https://github.com/arc-mcp/arc-1/commit/e58f58974a52252400713ab2e383d0bd07e7f894))
+* use known object types for pre-write lint ([#1119](https://github.com/arc-mcp/arc-1/issues/1119)) ([14aafd6](https://github.com/arc-mcp/arc-1/commit/14aafd6fe6ca6cfa72e753723ee393be119bfc35))
+* verify patched runtimes in standalone executables ([#1183](https://github.com/arc-mcp/arc-1/issues/1183)) ([33b905f](https://github.com/arc-mcp/arc-1/commit/33b905f7c161ccbca94e76ddcd5d554292ed664a))
+* **write:** clarify pre-write parser error guidance ([#1169](https://github.com/arc-mcp/arc-1/issues/1169)) ([949325e](https://github.com/arc-mcp/arc-1/commit/949325e675c82c9bee22b084982fc2b6409abee8))
+
 ## [1.9.0](https://github.com/arc-mcp/arc-1/compare/v1.8.0...v1.9.0) (2026-10-23)
 
 

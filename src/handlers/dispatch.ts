@@ -129,7 +129,11 @@ function formatPossibleDataPreviewWafBlock(err: AdtApiError, minimalErrors: bool
 function getWriteInfrastructureHint(err: AdtApiError, tool: string, args: Record<string, unknown>): string | undefined {
   if (tool !== 'SAPWrite') return undefined;
   const action = String(args.action ?? '').toLowerCase();
-  if (!['create', 'update', 'batch_create', 'edit_method', 'edit_unit', 'add_unit', 'delete'].includes(action))
+  if (
+    !['create', 'update', 'batch_create', 'edit_method', 'edit_unit', 'add_unit', 'edit_content', 'delete'].includes(
+      action,
+    )
+  )
     return undefined;
 
   // These failures happen around ADT session management, often after SAP has
@@ -219,6 +223,9 @@ function buildBaseErrorMessage(
   if (err instanceof AdtResponseLimitError && err.endpointFamily === 'package-browser') {
     return `${message} Narrow with an advertised objectType or a smaller package. maxResults only caps returned entries, not SAP's response size. No listing was returned.`;
   }
+  if (err instanceof AdtResponseLimitError && err.endpointFamily === 'search-help-metadata') {
+    return `${message} SHLP metadata cannot be narrowed or paged here. Inspect the search help in SAP. No partial metadata was returned.`;
+  }
   if (err instanceof AdtResponseLimitError) {
     const mebibytes = err.limitBytes / (1024 * 1024);
     const displayLimit = Number.isInteger(mebibytes) ? `${mebibytes} MiB` : `${err.limitBytes}-byte`;
@@ -292,6 +299,7 @@ function buildBaseErrorMessage(
     }
 
     if (err.isNotFound) {
+      if (err.creationOutcome === 'confirmed') return enriched;
       if (err.resourceExistenceAfterDelete === 'exists') {
         return (
           `${enriched}\n\n` +
@@ -328,6 +336,14 @@ function buildBaseErrorMessage(
     }
     if (tool === 'SAPRead' && argType === 'TABLE_CONTENTS' && err.statusCode === 400) {
       const combined = `${err.message}\n${err.responseBody ?? ''}`;
+      // 758 and 816 answer every condition-only body this way, so the sqlFilter shape hint below
+      // would send the caller round in circles.
+      if (/only select statement is allowed/i.test(combined)) {
+        return (
+          `${enriched}\n\nHint: this SAP system's DDIC data preview does not accept a TABLE_CONTENTS sqlFilter. ` +
+          `Use type="TABLE_QUERY" with where=[{"field":"MANDT","op":"=","value":"100"}] instead.`
+        );
+      }
       if (hasSqlParserSignature(combined)) {
         return (
           `${enriched}\n\nHint: TABLE_CONTENTS sqlFilter must be a condition expression only ` +
@@ -364,7 +380,8 @@ function buildBaseErrorMessage(
       action === 'batch_create' ||
       action === 'edit_method' ||
       action === 'edit_unit' ||
-      action === 'add_unit';
+      action === 'add_unit' ||
+      action === 'edit_content';
     if ((err.statusCode === 400 || err.statusCode === 409) && DDIC_SAVE_HINT_TYPES.has(argType) && isSaveAction) {
       return (
         `${enriched}\n\nHint: DDIC save failed. Check the diagnostic details above for specific field or annotation errors. ` +
@@ -679,7 +696,9 @@ export function getToolRegistry(): ToolRegistry {
     if (!policy) throw new Error(`Built-in tool '${name}' has no ACTION_POLICY entry`);
     r.register({ name, source: 'builtin', policy, invoke });
   };
-  reg('SAPRead', (ctx) => handleSAPRead(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity, ctx.config.minimalErrors));
+  reg('SAPRead', (ctx) =>
+    handleSAPRead(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity, ctx.config.minimalErrors, ctx.config.abapRelease),
+  );
   reg('SAPSearch', (ctx) => handleSAPSearch(ctx.client, ctx.args, ctx.config.minimalErrors));
   reg('SAPQuery', (ctx) => handleSAPQuery(ctx.client, ctx.args, ctx.config.minimalErrors));
   reg('SAPWrite', (ctx) => handleSAPWrite(ctx.client, ctx.args, ctx.config, ctx.cache, ctx.cacheSecurity));
@@ -692,7 +711,13 @@ export function getToolRegistry(): ToolRegistry {
       : handleSAPNavigate(ctx.client, ctx.args, ctx.config.minimalErrors),
   );
   reg('SAPLint', (ctx) => handleSAPLint(ctx.client, ctx.args, ctx.config));
-  reg('SAPDiagnose', (ctx) => handleSAPDiagnose(ctx.client, ctx.args, ctx.config.minimalErrors));
+  reg('SAPDiagnose', (ctx) =>
+    handleSAPDiagnose(ctx.client, ctx.args, ctx.config.minimalErrors, {
+      configuredAbapRelease:
+        ctx.config.multiTargetEndpoints || ctx.config.targetId ? undefined : ctx.config.abapRelease,
+      configuredSystemType: ctx.config.systemType === 'auto' ? undefined : ctx.config.systemType,
+    }),
+  );
   reg('SAPTransport', (ctx) => handleSAPTransport(ctx.client, ctx.args, ctx.config));
   reg('SAPGit', (ctx) => handleSAPGit(ctx.client, ctx.args, ctx.authInfo));
   reg('SAPContext', (ctx) => handleSAPContext(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity));

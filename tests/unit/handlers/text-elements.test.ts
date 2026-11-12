@@ -493,7 +493,8 @@ describe('PROG/FUGR deletion preserves inactive text pools', () => {
   it.each(['PROG', 'FUGR'])('retains legacy %s deletion when discovery proves the collection absent', async (type) => {
     mockSap();
     const client = createClient();
-    client.http.setDiscoveryMap(new Map([['/sap/bc/adt/programs/programs', ['text/plain']]]));
+    const owner = type === 'PROG' ? '/sap/bc/adt/programs/programs' : '/sap/bc/adt/functions/groups';
+    client.http.setDiscoveryMap(new Map([[owner, ['text/plain']]]));
     expect((await del(type, 'ZTEST', DEFAULT_CONFIG, client)).isError).toBeUndefined();
     expect(steps()).toEqual(['LOCK', 'DELETE', 'UNLOCK']);
     expect(calls().some(([url]) => String(url).includes('/textelements/'))).toBe(false);

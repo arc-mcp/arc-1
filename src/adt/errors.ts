@@ -20,8 +20,8 @@ import { decodeXmlEntities } from './xml-entities.js';
 
 /** Base error for all ADT-related errors */
 export class AdtError extends Error {
-  /** A create request failed without establishing whether SAP committed it. */
-  creationOutcome?: 'unknown';
+  /** Creation was confirmed before a later failure, or its outcome could not be established. */
+  creationOutcome?: 'unknown' | 'confirmed';
 
   /** A plugin POST failed without establishing whether its service executed it. */
   pluginPostOutcome?: 'unknown';
@@ -78,6 +78,7 @@ export interface SapErrorClassification {
     | 'object-exists'
     | 'method-not-supported'
     | 'icf-handler-not-bound'
+    | 'program-variants-unavailable'
     | 'icf-service-inactive'
     | 'gateway-service-not-found'
     | 'bdef-base-not-extensible'
@@ -809,6 +810,23 @@ export function classifySapDomainError(
     };
   }
 
+  // Captured: EN on 750/758/816, DE on 758/816. The exact path scopes these markers so callers
+  // without release metadata get the same classification.
+  if (
+    statusCode === 404 &&
+    path &&
+    /^\/sap\/bc\/adt\/programs\/programs\/[^/?]+\/variants(?:\?|$)/i.test(path) &&
+    /No suitable resource found|Keine geeignete Ressource gefunden/i.test(bodyRaw)
+  ) {
+    return {
+      category: 'program-variants-unavailable',
+      hint:
+        'SAP has no program-variant ADT resource for this request, so ARC-1 cannot read program variants here. ' +
+        'This 404 does not show whether the program exists or has variants. ' +
+        'Use SE38 in SAP GUI to inspect variants.',
+    };
+  }
+
   // Some ADT endpoints return `HTTP 404 "No suitable resource found"` for every
   // verb while still appearing in `/discovery` — this is the ADT framework's
   // way of saying the resource URI didn't match any registered handler inside
@@ -1062,6 +1080,11 @@ function parseOptionalInt(value: string | undefined): number | undefined {
 function extractInlineLineNumber(text: string): number | undefined {
   const match = text.match(/\bline\s+(\d+)\b/i);
   return match?.[1] ? parseOptionalInt(match[1]) : undefined;
+}
+
+/** A control request failed before the intended data operation could receive a response. */
+export class AdtCsrfBootstrapError extends AdtApiError {
+  override name = 'AdtCsrfBootstrapError';
 }
 
 /** Network-level error (DNS, connection refused, timeout) */

@@ -51,6 +51,7 @@ export const SLASH_TYPE_MAP: Record<string, string> = {
   'STRU/DS': 'TABL', // docs/research/abap-types/types/tabl.md (legacy alias)
   'DOMA/DD': 'DOMA', // docs/research/abap-types/types/doma.md
   'DTEL/DE': 'DTEL', // docs/research/abap-types/types/dtel.md
+  'SHLP/DH': 'SHLP', // metadata only — docs/research/abap-types/types/shlp.md
   'MSAG/N': 'MSAG', // docs/research/abap-types/types/msag.md
   'DEVC/K': 'DEVC', // docs/research/abap-types/types/devc.md
   // TRAN/T (was TRAN/O — invented). Live a4h + npl 2026-05-08 both return
@@ -90,6 +91,7 @@ export const SLASH_TYPE_EVIDENCE: Record<string, string> = {
   'STRU/DS': 'docs/research/abap-types/types/tabl.md',
   'DOMA/DD': 'docs/research/abap-types/types/doma.md',
   'DTEL/DE': 'docs/research/abap-types/types/dtel.md',
+  'SHLP/DH': 'docs/research/abap-types/types/shlp.md',
   'MSAG/N': 'docs/research/abap-types/types/msag.md',
   'DEVC/K': 'docs/research/abap-types/types/devc.md',
   'TRAN/T': 'docs/research/abap-types/types/tran.md',
@@ -114,6 +116,7 @@ const FRIENDLY_TYPE_ALIAS_MAP: Record<string, string> = {
  * guard prevents from reoccurring.
  */
 export const KNOWN_BASE_TYPES = new Set([
+  'SHLP',
   'PROG',
   'REPT',
   'CLAS',
@@ -293,6 +296,10 @@ export function normalizeTypeArgsForValidation(
       // A text-pool PUT replaces the selected part; an explicit empty string clears it.
       // Null/omitted source remains a missing-source error; other actions keep normal stripping.
       if (action === 'edit_text_symbols' && typeof args.source === 'string') cleaned.source = args.source;
+      if (action === 'edit_content') {
+        if (typeof args.oldContent === 'string') cleaned.oldContent = args.oldContent;
+        if (typeof args.newContent === 'string') cleaned.newContent = args.newContent;
+      }
       // SAPWrite preserves TABL/DT and TABL/DS so the create path can route by subtype.
       const normType = cleaned.type === undefined ? undefined : normalizeWriteObjectType(String(cleaned.type ?? ''));
       // Drop an inapplicable `include`: it is only meaningful for a CLAS local-include
@@ -426,6 +433,9 @@ export function functionModuleObjectUrl(group: string, name: string): string {
 }
 
 export function objectBasePath(type: string): string {
+  if (normalizeObjectType(type) === 'SHLP') {
+    throw new Error('SHLP has a specialized metadata reader; generic source URLs and operations are unsupported.');
+  }
   if (Object.hasOwn(SDO_REGISTRY, type)) return `${SDO_REGISTRY[type as keyof typeof SDO_REGISTRY].href}/`;
   switch (type) {
     case 'SMBC':

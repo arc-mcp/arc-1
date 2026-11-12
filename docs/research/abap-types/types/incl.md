@@ -1,17 +1,20 @@
 # INCL — ABAP Include
 
 ## TL;DR
-`INCL` is **ARC-1's canonical short form** for ABAP includes — but it is NOT a TADIR R3TR type. In SAP, includes are TADIR `R3TR PROG` rows with attribute `SUBC=I`, and ADT exposes them with the slash subtype **`PROG/I`** (under URL `/sap/bc/adt/programs/includes/`). ARC-1 correctly aliases `PROG/I → INCL` in `SLASH_TYPE_MAP` and uses the right URL. The made-up name `INCL` is harmless internal shorthand.
+`INCL` is ARC-1's short form for includes, not a TADIR R3TR type. ADT returns standalone
+includes as `PROG/I` and function-group includes as `FUGR/I`. Object search accepts either
+specific subtype; `INCL` searches both. See the native search qualification below.
 
 ## TADIR ground truth
-- **R3TR type**: does not exist as `R3TR INCL`. Includes live in TADIR as `R3TR PROG` with `TRDIR-SUBC = 'I'`.
+- **R3TR type**: does not exist as `R3TR INCL`. Standalone includes live in TADIR as `R3TR PROG` with `TRDIR-SUBC = 'I'`.
 - **LIMU sub-objects**: `REPS` (the include's source).
 - **abap-file-formats support**: ❌ — no `incl/` directory in [SAP/abap-file-formats](https://github.com/SAP/abap-file-formats/tree/main/file-formats). Includes are not a separate cloud-released type; they are an attribute of `prog`.
 
 ## ADT slash subtypes
 | Slash code | Meaning | URL prefix | Verified on |
 |---|---|---|---|
-| `PROG/I` | Include (also covers FUGR-generated `L*` includes) | `/sap/bc/adt/programs/includes/<NAME>` | a4h ✅ |
+| `PROG/I` | Standalone include | `/sap/bc/adt/programs/includes/<NAME>` | a4h ✅ |
+| `FUGR/I` | Function-group include | `/sap/bc/adt/functions/groups/<GROUP>/includes/<NAME>`; U01-style includes can use `/fmodules/<FUNCTION>` | a4h 758 ✅ |
 | `INCL/I` | **Does not exist** as ADT objectType | n/a | a4h ❌ — search with this filter returns empty |
 
 Live evidence: `GET /repository/informationsystem/search?objectType=INCL/I` → empty result set; `objectType=PROG/I` → returns includes correctly. ADT never emits a slash code starting with `INCL/`.
@@ -28,6 +31,15 @@ Live evidence: `GET /repository/informationsystem/search?objectType=INCL/I` → 
 ### a4h (S/4HANA 2023)
 - `GET /repository/informationsystem/search?query=*&objectType=PROG/I` → 200 with `adtcore:type="PROG/I"`.
 - `GET /sap/bc/adt/programs/includes/<NAME>/source/main` → 200.
+
+### 2026-11-06: include-search qualification (#1205)
+
+Native 758 SP02, direct HTTPS Basic, client 001: `LSVIMTOP` and `LSVIMU01` are `FUGR/I`
+hits without a filter; `INCL` and `FUGR/I` server filters return none. `FUGR/I` on `ICON`
+instead returns the `FUGR/F` container, so the server filter is not a reliable subtype selector.
+`ENH_PROG_INCL_IMPLICIT_OPT` is found as `PROG/I` by the `PROG/I` server filter.
+ARC-1 therefore locally filters bounded candidates only for `INCL` and `FUGR/I` searches.
+The U01 hit retains SAP's function-module URI; this search fix does not change write routing.
 
 ### 7.50 (NW 7.50)
 - Not verified live; endpoint stable since 7.0.

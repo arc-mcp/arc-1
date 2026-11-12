@@ -22,14 +22,18 @@ const CLASS_EDITS = new Set([
 ]);
 
 export function sourcePreconditionError(type: string, action: string, hash: unknown): string | undefined {
-  if (hash === undefined) return undefined;
+  if (hash === undefined)
+    return action === 'edit_content'
+      ? 'edit_content requires expectedSourceHash from SAPRead(format="editable").'
+      : undefined;
   if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash))
     return 'expectedSourceHash must be the 64-character SHA-256 from SAPRead(format="editable").';
   if (
     !TYPES.has(type) ||
     !(
       action === 'update' ||
-      ((action === 'edit_unit' || action === 'add_unit') && (type === 'PROG' || type === 'INCL')) ||
+      ((action === 'edit_unit' || action === 'add_unit' || action === 'edit_content') &&
+        (type === 'PROG' || type === 'INCL')) ||
       (type === 'CLAS' && CLASS_EDITS.has(action))
     )
   ) {

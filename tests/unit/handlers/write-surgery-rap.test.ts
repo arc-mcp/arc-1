@@ -376,6 +376,8 @@ ENDCLASS.`,
       expect(text).toContain('implementations');
       // Auto-routed hint should be present for callers who used the lhc_ prefix
       expect(text).toContain('auto-routed');
+      expect(text).toContain('Use SAPRead with method="*"');
+      expect(text).toContain('SAPRead grep');
     });
 
     it('reads inactive CCIMP when an inactive draft exists (PR-D review fix)', async () => {

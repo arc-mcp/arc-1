@@ -6,6 +6,7 @@ import {
   ABAPLINT_MAX_RELEASE,
   classifyAuthProbeError,
   classifyFeatureProbeStatus,
+  detectAbapRelease,
   detectHanaFromComponents,
   detectSystemType,
   isBeyondAbaplintCeiling,
@@ -25,7 +26,6 @@ describe('Feature Detection', () => {
         abapGit: 'on',
         gcts: 'on',
         rap: 'on',
-        amdp: 'on',
         ui5: 'on',
         transport: 'on',
         ui5repo: 'on',
@@ -46,7 +46,6 @@ describe('Feature Detection', () => {
         abapGit: 'off',
         gcts: 'off',
         rap: 'off',
-        amdp: 'off',
         ui5: 'off',
         transport: 'off',
         ui5repo: 'off',
@@ -66,7 +65,6 @@ describe('Feature Detection', () => {
         abapGit: 'auto',
         gcts: 'auto',
         rap: 'auto',
-        amdp: 'auto',
         ui5: 'auto',
         transport: 'auto',
         ui5repo: 'auto',
@@ -84,7 +82,6 @@ describe('Feature Detection', () => {
         abapGit: 'off',
         gcts: 'auto',
         rap: 'auto',
-        amdp: 'on',
         ui5: 'off',
         transport: 'auto',
         ui5repo: 'auto',
@@ -96,7 +93,6 @@ describe('Feature Detection', () => {
       expect(result.abapGit.available).toBe(false);
       expect(result.gcts.available).toBe(false);
       expect(result.rap.available).toBe(false);
-      expect(result.amdp.available).toBe(true);
       expect(result.ui5.available).toBe(false);
       expect(result.transport.available).toBe(false);
     });
@@ -107,7 +103,6 @@ describe('Feature Detection', () => {
         abapGit: 'off',
         gcts: 'on',
         rap: 'auto',
-        amdp: 'auto',
         ui5: 'auto',
         transport: 'auto',
         ui5repo: 'auto',
@@ -127,7 +122,6 @@ describe('Feature Detection', () => {
         abapGit: 'auto',
         gcts: 'auto',
         rap: 'auto',
-        amdp: 'auto',
         ui5: 'auto',
         transport: 'auto',
         ui5repo: 'on',
@@ -144,7 +138,6 @@ describe('Feature Detection', () => {
         abapGit: 'auto',
         gcts: 'auto',
         rap: 'auto',
-        amdp: 'auto',
         ui5: 'auto',
         transport: 'auto',
         ui5repo: 'auto',
@@ -162,7 +155,6 @@ describe('Feature Detection', () => {
         abapGit: 'auto',
         gcts: 'auto',
         rap: 'auto',
-        amdp: 'auto',
         ui5: 'auto',
         transport: 'auto',
         ui5repo: 'auto',
@@ -179,7 +171,6 @@ describe('Feature Detection', () => {
         abapGit: 'auto',
         gcts: 'auto',
         rap: 'auto',
-        amdp: 'auto',
         ui5: 'auto',
         transport: 'auto',
         ui5repo: 'auto',
@@ -282,8 +273,8 @@ describe('Feature Detection', () => {
       expect(detectSystemType(components)).toBe('onprem');
     });
 
-    it('detects on-premise when components list is empty', () => {
-      expect(detectSystemType([])).toBe('onprem');
+    it('does not classify an empty component list as on-premise', () => {
+      expect(detectSystemType([])).toBeUndefined();
     });
 
     it('detects on-premise for typical S/4HANA components', () => {
@@ -418,7 +409,6 @@ describe('Feature Detection', () => {
       abapGit: 'auto',
       gcts: 'auto',
       rap: 'auto',
-      amdp: 'auto',
       ui5: 'auto',
       transport: 'auto',
       ui5repo: 'auto',
@@ -636,6 +626,40 @@ describe('Feature Detection', () => {
       const result = await probeFeatures(client, defaultConfig);
 
       expect(result.abapRelease).toBeUndefined();
+    });
+
+    it('detectAbapRelease reads the release like the probe, without the other probes', async () => {
+      const client = mockProbeClientWithSyntaxConfigs({ componentsBody: emptyComponentsFeed });
+      expect(await detectAbapRelease(client)).toBe('757');
+      const calls = (client as any).get.mock.calls.map((args: unknown[]) => args[0]);
+      expect(calls).toEqual(['/sap/bc/adt/system/components', '/sap/bc/adt/abapsource/syntax/configurations']);
+
+      expect(await detectAbapRelease(mockProbeClientWithSyntaxConfigs({ componentsBody: componentsXml }))).toBe('758');
+    });
+
+    it('detectAbapRelease leaves the release unknown when SAP refuses both reads', async () => {
+      const client = {
+        get: vi.fn().mockImplementation((url: string) => Promise.reject(new AdtApiError('Forbidden', 403, url))),
+      } as unknown as AdtHttpClient;
+      await expect(detectAbapRelease(client)).resolves.toBeUndefined();
+    });
+    it('carries the caller signal and deadline through both release reads', async () => {
+      const client = mockProbeClientWithSyntaxConfigs({ componentsBody: emptyComponentsFeed });
+      const request = { signal: new AbortController().signal, deadline: Date.now() + 5000 };
+      expect(await detectAbapRelease(client, request)).toBe('757');
+      for (const call of vi.mocked(client.get).mock.calls) expect(call[2]).toMatchObject({ ...request, probe: true });
+    });
+    it('does not retry release detection after caller cancellation', async () => {
+      const controller = new AbortController();
+      const get = vi.fn(async () => {
+        controller.abort();
+        throw new Error('cancelled');
+      });
+      const client = { get } as unknown as AdtHttpClient;
+      expect(await detectAbapRelease(client, { signal: controller.signal })).toBeUndefined();
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(await detectAbapRelease(client, { signal: controller.signal })).toBeUndefined();
+      expect(get).toHaveBeenCalledTimes(1);
     });
 
     function makeComponentsXml(entries: Array<{ id: string; title: string }>): string {
@@ -941,15 +965,23 @@ describe('Feature Detection', () => {
     });
 
     it('returns available=false with forbidden reason on 403', () => {
-      const r = classifyFeatureProbeStatus('amdp', 403);
+      const r = classifyFeatureProbeStatus('abapGit', 403);
       expect(r.available).toBe(false);
       expect(r.reason).toMatch(/forbidden \(403\)/);
     });
 
     it('returns available=false with not-found reason on 404', () => {
-      const r = classifyFeatureProbeStatus('amdp', 404);
+      const r = classifyFeatureProbeStatus('abapGit', 404);
       expect(r.available).toBe(false);
       expect(r.reason).toMatch(/endpoint not found \(404\)/);
+    });
+
+    it.each([502, 503, 504])('leaves HTTP %i inconclusive instead of advertising availability', (status) => {
+      expect(classifyFeatureProbeStatus('rap', status)).toEqual({
+        id: 'rap',
+        available: false,
+        reason: expect.stringMatching(new RegExp(`\\(${status}\\).*cannot determine availability`)),
+      });
     });
 
     it('returns available=true on 400 / 405 / 500 (endpoint exists, request rejected)', () => {

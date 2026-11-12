@@ -61,9 +61,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Sole test gate for the release: release-please opens its PR with the default
-      # GITHUB_TOKEN, so test.yml never runs on it (GITHUB_TOKEN events don't trigger
-      # workflows) — nothing else tests the released commit. Do not remove.
+      # Sole guaranteed test gate for the release: release-please opens its PR with the
+      # default GITHUB_TOKEN, so test.yml runs on it only if a maintainer approves the
+      # bot-created PR's workflows, and nothing else tests the released commit. Do not remove.
       # Coverage is dropped here: it's non-gating and no one reads it at publish time.
       #
       # release-notes.test.ts is excluded for the same reason link-release-notes is
@@ -485,7 +485,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4
 
       - name: Login to GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6  # v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -585,7 +585,7 @@ jobs:
           merge-multiple: true
 
       - name: Login to GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6  # v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

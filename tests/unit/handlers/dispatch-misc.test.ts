@@ -1130,7 +1130,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
     /** Create minimal BTP-detected features for testing */
     function setBtpMode(): void {
       setCachedFeatures({
-        ...features({ abapGit: false, gcts: false, amdp: false, ui5: false, ui5repo: false, flp: false }),
+        ...features({ abapGit: false, gcts: false, ui5: false, ui5repo: false, flp: false }),
         abapRelease: '758',
         systemType: 'btp',
       });
@@ -1281,6 +1281,19 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('Unknown action');
+    });
+
+    it('refuses SAP(read) TABLE_QUERY with a sqlFilter before any request is sent', async () => {
+      mockFetch.mockReset();
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, toolMode: 'hyperfocused' }, 'SAP', {
+        action: 'read',
+        type: 'TABLE_QUERY',
+        name: 'T000',
+        params: { sqlFilter: "MANDT = '000'", maxRows: 5 },
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('TABLE_QUERY does not accept sqlFilter');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('routes SAP(search) with params', async () => {

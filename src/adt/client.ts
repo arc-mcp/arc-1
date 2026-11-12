@@ -27,6 +27,7 @@ import { readEnhancementImplementation } from './enhancements.js';
 import { AdtApiError, AdtError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
+import { filterIncludeHits, requiresUnfilteredIncludeSearch } from './include-search.js';
 import { getDirectPackageContents } from './package-browser.js';
 import { requirePackageFilteredSearch } from './package-contents.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
@@ -788,19 +789,20 @@ export class AdtClient {
    *  absent entirely, so transparent tables (TABL/DT) fall through to /structures/
    *  and a PUT there silently sets DD02L-TABCLASS=INTTAB (corruption). Use
    *  `resolveTablObjectUrlForWrite()` instead. See issue #285. */
-  async resolveTablObjectUrl(name: string): Promise<string> {
+  async resolveTablObjectUrl(name: string, options?: AdtRequestOptions): Promise<string> {
+    checkOperation(this.safety, OperationType.Read, 'ResolveTablObjectUrl');
     const upper = name.toUpperCase();
     const cached = this.tablUrlCache.get(upper);
     if (cached) return cached;
     const tableUrl = `/sap/bc/adt/ddic/tables/${encodeURIComponent(name)}`;
     const structUrl = `/sap/bc/adt/ddic/structures/${encodeURIComponent(name)}`;
     try {
-      await this.http.get(tableUrl);
+      await this.http.get(tableUrl, undefined, options);
       this.tablUrlCache.set(upper, tableUrl);
       return tableUrl;
     } catch (err) {
       if (err instanceof AdtApiError && err.statusCode === 404) {
-        await this.http.get(structUrl);
+        await this.http.get(structUrl, undefined, options);
         this.tablUrlCache.set(upper, structUrl);
         return structUrl;
       }
@@ -962,8 +964,8 @@ export class AdtClient {
   }
 
   /** Get enhancement metadata and, for source-code plug-ins, hook locations and ABAP source. */
-  async getEnhancementImplementation(name: string): Promise<EnhancementImplementationInfo> {
-    return readEnhancementImplementation(this, name);
+  async getEnhancementImplementation(name: string, release?: string): Promise<EnhancementImplementationInfo> {
+    return readEnhancementImplementation(this, name, release);
   }
 
   /** Get transaction code metadata (description, package) */
@@ -1068,13 +1070,11 @@ export class AdtClient {
       const params = new URLSearchParams({
         operation: 'quickSearch',
         query: name,
-        maxResults: String(limit),
+        maxResults: String(requiresUnfilteredIncludeSearch(objectType) ? 1000 : limit),
       });
-      if (objectType) {
-        params.set('objectType', objectType);
-      }
+      if (objectType && !requiresUnfilteredIncludeSearch(objectType)) params.set('objectType', objectType);
       const resp = await this.http.get(`/sap/bc/adt/repository/informationsystem/search?${params.toString()}`);
-      return parseSearchResults(resp.body);
+      return filterIncludeHits(parseSearchResults(resp.body), objectType);
     };
 
     const results: AdtObjectLookupResult[] = [];

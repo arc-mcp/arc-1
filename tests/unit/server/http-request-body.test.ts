@@ -1,6 +1,5 @@
 import { EventEmitter } from 'node:events';
 import { request as httpRequest } from 'node:http';
-import { gzipSync } from 'node:zlib';
 import express from 'express';
 import request from 'supertest';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -92,16 +91,9 @@ it('keeps non-MCP JSON at 100 KiB', async () => {
   await request(appWithLimit(MAX_HTTP_REQUEST_BYTES)).post('/register').type('json').send(payload(102401)).expect(413);
 });
 
-it('bounds decompressed bytes and releases failed parse reservations', async () => {
+it('bounds plain bytes and keeps malformed JSON errors private', async () => {
   const app = appWithLimit(1024);
-  const compressed = gzipSync(payload(1025));
-  await request(app)
-    .post('/mcp')
-    .type('json')
-    .set('Content-Encoding', 'gzip')
-    .serialize((value) => value)
-    .send(compressed)
-    .expect(413);
+  await request(app).post('/mcp').type('json').send(payload(1025)).expect(413);
   const invalid = await request(app).post('/mcp').type('json').send('{"private":"secret"').expect(400);
   expect(JSON.stringify(invalid.body)).not.toContain('secret');
   await request(app).post('/mcp').type('json').send('{}').expect(200);
@@ -128,6 +120,33 @@ it.each([8 * 1024 * 1024, MAX_HTTP_REQUEST_BYTES])(
       await vi.waitFor(() => expect(finish).toHaveLength(held.length));
       await request(app).post('/mcp').type('json').send(payload(102401)).expect(503).expect('Retry-After', '1');
       await request(app).post('/mcp').type('json').send(payload(102400)).expect(200);
+      // Small declared encoded bodies reach the parser; large unknown bodies still hit admission first.
+      await request(app).post('/mcp').type('json').set('Content-Encoding', 'gzip').send('{}').expect(415);
+      const server = app.listen(0, '127.0.0.1');
+      await new Promise<void>((resolve) => server.once('listening', resolve));
+      try {
+        const status = await new Promise<number | undefined>((resolve, reject) => {
+          const req = httpRequest(
+            {
+              host: '127.0.0.1',
+              port: (server.address() as { port: number }).port,
+              method: 'POST',
+              path: '/mcp',
+              headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip' },
+            },
+            (res) => {
+              res.resume();
+              res.on('end', () => resolve(res.statusCode));
+            },
+          );
+          req.on('error', reject);
+          req.write('{}');
+          req.end();
+        });
+        expect(status).toBe(503);
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
       await request(app).get('/health').expect(200);
     } finally {
       for (const end of finish) end();
@@ -190,18 +209,36 @@ it('wires the limit into the real HTTP server while retaining bearer authenticat
   await request(app).post('/mcp').type('json').send(payload(131073)).expect(413);
 });
 
-it('releases large reservations after encoded-body failures', async () => {
+it('releases large chunked reservations after malformed plain JSON', async () => {
   const app = appWithLimit(MAX_HTTP_REQUEST_BYTES);
-  for (let i = 0; i < 3; i++) {
-    await request(app)
-      .post('/mcp')
-      .type('json')
-      .set('Content-Encoding', 'gzip')
-      .serialize((value) => value)
-      .send(gzipSync('{"private":"secret"'))
-      .expect(400);
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  try {
+    for (let i = 0; i < 3; i++) {
+      const status = await new Promise<number | undefined>((resolve, reject) => {
+        const req = httpRequest(
+          {
+            host: '127.0.0.1',
+            port: (server.address() as { port: number }).port,
+            path: '/mcp',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          },
+          (res) => {
+            res.resume();
+            res.on('end', () => resolve(res.statusCode));
+          },
+        );
+        req.on('error', reject);
+        req.write('{"private":"secret"');
+        req.end();
+      });
+      expect(status).toBe(400);
+    }
+    await request(server).post('/mcp').type('json').send(payload(MAX_HTTP_REQUEST_BYTES)).expect(200);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-  await request(app).post('/mcp').type('json').send(payload(MAX_HTTP_REQUEST_BYTES)).expect(200);
 });
 
 it('releases a reservation when the client leaves during dispatch', async () => {

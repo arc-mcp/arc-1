@@ -40,6 +40,47 @@ async function setup(proxy: boolean, listener: RequestListener) {
 }
 
 describe.each([false, true])('direct package transport, Connectivity proxy=%s', (proxy) => {
+  it('lists a package on a cold session when core discovery has no token (#1193)', async () => {
+    const sends: string[] = [];
+    const credentials: { cookie: string | undefined; token: string | string[] | undefined }[] = [];
+    let reads = 0;
+    const { http, post } = await setup(proxy, (req, res) => {
+      const path = new URL(req.url!, 'http://sap.test').pathname;
+      sends.push(`${req.method} ${path}`);
+      credentials.push({ cookie: req.headers.cookie, token: req.headers['x-csrf-token'] });
+      if (path === '/sap/bc/adt/core/discovery') {
+        res.setHeader('content-type', 'text/html');
+        res.setHeader('set-cookie', 'SAP_SESSIONID=first; Path=/; Secure; HttpOnly');
+        res.end();
+      } else if (path === '/sap/bc/adt/discovery') {
+        res.setHeader('x-csrf-token', 'TOKEN');
+        res.setHeader('set-cookie', 'SAP_EXTRA=second; Path=/; Secure; HttpOnly');
+        res.end('<service/>');
+      } else {
+        res.end(++reads === 1 ? root : expanded);
+      }
+    });
+    const result = await getDirectPackageContents(http, defaultSafetyConfig(), 'ZPACKAGE');
+    expect(result.objects.map((object) => object.name)).toEqual(['ZCL_ONE']);
+    expect(sends).toEqual([
+      'HEAD /sap/bc/adt/core/discovery',
+      'GET /sap/bc/adt/core/discovery',
+      'GET /sap/bc/adt/discovery',
+      'POST /sap/bc/adt/repository/nodestructure',
+      'POST /sap/bc/adt/repository/nodestructure',
+    ]);
+    expect(credentials[2]!.cookie).toContain('SAP_SESSIONID=first');
+    for (const headers of credentials.slice(3)) {
+      expect(headers.cookie).toContain('SAP_SESSIONID=first');
+      expect(headers.cookie).toContain('SAP_EXTRA=second');
+      expect(headers.token).toBe('TOKEN');
+    }
+    const options = post.mock.calls[0]![4]!;
+    expect(post.mock.calls[1]![4]).toBe(options);
+    expect(options.attemptBudget).toMatchObject({ used: 5, limit: 8 });
+    expect(options.responseBudget!.consumedBytes).toBe(Buffer.byteLength(root + expanded));
+  });
+
   it('counts CSRF and both native reads in the same real-send allowance', async () => {
     const methods: string[] = [];
     let reads = 0;

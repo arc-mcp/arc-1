@@ -1,3 +1,4 @@
+import { extensionReadProperties } from './extension-input.js';
 /** Intent-based tool schemas; BTP omits classic object types and adjusts descriptions. */
 
 import {
@@ -91,30 +92,31 @@ function isBtpMode(config: ServerConfig): boolean {
 }
 
 const SAPREAD_DESC_ONPREM =
-  'Read SAP ABAP source, metadata and syntax results. ' +
-  'For source purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
-  'TABLE_QUERY: multi-column filters, data preview required; CDS needs SAP_BASIS 752+. TABLE_CONTENTS: single-column filter. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
-  'SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method="*" for signatures, method="NAME" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers.';
+  'Read SAP ABAP source/metadata. DDIC metadata: omit format. ' +
+  'SHLP: active partial interface metadata; missing headers/assignments/appends are explicit. No drafts or source formats. ' +
+  'For specs, reviews or pre-change context, prefer SAPContext first. ' +
+  'TABLE_QUERY: filter with where, data preview required; CDS needs SAP_BASIS 752+. TABLE_CONTENTS: unfiltered preview. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
+  'SYNTAX: read-only check (objectType+name, optional source). Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers.';
 
 const SAPREAD_DESC_BTP =
   'Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
   'Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), TABL/DTT (technical settings), TTYP, DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), ENHO. PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). ' +
-  'SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method="*" for signatures, method="NAME" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. ' +
+  'SYNTAX: read-only check (objectType+name, optional source). Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. ' +
   'grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.';
 
 // ─── SAPContext Types ───────────────────────────────────────────────
 
 const SAPCONTEXT_DESC_ONPREM =
-  'Primary tool for understanding ABAP/CDS objects before specs, reviews, explanations, or changes — use instead of SAPRead when the user asks what an object does. Returns intent first (the object KTD when available) then compressed dependency contracts. Use SAPRead after SAPContext for exact source/method bodies/grep/drafts.\n\n' +
+  'SHLP: default/deps returns active partial interface metadata, as SAPRead; no KTD or dependency traversal. ' +
+  'Primary tool for understanding ABAP/CDS objects. KTD when available, then dependency contracts. Use SAPRead after SAPContext for exact source/methods/grep/drafts.\n\n' +
   "Decision rule — pick the action from the user's question:\n" +
   '- "What breaks if I change <CDS>?" / "Who consumes <I_*>?" / "Blast radius" → action="impact" (DDLS only).\n' +
   '- "Which includes/appends extend <TABL>?" → action="structure", type="TABL".\n' +
   '- "What does <object> do?" / "Explain" / "deps before editing" → action="deps" (default); type+name required.\n' +
   '- "Find all callers of <object>" → action="usages" (live SAP where-used lookup).\n\n' +
-  'impact (CDS blast-radius): upstream AST deps + downstream where-used, classified into RAP buckets (projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls, metadataExtensions, abapConsumers, documentation, tables, other) + sibling-consistency hints. Use this instead of text-scanning DDDDLSRC/ACMDCLSRC with SAPQuery (it filters the noise). Optional includeIndirect, siblingCheck, siblingMaxCandidates.\n' +
+  'impact: upstream CDS dependencies, downstream where-used in RAP buckets, and sibling-consistency hints. Prefer it to SQL source scans. See action/options below.\n' +
   'deps: target KTD when available + selected dependency contracts, derived from source (not SAP-native relationships or a complete inventory). Counts distinguish root candidates from recursive attempts. Standard helper names are filtered. For CDS, includes dependency DDL/field catalogs for cl_cds_test_environment.\n' +
-  'structure (TABL only): the DDIC include/append tree.\n\n' +
-  'Non-CDS reverse-lookup: SAPNavigate(references); CDS: impact. Full detail: docs_page SAPContext.';
+  'structure (TABL only): the DDIC include/append tree.';
 
 const SAPCONTEXT_DESC_BTP =
   'Primary tool for understanding ABAP/CDS objects before specs, reviews, explanations, or changes (BTP ABAP Environment) — use instead of SAPRead when the user asks what an object does. Returns intent first (object KTD when available) then compressed dependency contracts.\n\n' +
@@ -162,7 +164,7 @@ const SAPTRANSPORT_DESC_BTP =
 // ─── SAPManage ──────────────────────────────────────────────────────
 const SAPMANAGE_DESC_ONPREM =
   'Probe and report SAP system capabilities. Use BEFORE operations that depend on optional features ' +
-  '(abapGit, RAP/CDS, AMDP, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\n' +
+  '(abapGit, RAP/CDS, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\n' +
   'Actions:\n' +
   '- "features": cached feature status (fast, no round-trip; id, available, mode, probedAt). "probe": re-probe now (feature probes + auth + discovery refresh). "cache_stats": object cache health.\n' +
   '- "create_package" / "delete_package" / "change_package": DEVC lifecycle via ADT packages API.\n' +
@@ -183,7 +185,7 @@ const SAPMANAGE_DESC_BTP =
   '- "set_api_state": Release (or revoke) an object\'s API release contract for ABAP Cloud / Clean Core ' +
   '(requires "objectUri", or "name" + "objectType"; "apiState" defaults to RELEASED, "contract" defaults to C1 — pass C0 for SRVD, C3 for classic views). The write counterpart of SAPRead(type="API_STATE").\n\n' +
   'Returns JSON with features and systemType="btp". On BTP, RAP/CDS and transports are always available. ' +
-  'abapGit, AMDP, UI5/BSP, and FLP customization may not be available depending on the BTP ABAP configuration.';
+  'abapGit, UI5/BSP, and FLP customization may not be available depending on the BTP ABAP configuration.';
 
 const SAPMANAGE_ACTIONS_READ = [
   'features',
@@ -429,7 +431,7 @@ export function getToolDefinitions(
           include: {
             type: 'string',
             description:
-              'TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins over method routing. ' +
+              'SRVB: service_info = URL, entity sets. TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins. ' +
               'DDLS: elements returns field catalog (keys, aliases, associations, types). VERSIONS CLAS: selects include history. BSP: case-sensitive path; name also accepts APP/path.' +
               // TEXT_ELEMENTS does not exist on BTP — keep the BTP surface byte-identical.
               (btp ? '' : ' TEXT_ELEMENTS: symbols|selections|headings; omit for pool (CLAS: symbols).'),
@@ -442,9 +444,14 @@ export function getToolDefinitions(
           method: {
             type: 'string',
             description:
-              'For CLAS: read a method (e.g., "get_name", "zif_order~process", "lhc_travel~accept") or use "*" to list methods. Without include=, lhc_*/lcl_* use implementations, ltc_* uses testclasses, and others use MAIN; explicit include= wins. ' +
-              (btp ? '' : 'For SOBJ: BOR method name to read. If omitted, returns the full BOR method catalog. ') +
-              'Not used with other types.',
+              'CLAS: method body; "*" lists methods. Without include, lhc_x~m/lcl_x~m use implementations, ltc_x~m testclasses, others MAIN. Explicit include wins. ' +
+              (btp ? '' : 'SOBJ: method implementation; omit for catalog.'),
+          },
+          methodView: {
+            type: 'string',
+            enum: ['signature'],
+            description:
+              'CLAS: own MAIN declaration with parameters/exceptions. Bare method only; no locals, interfaces, inheritance or other selectors. Omit for body.',
           },
           grep: {
             type: 'string',
@@ -455,6 +462,7 @@ export function getToolDefinitions(
               (btp ? '' : ', PROG, FUNC, FUGR, INCL, VIEW') +
               ').',
           },
+          ...extensionReadProperties,
           lineStart: {
             type: 'integer',
             minimum: 1,
@@ -482,7 +490,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['text', 'structured', 'editable'],
             description:
-              'Default text; DEVC returns array then listing metadata, diff a patch. structured: CLAS metadata+includes, DEVC {objects,listing}, diff JSON. editable: fresh {source,sourceHash} for guarded SAPWrite; omit version/method/grep, select CLAS include.',
+              'Default text. structured: CLAS metadata+includes (omit method), DEVC {objects,listing}, diff JSON. editable: fresh {source,sourceHash} for guarded SAPWrite; omit version/method/grep, select CLAS include.',
           },
           version: {
             type: 'string',
@@ -540,8 +548,7 @@ export function getToolDefinitions(
           columns: {
             type: 'array',
             items: { type: 'string' },
-            description:
-              'For TABLE_QUERY: columns to SELECT (default: all). Example: ["MATNR","BWART","BUDAT","MENGE"].',
+            description: 'TABLE_QUERY only: columns to select (default all), e.g. ["MATNR","BWART"].',
           },
           where: {
             type: 'array',
@@ -590,7 +597,7 @@ export function getToolDefinitions(
               'update',
               'delete',
               'edit_method',
-              ...(btp ? [] : ['edit_unit', 'add_unit']),
+              ...(btp ? [] : ['edit_unit', 'add_unit', 'edit_content']),
               'edit_class_definition',
               'add_method',
               'edit_method_signature',
@@ -606,7 +613,9 @@ export function getToolDefinitions(
             description:
               'Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). ' +
               'edit_method: replace a single method body — the token-cheap path for class edits. ' +
-              (btp ? '' : 'edit_unit replaces a FORM/MODULE in PROG/INCL; add_unit appends one at EOF. ') +
+              (btp
+                ? ''
+                : 'PROG/INCL: edit_unit replaces a FORM/MODULE; add_unit appends one; edit_content replaces one exact match and requires expectedSourceHash. ') +
               'batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. ' +
               'Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; ' +
               'add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); ' +
@@ -634,7 +643,8 @@ export function getToolDefinitions(
           expectedSourceHash: {
             type: 'string',
             description:
-              'SHA-256 from SAPRead(format=editable). Refuses changed source under the lock. Text-source update and class/procedural surgery only; whole addressed source/include, not just the edited unit. Omitted/blank: no cross-call protection.',
+              (btp ? 'Optional' : 'Required for edit_content; otherwise optional') +
+              ' SHA-256 from SAPRead(format=editable) for the whole source/include. Refuses changes under the lock. Text-source updates and class/procedural edits only.',
           },
           source: {
             type: 'string',
@@ -666,6 +676,8 @@ export function getToolDefinitions(
           ...(btp
             ? {}
             : {
+                oldContent: { type: 'string', description: 'edit_content: exact text to replace.' },
+                newContent: { type: 'string', description: 'edit_content: replacement; empty deletes.' },
                 unit: {
                   type: 'string',
                   description: 'edit_unit/add_unit: existing/new FORM or MODULE name (case-insensitive).',
@@ -729,7 +741,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'FUNC: existing FUGR; required for create, otherwise resolved. INCL: parent FUGR for structural includes; omit for standalone.',
+              'FUNC: required for create; otherwise resolved. INCL: required for grouped create/delete; resolved for structural-include edits when omitted.',
           },
           ...(btp ? {} : FuncProcessing.FUNCTION_PROCESSING_TOOL_PROPERTIES),
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
@@ -807,7 +819,7 @@ export function getToolDefinitions(
                 type: {
                   type: 'string',
                   description:
-                    'ABAP type, e.g. STRING, I, BAPIRET2. TABLES includes TYPE/LIKE, e.g. TYPE STANDARD TABLE OF X or LIKE DOKHL-OBJECT. Ignored for exceptions/raising.',
+                    'Required except exceptions/raising. Bare STRING or REF TO CL_X, explicit TYPE STRING or TYPE REF TO CL_X, or LIKE ICON-NAME (obsolete).',
                 },
                 byValue: {
                   type: 'boolean',
@@ -989,7 +1001,7 @@ export function getToolDefinitions(
           type: { type: 'string', description: 'Object type (PROG, CLAS, DDLS, DDLX, BDEF, SRVD, SRVB, etc.)' },
           group: {
             type: 'string',
-            description: 'Parent FUGR for FUNC or structural INCL.',
+            description: 'Parent FUGR for FUNC or structural INCL; auto-resolved if omitted.',
           },
           version: { type: 'string', description: 'Service version for publish/unpublish (default: "0001")' },
           service_type: {
@@ -1130,8 +1142,8 @@ export function getToolDefinitions(
         '- "syntax": check objects[] (CLAS/INTF/PROG/DDLS; version active/inactive). Single: prefer SAPRead SYNTAX.\n' +
         '- "unittest": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n' +
         '- "unittest_ci": harmless package tests with source reconciliation; empty/incomplete runs fail.\n' +
-        '- "atc": ATC (name+type or objects [{type,name}], max 20). Omit variant for system default; unknown variant errors. "atc_variants": read variants/default, optional variant name filter.\n' +
-        '- "atc_ci": package ATC CI; requires available API and verified selection.\n' +
+        '- "atc": ATC (name+type/DEVC tree or objects [{type,name}], max 20). Omit variant for system default; unknown variant errors. "atc_variants": read variants/default, optional variant name filter.\n' +
+        '- "atc_ci": BTP-only package ATC CI; on-prem: atc type DEVC.\n' +
         '- "cds_testcases": read suggested CDS Unit tests (name; SAP_BASIS 8.16+).\n' +
         '- "object_state": active/inactive ETags/hashes/divergence (name+type; CLAS includes). No server-driven types.\n' +
         '- "quickfix": proposals: name+type+source+line; optional column/sourceUri.\n' +

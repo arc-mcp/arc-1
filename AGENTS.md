@@ -62,6 +62,9 @@ TEST_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-abap-service-key.json npm run test
 
 Pre-commit: Husky runs `lint-staged` → Biome auto-fixes staged `*.{ts,js,json}`. Never hand-fix formatting.
 
+Pre-push: Husky runs `check:sizes`, `validate:policy` and `typecheck` on the working tree, not the pushed
+commits. Tests, full lint and build are not included; CI remains authoritative.
+
 ## Deploying ARC-1 (not developing it)
 
 If the task is "deploy/install ARC-1 for a team", you are an operator, not a contributor — do not
@@ -208,9 +211,11 @@ and [its contract](docs/plans/xsuaa-target-authorization.md); [ADR-0010](docs/ad
 | Multi-target ADR-0006/0007 work | Read `docs/adr/0006-experimental-read-only-multi-target.md` and `docs/adr/0007-shared-basic-identity-for-read-only-multi-target.md`, then the normative `docs/plans/destination-discovered-multi-target-v1.md`, `docs_page/multi-target-setup.md`, and `docs_page/multi-target-administration.md`; code is `src/server/{destination-discovery,destination-registry,multi-target-*,server,http}.ts`, `src/authz/policy.ts`, and `src/handlers/{dispatch,feature-cache}.ts`; focused tests are `tests/unit/server/{destination-discovery,destination-registry,multi-target-*,http-destinations,http-multi-target-routes,mta-descriptor}.test.ts`, `tests/unit/authz/policy.test.ts`, and `tests/unit/handlers/multi-target-errors.test.ts`. For writes also read ADR-0010, `docs/plans/2026-10-22-multi-target-pinned-writes.md` and `docs_page/multi-target-writes.md`; pipeline/tests: `src/handlers/write/pinned*.ts`, `src/adt/pinned-write-policy.ts`, `tests/unit/handlers/pinned-writes.test.ts`. Keep aggregate/Basic mutation-free and explicit action/type/input allowlists; ATC/Unit are workload-producing reads. Basic is default-off/shared/one-instance and never PP fallback. `SAPTargets` is aggregate-only. Real `sap-sysid`/`sap-client` remain mandatory. |
 | Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` (+ `src/adt/xml-parser.ts`, `src/adt/types.ts` for structured) |
 | Shared mutation lifecycle | `src/adt/{crud,mutation-context,mutation-http}.ts`, `src/handlers/write/pinned.ts`; preserve explicit legacy/pinned profiles and use the owning session for bounded cleanup. See `docs/dev-guide.md#shared-mutation-lifecycle`. |
+| SHLP partial metadata | `src/adt/search-help.ts`, `src/handlers/search-help*.ts`, read/context registry + schemas — active only; discovery presence is independent of Accept MIME entries |
 | Stored SAPscript text (`SAPQuery action=long_text`) | `src/adt/stored-text/`, `src/handlers/{query-input,query-tool,long-text,long-text-input}.ts`, `tests/evals/scenarios/stored-text.ts` — exact-key classic ITF only; data scope/preview, no RFC/helper/free-SQL fallback. See `docs/research/2026-10-17-stored-text-integration-evals.md`. |
 | Add ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/object-types.ts`, `tests/unit/handlers/slash-type-map.test.ts` — needs `docs/research/abap-types/types/<short>.md` evidence, verify live `<adtcore:type>` first (#218) |
 | SAPWrite TABL subtype routing (TABL/DT vs /DS, #285) | `src/handlers/object-types.ts`, `src/handlers/write-helpers.ts`, `src/handlers/write/create.ts`, `src/handlers/{schemas,tools}.ts` — reads collapse to bare `TABL` |
+| Service binding OData info (`SAPRead type=SRVB include=service_info`) | `src/adt/service-info.ts`, `src/handlers/{read,schemas,tools}.ts`, `tests/unit/handlers/service-info.test.ts` — uncached; unpublished means no entity-set evidence, not an empty service. Contract: `docs/research/abap-types/types/srvb.md` |
 | AUTH/FEATURE_TOGGLE/ENHO/VERSIONS/MSAG-style reads | `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/adt/types.ts`, `src/handlers/read.ts`, `src/handlers/{schemas,tools}.ts` |
 | Add fix proposal / quickfix | `src/adt/devtools.ts`, `src/handlers/diagnose.ts`, `src/handlers/{schemas,tools}.ts`, tests — proposal POST URIs stay exact; SAP context uses headers (#993) |
 | OData-based read (non-ADT) / FLP ops | `src/adt/ui5-repository.ts` → `src/handlers/read.ts` / `src/adt/flp.ts` → `src/handlers/manage.ts` |
@@ -250,7 +255,7 @@ and [its contract](docs/plans/xsuaa-target-authorization.md); [ADR-0010](docs/ad
 | Live ADT type probe | `scripts/probe-adt-types.ts` (`npm run probe`), `src/probe/`, `tests/unit/probe/replay.test.ts` |
 | CDS impact classifier | `src/adt/cds-impact.ts`, `src/adt/codeintel.ts`, tests |
 | Inactive syntax check / post-save check | `src/adt/devtools.ts`, `src/handlers/write-helpers.ts` (`tryPostSaveSyntaxCheck`) |
-| Procedural unit surgery (`edit_unit` / `add_unit`) | `src/context/unit-surgery.ts`, `src/handlers/write/unit-surgery.ts` — PROG/INCL only; lock before read; `add_unit` appends at physical EOF without moving INCLUDEs; incomplete MODULEs are refused. |
+| Procedural edits (`edit_unit` / `add_unit` / `edit_content`) | `src/context/{unit-surgery,content-splice}.ts`, `src/handlers/write/unit-surgery.ts` — PROG/INCL only; `edit_content` requires a fresh hash and unique exact match; lock before read; `add_unit` appends at physical EOF without moving INCLUDEs; incomplete MODULEs are refused. |
 | Method-level surgery | `src/context/method-surgery.ts` — `<localclass>~<method>` specifiers; ambiguous bare names error |
 | Program text-pool activation (`REPT` / `PROG/PX`, #940) | `src/handlers/{object-types,activate}.ts`, `src/adt/text-elements.ts` — use the pool URI and its packageRef. Evidence and limitations: `docs/research/abap-types/types/rept.md`. |
 | SAPRead method for class-local includes | `src/handlers/read.ts`, `src/handlers/object-types.ts`, `tests/unit/handlers/read.test.ts` — explicit `include=` wins (including `main`); otherwise `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses, global/bare→MAIN; raw include reads bypass the MAIN-only cache key |
@@ -277,7 +282,7 @@ and [its contract](docs/plans/xsuaa-target-authorization.md); [ADR-0010](docs/ad
 | Experimental live relations | `src/handlers/{live-relations,relation-input,relation-tool}.ts`, `src/adt/{repository-relations,relation-objects}.ts`, `src/context/relation-walk.ts` — automatic capability/deny-action projection, no result cache; docs_page/live-relations.md |
 | Experimental data-source blocklist | `src/adt/{data-source-name,sql-source-analyzer,data-source-policy,internal-data-operations}.ts` + `client.ts` — one canonicalizer for every policy input; blank=off but a stray comma fails startup (details: dev-guide) |
 | Dump feed filters | `src/adt/feed-schema.ts`, `src/handlers/dump-filter-inputs.ts`, `src/adt/diagnostics.ts` — discovery is optional; preserve the legacy unfiltered request shape. See `docs/dev-guide.md#dump-feed-filters`. |
-| Runtime + source-state diagnostics | `src/adt/diagnostics.ts`, `src/adt/dump-feed-detail.ts`, `src/handlers/diagnose.ts`, `{schemas,tools}.ts` — 7.50 has no dump-detail resource: a detail 404 is answered from the dump feed's HTML summary, which covers 24 hours (details: dev-guide) |
+| Runtime + source-state diagnostics | `src/adt/{diagnostics,dump-feed-detail,dump-list-window}.ts`, `src/handlers/diagnose.ts`, `{schemas,tools}.ts` — the older dump feed can cover only 24 hours (verified on 7.50): 7.50 answers a detail 404 from the feed's HTML summary, and lists get a window note (details: dev-guide) |
 | Authorization trace (`SAPDiagnose authorization_trace`) | `src/adt/authorization-trace.ts` (`getAuthorizationTrace`/`decodeAuthTraceRows`), `diagnostics.ts` re-export, `diagnose.ts`, `{schemas,tools}.ts`, `policy.ts` — data scope + `SAP_ALLOW_DATA_PREVIEW`; on-prem `SUAUTHVALTRC` via `runTableQuery`, TOBJ decode, client-side sort; not SU53/STAUTHTRACE (details: `docs/research/2026-07-09-su53-authorization-analysis-adt-surface.md`) |
 | OData/SQL perf insight (`SAPDiagnose odata_perf`/`cds_sql`) + ICF-inactive guard | `src/adt/diagnostics.ts` (`probeODataPerformance`/`verdictFromStatistics`, `getCdsCreateStatements`/`parseCdsCreateStatements`), `diagnose.ts`, `{schemas,tools}.ts`, `policy.ts`, `errors.ts` (`icf-service-inactive` = 403 "Service cannot be reached" HTML) — odata_perf=data scope (host-relative path only, SSRF guard; `gwhub`→framework on 7.50); `cds_sql` POST createstatements + CSRF + `Accept: …ddl.createStatements+xml`; `statement` is an ARRAY_TAG (read `node.statement` as array). Verified 750/758/816 |
 | ST05 SQL-trace control (`SAPDiagnose sql_trace_state`/`set_sql_trace_state`/`sql_trace_directory`) | `src/adt/diagnostics.ts` (`getSqlTraceState`/`setSqlTraceState`/`getSqlTraceDirectory` + `parseSqlTraceState`/`parseSqlTraceDirectory`), `diagnose.ts`, `{schemas,tools}.ts`, `policy.ts` — `set`=write/Update GET→edit-raw-XML→PUT `/st05/trace/state` (CT `…perf.trace.state.v1+xml`, flips ALL instances); `sql_trace_directory` returns SAP's TMC deep-link (no ADT SQL-record API). ADT-native record reader = Cross Trace `/sap/bc/adt/crosstrace/*` (follow-up; present on 758, request types incl. OData V4). Verified 758 |
@@ -306,6 +311,7 @@ and [its contract](docs/plans/xsuaa-target-authorization.md); [ADR-0010](docs/ad
 | BTP auth / Destination Service | `src/adt/oauth.ts` (browser OAuth) + `src/server/server.ts` (`buildAdtConfig` per-user destination) + `@arc-mcp/xsuaa-auth` dep |
 | AFF schema / validation | `src/aff/schemas/` + `src/aff/validator.ts` / `src/handlers/write/create.ts` (create/batch_create paths) |
 | CI coverage / reliability reporting | `scripts/ci/coverage-summary.mjs`, `scripts/ci/collect-test-reliability.mjs`, `.github/workflows/test.yml` |
+| Where-used CI / #1057 | `tests/integration/where-used-details.integration.test.ts`, `tests/unit/workflows/where-used-containment.test.ts`, `vitest.where-used-diagnostic.config.ts` — required native reads use the pinned E2E interface/class pair; fresh-activation diagnostics are separately non-blocking. Limits: `docs/dev-guide.md#where-used-ci-containment-1057`. |
 
 ## Architecture: Request Flow
 
@@ -399,7 +405,7 @@ never present mocks or skipped tests as live coverage. Documentation-only change
   model require a new ADR/security review. Separate instances remain the stronger isolation option.
 - **Per-user auth never inherits shared credentials** — `buildAdtConfig(..., { perUser: true })` strips username/password/cookies; any new Layer B field must respect the flag.
 - **All ADT endpoints have safety guards** — no unguarded `http.{get,post,put,delete}`.
-- **Cookie hot-reload**: `SAP_COOKIE_FILE` re-read before the 401 retry, and again on the next request after a persistent 401; `SAP_COOKIE_STRING` cannot hot-reload.
+- **Cookie hot-reload**: `SAP_COOKIE_FILE` re-read during auth recovery and before CSRF bootstrap outside a live stateful context; changed cookies reset the old session, empty/unreadable files preserve known cookies, and `SAP_COOKIE_STRING` cannot hot-reload.
 - **Error types**: `AdtApiError` / `AdtSafetyError` / `AdtNetworkError` / `AdtResponseLimitError`; `dispatch.ts` formats them with LLM-friendly hints.
 - **Stateful sessions** for lock→modify→unlock; CSRF auto-managed (`src/adt/http.ts`).
 - **ADT locks never cross an MCP round-trip** — `lock→modify→unlock` completes inside ONE synchronous tool call; never elicit inside a lock block, never expose writes as async MCP Tasks holding a lock ([ADR-0006](docs/adr/0006-mcp-legacy-era-until-triggers.md)).

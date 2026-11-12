@@ -1,0 +1,83 @@
+{
+  "note": "Informational coverage from 148 focused tests, not the entire unit suite. No threshold change.",
+  "files": {
+    "src/adt/class-extensions.ts": {
+      "lines": {
+        "total": 180,
+        "covered": 177,
+        "skipped": 0,
+        "pct": 98.33
+      },
+      "functions": {
+        "total": 29,
+        "covered": 29,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 200,
+        "covered": 193,
+        "skipped": 0,
+        "pct": 96.5
+      },
+      "branches": {
+        "total": 113,
+        "covered": 102,
+        "skipped": 0,
+        "pct": 90.26
+      }
+    },
+    "src/adt/enhancement-include.ts": {
+      "lines": {
+        "total": 45,
+        "covered": 44,
+        "skipped": 0,
+        "pct": 97.77
+      },
+      "functions": {
+        "total": 8,
+        "covered": 8,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 52,
+        "covered": 50,
+        "skipped": 0,
+        "pct": 96.15
+      },
+      "branches": {
+        "total": 40,
+        "covered": 36,
+        "skipped": 0,
+        "pct": 90
+      }
+    },
+    "src/handlers/extension-read.ts": {
+      "lines": {
+        "total": 22,
+        "covered": 21,
+        "skipped": 0,
+        "pct": 95.45
+      },
+      "functions": {
+        "total": 2,
+        "covered": 2,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 24,
+        "covered": 22,
+        "skipped": 0,
+        "pct": 91.66
+      },
+      "branches": {
+        "total": 58,
+        "covered": 45,
+        "skipped": 0,
+        "pct": 77.58
+      }
+    }
+  }
+}

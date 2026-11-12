@@ -1,0 +1,23 @@
+{
+  "helperSha256": "bb907cc72f869fe6d88aac926bc0adae99614e2a2972814abcaa57ec00174053",
+  "benchmark": {
+    "inputBytes": 150000,
+    "oldPattern": "exceeded one-second subprocess timeout; terminated",
+    "boundedPatternMs": 0.59
+  },
+  "replays": [
+    {
+      "target": "a4h",
+      "checkedAt": "2026-10-31T21:21:41.394Z",
+      "cases": 8,
+      "baseAndSourceHashesUnchanged": true
+    },
+    {
+      "target": "npl",
+      "checkedAt": "2026-10-31T21:21:46.007Z",
+      "cases": 8,
+      "baseAndSourceHashesUnchanged": true
+    }
+  ],
+  "btp": "Final BTP 920 evidence precedes only this regex boundary; its generated source paths remain unqualified/denied and were not exercised."
+}

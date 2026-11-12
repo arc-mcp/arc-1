@@ -2,7 +2,7 @@
  * Feature detection for ARC-1.
  *
  * Probes SAP system capabilities to determine which optional features
- * are available (abapGit, RAP, AMDP, UI5, Transport, HANA).
+ * are available (abapGit, RAP, UI5, Transport, HANA).
  *
  * Each feature can be:
  * - "auto": probe SAP system at startup, enable if available
@@ -13,15 +13,15 @@
  * returns 404 (endpoint doesn't exist), the feature is gracefully
  * disabled. This prevents errors when connecting to older SAP systems.
  *
- * Probe endpoints are lightweight HEAD requests — they don't fetch data,
- * just check if the endpoint exists (returns 200 or 404).
+ * Probes inspect GET responses; some supported collections reject a bare GET.
+ * Gateway failures do not establish whether a capability exists.
  */
 
 import { Version } from '@abaplint/core';
 import type { FeatureConfig, FeatureMode } from './config.js';
 import { fetchDiscoveryDocument } from './discovery.js';
 import { AdtApiError } from './errors.js';
-import type { AdtHttpClient } from './http.js';
+import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import { parseReleaseNumber } from './release.js';
 import type { AuthProbeResult, FeatureStatus, ResolvedFeatures, SystemType, TextSearchStatus } from './types.js';
 import { parseInstalledComponents, parseSyntaxConfigurations } from './xml-parser.js';
@@ -38,8 +38,6 @@ const PROBES: FeatureProbe[] = [
   { id: 'abapGit', endpoint: '/sap/bc/adt/abapgit/repos', description: 'abapGit integration' },
   { id: 'gcts', endpoint: '/sap/bc/cts_abapvcs/system', description: 'gCTS (git-enabled CTS)' },
   { id: 'rap', endpoint: '/sap/bc/adt/ddic/ddl/sources', description: 'RAP/CDS development' },
-  // Path is /amdp/debugger, not /debugger/amdp (the latter resolves to the generic debugger node → 403). G-6.
-  { id: 'amdp', endpoint: '/sap/bc/adt/amdp/debugger', description: 'AMDP debugging' },
   // Probe /objects, not the bare node — the bare /…/ui5-bsp path has no handler → 404 → false-disables BSP.
   { id: 'ui5', endpoint: '/sap/bc/adt/filestore/ui5-bsp/objects', description: 'UI5/Fiori BSP' },
   { id: 'transport', endpoint: '/sap/bc/adt/cts/transportrequests', description: 'CTS transport management' },
@@ -50,6 +48,8 @@ const PROBES: FeatureProbe[] = [
     description: 'FLP customization (PAGE_BUILDER_CUST)',
   },
 ];
+
+const AVAILABILITY_FAILURE_STATUSES = new Set([502, 503, 504]);
 
 /** Per-feature probe outcome — `available` plus an optional human-readable reason. */
 interface ProbeOutcome {
@@ -84,20 +84,19 @@ function resolveFeature(mode: FeatureMode, probeOutcome: ProbeOutcome, id: strin
  * Probe all features and return resolved status.
  *
  * Runs all probes in parallel for speed.
- * Each probe is a HEAD request — if it returns 2xx, the feature exists.
- * 404 or network error means the feature is not available.
+ * Gateway, authentication and network failures can leave availability undetermined.
  */
 export async function probeFeatures(
   client: AdtHttpClient,
   config: FeatureConfig,
   systemTypeOverride?: string,
+  request?: AdtRequestOptions,
 ): Promise<ResolvedFeatures> {
   const modeMap: Record<string, FeatureMode> = {
     hana: config.hana,
     abapGit: config.abapGit,
     gcts: config.gcts,
     rap: config.rap,
-    amdp: config.amdp,
     ui5: config.ui5,
     transport: config.transport,
     ui5repo: config.ui5repo,
@@ -112,7 +111,7 @@ export async function probeFeatures(
     Promise.all(
       probesToRun.map(async (probe) => {
         try {
-          await client.get(probe.endpoint, undefined, { probe: true });
+          await client.get(probe.endpoint, undefined, { ...request, probe: true });
           return classifyFeatureProbeStatus(probe.id, 200);
         } catch (err) {
           if (err instanceof AdtApiError) {
@@ -129,10 +128,10 @@ export async function probeFeatures(
         }
       }),
     ),
-    detectSystemFromComponents(client),
-    probeTextSearch(client),
-    probeAuthorization(client),
-    fetchDiscoveryDocument(client),
+    detectSystemFromComponents(client, request),
+    probeTextSearch(client, request),
+    probeAuthorization(client, request),
+    fetchDiscoveryDocument(client, request),
   ]);
 
   const { map: discoveryMap, nhiPresent: discoveryNhiPresent } = discoveryResult;
@@ -173,9 +172,11 @@ export async function probeFeatures(
   const resolved = result as unknown as ResolvedFeatures;
   // Prefer SAP_BASIS from installed components. If that feed does not expose a
   // release, fall back to the ADT syntax configuration metadata.
-  const abapRelease = systemDetection.abapRelease ?? (await detectReleaseFromSyntaxConfigurations(client));
+  const abapRelease = systemDetection.abapRelease ?? (await detectReleaseFromSyntaxConfigurations(client, request));
   if (abapRelease) {
     resolved.abapRelease = abapRelease;
+  } else if (systemDetection.releaseProbePending) {
+    resolved.releaseProbePending = true;
   }
   // Apply system type: manual override takes precedence over auto-detection
   if (systemTypeOverride && systemTypeOverride !== 'auto') {
@@ -256,6 +257,7 @@ interface SystemDetection {
   abapRelease?: string;
   systemType?: SystemType;
   hasHana?: boolean;
+  releaseProbePending?: boolean;
 }
 
 /**
@@ -267,25 +269,29 @@ interface SystemDetection {
  *
  * This reuses the same `/sap/bc/adt/system/components` call — zero extra HTTP requests.
  */
-async function detectSystemFromComponents(client: AdtHttpClient): Promise<SystemDetection> {
+async function detectSystemFromComponents(
+  client: AdtHttpClient,
+  request?: AdtRequestOptions,
+): Promise<SystemDetection> {
   try {
     const resp = await client.get(
       '/sap/bc/adt/system/components',
       { Accept: 'application/atom+xml;type=feed' },
-      { probe: true },
+      { ...request, probe: true },
     );
     if (resp.statusCode >= 400) return {};
     const components = parseInstalledComponents(resp.body);
     const basis = components.find((c) => c.name.toUpperCase() === 'SAP_BASIS');
-    const hasSapCloud = components.some((c) => c.name.toUpperCase() === 'SAP_CLOUD');
-    const systemType: SystemType | undefined = hasSapCloud ? 'btp' : 'onprem';
+    const systemType = detectSystemType(components);
     return {
       abapRelease: basis?.release || undefined,
       systemType,
       hasHana: detectHanaFromComponents(components),
     };
-  } catch {
-    return {};
+  } catch (err) {
+    return err instanceof AdtApiError && AVAILABILITY_FAILURE_STATUSES.has(err.statusCode)
+      ? { releaseProbePending: true }
+      : {};
   }
 }
 
@@ -296,12 +302,15 @@ async function detectSystemFromComponents(client: AdtHttpClient): Promise<System
  * release. The Standard ABAP language entry (`version="X"`) carries the parser
  * release in its link `etag` attribute, e.g. `etag="757"`.
  */
-async function detectReleaseFromSyntaxConfigurations(client: AdtHttpClient): Promise<string | undefined> {
+async function detectReleaseFromSyntaxConfigurations(
+  client: AdtHttpClient,
+  request?: AdtRequestOptions,
+): Promise<string | undefined> {
   try {
     const resp = await client.get(
       '/sap/bc/adt/abapsource/syntax/configurations',
       { Accept: 'application/vnd.sap.adt.syntaxconfigurations+xml' },
-      { probe: true },
+      { ...request, probe: true },
     );
     if (resp.statusCode >= 400) return undefined;
     const configs = parseSyntaxConfigurations(resp.body);
@@ -309,6 +318,20 @@ async function detectReleaseFromSyntaxConfigurations(client: AdtHttpClient): Pro
   } catch {
     return undefined;
   }
+}
+
+/**
+ * SAP_BASIS as the feature probe reads it, for callers that need the release when the probe could not
+ * read it (for example a startup probe under a restricted technical user). Never throws.
+ */
+export async function detectAbapRelease(
+  client: AdtHttpClient,
+  request?: AdtRequestOptions,
+): Promise<string | undefined> {
+  if (request?.signal?.aborted) return undefined;
+  const release = (await detectSystemFromComponents(client, request)).abapRelease;
+  if (release || request?.signal?.aborted) return release;
+  return detectReleaseFromSyntaxConfigurations(client, request);
 }
 
 /**
@@ -341,11 +364,12 @@ export function detectHanaFromComponents(components: Array<{ name: string }>): b
 
 /**
  * Detect system type from installed components (exported for testing).
- * Returns 'btp' if SAP_CLOUD component is present, 'onprem' otherwise.
+ * Returns 'btp' if SAP_CLOUD is present, 'onprem' for other nonempty lists, or unknown.
  */
 export function detectSystemType(
   components: Array<{ name: string; release: string; description: string }>,
-): SystemType {
+): SystemType | undefined {
+  if (components.length === 0) return undefined;
   const hasSapCloud = components.some((c) => c.name.toUpperCase() === 'SAP_CLOUD');
   return hasSapCloud ? 'btp' : 'onprem';
 }
@@ -353,7 +377,7 @@ export function detectSystemType(
 /**
  * Probe text search (source_code) availability with a real request.
  *
- * Unlike HEAD-based feature probes, this does a real GET to detect auth,
+ * Unlike GET-based feature probes, this does a real GET to detect auth,
  * SICF, and framework errors that HEAD doesn't surface.
  *
  * It hits the dedicated `textsearch/support` sub-resource rather than running
@@ -362,9 +386,10 @@ export function detectSystemType(
  * a search that legitimately found nothing. The `db` selector is part of the
  * advertised support template; an explicit empty value asks about source search.
  */
-export async function probeTextSearch(client: AdtHttpClient): Promise<TextSearchStatus> {
+export async function probeTextSearch(client: AdtHttpClient, request?: AdtRequestOptions): Promise<TextSearchStatus> {
   try {
     await client.get('/sap/bc/adt/repository/informationsystem/textsearch/support?db=', undefined, {
+      ...request,
       probe: true,
     });
     return { available: true };
@@ -448,8 +473,11 @@ export function classifyTextSearchError(statusCode: number, responseBody?: strin
  *
  * Does NOT probe write operations (too risky — would modify state).
  */
-export async function probeAuthorization(client: AdtHttpClient): Promise<AuthProbeResult> {
-  const [searchResult, transportResult] = await Promise.all([probeSearchAccess(client), probeTransportAccess(client)]);
+export async function probeAuthorization(client: AdtHttpClient, request?: AdtRequestOptions): Promise<AuthProbeResult> {
+  const [searchResult, transportResult] = await Promise.all([
+    probeSearchAccess(client, request),
+    probeTransportAccess(client, request),
+  ]);
 
   return {
     searchAccess: searchResult.available,
@@ -459,12 +487,15 @@ export async function probeAuthorization(client: AdtHttpClient): Promise<AuthPro
   };
 }
 
-async function probeSearchAccess(client: AdtHttpClient): Promise<{ available: boolean; reason?: string }> {
+async function probeSearchAccess(
+  client: AdtHttpClient,
+  request?: AdtRequestOptions,
+): Promise<{ available: boolean; reason?: string }> {
   try {
     const resp = await client.get(
       '/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=CL_ABAP_*&maxResults=1',
       undefined,
-      { probe: true },
+      { ...request, probe: true },
     );
     if (resp.statusCode < 400) {
       return { available: true };
@@ -478,9 +509,15 @@ async function probeSearchAccess(client: AdtHttpClient): Promise<{ available: bo
   }
 }
 
-async function probeTransportAccess(client: AdtHttpClient): Promise<{ available: boolean; reason?: string }> {
+async function probeTransportAccess(
+  client: AdtHttpClient,
+  request?: AdtRequestOptions,
+): Promise<{ available: boolean; reason?: string }> {
   try {
-    const resp = await client.get('/sap/bc/adt/cts/transportrequests?user=__PROBE__', undefined, { probe: true });
+    const resp = await client.get('/sap/bc/adt/cts/transportrequests?user=__PROBE__', undefined, {
+      ...request,
+      probe: true,
+    });
     if (resp.statusCode < 400) {
       return { available: true };
     }
@@ -498,9 +535,8 @@ async function probeTransportAccess(client: AdtHttpClient): Promise<{ available:
  *
  * Decision table:
  * - **2xx** → endpoint exists and we got a clean response → available.
- * - **400, 405, 500, other 4xx/5xx** → endpoint exists; SAP returned a request-shape /
- *   server error after dispatching to the handler → available. (Some collection endpoints
- *   intentionally return 400 without query params, e.g. `/ddic/ddl/sources`.)
+ * - **400, 405, 500 and other unlisted errors (including 429)** → retain availability evidence. Some registered
+ *   SAP collections reject a bare GET with these statuses (e.g. `/ddic/ddl/sources`).
  * - **401** → request was rejected by ICM/SICF before authorization could even run.
  *   This carries NO signal about endpoint existence — could be missing creds, expired
  *   session, wrong client, etc. Reporting `available: true` here would be a lie on
@@ -509,6 +545,7 @@ async function probeTransportAccess(client: AdtHttpClient): Promise<{ available:
  *   From the caller's perspective the feature is unusable, so report unavailable —
  *   matches `classifyAuthProbeError` semantics for textSearch / authProbe.
  * - **404** → ICF service not activated, endpoint not registered → unavailable.
+ * - **502, 503, 504** → availability is undetermined; do not cache as positive evidence.
  *
  * Exported for testing.
  */
@@ -528,7 +565,14 @@ export function classifyFeatureProbeStatus(
   if (statusCode === 404) {
     return { id, available: false, reason: 'endpoint not found (404) — ICF service not activated' };
   }
-  // 400 / 405 / 4xx / 5xx other than auth/missing → endpoint exists, request was dispatched.
+  if (AVAILABILITY_FAILURE_STATUSES.has(statusCode)) {
+    return {
+      id,
+      available: false,
+      reason: `gateway or availability failure (${statusCode}) — cannot determine availability`,
+    };
+  }
+  // Preserve the compatibility assumption for other request-shape/server errors.
   return { id, available: true };
 }
 
@@ -565,7 +609,6 @@ export function resolveWithoutProbing(config: FeatureConfig): ResolvedFeatures {
     abapGit: 'abapGit integration',
     gcts: 'gCTS (git-enabled CTS)',
     rap: 'RAP/CDS development',
-    amdp: 'AMDP debugging',
     ui5: 'UI5/Fiori BSP',
     transport: 'CTS transport management',
     ui5repo: 'UI5 ABAP Repository Deploy',

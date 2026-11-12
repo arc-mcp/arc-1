@@ -47,7 +47,7 @@ export interface ServerConfig {
   // --- MCP Transport ---
   transport: TransportType;
   httpAddr: string;
-  /** Maximum decompressed JSON request bytes on MCP HTTP routes. */
+  /** Maximum uncompressed JSON request bytes on MCP HTTP routes. */
   maxHttpRequestBytes: number;
   serverName: string;
   /** Human-readable single-target label prepended to model-facing MCP instructions. */
@@ -79,7 +79,6 @@ export interface ServerConfig {
   featureAbapGit: FeatureToggle;
   featureGcts: FeatureToggle;
   featureRap: FeatureToggle;
-  featureAmdp: FeatureToggle;
   featureUi5: FeatureToggle;
   featureTransport: FeatureToggle;
   featureHana: FeatureToggle;
@@ -304,7 +303,6 @@ export const DEFAULT_CONFIG: ServerConfig = {
   featureAbapGit: 'auto',
   featureGcts: 'auto',
   featureRap: 'auto',
-  featureAmdp: 'auto',
   featureUi5: 'auto',
   featureTransport: 'auto',
   featureHana: 'auto',

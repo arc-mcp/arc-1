@@ -125,6 +125,20 @@ const update = () => ({
 });
 
 describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
+  it('keeps parser gaps blocking and gives administrator guidance before any request', async () => {
+    const result = await handlePinnedWrite(
+      client(),
+      { ...update(), source: replacement.replace('result = 2.', 'INVALID SYNTAX HERE.') },
+      { ...config, lintBeforeWrite: true, systemType: 'onprem', abapRelease: '757' },
+    );
+    expect(result.isError).toBe(true);
+    expect(payload(result)).toMatchObject({ error: 'PINNED_WRITE_REFUSED', state: 'unchanged' });
+    expect(result.content[0].text).toContain('grammar abaplint does not support');
+    expect(result.content[0].text).toContain('administrator');
+    expect(result.content[0].text).not.toContain('lintBeforeWrite');
+    expect(requests).toHaveLength(0);
+  });
+
   it('saves and reads back under an owning lock through shared dispatch', async () => {
     const result = await handleToolCall(client(), config, 'SAPWrite', update());
     expect(result.isError, result.content[0].text).toBeUndefined();
@@ -169,6 +183,17 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
       else await expect(result).rejects.toThrow();
     },
   );
+  it('directs a failed pinned method splice to SAPRead without saving source', async () => {
+    const result = await handlePinnedWrite(
+      client(),
+      { ...update(), action: 'edit_method', method: 'valu', source: 'result = 3.' },
+      config,
+    );
+    expect(result.isError).toBe(true);
+    expect(payload(result).message).toContain('Use SAPRead with method="*"');
+    expect(requests.some((request) => request.method === 'PUT')).toBe(false);
+  });
+
   it('creates with no JWT display responsible and preserves the scoped metadata path', async () => {
     const result = await handlePinnedWrite(
       client(),
@@ -474,4 +499,17 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect(result.isError, result.content[0].text).toBeUndefined();
     expect(requests.filter((r) => r.path.includes('/activation?'))).toHaveLength(1);
   });
+});
+
+it('refuses edit_content on pinned targets before SAP I/O', async () => {
+  const result = await handleToolCall(client(), config, 'SAPWrite', {
+    action: 'edit_content',
+    type: 'PROG',
+    name: 'ZTEST',
+    oldContent: 'old',
+    newContent: 'new',
+    expectedSourceHash: sourceHash('old'),
+  });
+  expect(result.isError).toBe(true);
+  expect(requests).toHaveLength(0);
 });

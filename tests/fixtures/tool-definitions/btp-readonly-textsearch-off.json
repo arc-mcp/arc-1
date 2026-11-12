@@ -1,7 +1,7 @@
 [
   {
     "name": "SAPRead",
-    "description": "Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), TABL/DTT (technical settings), TTYP, DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), ENHO. PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method=\"*\" for signatures, method=\"NAME\" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.",
+    "description": "Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), TABL/DTT (technical settings), TTYP, DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), ENHO. PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). SYNTAX: read-only check (objectType+name, optional source). Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -88,7 +88,7 @@
         },
         "include": {
           "type": "string",
-          "description": "TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins over method routing. DDLS: elements returns field catalog (keys, aliases, associations, types). VERSIONS CLAS: selects include history. BSP: case-sensitive path; name also accepts APP/path."
+          "description": "SRVB: service_info = URL, entity sets. TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins. DDLS: elements returns field catalog (keys, aliases, associations, types). VERSIONS CLAS: selects include history. BSP: case-sensitive path; name also accepts APP/path."
         },
         "group": {
           "type": "string",
@@ -96,12 +96,52 @@
         },
         "method": {
           "type": "string",
-          "description": "For CLAS: read a method (e.g., \"get_name\", \"zif_order~process\", \"lhc_travel~accept\") or use \"*\" to list methods. Without include=, lhc_*/lcl_* use implementations, ltc_* uses testclasses, and others use MAIN; explicit include= wins. Not used with other types."
+          "description": "CLAS: method body; \"*\" lists methods. Without include, lhc_x~m/lcl_x~m use implementations, ltc_x~m testclasses, others MAIN. Explicit include wins. "
+        },
+        "methodView": {
+          "type": "string",
+          "enum": [
+            "signature"
+          ],
+          "description": "CLAS: own MAIN declaration with parameters/exceptions. Bare method only; no locals, interfaces, inheritance or other selectors. Omit for body."
         },
         "grep": {
           "type": "string",
           "maxLength": 512,
           "description": "Case-insensitive source regex: matching lines, 1-based numbers and ±3 context; invalid regex becomes literal. CLAS adds owning class/method; include scopes a section. Never combine with method. Works for source-bearing types (CLAS, INTF, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL)."
+        },
+        "extensions": {
+          "type": "string",
+          "enum": [
+            "none",
+            "summary",
+            "sources"
+          ],
+          "description": "Full reads: summary; partial: none. sources adds labelled bodies. CLAS: hooks/native; BDEF: verified index. INTF/inactive limited."
+        },
+        "enhancementContext": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "PROG",
+                "FUGR",
+                "CLAS"
+              ]
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 80,
+              "pattern": "^(?:\\/[A-Za-z0-9_]+\\/)?[A-Za-z0-9_$]{1,40}$"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ],
+          "additionalProperties": false,
+          "description": "INCL only: owning main object."
         },
         "lineStart": {
           "type": "integer",
@@ -120,7 +160,7 @@
             "structured",
             "editable"
           ],
-          "description": "Default text; DEVC returns array then listing metadata, diff a patch. structured: CLAS metadata+includes, DEVC {objects,listing}, diff JSON. editable: fresh {source,sourceHash} for guarded SAPWrite; omit version/method/grep, select CLAS include."
+          "description": "Default text. structured: CLAS metadata+includes (omit method), DEVC {objects,listing}, diff JSON. editable: fresh {source,sourceHash} for guarded SAPWrite; omit version/method/grep, select CLAS include."
         },
         "version": {
           "type": "string",
@@ -175,7 +215,7 @@
           "items": {
             "type": "string"
           },
-          "description": "For TABLE_QUERY: columns to SELECT (default: all). Example: [\"MATNR\",\"BWART\",\"BUDAT\",\"MENGE\"]."
+          "description": "TABLE_QUERY only: columns to select (default all), e.g. [\"MATNR\",\"BWART\"]."
         },
         "where": {
           "type": "array",
@@ -429,7 +469,7 @@
   },
   {
     "name": "SAPDiagnose",
-    "description": "ABAP diagnostics:\n- \"syntax\": check objects[] (CLAS/INTF/PROG/DDLS; version active/inactive). Single: prefer SAPRead SYNTAX.\n- \"unittest\": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n- \"unittest_ci\": harmless package tests with source reconciliation; empty/incomplete runs fail.\n- \"atc\": ATC (name+type or objects [{type,name}], max 20). Omit variant for system default; unknown variant errors. \"atc_variants\": read variants/default, optional variant name filter.\n- \"atc_ci\": package ATC CI; requires available API and verified selection.\n- \"cds_testcases\": read suggested CDS Unit tests (name; SAP_BASIS 8.16+).\n- \"object_state\": active/inactive ETags/hashes/divergence (name+type; CLAS includes). No server-driven types.\n- \"quickfix\": proposals: name+type+source+line; optional column/sourceUri.\n- \"apply_quickfix\": text deltas, no save; quickfix inputs + proposalUri/proposalUserContent.\n- \"dumps\": ST22, newest: user/from/to/maxResults/filters; id=detail.\n- \"feed_schema\": optional dump filters; action only.\n- \"traces\": list profiler traces; id+analysis analyzes one.\n- \"trace_start\": arm NEXT matching execution (write; defaults HTTP, SQL on); reproduce, then read \"traces\".\n- \"trace_requests\": list armed traces. \"trace_cancel\": cancel by id (write).\n- \"system_messages\": list SM02 messages. \"gateway_errors\": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n- \"odata_perf\": read OData timing (url: host-relative; DB/ABAP/framework/auth); needs allowDataPreview.\n- \"authorization_trace\": read STUSERTRACE/SUAUTHVALTRC (on-prem; needs SAP_ALLOW_DATA_PREVIEW).\n- \"cds_sql\": read CDS native SQL (name).\n- \"sql_trace_state\" / \"set_sql_trace_state\" (sqlOn; needs SAP_ALLOW_WRITES) / \"sql_trace_directory\": ST05 SQL-trace control.\nQuickfix: syntax/ATC → quickfix → apply_quickfix → SAPWrite.",
+    "description": "ABAP diagnostics:\n- \"syntax\": check objects[] (CLAS/INTF/PROG/DDLS; version active/inactive). Single: prefer SAPRead SYNTAX.\n- \"unittest\": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n- \"unittest_ci\": harmless package tests with source reconciliation; empty/incomplete runs fail.\n- \"atc\": ATC (name+type/DEVC tree or objects [{type,name}], max 20). Omit variant for system default; unknown variant errors. \"atc_variants\": read variants/default, optional variant name filter.\n- \"atc_ci\": BTP-only package ATC CI; on-prem: atc type DEVC.\n- \"cds_testcases\": read suggested CDS Unit tests (name; SAP_BASIS 8.16+).\n- \"object_state\": active/inactive ETags/hashes/divergence (name+type; CLAS includes). No server-driven types.\n- \"quickfix\": proposals: name+type+source+line; optional column/sourceUri.\n- \"apply_quickfix\": text deltas, no save; quickfix inputs + proposalUri/proposalUserContent.\n- \"dumps\": ST22, newest: user/from/to/maxResults/filters; id=detail.\n- \"feed_schema\": optional dump filters; action only.\n- \"traces\": list profiler traces; id+analysis analyzes one.\n- \"trace_start\": arm NEXT matching execution (write; defaults HTTP, SQL on); reproduce, then read \"traces\".\n- \"trace_requests\": list armed traces. \"trace_cancel\": cancel by id (write).\n- \"system_messages\": list SM02 messages. \"gateway_errors\": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n- \"odata_perf\": read OData timing (url: host-relative; DB/ABAP/framework/auth); needs allowDataPreview.\n- \"authorization_trace\": read STUSERTRACE/SUAUTHVALTRC (on-prem; needs SAP_ALLOW_DATA_PREVIEW).\n- \"cds_sql\": read CDS native SQL (name).\n- \"sql_trace_state\" / \"set_sql_trace_state\" (sqlOn; needs SAP_ALLOW_WRITES) / \"sql_trace_directory\": ST05 SQL-trace control.\nQuickfix: syntax/ATC → quickfix → apply_quickfix → SAPWrite.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -867,7 +907,7 @@
   },
   {
     "name": "SAPManage",
-    "description": "Probe and report SAP system capabilities (BTP ABAP Environment). Returns feature status and system type. Also handles package (DEVC) lifecycle operations.\n\nActions:\n- \"features\": Get cached feature status from last probe.\n- \"probe\": Re-probe the SAP system now (feature probes + discovery refresh).\n- \"cache_stats\": Show request-driven object cache health.\n- \"create_package\": Create a package (DEVC) via ADT packages API.\n- \"delete_package\": Delete an existing package.\n- FLP actions: flp_list_catalogs, flp_list_groups, flp_list_tiles, flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog. Classic designer model, deprecated since S/4HANA 2023 (successor: SAPRead type=UIAD).\n- \"set_api_state\": Release (or revoke) an object's API release contract for ABAP Cloud / Clean Core (requires \"objectUri\", or \"name\" + \"objectType\"; \"apiState\" defaults to RELEASED, \"contract\" defaults to C1 — pass C0 for SRVD, C3 for classic views). The write counterpart of SAPRead(type=\"API_STATE\").\n\nReturns JSON with features and systemType=\"btp\". On BTP, RAP/CDS and transports are always available. abapGit, AMDP, UI5/BSP, and FLP customization may not be available depending on the BTP ABAP configuration.",
+    "description": "Probe and report SAP system capabilities (BTP ABAP Environment). Returns feature status and system type. Also handles package (DEVC) lifecycle operations.\n\nActions:\n- \"features\": Get cached feature status from last probe.\n- \"probe\": Re-probe the SAP system now (feature probes + discovery refresh).\n- \"cache_stats\": Show request-driven object cache health.\n- \"create_package\": Create a package (DEVC) via ADT packages API.\n- \"delete_package\": Delete an existing package.\n- FLP actions: flp_list_catalogs, flp_list_groups, flp_list_tiles, flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog. Classic designer model, deprecated since S/4HANA 2023 (successor: SAPRead type=UIAD).\n- \"set_api_state\": Release (or revoke) an object's API release contract for ABAP Cloud / Clean Core (requires \"objectUri\", or \"name\" + \"objectType\"; \"apiState\" defaults to RELEASED, \"contract\" defaults to C1 — pass C0 for SRVD, C3 for classic views). The write counterpart of SAPRead(type=\"API_STATE\").\n\nReturns JSON with features and systemType=\"btp\". On BTP, RAP/CDS and transports are always available. abapGit, UI5/BSP, and FLP customization may not be available depending on the BTP ABAP configuration.",
     "inputSchema": {
       "type": "object",
       "properties": {

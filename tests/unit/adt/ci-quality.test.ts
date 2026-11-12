@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseNativeJunitSummary } from '../../../src/adt/aunit.js';
-import { CI_FINDINGS_LIMIT, runAtcCiCheck, verifyCiPackages } from '../../../src/adt/ci-quality.js';
+import {
+  ATC_CI_NOT_STARTED_LIMIT_MS,
+  CI_FINDINGS_LIMIT,
+  runAtcCiCheck,
+  verifyCiPackages,
+} from '../../../src/adt/ci-quality.js';
 import {
   buildAtcCiRunParametersXml,
   parseAtcCheckstyle,
@@ -219,6 +224,112 @@ describe('ATC CI orchestration', () => {
     });
     expect(JSON.stringify(result)).not.toContain('504');
     expect(post).toHaveBeenCalledTimes(1);
+  });
+  it('stops waiting for a run that SAP leaves in Not Yet Started, long before the deadline', async () => {
+    const { http, post } = httpFor({
+      status: '<run status="Not Yet Started"><progress description="Job noch nicht gestartet"/></run>',
+    });
+    let now = Date.now();
+    const clock = {
+      now: () => now,
+      sleep: async (ms: number) => {
+        now += ms;
+      },
+    };
+    const result = await runAtcCiCheck(http, safety, { ...options(), timeoutSeconds: 1800, clock });
+    expect(result).toMatchObject({
+      status: 'incomplete',
+      fail: true,
+      durationMs: ATC_CI_NOT_STARTED_LIMIT_MS,
+      lastStatus: 'Not Yet Started',
+      progress: 'Job noch nicht gestartet',
+      runPath,
+    });
+    expect(result).toMatchObject({
+      incompleteReason: expect.stringMatching(
+        /Not Yet Started.*60 s.*Inspect the existing SAP run.*action="atc", type="DEVC"/,
+      ),
+    });
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+  it('keeps waiting once SAP has started the run', async () => {
+    let now = Date.now();
+    const started = now;
+    const { http, get } = httpFor();
+    get.mockImplementation(async (path: string) => {
+      if (path.includes('00000000000000000000000000000000')) return { body: '', headers: {} };
+      if (path.startsWith('/sap/bc/adt/packages/'))
+        return { body: '<pak:package xmlns:pak="pak" xmlns:adtcore="adt" adtcore:name="ZPKG"/>', headers: {} };
+      if (path.includes('informationsystem'))
+        return {
+          body: '<objectReferences><objectReference name="ZTEST" type="PROG/P" packageName="ZPKG" uri="/sap/bc/adt/programs/programs/ztest"/></objectReferences>',
+          headers: {},
+        };
+      if (path === resultPath) return { body: report, headers: {} };
+      const elapsed = now - started;
+      if (elapsed < 30_000) return { body: '<run status="Not Yet Started"/>', headers: {} };
+      if (elapsed < 120_000) return { body: '<run status="In Process"/>', headers: {} };
+      return { body: completed, headers: {} };
+    });
+    const clock = {
+      now: () => now,
+      sleep: async (ms: number) => {
+        now += ms;
+      },
+    };
+    const result = await runAtcCiCheck(http, safety, { ...options(), timeoutSeconds: 600, clock });
+    expect(result).toMatchObject({ status: 'completed', runPath, resultPath });
+  });
+  it.each([
+    ['known BTP', 'btp' as const, false],
+    ['a run that already progressed', undefined, true],
+  ])('retains the caller deadline for %s', async (_label, systemType, progressed) => {
+    let now = 0;
+    const { http, get, post } = httpFor({ status: '<run status="Not Yet Started"/>' });
+    const original = get.getMockImplementation()!;
+    get.mockImplementation(async (path) =>
+      path === runPath && progressed && now < 5000
+        ? { body: '<run status="In Process"/>', headers: {} }
+        : original(path),
+    );
+    const result = await runAtcCiCheck(http, safety, {
+      ...options(),
+      systemType,
+      timeoutSeconds: 90,
+      clock: {
+        now: () => now,
+        sleep: async (ms) => {
+          now += ms;
+        },
+      },
+    });
+    expect(result).toMatchObject({ status: 'incomplete', durationMs: 90_000, runPath });
+    expect(result).toMatchObject({ incompleteReason: expect.stringContaining('deadline expired') });
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+  it('keeps the shorter overall deadline while waiting for an unknown system', async () => {
+    let now = 0;
+    const { http } = httpFor({ status: '<run status="Not Yet Started"/>' });
+    const result = await runAtcCiCheck(http, safety, {
+      ...options(),
+      timeoutSeconds: 10,
+      clock: {
+        now: () => now,
+        sleep: async (ms) => {
+          now += ms;
+        },
+      },
+    });
+    expect(result).toMatchObject({ status: 'incomplete', durationMs: 10_000, runPath });
+    expect(result).toMatchObject({ incompleteReason: expect.stringContaining('deadline expired') });
+  });
+  it('refuses on-premise systems before any request', async () => {
+    const { http, get, post } = httpFor();
+    await expect(runAtcCiCheck(http, safety, { ...options(), systemType: 'onprem' })).rejects.toThrow(
+      /supported only for BTP ABAP Environment.*No run was started.*action="atc", type="DEVC"/,
+    );
+    expect(get).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
   });
   it('classifies a request deadline as incomplete and never HTTP 504', async () => {
     const { http, get } = httpFor();

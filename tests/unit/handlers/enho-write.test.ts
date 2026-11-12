@@ -308,10 +308,11 @@ describe('ENHO (BAdI implementation) write handlers', () => {
 
   it('SAPWrite update keeps filter trees, customizingLock and example that the JSON does not model', async () => {
     const calls = mockSap(FILTERED);
-    const read = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+    const read = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, abapRelease: '816' }, 'SAPRead', {
       type: 'ENHO',
       name: 'ZMY_ENH_FILTERED',
     });
+    expect(read.isError, read.content[0]?.text).toBeUndefined();
     const json = JSON.parse(read.content[0].text);
     json.badiImplementations[1].active = false;
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {

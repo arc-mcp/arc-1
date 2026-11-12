@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-10-26
+**Last reviewed:** 2026-11-06
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -85,8 +85,12 @@ sequence.
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
 | [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P3 | M | Revisit on trigger | Security |
+| [SEC-20](#sec-20) | Require dependency and CodeQL security checks on `main` | P1 | XS | Ready | Security |
+| [SEC-21](#sec-21) | Socket policy calibration | P3 | S | Revisit on trigger | Security |
+| [SEC-22](#sec-22) | SBOMs for the Docker image, MCPB bundle and executables | P3 | S | Revisit on trigger | Security |
 | [SEC-19](#sec-19) | Registered agent identity and downstream tool scopes | P2 | L | Needs research | Auth / Security |
 | [COMPAT-22](#compat-22) | Integration Suite remote MCP gateway validation | P2 | M | Needs research | Compatibility |
+| [COMPAT-23](#compat-23) | Shared reader for function-group object URIs | P2 | M | Ready | Compatibility |
 | [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
 | [FEAT-85](#feat-85) | Set the ABAP language version of packages and objects | P1 | M | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
@@ -109,16 +113,19 @@ sequence.
 | [FEAT-71](#feat-71) | Dictionary activation log | P3 | M | Needs research | Diagnostics |
 | [FEAT-91](#feat-91) | Validate the legacy dump user filter | P2 | S | Needs research | Diagnostics |
 | [FEAT-74](#feat-74) | Qualify dump-filter matching | P2 | S | Needs research | Diagnostics |
-| [FEAT-94](#feat-94) | Report a dump feed's shorter time window | P2 | S | Needs research | Diagnostics |
+| [FEAT-94](#feat-94) | Verify the dump feed window on more releases | P3 | S | Needs environment | Diagnostics |
 | [FEAT-50](#feat-50) | ADT type-probe fixture coverage | P3 | XS each | Contributor-driven | Diagnostics |
 | [FEAT-32](#feat-32) | Stable data-preview pagination | P3 | M | Needs research | Data access |
 | [FEAT-86](#feat-86) | Additional stored-text profiles and persistence | P3 | M | Needs research | Data access |
 | [FEAT-87](#feat-87) | Preserve repeated spaces in general data queries | P2 | S | Needs research | Data access |
 | [FEAT-88](#feat-88) | Application-log discovery and wider qualification | P3 | M | Needs research | Data access |
 | [FEAT-89](#feat-89) | Additional typed data-cluster use cases | P3 | M | Needs research | Data access |
+| [FEAT-95](#feat-95) | Retire the TABLE_CONTENTS sqlFilter | P3 | S | Needs research | Data access |
 | [FEAT-90](#feat-90) | Historical transport scope beyond source | P2 | M | Needs research | Developer workflow |
 | [FEAT-36](#feat-36) | Type information | P3 | S | Blocked | Code intelligence |
 | [FEAT-79](#feat-79) | DDIC-aware dependency context | P2 | M | Needs research | Code intelligence |
+| [FEAT-96](#feat-96) | Bounded class overview and large-read policy | P2 | M | Needs research | Code intelligence |
+| [FEAT-97](#feat-97) | Complete SHLP definitions and effective appends | P3 | M | Needs research | Object coverage |
 | [FEAT-42](#feat-42) | Additional CI output formats | P3 | XS | Revisit on trigger | CI |
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
@@ -347,9 +354,11 @@ automatic revocation to deletion. Pre-existing BTP SUSH entries are separate evi
 - **Priority / effort / status:** P3 / S / Needs research
 - **Category:** Compatibility
 
-**Remaining gap.** Program and function-group deletion now holds owner and pool
-locks and refuses explicit inactive pool metadata; it never activates a draft
-automatically. The caller's inactive feed is not an ownership or absence check.
+**Remaining gap.** Where the text-pool service is advertised, program and function-group
+deletion holds owner and pool locks and refuses explicit inactive pool metadata; it never
+activates a draft automatically. Validated discovery can permit owner-only deletion on
+legacy systems without that service, where inactive SAP GUI text drafts cannot be checked.
+The caller's inactive feed is not an ownership or absence check.
 The remaining qualification is two users, recording transports and principal
 propagation, including drafts outside a shared request and competing locks. See the
 [cross-user deletion evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-cross-user-text-delete.md).
@@ -529,6 +538,62 @@ SAP metadata for implicit dependencies and test representative releases. Choose 
 explicit refusal for affected functions; do not infer full lineage from the present graph or add a
 hard-coded table list without proving its completeness.
 
+<a id="sec-20"></a>
+### SEC-20 — Require dependency and CodeQL security checks on `main`
+
+- **Priority / effort / status:** P1 / XS / Ready
+- **Category:** Security
+
+**Remaining gap.** Security checks report on PRs, but no ruleset requires them. A red
+`Dependency security` check or a high CodeQL finding does not stop a merge. The `main` ruleset only
+has deletion, non-fast-forward and pull-request rules (checked 2026-11-01).
+
+**Resume with.** Add a ruleset for the default branch with two rules:
+
+- Required status check `Dependency security` from GitHub Actions (integration ID `15368`). Leave
+  "require branches to be up to date" off: it would force a re-merge and full CI on every open PR.
+- A `code_scanning` rule for CodeQL with security alerts at `high_or_higher` and general alerts at
+  `none`. Do not require the `CodeQL` status check instead.
+
+Before enabling it, watch the merge panel on a normal PR, a release PR and a Dependabot PR:
+
+- Release PRs only run their workflows after a maintainer approves them:
+  [#1093](https://github.com/arc-mcp/arc-1/pull/1093) never ran Dependency Review,
+  [#1079](https://github.com/arc-mcp/arc-1/pull/1079) did. The required check waits until then.
+- `CodeQL` was `neutral` on #1079 although every analysis passed. Confirm that does not block.
+- [GitHub exempts Dependabot PRs](https://docs.github.com/en/code-security/concepts/code-scanning/merge-protection#exceptions-and-limitations)
+  analyzed by default setup from code-scanning rules, so only `Dependency security` applies there.
+
+Afterwards, prove that a harmless failing check is refused, and update the warning in
+[section 13](security-guide.md#13-dependency-supply-chain-security).
+
+<a id="sec-21"></a>
+### SEC-21 — Socket policy calibration
+
+- **Priority / effort / status:** P3 / S / Revisit on trigger
+- **Category:** Security
+
+**Remaining gap.** The Socket GitHub App reports on every PR, but ARC-1 has not verified that its
+dashboard policy blocks anything on a real dependency change.
+
+**Resume when.** A customer asks for malicious-package blocking, or SEC-20 is in place and adding
+Socket to it would be useful. Review results on real dependency PRs first, block known malware, and
+keep behavior signals such as install scripts and network access as warnings because legitimate
+packages trigger them. Add `Socket Security: Pull Request Alerts` to the required checks only after that.
+
+<a id="sec-22"></a>
+### SEC-22 — SBOMs for the Docker image, MCPB bundle and executables
+
+- **Priority / effort / status:** P3 / S / Revisit on trigger
+- **Category:** Security
+
+**Remaining gap.** Releases publish an SBOM for the root npm production graph only. It does not
+describe Alpine packages in the image, the MCPB after `better-sqlite3` is removed, or the executables.
+Scheduled scans also rebuild the image, so they say nothing about an already published digest.
+
+**Resume when.** A customer deploying one of these artifacts needs its inventory. Generate each
+SBOM from the built artifact, keep the release non-gating, and do not reuse the npm SBOM.
+
 <a id="sec-19"></a>
 ### SEC-19 — Registered agent identity and downstream tool scopes
 
@@ -564,6 +629,31 @@ See the [source and validation boundary](https://github.com/arc-mcp/arc-1/blob/m
 authentication and two users with different SAP permissions. Verify identity, scopes, tool filtering,
 audit/traces, quotas, errors and reconnect behavior. Do not silently substitute a shared credential
 for PP or present transport success as ADT permission. The gateway is optional for custom MCP.
+
+<a id="compat-23"></a>
+### COMPAT-23 — Shared reader for function-group object URIs
+
+- **Priority / effort / status:** P2 / M / Ready
+- **Category:** Compatibility
+
+**Idea.** One small, pure function that reads a repository search-hit URI and returns what the
+object is (function-group include, function module or standalone include), its function group and
+its name, so callers stop re-deriving this from URIs one by one.
+
+**Why it remains.** SAP's search does not treat function modules and function-group includes as
+ordinary typed objects: on 7.57 the `objectType` filter returns nothing for `INCL`/`FUGR/I`, and the
+`U01`-style includes are typed `FUGR/I` but carry a function-module URI. ARC-1 therefore reads the
+URI in several places, for example `client.resolveFunctionGroup` and `resolveIncludeGroup` in
+`src/handlers/include-group.ts` (shared by transport, writes and activation). The type-filter symptom is fixed in the include-search change
+(`src/adt/include-search.ts`); the duplicated URI reading is not.
+
+**Resume with.** Add the reader under `src/adt/`. Move `resolveIncludeGroup` onto it first and keep
+its refusal to guess on ambiguous results, then `resolveFunctionGroup` (it accepts a trailing
+`/`, `?` or `#` that `resolveIncludeGroup` rejects). One caller per commit; leave the XML node-type
+handling in `xml-parser.ts` and the create-XML types alone. Open question: `resolveIncludeGroup`
+still refuses U01-style function-module routes. Live 7.58/8.16 search returns an `FUGR/I` hit with
+a `/fmodules/` URI; 7.50 returned no hit. Decide the intended function-module editing scope
+before broadening that resolver; the structural-include change does not require it.
 
 ## Developer workflows
 
@@ -966,19 +1056,21 @@ validator without schema discovery on the legacy path. Retain fail-before gramma
 positive match. [Original finding](https://github.com/arc-mcp/arc-1/blob/5725fab6515f7a410e3e488003ae1a7aa3d8c249/docs/research/adt-vscode-1.2/evidence/diagnostics-review/claude-review-1.md).
 
 <a id="feat-94"></a>
-### FEAT-94 — Report a dump feed's shorter time window
+### FEAT-94 — Verify the dump feed window on more releases
 
-- **Priority / effort / status:** P2 / S / Needs research
+- **Priority / effort / status:** P3 / S / Needs environment
 - **Category:** Diagnostics
 
-**Remaining gap.** On SAP_BASIS 7.50 the dump feed only reaches back 24 hours: its handler raises
-`from` to now minus 24 hours. A list for an older window comes back empty or cut short without a
-note, so a model reports no dumps while ST22 lists them. Dump detail already explains this when the
-feed does not list a dump.
+**Remaining gap.** Dump lists from a SAP_BASIS release below 7.53 carry a note when the older feed
+handler may have cut them to 24 hours. The class per release comes from SAP Note correction
+instructions; the window itself was read on 7.50 (24 hours) and 7.58 (2000 days) only. 7.31, 7.40,
+7.51 and 7.52 run the same older class, and 7.53–7.57 and 8.16 the newer one, unverified. A target
+that reports its release neither to the probe nor to the caller's own read, and has no
+`SAP_ABAP_RELEASE`, gets no note.
 
-**Resume with.** A list contract that can carry a note (the result is a bare array today) and a
-signal for the shorter window that does not depend on dumps being present, verified on a 7.50
-target that has dumps older than one day. [Mechanism](https://github.com/arc-mcp/arc-1/blob/main/docs/dev-guide.md#dump-detail-on-sap_basis-750).
+**Resume with.** A target on one of those releases: read the `compute_timestamp_from` call in its
+dump feed handler, or list dumps older than one day and compare with ST22. Adjust the release
+threshold only on that evidence. [Mechanism and release table](https://github.com/arc-mcp/arc-1/blob/main/docs/dev-guide.md#dump-detail-on-sap_basis-750).
 
 <a id="feat-50"></a>
 ### FEAT-50 — ADT type-probe fixture coverage
@@ -1086,6 +1178,25 @@ semantics. Prefer purpose-specific native APIs where available.
 fixtures and expected values across the relevant releases/platforms. Preserve data gates, blocklists,
 current-user identity, and bounded output; no RFC or executed ABAP fallback in core (ADR-0009).
 
+<a id="feat-95"></a>
+### FEAT-95 — Retire the TABLE_CONTENTS sqlFilter
+
+- **Priority / effort / status:** P3 / S / Needs research
+- **Category:** Data access
+
+**Remaining gap.** `TABLE_CONTENTS` sends `sqlFilter` as a bare condition to the DDIC data preview.
+The tested 758 and 816 systems refuse these bodies with "Only SELECT statement is allowed";
+ARC-1 points callers to `TABLE_QUERY` `where`. The documented 750 test system returns 404 for both data-preview
+collections, so it cannot settle compatibility on other 750 systems. The DDIC
+preview does accept a full `SELECT`, but on 816 it runs whatever table that statement names and
+ignores `ddicEntityName`, so wrapping the condition into a `SELECT` would turn TABLE_CONTENTS into
+free SQL outside the data-source analyzer and the `allowFreeSQL` gate.
+
+**Resume with.** A deprecation path, or a named preview-enabled target that accepts a condition-only
+body. Any retained support needs evidence that the body cannot select another table or bypass the
+free-SQL gate. Check the SELECT prefix guard with Unicode case folding too. Do not build a
+`SELECT` from caller text for the DDIC preview.
+
 <a id="feat-36"></a>
 ### FEAT-36 — Type information
 
@@ -1117,6 +1228,46 @@ contracts, then verify source/signature type references and lookup limits on bot
 failed attempts distinct from absent objects and preserve the existing source/cache identity policy.
 Evaluate prioritizing known function/class candidates ahead of ambiguous type guesses without
 increasing the lookup limit; verify that any ranking change improves useful coverage.
+
+<a id="feat-96"></a>
+### FEAT-96 — Bounded class overview and large-read policy
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Code intelligence
+
+**Remaining gap.** An optional bounded class overview and a predictable large-source response policy
+could help unknown-member discovery. Define completeness, continuation, and opt-in/default behavior
+before changing existing full-source reads. Broader local/interface/inherited signature resolution
+also needs explicit ownership and ambiguity rules. Existing named-method, grep, range and own-MAIN
+signature reads cover focused requests; they do not establish a complete inherited API.
+
+**Evidence.** [Focused-read implementation and live measurements](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-29-read-token-quick-wins/README.md)
+separate returned model context from SAP transfer. The October 31 BTP/HTTP qualification and
+strict model traces also expose unnecessary follow-up reads after a sufficient method body; a
+wording-only experiment did not improve that sample, and the post-review five-case run still
+failed the implementation-only call budget. Metadata first adds a call when the member
+is already known, and caching alone does not shrink returned source.
+
+**Resume with.** Compare equal completed unknown-member tasks across representative classes and
+clients, including retries and discovery calls. Demonstrate a useful improvement before adding a
+default cap or automatic overview. Preserve source/editable hashes, version and per-user cache
+boundaries, and explicit full reads.
+
+<a id="feat-97"></a>
+### FEAT-97 — Complete SHLP definitions and effective appends
+
+- **Priority / effort / status:** P3 / M / Needs research
+- **Category:** Object coverage
+
+**Remaining gap.** Native active partial SHLP metadata is available through SAPRead and SAPContext.
+Selection-method/exit headers, collective assignments, parameter positions/defaults, inactive content
+and effective append provenance remain unavailable. The bounded reader needs no SQL or execution.
+
+**Resume with.** A concrete full-definition use case, an independent complete-definition oracle and
+positive append fixtures covering switch/interface semantics. Preserve data/SQL permissions and
+keep execution/export extensions outside core. BTP and live restricted-user/PP qualification remain
+separate evidence requirements. See [native evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/abap-types/types/shlp.md) and
+[implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-29-shlp-native-metadata.md).
 
 ## CI and operations
 
@@ -1221,7 +1372,8 @@ plugin loading in a SEA before claiming support.
 
 **Why it remains.** SAP ref. 137800 calls for outage protection. ARC-1 has HTTP timeouts, bounded
 retry paths and concurrency admission, but no built-in circuit breaker; ordinary semaphore waits
-lack a queue deadline. A semaphore does not suppress repeated calls to an unavailable backend.
+lack a queue deadline. Entirely inconclusive feature probes, including HTTP 502/503/504, repeat on
+later calls to that target. Neither those probes nor a semaphore suppress outage traffic.
 See the [current gap assessment](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-21-sap-api-policy-custom-mcp.md).
 
 **Resume with.** Define transient-failure classification, target isolation, recovery probes, queue

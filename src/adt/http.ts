@@ -13,9 +13,9 @@ import { logger } from '../server/logger.js';
 import { traceHeaders } from '../server/trace-context.js';
 import { acceptFallback } from './accept-fallback.js';
 import { connectivityProxyResponse, prepareBoundedResponse } from './bounded-response.js';
-import { resolveCookies } from './cookies.js';
+import { loadCookiesFromFile, parseCookieString } from './cookies.js';
 import { resolveAcceptType, resolveContentType } from './discovery.js';
-import { AdtApiError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
+import { AdtApiError, AdtCsrfBootstrapError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
 import {
   type AdtRequestOptions,
   awaitWithinRequestBudget,
@@ -116,7 +116,7 @@ export interface AdtHttpConfig {
   /** Gzip non-empty data-preview POST bodies for approved WAF compatibility. */
   gzipDataPreviewBody?: boolean;
   cookies?: Record<string, string>;
-  /** Path to cookie file — enables hot-reload on stale auth */
+  /** Cookie file re-read during auth recovery and before CSRF bootstrap outside a live stateful context. */
   cookieFile?: string;
   /** Inline cookie string — stored for config awareness (no hot-reload) */
   cookieString?: string;
@@ -226,6 +226,16 @@ export class AdtHttpClient {
   /** True once ADT discovery has been loaded — lets callers distinguish "capability absent" from "unknown". */
   hasDiscoveryData(): boolean {
     return this.discoveryMap.size > 0;
+  }
+
+  /** Exact collection presence; no Accept entries still means present. Undefined means discovery is unknown. */
+  hasDiscoveryCollection(path: string): boolean | undefined {
+    return this.hasDiscoveryData() ? this.discoveryMap.has(path) : undefined;
+  }
+
+  /** Requested SAP language; the response may still contain fallback translations. */
+  get language(): string | undefined {
+    return this.config.language;
   }
 
   /** The Accept media type ADT discovery advertises for a collection path, or undefined. Used for capability gating. */
@@ -525,9 +535,11 @@ export class AdtHttpClient {
       headers['SAP-Connectivity-Authentication'] = this.config.sapConnectivityAuth;
     }
     // Quick-fix lookup includes queries (#993); old revision feeds append source paths to them. Use context headers.
+    // Legacy discovery is query-sensitive too (#1189); retain its explicit SAML URL bypass.
     const sapContextInHeaders =
       (method === 'POST' && path.startsWith('/sap/bc/adt/quickfixes/proposals/')) ||
-      (method === 'GET' && /^\/sap\/bc\/adt\/[^?#]+\/versions$/.test(path));
+      (method === 'GET' && /^\/sap\/bc\/adt\/[^?#]+\/versions$/.test(path)) ||
+      (method === 'GET' && path === '/sap/bc/adt/discovery' && !this.config.disableSaml);
     if (sapContextInHeaders) {
       if (this.config.client) headers['sap-client'] = this.config.client;
       if (this.config.language) headers['sap-language'] = this.config.language;
@@ -620,7 +632,7 @@ export class AdtHttpClient {
       // Handle 503 Service Unavailable — ICM thread/MPI exhaustion or WP overload.
       // Legacy retries remain the default; ambiguous mutations can disable transient replay.
       // Retry happens INSIDE the semaphore slot to avoid increasing load on an overloaded system.
-      if (response.status === 503 && retryTransientErrors) {
+      if (response.status === 503 && retryTransientErrors && options?.retryUnavailable !== false) {
         const { delayMs: jitterMs, source } = parseRetryAfter(
           response.headers.get('retry-after'),
           1000 + Math.random() * 1000,
@@ -1045,9 +1057,11 @@ export class AdtHttpClient {
       headers['SAP-Connectivity-Authentication'] = this.config.sapConnectivityAuth;
     }
 
-    // Lazy cookie reload (same guard as request()) — re-read cookie file
-    // before CSRF fetch so a hot-reloaded cookie is used immediately.
-    if (this.cookiesCleared && this.isCookieAuthMode()) {
+    // A tokenless 200 need not be a recognized auth failure. Check the file on bootstrap,
+    // but keep a locked operation's owning session through refresh, unlock and close.
+    const context = this.cookieJar.get('sap-contextid');
+    const liveStatefulContext = this.config.sessionType === 'stateful' && !!context && context !== '0';
+    if ((this.config.cookieFile && !liveStatefulContext) || (this.cookiesCleared && this.isCookieAuthMode())) {
       this.reloadCookiesFromSource();
     }
 
@@ -1071,11 +1085,14 @@ export class AdtHttpClient {
           headers['X-sap-adt-sessiontype'] === undefined ? 'unspecified' : (this.config.sessionType ?? 'unspecified'),
         hasContext: /(?:^|;\s*)sap-contextid=/.test(headers.Cookie ?? ''),
       });
-      if (method === 'GET' && response.status === 200 && !usableCsrfToken(response)) {
-        // Check login pages, but preserve the header-only legacy discovery fallback.
+      const inspectBody = method === 'GET' && !options?.discardResponseBody;
+      if (inspectBody && response.status === 200 && !usableCsrfToken(response)) {
+        // Discarded bodies cannot be classified; a usable token is still required below.
         this.handleResponse(response.status, response.headers, await response.text(), path, false);
       }
-      // Only headers are needed; release GET bodies before a fallback or return.
+      // Optional analyses account for control bodies in the same streamed allowance.
+      if (options?.responseBudget?.countAllResponses && !response.bodyUsed) await response.arrayBuffer();
+      // Other callers need headers only; release GET bodies before a fallback or return.
       if (!response.bodyUsed) await response.body?.cancel();
       return response;
     };
@@ -1085,7 +1102,7 @@ export class AdtHttpClient {
       let response = await probe('HEAD');
 
       // Retry once on 503 — ICM may be temporarily overloaded (thread/MPI exhaustion).
-      if (response.status === 503) {
+      if (response.status === 503 && options?.retryTransientErrors !== false && options?.retryUnavailable !== false) {
         const jitterMs = 1000 + Math.random() * 1000;
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -1141,7 +1158,7 @@ export class AdtHttpClient {
             path,
           );
         }
-        throw new AdtApiError(`No CSRF token in response (HTTP ${response.status})`, response.status, path);
+        throw new AdtCsrfBootstrapError(`No CSRF token in response (HTTP ${response.status})`, response.status, path);
       }
 
       return path;
@@ -1167,25 +1184,10 @@ export class AdtHttpClient {
   }
 
   /**
-   * Mark stale cookies for hot-reload on the next request.
-   *
-   * Clears EVERY in-memory copy of the failed session: `config.cookies` (the
-   * static set seeded from cookieFile/cookieString at construction), `cookieJar`
-   * (cookies harvested from prior responses, including the 401/HTML-login
-   * response that just triggered this call), and `csrfToken` (bound to the
-   * dead session).
-   *
-   * Without clearing the jar, the next request's cookie-header build path
-   * (`config.cookies` + `cookieJar`) would re-emit the stale Set-Cookie values
-   * harvested from the failed response — overriding the fresh `config.cookies`
-   * we'll repopulate via `reloadCookiesFromSource()`. The jar therefore must
-   * not survive the reload boundary.
-   *
-   * Called from THREE paths: persistent 401 in `request()` retry, HTML-login
-   * fallback in `handleResponse()`, and CSRF 401 in `fetchCsrfToken()`. Also
-   * exposed publicly via `markCookiesStale()` so the startup auth preflight
-   * can propagate "the cookies you started the process with are dead" state
-   * to the long-lived runtime client.
+   * Clear configured cookies and all session state after an authentication failure.
+   * The jar must be cleared too: its server-assigned values override a refreshed file.
+   * The next request reloads credentials through cookiesCleared. markCookiesStale()
+   * also uses this to propagate a startup failure to the long-lived runtime client.
    */
   private clearCookiesAndMark(): void {
     this.config.cookies = {};
@@ -1207,23 +1209,33 @@ export class AdtHttpClient {
   }
 
   /**
-   * Re-read cookies from the original source (file or string).
-   * Called lazily on the NEXT request after a 401 cleared stale cookies.
+   * Re-read a cookie file for auth recovery or CSRF bootstrap; replace session state only on a change.
    */
   private reloadCookiesFromSource(): void {
     this.cookiesCleared = false;
-    if (!this.config.cookieFile && this.config.cookieString) {
-      logger.warn('SAP_COOKIE_STRING cannot be refreshed without restart. Use SAP_COOKIE_FILE for automatic reload.');
+    if (!this.config.cookieFile) {
+      if (this.config.cookieString) {
+        logger.warn('SAP_COOKIE_STRING cannot be refreshed without restart. Use SAP_COOKIE_FILE for automatic reload.');
+      }
       return;
     }
     try {
-      const fresh = resolveCookies(this.config.cookieFile, this.config.cookieString);
-      if (fresh && Object.keys(fresh).length > 0) {
-        this.config.cookies = fresh;
-        logger.info('Reloaded cookies from file', { cookieCount: Object.keys(fresh).length });
-      } else {
+      const fileCookies = loadCookiesFromFile(this.config.cookieFile);
+      if (Object.keys(fileCookies).length === 0) {
         logger.warn('Cookie reload returned empty result');
+        return;
       }
+      const fresh = { ...fileCookies, ...parseCookieString(this.config.cookieString ?? '') };
+      const current = this.config.cookies ?? {};
+      if (
+        Object.keys(fresh).length === Object.keys(current).length &&
+        Object.entries(fresh).every(([name, value]) => current[name] === value)
+      ) {
+        return;
+      }
+      this.resetSession();
+      this.config.cookies = fresh;
+      logger.info('Reloaded cookies from file', { cookieCount: Object.keys(fresh).length });
     } catch (err) {
       logger.warn('Failed to reload cookies from source', {
         error: err instanceof Error ? err.message : String(err),
