@@ -123,6 +123,37 @@ describe('SAPRead SRVB include=service_info', () => {
     expect(service.note).toContain('publish_srvb');
   });
 
+  it.each(['', 'unknown'])('keeps an unknown publication state (%s) separate from unpublished', async (state) => {
+    respond(binding('V4', content()), { '0001': V4_PUBLISHED.replace('published="true"', `published="${state}"`) });
+    const [service] = JSON.parse((await read()).content[0]!.text).services;
+    expect(service).not.toHaveProperty('published');
+    expect(service).not.toHaveProperty('entitySets');
+    expect(service.serviceUrl).toContain('/sap/opu/odata4/');
+    expect(service.note).toContain('unknown');
+    expect(service.note).not.toContain('publish_srvb');
+  });
+
+  it.each([403, 500])('propagates native HTTP %s without invented service information', async (status) => {
+    respond(binding('V4', content()));
+    const original = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((...args) =>
+      String(args[0]).includes('/odatav4/')
+        ? Promise.resolve(mockResponse(status, 'Native read failed'))
+        : original(...args),
+    );
+    const result = await read();
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).not.toContain('entitySets');
+  });
+
+  it('reads publication changes again instead of caching the service document', async () => {
+    respond(binding('V4', content()), { '0001': V4_UNPUBLISHED });
+    expect(JSON.parse((await read()).content[0]!.text).services[0].published).toBe(false);
+    respond(binding('V4', content()), { '0001': V4_PUBLISHED });
+    expect(JSON.parse((await read()).content[0]!.text).services[0].published).toBe(true);
+    expect(infoRequests()).toHaveLength(2);
+  });
+
   it('reads every declared service version', async () => {
     respond(binding('V2', content('0001') + content('0002')), {
       '0001': v2Document('0001'),

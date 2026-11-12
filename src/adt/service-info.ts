@@ -88,7 +88,10 @@ export function parseServiceInfoDocument(
     return {
       published: published === 'false' ? false : undefined,
       ...(serviceUrl ? { serviceUrl } : {}),
-      note: 'SAP reports no entity sets for a service that is not published; publish it to read them (SAPActivate action=publish_srvb).',
+      note:
+        published === 'false'
+          ? 'SAP reports no entity sets for a service that is not published; publish it to read them (SAPActivate action=publish_srvb).'
+          : 'SAP did not report a recognized publication state; entity sets are unknown.',
     };
   }
   return { published: true, serviceUrl, entitySets: parseEntitySets(service) };
