@@ -120,7 +120,7 @@ See [Authorization](authorization.md) and [Principal Propagation](principal-prop
 
 ### "Feature not available" is normal, not an error
 
-ARC-1 probes optional capabilities at startup (abapGit, AMDP, RAP/CDS, UI5, HANA info, source search,
+ARC-1 probes optional capabilities at startup (abapGit, RAP/CDS, UI5, HANA info, source search,
 …). Any capability your system doesn't have simply returns `404` (not installed / ICF service not
 active) or `400` — **this is expected and is recorded as data, not an error.** These probe misses are
 logged at `debug`, so they do **not** appear at the default `info` level. A clean startup has **no
@@ -130,11 +130,10 @@ If you run with `SAP_VERBOSE=true`, you'll see them — and they're still harmle
 
 ```
 DEBUG: [http_request] {"method":"GET","path":"/sap/bc/adt/abapgit/repos","statusCode":404,...}
-DEBUG: [http_request] {"method":"GET","path":"/sap/bc/adt/debugger/amdp","statusCode":404,...}
 DEBUG: [http_request] {"method":"GET","path":"/sap/bc/adt/ddic/ddl/sources","statusCode":400,...}
 ```
 
-These just mean abapGit/AMDP aren't installed and the RAP probe returned its expected `400` — ARC-1
+These just mean abapGit isn't installed and the RAP probe returned its expected `400` — ARC-1
 disables those features gracefully and serves the rest. The resolved feature set is what matters, not
 the individual probe responses.
 

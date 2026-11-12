@@ -91,7 +91,6 @@ const ALL_FEATURES_AVAILABLE: ResolvedFeatures = {
   abapGit: availableFeature('abapGit'),
   gcts: availableFeature('gcts'),
   rap: availableFeature('rap'),
-  amdp: availableFeature('amdp'),
   ui5: availableFeature('ui5'),
   transport: availableFeature('transport'),
   ui5repo: availableFeature('ui5repo'),

@@ -2761,7 +2761,7 @@ group membership; inspect a group's tiles in SAP Fiori Launchpad Designer.
 | `tileInstanceId` | string | No | Required for `flp_add_tile_to_group` |
 | `tile` | object | No | Required for `flp_create_tile`. Fields: `id`, `title`, `semanticObject`, `semanticAction`, optional `icon`, `url`, `subtitle`, `info` |
 
-**Probed features:** `hana`, `abapGit`, `rap`, `amdp`, `ui5`, `transport`, `ui5repo`, `flp`. Each returns `available` (bool), `mode` (auto/on/off), `message`, and `probedAt` timestamp.
+**Probed features:** `hana`, `abapGit`, `rap`, `ui5`, `transport`, `ui5repo`, `flp`. Each returns `available` (bool), `mode` (auto/on/off), `message`, and `probedAt` timestamp.
 
 **cache_stats output:**
 ```json
