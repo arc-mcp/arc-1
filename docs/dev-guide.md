@@ -268,9 +268,12 @@ loader reports that with the platform named. Remaining gaps are tracked as COMPA
 
 **Live evidence.** Verified on a domain-joined Windows x64 host against an on-premise SNC/Kerberos-only
 system over direct HTTPS, default `bootstrap` mode, no SPN override: discovery 200, CSRF bootstrap
-succeeded, search and transport authorization probes passed, `SAPSearch` returned a class. **Reads
-only** — the lock→modify→unlock path, ticket/session expiry recovery and `per-request` mode have not
-been exercised against a real system. Note `npm install kerberos` is a no-op when the package is
+succeeded, search and transport authorization probes passed, `SAPSearch` returned a class. The run
+was repeated with the NTLM refusal in place and still succeeded, which proves two things at once:
+the guard does not reject a genuine ticket, and the protocol that system accepts really is Kerberos
+rather than an NTLM fallback that happened to be tolerated. **Reads only** — the lock→modify→unlock
+path, ticket/session expiry recovery and `per-request` mode have not been exercised against a real
+system. Note `npm install kerberos` is a no-op when the package is
 already unpacked without its binary (npm considers it installed and skips the install script);
 `npm rebuild kerberos` is what fetches the prebuild.
 
