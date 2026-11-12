@@ -271,10 +271,14 @@ system over direct HTTPS, default `bootstrap` mode, no SPN override: discovery 2
 succeeded, search and transport authorization probes passed, `SAPSearch` returned a class. The run
 was repeated with the NTLM refusal in place and still succeeded, which proves two things at once:
 the guard does not reject a genuine ticket, and the protocol that system accepts really is Kerberos
-rather than an NTLM fallback that happened to be tolerated. **Reads only** — the lock→modify→unlock
-path, ticket/session expiry recovery and `per-request` mode have not been exercised against a real
-system. Note `npm install kerberos` is a no-op when the package is
-already unpacked without its binary (npm considers it installed and skips the install script);
+rather than an NTLM fallback that happened to be tolerated. The **write** path was then exercised on
+the same system with a disposable `$TMP` class: create → source update → activate → read-back →
+delete, all succeeding. That covers the two stateful-session steps (update and delete each run
+lock→modify→unlock), so rule 3 is no longer unit-tests-only. Still **unverified against a real
+system**: ticket/session expiry recovery — a one-shot `arc1-cli` call always negotiates afresh, so
+provoking it needs a long-running server and a `klist purge` mid-session — `per-request` mode, and
+everything outside win32-x64. Note `npm install kerberos` is a no-op when the package is already
+unpacked without its binary (npm considers it installed and skips the install script);
 `npm rebuild kerberos` is what fetches the prebuild.
 
 ## Key Files for Common Tasks — full reference
