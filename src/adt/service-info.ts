@@ -94,6 +94,9 @@ export function parseServiceInfoDocument(
           : 'SAP did not report a recognized publication state; entity sets are unknown.',
     };
   }
+  if (service.serviceInformation === undefined) {
+    return { published: true, ...(serviceUrl ? { serviceUrl } : {}), note: 'SAP returned no entity-set information.' };
+  }
   return { published: true, serviceUrl, entitySets: parseEntitySets(service) };
 }
 

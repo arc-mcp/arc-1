@@ -123,6 +123,23 @@ describe('SAPRead SRVB include=service_info', () => {
     expect(service.note).toContain('publish_srvb');
   });
 
+  it.each([
+    ['V2', v2Document()],
+    ['V4', V4_PUBLISHED],
+  ])(
+    'does not call a published %s service empty when its entity-set information is absent',
+    async (version, document) => {
+      respond(binding(version, content()), {
+        '0001': document.replace(/<serviceInfo:serviceInformation[\s\S]*?<\/serviceInfo:serviceInformation>/, ''),
+      });
+      const [service] = JSON.parse((await read()).content[0]!.text).services;
+      expect(service.published).toBe(true);
+      expect(service).not.toHaveProperty('entitySets');
+      expect(service.serviceUrl).toContain('/sap/opu/');
+      expect(service.note).toBe('SAP returned no entity-set information.');
+    },
+  );
+
   it.each(['', 'unknown'])('keeps an unknown publication state (%s) separate from unpublished', async (state) => {
     respond(binding('V4', content()), { '0001': V4_PUBLISHED.replace('published="true"', `published="${state}"`) });
     const [service] = JSON.parse((await read()).content[0]!.text).services;
