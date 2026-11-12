@@ -21,6 +21,7 @@ import {
   isTableTypesEndpointAvailable,
 } from './feature-cache.js';
 import { writeActionGenerate } from './generators.js';
+import { resolveIncludeGroupForMutation } from './include-group.js';
 import {
   canonicalTablType,
   functionGroupIncludeObjectUrl,
@@ -123,6 +124,9 @@ export async function handleSAPWrite(
   // `buildCreateXml('FUNC', …, properties)` finds it.
   let objectUrl: string;
   let srcUrl: string;
+  if (type === 'INCL' && ['update', 'edit_unit', 'add_unit', 'edit_content'].includes(action)) {
+    args.group = await resolveIncludeGroupForMutation(client, name, args.group);
+  }
   if (
     (type === 'TABL' || type === 'TABL/DT' || type === 'TABL/DS') &&
     action !== 'create' &&
@@ -262,6 +266,7 @@ export async function handleSAPWrite(
       return writeActionEditMethod(ctx);
     case 'add_unit':
     case 'edit_unit':
+    case 'edit_content':
       return writeActionUnit(ctx);
 
     // Class-section surgery actions (issue #303) — see write/class-surgery.ts.
@@ -296,7 +301,7 @@ export async function handleSAPWrite(
       return writeActionEditTextSymbols(ctx);
     default:
       return errorResult(
-        `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, edit_unit, add_unit, batch_create, scaffold_rap_handlers, generate_behavior_implementation`,
+        `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, edit_unit, add_unit, edit_content, batch_create, scaffold_rap_handlers, generate_behavior_implementation`,
       );
   }
 }

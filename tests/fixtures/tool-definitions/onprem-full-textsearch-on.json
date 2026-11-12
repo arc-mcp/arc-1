@@ -100,7 +100,7 @@
         },
         "include": {
           "type": "string",
-          "description": "TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins over method routing. DDLS: elements returns field catalog (keys, aliases, associations, types). VERSIONS CLAS: selects include history. BSP: case-sensitive path; name also accepts APP/path. TEXT_ELEMENTS: symbols|selections|headings; omit for pool (CLAS: symbols)."
+          "description": "SRVB: service_info = URL, entity sets. TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins. DDLS: elements returns field catalog (keys, aliases, associations, types). VERSIONS CLAS: selects include history. BSP: case-sensitive path; name also accepts APP/path. TEXT_ELEMENTS: symbols|selections|headings; omit for pool (CLAS: symbols)."
         },
         "group": {
           "type": "string",
@@ -345,6 +345,7 @@
             "edit_method",
             "edit_unit",
             "add_unit",
+            "edit_content",
             "edit_class_definition",
             "add_method",
             "edit_method_signature",
@@ -356,7 +357,7 @@
             "edit_text_symbols",
             "generate"
           ],
-          "description": "Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). edit_method: replace a single method body — the token-cheap path for class edits. edit_unit replaces a FORM/MODULE in PROG/INCL; add_unit appends one at EOF. batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); edit_method_signature rewrites one METHODS clause and leaves the body alone; change_method_visibility moves a method to another section and preserves its body; delete_method is destructive — it discards the body, so to re-section a method use change_method_visibility, never delete+add. scaffold_rap_handlers / generate_behavior_implementation: derive behavior-pool handlers from a BDEF (the latter is the equivalent of Eclipse's \"Generate Behavior Implementation\"). edit_text_symbols: replace a CLAS/PROG/FUGR textpool part; read first, retain other entries. source=\"\" clears it. generate: SAP object generator (SAPRead GENERATORS) on type/name; source=JSON overrides; dryRun first."
+          "description": "Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). edit_method: replace a single method body — the token-cheap path for class edits. PROG/INCL: edit_unit replaces a FORM/MODULE; add_unit appends one; edit_content replaces one exact match and requires expectedSourceHash. batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); edit_method_signature rewrites one METHODS clause and leaves the body alone; change_method_visibility moves a method to another section and preserves its body; delete_method is destructive — it discards the body, so to re-section a method use change_method_visibility, never delete+add. scaffold_rap_handlers / generate_behavior_implementation: derive behavior-pool handlers from a BDEF (the latter is the equivalent of Eclipse's \"Generate Behavior Implementation\"). edit_text_symbols: replace a CLAS/PROG/FUGR textpool part; read first, retain other entries. source=\"\" clears it. generate: SAP object generator (SAPRead GENERATORS) on type/name; source=JSON overrides; dryRun first."
         },
         "type": {
           "type": "string",
@@ -408,7 +409,7 @@
         },
         "expectedSourceHash": {
           "type": "string",
-          "description": "SHA-256 from SAPRead(format=editable). Refuses changed source under the lock. Text-source update and class/procedural surgery only; whole addressed source/include, not just the edited unit. Omitted/blank: no cross-call protection."
+          "description": "Required for edit_content; otherwise optional SHA-256 from SAPRead(format=editable) for the whole source/include. Refuses changes under the lock. Text-source updates and class/procedural edits only."
         },
         "source": {
           "type": "string",
@@ -436,6 +437,14 @@
         "method": {
           "type": "string",
           "description": "edit_method/edit_method_signature/delete_method/change_method_visibility: the method NAME (e.g. \"get_name\", \"zif_order~process\", \"lhc_project~approve_project\"). add_method: the full METHODS clause as ABAP source. Local-class methods auto-route by prefix (lhc_*/lcl_* → implementations, ltc_* → testclasses); use the qualified <localclass>~<method> form when a bare name is ambiguous."
+        },
+        "oldContent": {
+          "type": "string",
+          "description": "edit_content: exact text to replace."
+        },
+        "newContent": {
+          "type": "string",
+          "description": "edit_content: replacement; empty deletes."
         },
         "unit": {
           "type": "string",
@@ -496,7 +505,7 @@
         },
         "group": {
           "type": "string",
-          "description": "FUNC: existing FUGR; required for create, otherwise resolved. INCL: parent FUGR for structural includes; omit for standalone."
+          "description": "FUNC: required for create; otherwise resolved. INCL: required for grouped create/delete; resolved for structural-include edits when omitted."
         },
         "processingType": {
           "type": "string",
@@ -1162,7 +1171,7 @@
         },
         "group": {
           "type": "string",
-          "description": "Parent FUGR for FUNC or structural INCL."
+          "description": "Parent FUGR for FUNC or structural INCL; auto-resolved if omitted."
         },
         "version": {
           "type": "string",
@@ -1964,7 +1973,7 @@
   },
   {
     "name": "SAPManage",
-    "description": "Probe and report SAP system capabilities. Use BEFORE operations that depend on optional features (abapGit, RAP/CDS, AMDP, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\nActions:\n- \"features\": cached feature status (fast, no round-trip; id, available, mode, probedAt). \"probe\": re-probe now (feature probes + auth + discovery refresh). \"cache_stats\": object cache health.\n- \"create_package\" / \"delete_package\" / \"change_package\": DEVC lifecycle via ADT packages API.\n- FLP read: flp_list_catalogs, flp_list_groups, flp_list_tiles (catalogId). FLP write: flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog. Classic designer tile/target-mapping model, deprecated since S/4HANA 2023; Work Zone exposure v2 needs LADIs (SAPRead type=UIAD).\n- \"set_api_state\": release/revoke an object's API release contract (objectUri, or name+objectType; apiState defaults RELEASED, contract defaults C1 — C0 for SRVD, C3 for classic views). Write counterpart of SAPRead(type=\"API_STATE\").\n\nReturns features + systemType (\"onprem\"/\"btp\"); \"available: false\" means do NOT attempt dependent operations.",
+    "description": "Probe and report SAP system capabilities. Use BEFORE operations that depend on optional features (abapGit, RAP/CDS, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\nActions:\n- \"features\": cached feature status (fast, no round-trip; id, available, mode, probedAt). \"probe\": re-probe now (feature probes + auth + discovery refresh). \"cache_stats\": object cache health.\n- \"create_package\" / \"delete_package\" / \"change_package\": DEVC lifecycle via ADT packages API.\n- FLP read: flp_list_catalogs, flp_list_groups, flp_list_tiles (catalogId). FLP write: flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog. Classic designer tile/target-mapping model, deprecated since S/4HANA 2023; Work Zone exposure v2 needs LADIs (SAPRead type=UIAD).\n- \"set_api_state\": release/revoke an object's API release contract (objectUri, or name+objectType; apiState defaults RELEASED, contract defaults C1 — C0 for SRVD, C3 for classic views). Write counterpart of SAPRead(type=\"API_STATE\").\n\nReturns features + systemType (\"onprem\"/\"btp\"); \"available: false\" means do NOT attempt dependent operations.",
     "inputSchema": {
       "type": "object",
       "properties": {

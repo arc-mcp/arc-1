@@ -141,6 +141,8 @@ describe('test workflow gate behavior', () => {
     for (const step of steps.slice(1)) {
       // auth_ok can only be set by the preflight, which itself requires the new freshness check.
       if (step.id === 'sap_auth') expect(step.if).toBe(current);
+      else if (job === 'integration' && ['where_used_diagnostic', 'where_used_summary'].includes(step.id ?? ''))
+        expect(step.if).toBe('$' + "{{ !cancelled() && steps.sap_auth.outputs.auth_ok == 'true' }}");
       else expect([current, `always() && ${current}`, "steps.sap_auth.outputs.auth_ok == 'true'"]).toContain(step.if);
       if (
         step.name?.startsWith('Upload ') ||

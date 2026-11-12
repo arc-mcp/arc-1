@@ -129,7 +129,11 @@ function formatPossibleDataPreviewWafBlock(err: AdtApiError, minimalErrors: bool
 function getWriteInfrastructureHint(err: AdtApiError, tool: string, args: Record<string, unknown>): string | undefined {
   if (tool !== 'SAPWrite') return undefined;
   const action = String(args.action ?? '').toLowerCase();
-  if (!['create', 'update', 'batch_create', 'edit_method', 'edit_unit', 'add_unit', 'delete'].includes(action))
+  if (
+    !['create', 'update', 'batch_create', 'edit_method', 'edit_unit', 'add_unit', 'edit_content', 'delete'].includes(
+      action,
+    )
+  )
     return undefined;
 
   // These failures happen around ADT session management, often after SAP has
@@ -376,7 +380,8 @@ function buildBaseErrorMessage(
       action === 'batch_create' ||
       action === 'edit_method' ||
       action === 'edit_unit' ||
-      action === 'add_unit';
+      action === 'add_unit' ||
+      action === 'edit_content';
     if ((err.statusCode === 400 || err.statusCode === 409) && DDIC_SAVE_HINT_TYPES.has(argType) && isSaveAction) {
       return (
         `${enriched}\n\nHint: DDIC save failed. Check the diagnostic details above for specific field or annotation errors. ` +
@@ -691,7 +696,9 @@ export function getToolRegistry(): ToolRegistry {
     if (!policy) throw new Error(`Built-in tool '${name}' has no ACTION_POLICY entry`);
     r.register({ name, source: 'builtin', policy, invoke });
   };
-  reg('SAPRead', (ctx) => handleSAPRead(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity, ctx.config.minimalErrors));
+  reg('SAPRead', (ctx) =>
+    handleSAPRead(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity, ctx.config.minimalErrors, ctx.config.abapRelease),
+  );
   reg('SAPSearch', (ctx) => handleSAPSearch(ctx.client, ctx.args, ctx.config.minimalErrors));
   reg('SAPQuery', (ctx) => handleSAPQuery(ctx.client, ctx.args, ctx.config.minimalErrors));
   reg('SAPWrite', (ctx) => handleSAPWrite(ctx.client, ctx.args, ctx.config, ctx.cache, ctx.cacheSecurity));

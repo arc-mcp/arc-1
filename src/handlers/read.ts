@@ -28,6 +28,7 @@ import {
   isServerDrivenObjectType,
   serverDrivenUnavailableMessage,
 } from '../adt/server-driven.js';
+import { getServiceBindingInfo } from '../adt/service-info.js';
 import { listTableIndexes } from '../adt/table-index.js';
 import { getTableSettings } from '../adt/table-settings.js';
 import type { FunctionModuleProperties, InactiveObject } from '../adt/types.js';
@@ -206,9 +207,18 @@ export async function handleSAPRead(
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
   minimalErrors: boolean,
+  configuredRelease?: string,
 ): Promise<ToolResult> {
   const captured: { version: SourceVersion; source?: string; group?: string } = { version: 'active' };
-  const base = await handleSAPReadBase(client, args, cachingLayer, cacheSecurity, minimalErrors, captured);
+  const base = await handleSAPReadBase(
+    client,
+    args,
+    cachingLayer,
+    cacheSecurity,
+    minimalErrors,
+    captured,
+    configuredRelease,
+  );
   const type = normalizeObjectType(String(args.type ?? ''));
   if (
     !EXTENSION_READ_TYPES.has(type) ||
@@ -222,6 +232,7 @@ export async function handleSAPRead(
     base,
     captured.version,
     captured.source,
+    configuredRelease,
   );
 }
 
@@ -232,6 +243,7 @@ async function handleSAPReadBase(
   cacheSecurity: CacheSecurityContext,
   minimalErrors: boolean,
   extensionBase: { version: SourceVersion; source?: string; group?: string },
+  configuredRelease?: string,
 ): Promise<ToolResult> {
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
@@ -345,6 +357,12 @@ async function handleSAPReadBase(
   }
 
   if (type === 'GENERATORS') return readGenerators(client, args);
+
+  // Publish state and entity sets change outside the object's source version, so this stays uncached.
+  if (type === 'SRVB' && String(args.include ?? '').toLowerCase() === 'service_info') {
+    if (!name) return errorResult('SAPRead SRVB include=service_info requires a service binding name.');
+    return textResult(toolJson(await getServiceBindingInfo(client.http, client.safety, name)));
+  }
 
   if (type === 'SMBC') {
     if (!name) return errorResult('"name" is required for SAPRead type=SMBC.');
@@ -905,7 +923,10 @@ async function handleSAPReadBase(
           'ENHO does not support explicit version selection. Omit version or use "auto" for SAP\'s developer view.',
         );
       }
-      const enhancement = await client.getEnhancementImplementation(name, getCachedFeatures()?.abapRelease);
+      const enhancement = await client.getEnhancementImplementation(
+        name,
+        getCachedFeatures()?.abapRelease ?? configuredRelease,
+      );
       return textResult(toolJson(enhancement));
     }
     case 'VERSIONS': {

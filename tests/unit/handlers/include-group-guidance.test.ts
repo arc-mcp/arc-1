@@ -25,6 +25,7 @@ describe('include package-resolution guidance (#1161)', () => {
         `%s explains missing group with ${JSON.stringify(allowedPackages)} (minimal=${minimalErrors})`,
         async (tool) => {
           const client = clientFor(allowedPackages);
+          vi.spyOn(client, 'lookupObjects').mockResolvedValue([]);
           const resolve = vi.spyOn(client, 'resolveObjectPackage').mockResolvedValue('');
           const args =
             tool === 'SAPWrite'
@@ -59,8 +60,9 @@ describe('include package-resolution guidance (#1161)', () => {
       'verified package',
     );
   });
-  it('SAPActivate batch explains missing group', async () => {
+  it('SAPActivate batch explains missing group after an empty owner search', async () => {
     const client = clientFor(['*']);
+    vi.spyOn(client, 'lookupObjects').mockResolvedValue([]);
     vi.spyOn(client, 'resolveObjectPackage').mockResolvedValue('');
     const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPActivate', {
       objects: [{ type: 'INCL', name: 'LZ_GROUPTOP' }],

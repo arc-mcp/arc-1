@@ -1,6 +1,6 @@
 import type { ConfigSource, ServerConfig } from './types.js';
 
-const FEATURE_KEYS = ['hana', 'abapGit', 'gcts', 'rap', 'amdp', 'ui5', 'transport', 'ui5repo', 'flp'] as const;
+const FEATURE_KEYS = ['hana', 'abapGit', 'gcts', 'rap', 'ui5', 'transport', 'ui5repo', 'flp'] as const;
 
 export interface UiOverview {
   app: {
@@ -70,7 +70,6 @@ export function sanitizeConfigForUi(config: ServerConfig): Record<string, unknow
       abapGit: config.featureAbapGit,
       gcts: config.featureGcts,
       rap: config.featureRap,
-      amdp: config.featureAmdp,
       ui5: config.featureUi5,
       transport: config.featureTransport,
       hana: config.featureHana,

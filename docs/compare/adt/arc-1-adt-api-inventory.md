@@ -104,6 +104,7 @@
 | 17 | `GET` | `/sap/bc/adt/ddic/srvd/sources/{name}/source/main` | `client.ts` (`getServiceDefinition`) | SRVD. |
 | 18 | `GET` | `/sap/bc/adt/ddic/ddlx/sources/{name}/source/main` | `client.ts` (`getMetadataExtension`) | DDLX. |
 | 19 | `GET` | `/sap/bc/adt/businessservices/bindings/{name}` | `client.ts` (`getServiceBinding`) | SRVB; `Accept: application/vnd.sap.adt.businessservices.v1+xml` (see code). |
+| 19a | `GET` | `/sap/bc/adt/businessservices/{odatav2,odatav4}/{name}?servicename={service}&serviceversion={version}&srvdname={srvd}` | `service-info.ts` (`getServiceBindingInfo`) | SRVB `include=service_info`; `servicename` is mandatory (HTTP 400 without it). |
 
 **Create parents (from `intent.ts` base paths):** collections under `.../ddl/sources/`, `.../bo/behaviordefinitions/`, `.../srvd/sources/`, `.../ddlx/sources/`, `.../businessservices/bindings/` as used by `createObject`.
 
@@ -239,7 +240,6 @@ These URLs are invoked with **`client.get`** (not HEAD — see implementation). 
 | 60 | `GET` | `/sap/bc/adt/ddic/sysinfo/hanainfo` | Probe `hana` |
 | 61 | `GET` | `/sap/bc/adt/abapgit/repos` | Probe `abapGit` |
 | 62 | `GET` | `/sap/bc/adt/ddic/ddl/sources` | Probe `rap` (RAP/CDS) |
-| 63 | `GET` | `/sap/bc/adt/debugger/amdp` | Probe `amdp` |
 | 64 | `GET` | `/sap/bc/adt/filestore/ui5-bsp` | Probe `ui5` |
 | 65 | `GET` | `/sap/bc/adt/cts/transportrequests` | Probe `transport` |
 | 66 | `GET` | `/sap/bc/adt/repository/informationsystem/textsearch/support?db=` | `probeTextSearch`; dedicated support check, with `SADT_REST 020` distinguished from authorization 403 |

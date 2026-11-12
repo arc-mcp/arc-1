@@ -36,6 +36,26 @@ jobs:
       - name: Install descriptor check dependencies
         run: npm ci --ignore-scripts
 
+      # The npm mbt installer can exit successfully after a failed binary download.
+      # Install the verified release directly so validation cannot silently be a no-op.
+      - name: Install verified MTA build tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          mbt_dir="$(mktemp -d "$RUNNER_TEMP/mbt.XXXXXX")"
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            --connect-timeout 15 --max-time 120 \
+            --header 'Accept: application/octet-stream' \
+            --output "$mbt_dir/mbt.tar.gz" \
+            https://api.github.com/repos/SAP/cloud-mta-build-tool/releases/assets/713773353
+          # Immutable v1.2.51 Linux amd64 release asset; no GitHub token is needed.
+          echo "6c35294381ee2a7aa9377990a72bddd2a8adec48553dac8d8942bcd6a486cdba  $mbt_dir/mbt.tar.gz" | sha256sum --check --strict
+          tar -xzf "$mbt_dir/mbt.tar.gz" -C "$mbt_dir" mbt
+          "$mbt_dir/mbt" --version
+          # npx resolves project bins, not arbitrary executables added to PATH.
+          ln -s "$mbt_dir/mbt" node_modules/.bin/mbt
+          npx --no-install mbt --version
+
       - name: Validate MTA descriptors and effective target-authorization extension chain
         run: npm run btp:validate
 
@@ -260,6 +280,30 @@ jobs:
           TEST_SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
           TEST_SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
 
+      - name: Fresh-activation where-used diagnostic (non-blocking; #1057)
+        id: where_used_diagnostic
+        if: ${{ !cancelled() && steps.sap_auth.outputs.auth_ok == 'true' }}
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          mkdir -p test-results
+          npm run test:integration:where-used-diagnostic 2>&1 | tee test-results/where-used-fresh-activation.log
+        env:
+          TEST_SAP_URL: ${{ secrets.TEST_SAP_URL }}
+          TEST_SAP_USER: ${{ secrets.TEST_SAP_USER }}
+          TEST_SAP_PASSWORD: ${{ secrets.TEST_SAP_PASSWORD }}
+          TEST_SAP_CLIENT: ${{ secrets.TEST_SAP_CLIENT }}
+          TEST_SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
+
+      - name: Fresh-activation diagnostic outcome
+        id: where_used_summary
+        if: ${{ !cancelled() && steps.sap_auth.outputs.auth_ok == 'true' }}
+        continue-on-error: true
+        run: node scripts/ci/where-used-diagnostic-summary.mjs
+        env:
+          DIAGNOSTIC_OUTCOME: ${{ steps.where_used_diagnostic.outcome }}
+
       - name: Upload integration test results
         if: always() && steps.current.outputs.current == 'true'
         uses: actions/upload-artifact@v7
@@ -269,6 +313,8 @@ jobs:
             test-results/integration.json
             test-results/integration-skips.ndjson
             test-results/where-used-diagnostics.json
+            test-results/where-used-fresh-activation.json
+            test-results/where-used-fresh-activation.log
           retention-days: 7
           if-no-files-found: warn
 

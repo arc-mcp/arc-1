@@ -119,6 +119,18 @@ describe('SAPRead class extensions', () => {
     expect(result.content.some((block) => block.text.endsWith(fixture('class-generated.abap')))).toBe(true);
     expect(result.content.slice(1).reduce((n, b) => n + Buffer.byteLength(b.text), 0)).toBeLessThanOrEqual(16384);
     expect(summary(result).consumed.sends).toBeLessThanOrEqual(20);
+    expect(s.calls.some((path) => path.includes('/enhoxh/'))).toBe(false);
+  });
+  it.each([undefined, '816'])('uses configured release only when the probe has no release: %s', async (probed) => {
+    setCachedFeatures({ abapRelease: probed });
+    const s = setup();
+    const result = await handleToolCall(s.client, { ...DEFAULT_CONFIG, abapRelease: '758' }, 'SAPRead', {
+      type: 'CLAS',
+      name,
+      extensions: 'sources',
+    });
+    expect(result.isError).toBeUndefined();
+    expect(s.calls.some((path) => path.includes('/enhoxh/'))).toBe(probed === '816');
   });
   it('defaults grep, method and local-section reads to none; explicit coverage names the selected section', async () => {
     for (const args of [{ grep: 'WRITE' }, { method: 'demo' }, { include: 'definitions' }]) {
