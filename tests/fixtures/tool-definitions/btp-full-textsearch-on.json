@@ -86,7 +86,7 @@
         },
         "include": {
           "type": "string",
-          "description": "TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins over method routing. DDLS: elements returns field catalog (keys, aliases, associations, types). VERSIONS CLAS: selects include history. BSP: case-sensitive path; name also accepts APP/path."
+          "description": "SRVB: service_info = URL, entity sets. TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins. DDLS: elements returns field catalog (keys, aliases, associations, types). VERSIONS CLAS: selects include history. BSP: case-sensitive path; name also accepts APP/path."
         },
         "group": {
           "type": "string",
