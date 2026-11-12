@@ -239,7 +239,6 @@ These URLs are invoked with **`client.get`** (not HEAD — see implementation). 
 | 60 | `GET` | `/sap/bc/adt/ddic/sysinfo/hanainfo` | Probe `hana` |
 | 61 | `GET` | `/sap/bc/adt/abapgit/repos` | Probe `abapGit` |
 | 62 | `GET` | `/sap/bc/adt/ddic/ddl/sources` | Probe `rap` (RAP/CDS) |
-| 63 | `GET` | `/sap/bc/adt/debugger/amdp` | Probe `amdp` |
 | 64 | `GET` | `/sap/bc/adt/filestore/ui5-bsp` | Probe `ui5` |
 | 65 | `GET` | `/sap/bc/adt/cts/transportrequests` | Probe `transport` |
 | 66 | `GET` | `/sap/bc/adt/repository/informationsystem/textsearch/support?db=` | `probeTextSearch`; dedicated support check, with `SADT_REST 020` distinguished from authorization 403 |

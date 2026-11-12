@@ -67,12 +67,22 @@ describe('parseArgs', () => {
     expect(() => parseArgs([])).toThrow(/Removed ARC-1 configuration/);
   });
 
-  it.each(['--cache-warmup=false', '--cache-warmup-packages=Z*', '--feature-amdp=off'])(
-    'rejects retired CLI flag %s',
-    (flag) => {
-      expect(() => parseArgs([flag])).toThrow(/Removed ARC-1 configuration/);
-    },
-  );
+  it.each(['--cache-warmup=false', '--cache-warmup-packages=Z*'])('rejects retired CLI flag %s', (flag) => {
+    expect(() => parseArgs([flag])).toThrow(/Removed ARC-1 configuration/);
+  });
+
+  it.each(['env', 'flag', 'both'])('accepts ignored legacy AMDP configuration from %s with one warning', (source) => {
+    if (source !== 'flag') process.env.SAP_FEATURE_AMDP = 'on';
+    const warning = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const config = parseArgs(source === 'env' ? [] : ['--feature-amdp=on']);
+      expect(config).not.toHaveProperty('featureAmdp');
+      expect(warning.mock.calls.filter(([text]) => String(text).includes('AMDP'))).toHaveLength(1);
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining('ignored'));
+    } finally {
+      warning.mockRestore();
+    }
+  });
 
   it('rejects the unreleased SAP_BTP_DESTINATIONS prototype variable with a migration hint', () => {
     process.env.SAP_BTP_DESTINATIONS = 'S4D,S4Q';

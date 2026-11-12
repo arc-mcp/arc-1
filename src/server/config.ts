@@ -121,6 +121,7 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'deny-actions', valueName: 'patterns', description: 'Action deny patterns or file path' },
   { name: 'feature-abapgit', valueName: 'mode', description: 'abapGit feature toggle: auto/on/off' },
   { name: 'feature-gcts', valueName: 'mode', description: 'gCTS feature toggle: auto/on/off' },
+  { name: 'feature-amdp', valueName: 'mode', description: 'Ignored; AMDP probe removed' },
   { name: 'feature-rap', valueName: 'mode', description: 'RAP feature toggle: auto/on/off' },
   { name: 'feature-ui5', valueName: 'mode', description: 'UI5 feature toggle: auto/on/off' },
   { name: 'feature-transport', valueName: 'mode', description: 'Transport feature toggle: auto/on/off' },
@@ -409,8 +410,6 @@ const RETIRED_ENV_VARS: Record<string, string> = {
 const RETIRED_CLI_FLAGS: Record<string, string> = {
   'cache-warmup': RETIRED_ENV_VARS.ARC1_CACHE_WARMUP,
   'cache-warmup-packages': RETIRED_ENV_VARS.ARC1_CACHE_WARMUP_PACKAGES,
-  // SAP_FEATURE_AMDP stays silently ignored: it never changed behavior, and the old Dockerfile set it.
-  'feature-amdp': 'The AMDP feature toggle was removed; no tool depended on it. Remove this flag.',
 };
 
 function cliFlagViolations(args: readonly string[], flags: Record<string, string>): string[] {
@@ -764,6 +763,10 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
         : { env: 'SAP_DENY_ACTIONS' };
   } else {
     sources.denyActions = 'default';
+  }
+
+  if (getFlag('feature-amdp') !== undefined || process.env.SAP_FEATURE_AMDP !== undefined) {
+    console.error('[warn] --feature-amdp / SAP_FEATURE_AMDP is ignored; the unused AMDP probe was removed.');
   }
 
   // ── Features ───────────────────────────────────────────────────────

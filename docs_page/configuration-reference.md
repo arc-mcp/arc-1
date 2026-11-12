@@ -386,6 +386,8 @@ Connector resource mappings.
 | `--feature-transport` | `SAP_FEATURE_TRANSPORT` | `auto` | CTS transport endpoints. Required for `SAPTransport` (even reads). |
 | `--feature-hana` | `SAP_FEATURE_HANA` | `auto` | Report HANA availability in system features. |
 
+Legacy `--feature-amdp` and `SAP_FEATURE_AMDP` are accepted and ignored with a warning. AMDP classes still use the ordinary class tools.
+
 `auto` probes one endpoint per feature. HTTP 502/503/504 leaves availability unknown; it is not
 cached as proof that a feature exists. Responses 2xx and legacy unlisted errors (including 400/405/429/500) count as presence;
 401/403/404 count as unavailable. On single-target `/mcp`, inspect the cached result using
