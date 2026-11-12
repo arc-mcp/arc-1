@@ -383,7 +383,7 @@
         },
         "expectedSourceHash": {
           "type": "string",
-          "description": "SHA-256 from SAPRead(format=editable). Refuses changed source under the lock. Text-source update and class/procedural surgery only; whole addressed source/include, not just the edited unit. Omitted/blank: no cross-call protection."
+          "description": "Optional SHA-256 from SAPRead(format=editable) for the whole source/include. Refuses changes under the lock. Text-source updates and class/procedural edits only."
         },
         "source": {
           "type": "string",
@@ -460,7 +460,7 @@
         },
         "group": {
           "type": "string",
-          "description": "FUNC: existing FUGR; required for create, otherwise resolved. INCL: parent FUGR for structural includes; omit for standalone."
+          "description": "FUNC: required for create; otherwise resolved. INCL: required for grouped create/delete; resolved for structural-include edits when omitted."
         },
         "dataType": {
           "type": "string",
@@ -1042,7 +1042,7 @@
         },
         "group": {
           "type": "string",
-          "description": "Parent FUGR for FUNC or structural INCL."
+          "description": "Parent FUGR for FUNC or structural INCL; auto-resolved if omitted."
         },
         "version": {
           "type": "string",

@@ -5,7 +5,6 @@
 
 import { type AdtClient, clampSearchResults } from '../adt/client.js';
 import { AdtApiError } from '../adt/errors.js';
-import { canonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { checkTransport } from '../adt/safety.js';
 import {
   checkRecursiveTransportReleaseScope,
@@ -30,6 +29,7 @@ import {
 import type { InactiveObject, ObjectTransportHistory, TransportReleaseReport, TransportRequest } from '../adt/types.js';
 import { logger } from '../server/logger.js';
 import type { ServerConfig } from '../server/types.js';
+import { resolveIncludeGroup } from './include-group.js';
 import { functionGroupObjectUrl, functionModuleObjectUrl, objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { handleTransportReview } from './transport-review.js';
@@ -190,43 +190,6 @@ function summarizeTransport(t: TransportRequest) {
       objectCount: task.objects.length,
     })),
   };
-}
-
-/** Owning group of a function-group include, or undefined for a standalone include. */
-async function resolveIncludeGroup(
-  client: AdtClient,
-  includeName: string,
-  allowMissing: boolean,
-): Promise<string | undefined> {
-  const [lookup] = await client.lookupObjects([includeName]);
-  const matches = (lookup?.matches ?? []).filter((r) => r.objectType === 'FUGR/I' || r.objectType === 'PROG/I');
-  if (matches.length === 0 && allowMissing) return undefined;
-  const owners = new Map<string, string | undefined>();
-  const unverified = new Error(
-    `Cannot verify the owning group of include "${includeName}". Provide "group" explicitly.`,
-  );
-  for (const r of matches) {
-    const path = canonicalHostRelativeAdtPath(r.uri, '/sap/bc/adt/', { allowRawEncodedSlash: true });
-    if (!path || path.includes('?')) throw unverified;
-    const grouped = path.match(/^\/sap\/bc\/adt\/functions\/groups\/([^/]+)\/includes\/([^/?#]+)$/i);
-    if (
-      r.objectType === 'FUGR/I' &&
-      grouped &&
-      decodeURIComponent(grouped[2]).toUpperCase() === includeName.toUpperCase()
-    ) {
-      const group = decodeURIComponent(grouped[1]).toUpperCase();
-      owners.set(group, group);
-    } else if (
-      r.objectType === 'PROG/I' &&
-      path.toUpperCase() === `/sap/bc/adt/programs/includes/${encodeURIComponent(includeName)}`.toUpperCase()
-    ) {
-      owners.set('standalone', undefined);
-    } else {
-      throw unverified;
-    }
-  }
-  if (owners.size !== 1) throw unverified;
-  return owners.values().next().value;
 }
 
 /** FUNC and structural INCL objects use a parent-group collection. */
