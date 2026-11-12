@@ -27,6 +27,7 @@ import { readEnhancementImplementation } from './enhancements.js';
 import { AdtApiError, AdtError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
+import { filterIncludeHits, requiresUnfilteredIncludeSearch } from './include-search.js';
 import { getDirectPackageContents } from './package-browser.js';
 import { requirePackageFilteredSearch } from './package-contents.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
@@ -1069,13 +1070,11 @@ export class AdtClient {
       const params = new URLSearchParams({
         operation: 'quickSearch',
         query: name,
-        maxResults: String(limit),
+        maxResults: String(requiresUnfilteredIncludeSearch(objectType) ? 1000 : limit),
       });
-      if (objectType) {
-        params.set('objectType', objectType);
-      }
+      if (objectType && !requiresUnfilteredIncludeSearch(objectType)) params.set('objectType', objectType);
       const resp = await this.http.get(`/sap/bc/adt/repository/informationsystem/search?${params.toString()}`);
-      return parseSearchResults(resp.body);
+      return filterIncludeHits(parseSearchResults(resp.body), objectType);
     };
 
     const results: AdtObjectLookupResult[] = [];

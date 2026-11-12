@@ -523,11 +523,15 @@ on-prem systems. Hook implementations additionally return `source`, `enhancedObj
 and `hookImplementations` (positions, program/method names, overwrite flags and
 navigation links). A failed source read returns an error, not successful partial metadata.
 
-ARC-1 resolves a different enhancement subtype through repository search only after
-an unsupported BAdI read. This needs search permission as well as read permission.
-A qualified source-unavailable failure can use the implementation's generated enhancement include
-(the name padded with `=` to 30 characters plus `E`). The fallback is qualified on 750/758; ordinary
-server errors, authorization, throttling and network failures do not authorize it. ARC-1 requires
+On SAP 758, ARC-1 resolves the exact subtype through repository search before reading metadata;
+this needs search permission as well as read permission, including for BAdIs. Enhancements SAP lists only as `ENHO/XH`
+(e.g. class enhancements) use their active generated include directly because even a metadata probe
+can dump. If the release is unknown, ARC-1 tries to detect it as the caller; if SAP still reports none,
+`ENHO/XH` reads stop with retry/configuration guidance. This also affects 7.50 BAdIs, which SAP lists
+as `ENHO/XH`. Other known releases keep the BAdI-first routing.
+A qualified source-unavailable failure on those routes can use the implementation's generated
+include (the name padded with `=` to 30 characters plus `E`). Ordinary server errors, authorization,
+throttling and network failures do not authorize that fallback. ARC-1 requires
 one exact active revision (`00000`) with matching REPS/include identity and canonical content URI;
 missing active entries never select a historical or inactive version. The source is returned with
 `enhancementInclude` provenance and a `note`; technology, description, package, enhanced object and
@@ -629,6 +633,12 @@ SAPSearch(query="SELECT * FROM mara", searchType="source_code", objectType="CLAS
 **Field names:** If searching for a field/column name (e.g., MATNR, BUKRS), use SAPQuery against DD03L instead — SAPSearch only searches object names.
 
 **TADIR lookup:** Use `searchType="tadir_lookup"` for reset/create preflights that need to know whether objects exist anywhere, regardless of package. The default `source='adt'` uses ADT repository quick search, which avoids long `IN (...)` parser limits and works in read/search-only configurations. The endpoint deliberately filters out TADIR rows that don't resolve to a live workbench resource, so orphan/ghost entries (left behind by aborted create/delete cycles) are invisible to the default path — see the source modes section below.
+
+For object search and ADT lookup, `INCL` includes both standalone (`PROG/I`) and function-group
+(`FUGR/I`) includes; an explicit subtype keeps only that kind. `INCL` and `FUGR/I` search up to
+1000 unfiltered candidates because SAP's type filter can miss function-group includes. Broad
+object searches warn when that cap is reached; narrow the pattern if needed. `PROG/I` keeps SAP's
+standalone-include filter; prefer it for broad standalone scans. This does not change the SQL-backed `db` lookup.
 
 ### TADIR lookup source modes
 
@@ -1268,7 +1278,11 @@ Pass the complete replacement or new block so multi-line FORM signatures and MOD
 
 To add a block, pass its new name in `unit` and its complete source. ARC-1 appends
 at the physical end of the selected source; it never moves trailing `INCLUDE`
-statements or existing unit headers. Existing names and incomplete structures are
+statements or existing unit headers. Full-line comments (and blank lines) before or after
+the block, such as `* --> TAG` / `* <-- TAG` change markers, are written verbatim; any other
+code outside the single block is refused. Only outer blank lines are removed; indentation and
+internal spacing are kept, with line endings matching the destination. `edit_unit` replaces the
+block only, so keep markers inside it there. Existing names and incomplete structures are
 refused without a PUT. `SAP_DENY_ACTIONS=SAPWrite.edit_unit` does not deny `add_unit`;
 list both actions (or `SAPWrite`) when both must be blocked. The write/package gates
 apply to both actions.

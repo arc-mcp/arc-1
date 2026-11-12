@@ -20,12 +20,18 @@ afterEach(async () => {
     }),
   );
 });
-describe.each([false, true])('class extension budgets, Connectivity=%s', (proxy) => {
+describe.each([
+  { proxy: false, release: '750' },
+  { proxy: true, release: '750' },
+  { proxy: false, release: '758' },
+  { proxy: true, release: '758' },
+])('class extension budgets, Connectivity=$proxy release=$release', ({ proxy, release }) => {
   it.each(['success', 'requests', 'bytes', 'deadline', 'auth', 'throttle'] as const)(
     'retains partial evidence at %s',
     async (scenario) => {
       let sends = 0,
-        sources = 0;
+        sources = 0,
+        genericReads = 0;
       const server = createServer((req, res) => {
         sends++;
         if (req.method === 'HEAD') {
@@ -43,11 +49,17 @@ describe.each([false, true])('class extension budgets, Connectivity=%s', (proxy)
           return;
         }
         if (path.includes('/enhoxh/')) {
+          genericReads++;
           res.writeHead(scenario === 'auth' ? 401 : scenario === 'throttle' ? 429 : 404);
           res.end();
           return;
         }
         if (path.endsWith('/versions')) {
+          if (release === '758' && ['auth', 'throttle'].includes(scenario)) {
+            res.writeHead(scenario === 'auth' ? 401 : 429);
+            res.end();
+            return;
+          }
           expect(req.headers.accept).toBe('application/atom+xml;type=feed');
           res.end(fixture('class-feed.xml'));
           return;
@@ -83,9 +95,10 @@ describe.each([false, true])('class extension budgets, Connectivity=%s', (proxy)
       const nodes = await discoverClassIdentities(client, session, request);
       expect(nodes).toHaveLength(1);
       if (scenario === 'deadline') session.options.deadline = Date.now() - 1;
-      await discoverClassSources(client, session, nodes, '750');
+      await discoverClassSources(client, session, nodes, release);
       const result = session.finish();
       expect(result.consumed.sends).toBe(sends);
+      if (release === '758') expect(genericReads).toBe(0);
       expect(result.consumed.sends).toBeLessThanOrEqual(20);
       expect(result.consumed.responseBytes).toBeLessThanOrEqual(scenario === 'bytes' ? 4096 : 256 * 1024);
       expect(session.options.responseBudget!.reservedBytes).toBe(0);
@@ -146,11 +159,11 @@ describe.each([false, true])('class extension budgets, Connectivity=%s', (proxy)
     };
     const session = new ExtensionDiscoverySession('sources', request, client.safety, { signal: controller.signal });
     const nodes = await discoverClassIdentities(client, session, request);
-    await expect(discoverClassSources(client, session, nodes, '750')).rejects.toThrow();
+    await expect(discoverClassSources(client, session, nodes, release)).rejects.toThrow();
     expect(controller.signal.aborted).toBe(true);
     expect(session.result.sources).toEqual([]);
     expect(session.options.responseBudget!.reservedBytes).toBe(0);
     expect(session.options.attemptBudget!.used).toBe(sends);
-    expect(sends).toBe(6);
+    expect(sends).toBe(release === '758' ? 5 : 6);
   });
 });

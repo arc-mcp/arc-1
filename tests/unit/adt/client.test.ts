@@ -1191,7 +1191,7 @@ describe('AdtClient', () => {
         mockResponse(200, loadFixture('enhancement-implementation.xml'), { 'x-csrf-token': 'T' }),
       );
       const client = createClient();
-      const enho = await client.getEnhancementImplementation('SFW_BCF_TCD');
+      const enho = await client.getEnhancementImplementation('SFW_BCF_TCD', '816');
       expect(enho.name).toBe('SFW_BCF_TCD');
       expect(enho.package).toBe('SFWTOOLS');
       expect(enho.technology).toBe('BADI_IMPL');

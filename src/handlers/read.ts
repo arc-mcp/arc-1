@@ -206,9 +206,18 @@ export async function handleSAPRead(
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
   minimalErrors: boolean,
+  configuredRelease?: string,
 ): Promise<ToolResult> {
   const captured: { version: SourceVersion; source?: string; group?: string } = { version: 'active' };
-  const base = await handleSAPReadBase(client, args, cachingLayer, cacheSecurity, minimalErrors, captured);
+  const base = await handleSAPReadBase(
+    client,
+    args,
+    cachingLayer,
+    cacheSecurity,
+    minimalErrors,
+    captured,
+    configuredRelease,
+  );
   const type = normalizeObjectType(String(args.type ?? ''));
   if (
     !EXTENSION_READ_TYPES.has(type) ||
@@ -222,6 +231,7 @@ export async function handleSAPRead(
     base,
     captured.version,
     captured.source,
+    configuredRelease,
   );
 }
 
@@ -232,6 +242,7 @@ async function handleSAPReadBase(
   cacheSecurity: CacheSecurityContext,
   minimalErrors: boolean,
   extensionBase: { version: SourceVersion; source?: string; group?: string },
+  configuredRelease?: string,
 ): Promise<ToolResult> {
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
@@ -909,7 +920,10 @@ async function handleSAPReadBase(
           'ENHO does not support explicit version selection. Omit version or use "auto" for SAP\'s developer view.',
         );
       }
-      const enhancement = await client.getEnhancementImplementation(name, getCachedFeatures()?.abapRelease);
+      const enhancement = await client.getEnhancementImplementation(
+        name,
+        getCachedFeatures()?.abapRelease ?? configuredRelease,
+      );
       return textResult(toolJson(enhancement));
     }
     case 'VERSIONS': {

@@ -19,7 +19,17 @@ Positive interface coverage, other releases and BTP principal propagation remain
 See the [combined qualification](../research/2026-10-31-extension-test-gaps.md) and
 [current runtime BTP requalification](../research/2026-11-01-cache-fixture-and-btp-requalification.md).
 
-Sources remain separate labelled representations. The active known-subtype ENHO reader may use a
+Sources remain separate labelled representations. On SAP_BASIS 758, owned ENHO/XH identities use
+their exact active generated-include revision directly: the generic ENHO serializer can dump for
+class enhancements, so it is never attempted, including when the revision is missing or denied.
+The probed release takes precedence over an explicitly configured release. Other known
+releases retain the existing route. Direct SAPRead ENHO has separate [subtype routing](../research/abap-types/types/enho.md#direct-enho-reads-on-758-2026-11-07-1207). If the release is unknown,
+XH sources are omitted as `class_source_release_unknown`; retry after `SAPManage probe` or configure
+`SAP_ABAP_RELEASE` for a single target. Multi-target endpoints rely on the probe.
+Discovery and independent hooks can still return their results. These remain qualification
+gaps tracked in #1196, including the previously observed generic-route failures on 816.
+
+For other releases/subtypes, the active known-subtype ENHO reader may use a
 generated include revision only for a qualified source-unavailable failure: 404/resource-read failure,
 or the observed 750 unsupported-technology/758 null-reference error with its release guard. Ordinary
 500s, authorization, throttle, network and exhausted budgets do not permit fallback. Returned authored

@@ -36,6 +36,26 @@ jobs:
       - name: Install descriptor check dependencies
         run: npm ci --ignore-scripts
 
+      # The npm mbt installer can exit successfully after a failed binary download.
+      # Install the verified release directly so validation cannot silently be a no-op.
+      - name: Install verified MTA build tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          mbt_dir="$(mktemp -d "$RUNNER_TEMP/mbt.XXXXXX")"
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            --connect-timeout 15 --max-time 120 \
+            --header 'Accept: application/octet-stream' \
+            --output "$mbt_dir/mbt.tar.gz" \
+            https://api.github.com/repos/SAP/cloud-mta-build-tool/releases/assets/713773353
+          # Immutable v1.2.51 Linux amd64 release asset; no GitHub token is needed.
+          echo "6c35294381ee2a7aa9377990a72bddd2a8adec48553dac8d8942bcd6a486cdba  $mbt_dir/mbt.tar.gz" | sha256sum --check --strict
+          tar -xzf "$mbt_dir/mbt.tar.gz" -C "$mbt_dir" mbt
+          "$mbt_dir/mbt" --version
+          # npx resolves project bins, not arbitrary executables added to PATH.
+          ln -s "$mbt_dir/mbt" node_modules/.bin/mbt
+          npx --no-install mbt --version
+
       - name: Validate MTA descriptors and effective target-authorization extension chain
         run: npm run btp:validate
 
