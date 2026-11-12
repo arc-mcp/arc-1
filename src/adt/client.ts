@@ -1398,7 +1398,7 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
 
   /**
    * Also returns SAP's count, timing and SQL echo, only where asked (SAPQuery).
-   * The count is not a result total; the timing excludes SAP's separate count query.
+   * The count is not a result total; the timing may exclude SAP's separate count query.
    */
   async runQueryWithMetrics(
     sql: string,

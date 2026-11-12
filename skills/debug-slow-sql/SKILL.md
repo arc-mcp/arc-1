@@ -81,7 +81,7 @@ entity/list request from the Network tab, not a `$batch` POST.)
 - `SAPQuery(sql="SELECT … FROM <cds-or-base> WHERE <the filter>")` — returns `columns`/`rows` plus datapreview
   metrics: `queryExecutionTimeMs`, `sapReportedTotalRows`, `rowsReturned`, and `executedQueryString`.
   Use the **real filter values**. SAP's count is diagnostic, not a result size or proof of a scan;
-  aggregates, DISTINCT and UNION can report misleading counts. The timing excludes SAP's separate count
+  aggregates, DISTINCT and UNION can report misleading counts. The timing may exclude SAP's separate count
   query. `maxRows` caps returned rows, not SAP work; UNION can transfer more rows than requested.
   Confirm suspected scans with ST05/HANA plans and rows fetched. Record timeouts instead of repeatedly
   lowering `maxRows`. (Needs `SAP_ALLOW_FREE_SQL` for

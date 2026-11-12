@@ -6,7 +6,7 @@ import { LONG_TEXT_DESCRIPTION, LONG_TEXT_PROPERTY } from './long-text-input.js'
 import type { ToolDefinition } from './tools.js';
 
 const QUERY_SQL_DIALECT_GUIDE =
-  'Read-only ABAP SQL SELECT: AS aliases, alias~field/alias~*, ASCENDING/DESCENDING; single-quoted literals (no @/:/?). maxRows, not TOP/LIMIT/OFFSET/FETCH. JOIN/GROUP BY/aggregates/UNION/subqueries; no CTE/FULL JOIN/derived/window tables/INTERSECT/EXCEPT/comments/semicolons/schema prefixes. Literal IN-lists chunk in plain SELECTs. sapReportedTotalRows is not a result total; rowLimitReached: more may exist. ';
+  'Read-only ABAP SQL SELECT: AS aliases, alias~field/alias~*, ASCENDING/DESCENDING; single-quoted literals (no @/:/?). maxRows, not TOP/LIMIT/OFFSET/FETCH. JOIN/GROUP BY/aggregates/UNION/subqueries; no CTE/FULL JOIN/derived/window tables/INTERSECT/EXCEPT/comments/semicolons/schema prefixes. IN-lists auto-chunk in plain SELECTs. sapReportedTotalRows is not a result total; rowLimitReached: more may exist. ';
 
 export const QUERY_SQL_DESCRIPTION_ONPREM =
   QUERY_SQL_DIALECT_GUIDE +

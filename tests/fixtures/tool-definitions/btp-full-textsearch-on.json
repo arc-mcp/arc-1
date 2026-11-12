@@ -1197,7 +1197,7 @@
   },
   {
     "name": "SAPQuery",
-    "description": "sql (default): Query BTP ABAP Environment with ABAP SQL; returns columns + rows. Read-only ABAP SQL SELECT: AS aliases, alias~field/alias~*, ASCENDING/DESCENDING; single-quoted literals (no @/:/?). maxRows, not TOP/LIMIT/OFFSET/FETCH. JOIN/GROUP BY/aggregates/UNION/subqueries; no CTE/FULL JOIN/derived/window tables/INTERSECT/EXCEPT/comments/semicolons/schema prefixes. Literal IN-lists chunk in plain SELECTs. sapReportedTotalRows is not a result total; rowLimitReached: more may exist. BTP permits custom Z/Y tables and released CDS entities; standard tables are blocked. Use released views such as I_LANGUAGE. Unknown tables get suggestions.",
+    "description": "sql (default): Query BTP ABAP Environment with ABAP SQL; returns columns + rows. Read-only ABAP SQL SELECT: AS aliases, alias~field/alias~*, ASCENDING/DESCENDING; single-quoted literals (no @/:/?). maxRows, not TOP/LIMIT/OFFSET/FETCH. JOIN/GROUP BY/aggregates/UNION/subqueries; no CTE/FULL JOIN/derived/window tables/INTERSECT/EXCEPT/comments/semicolons/schema prefixes. IN-lists auto-chunk in plain SELECTs. sapReportedTotalRows is not a result total; rowLimitReached: more may exist. BTP permits custom Z/Y tables and released CDS entities; standard tables are blocked. Use released views such as I_LANGUAGE. Unknown tables get suggestions.",
     "inputSchema": {
       "type": "object",
       "properties": {

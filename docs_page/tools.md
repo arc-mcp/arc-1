@@ -1921,11 +1921,11 @@ JOINs, aggregates, and subqueries are supported. For a plain projection `SELECT`
 
 `maxRows` caps returned rows, including `UNION`. `rowsReturned` is the actual output count;
 `rowLimitReached=true` means the cap was reached and more rows may exist; `false` means fewer rows were returned.
-The optional `sapReportedTotalRows` replaces `totalRows`: it is SAP's diagnostic count, **not the result size**.
-It may count input rows or report zero despite a non-empty result. Update consumers of the old field.
+The optional `sapReportedTotalRows` is SAP's diagnostic count, **not the result size**.
+It may count input rows or report zero despite a non-empty result.
 
 The cap does not bound SAP's work: SAP may compute a separate unlimited count and ignore its row cap for `UNION`.
-`queryExecutionTimeMs` excludes that count query. Cell values remain strings, including padding and leading zeros.
+`queryExecutionTimeMs` may exclude that count query. Cell values remain strings, including padding and leading zeros.
 On the tested 758/816 backends, COUNT-only queries with a false `HAVING` condition can incorrectly return a row
 containing zero; ARC-1 preserves SAP's values rather than guessing a correction.
 

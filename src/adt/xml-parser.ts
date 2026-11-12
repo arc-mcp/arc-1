@@ -300,7 +300,7 @@ function parseTableContentsObject(parsed: Record<string, unknown>): {
 export interface DataPreviewMeta {
   /** Raw SAP count: may count input rows or be zero when SAP's separate count query fails. */
   totalRows?: number;
-  /** Data SELECT time in milliseconds; excludes SAP's separate count query and network overhead. */
+  /** SAP timing in milliseconds; excludes network overhead and may exclude the separate count query. */
   queryExecutionTimeMs?: number;
   /** The OpenSQL echo returned by SAP, without client-side whitespace normalization. */
   executedQueryString?: string;
