@@ -676,9 +676,9 @@ keep their separate behavior.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit`, `add_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` replaces one FORM or MODULE in a PROG/INCL; `add_unit` inserts a new one; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes one part of a CLAS/PROG/FUGR text pool — see [Text elements](#text-elements). |
+| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit`, `add_unit`, `edit_content` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` replaces one FORM or MODULE in a PROG/INCL; `add_unit` inserts a new one; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes one part of a CLAS/PROG/FUGR text pool — see [Text elements](#text-elements). |
 | `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP`, `TABL/DT`, `TABL/DS`, `TABL/DTT` (update only), `DOMA`, `DTEL`, `ENQU`, `ENHO` (BAdI implementations), `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT`/`TABL/DTI` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
-| `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `create`, `update`, `delete`, `edit_unit`, and `add_unit`. Ignored for other types. |
+| `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `create`, `update`, `delete`, `edit_unit`, `add_unit`, and `edit_content`. For edits and activation, ARC-1 finds the group when SAP returns one unambiguous structural-include match. Ignored for other types. |
 | `rowType` | string | No | `TTYP` create/update: the row type — a built-in ABAP type (`STRING`, `I`, …) or a DDIC type name such as `BAPIRET2`. Required for create. An update without it keeps the stored row type where ARC-1 can; see [table type updates](#table-type-updates). |
 | `rowTypeKind` | string | No | `TTYP` only: `builtin` or `structure`. Omit it and ARC-1 infers from `rowType`; pass it explicitly when SAP knows a built-in type ARC-1 has not enumerated. An update keeps the stored kind while the row type is unchanged. |
 | `rowTypeLength` | integer | No | `TTYP` create/update: built-in row length and decimal places, including batch items. Use `rowTypeKind="builtin"` for DDIC built-ins such as `CHAR`/`DEC`. Each accepts 0–999999; SAP may accept a value at save, then reject or normalize it at activation; inspect activation warnings and read back the active definition. Omitted update fields keep their stored values only while both row name and kind stay unchanged. Dictionary row dimensions are resolved by SAP and cannot be set here. `length`/`decimals` remain DOMA/DTEL fields. |
@@ -693,6 +693,8 @@ keep their separate behavior.
 | `textPart` | string | No | For `edit_text_symbols`: which part of the textpool to write — `symbols` (default; the numbered `TEXT-nnn` literals), `selections` (a report's selection texts — the labels beside `PARAMETERS`/`SELECT-OPTIONS`), or `headings` (list header and column headers). A class has only `symbols`; `PROG` and `FUGR` have all three. On BTP, this action requires `type="CLAS"` and supports only `symbols` (or an omitted part). Read first with `SAPRead(type="CLAS", include="text_symbols")`. |
 | `method` | string | No | For `edit_method`/`edit_method_signature`/`delete_method`/`change_method_visibility`: method NAME (e.g., `"get_name"`, `"zif_order~process"`, `"lhc_project~approve_project"`). For `add_method`: the full METHODS CLAUSE as ABAP source (e.g., `"METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string."`). |
 | `unit` | string | No | For on-prem `edit_unit`/`add_unit`: existing/new case-insensitive FORM or MODULE name (for example `"PROCESS_ORDERS"` or `"STATUS_0100"`). |
+| `oldContent` | string | For `edit_content` | Non-empty exact text to replace; it must match once. Requires `expectedSourceHash` from an editable read. |
+| `newContent` | string | For `edit_content` | Replacement text; `""` deletes the match. |
 | `visibility` | string | No | For `add_method`: target visibility section — `public` (default), `protected`, or `private`. For `change_method_visibility`: target visibility section (required). The section header must already exist in the DEFINITION block; if not, ARC-1 refuses with a hint to use `edit_class_definition` first. |
 | `abstract` | boolean | No | For `add_method`: when `true`, only the METHODS clause is inserted into DEFINITION — no `METHOD/ENDMETHOD` stub is added to IMPLEMENTATION. Default `false`. |
 | `bdefName` | string | No | For `scaffold_rap_handlers`: interface BDEF name used to derive required handler signatures. For `generate_behavior_implementation`: optional override; default discovery reads the class metadata's `<class:rootEntityRef>` to locate the BDEF automatically. |
@@ -1245,7 +1247,7 @@ SAPWrite(action="edit_unit", type="PROG", name="ZREPORT", unit="process_data",
 ```
 
 Supported types: `PROG`, `INCL`, `CLAS`, `INTF`, `FUNC`, `DDLS`, `DCLS`, `BDEF`, `SRVD`, `DDLX`.
-Supported actions: `update`, `edit_unit`, `add_unit`, and the CLAS surgery actions. For class-local methods,
+Supported actions: `update`, `edit_unit`, `add_unit`, `edit_content`, and the CLAS surgery actions. For class-local methods,
 read the correct `include=implementations|testclasses|definitions|macros` and use that same include
 on the write (or the matching method prefix). The hash covers that entire include. For function-group
 includes pass the same `group`; FUNC can resolve its group or accept it explicitly. Unsupported
@@ -1257,6 +1259,29 @@ also refuses changes elsewhere in its containing source. Hashes compare exact UT
 including whitespace and line endings; they do not record edit history. A read does not hold a lock
 or reserve a version, and an identical source restored later has the same hash. A missing include
 cannot be initialized by a guarded write; its read/precondition must succeed first.
+
+### Replace a small piece of source text
+
+For on-prem programs and includes, read `format="editable"` first, then pass its `sourceHash`:
+
+```text
+SAPWrite(action="edit_content", type="PROG", name="ZREPORT",
+  oldContent="WRITE 'old'.", newContent="WRITE 'new'.",
+  expectedSourceHash="<sourceHash from the editable read>")
+```
+
+The text must match exactly once. Use more surrounding text if it appears twice; use
+`newContent=""` to delete it. ARC-1 checks the hash under the SAP lock, validates the resulting
+source, and saves it as a draft. If the source changed, re-read and prepare the edit again.
+Snippet line endings follow the source; bytes outside the match stay unchanged.
+
+For structural includes such as `LZGROUPTOP`, edits and activation can find the function group
+from SAP search. Supply `group` if search cannot verify it, including U01-style function-module
+routes. Ordinary Z/Y includes need no lookup. If a grouped write rejects the hash, re-read with
+that same `group`.
+
+Action-specific denials are independent: `SAPWrite.update` does not deny `edit_content`.
+Use `SAPWrite.edit_content` to deny this action, or `SAPWrite.edit_*` to deny all edit actions.
 
 ### Procedural unit surgery
 

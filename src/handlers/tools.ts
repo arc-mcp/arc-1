@@ -597,7 +597,7 @@ export function getToolDefinitions(
               'update',
               'delete',
               'edit_method',
-              ...(btp ? [] : ['edit_unit', 'add_unit']),
+              ...(btp ? [] : ['edit_unit', 'add_unit', 'edit_content']),
               'edit_class_definition',
               'add_method',
               'edit_method_signature',
@@ -613,7 +613,9 @@ export function getToolDefinitions(
             description:
               'Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). ' +
               'edit_method: replace a single method body — the token-cheap path for class edits. ' +
-              (btp ? '' : 'edit_unit replaces a FORM/MODULE in PROG/INCL; add_unit appends one at EOF. ') +
+              (btp
+                ? ''
+                : 'PROG/INCL: edit_unit replaces a FORM/MODULE; add_unit appends one; edit_content replaces one exact match and requires expectedSourceHash. ') +
               'batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. ' +
               'Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; ' +
               'add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); ' +
@@ -673,6 +675,8 @@ export function getToolDefinitions(
           ...(btp
             ? {}
             : {
+                oldContent: { type: 'string', description: 'edit_content: exact text to replace.' },
+                newContent: { type: 'string', description: 'edit_content: replacement; empty deletes.' },
                 unit: {
                   type: 'string',
                   description: 'edit_unit/add_unit: existing/new FORM or MODULE name (case-insensitive).',
