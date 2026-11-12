@@ -687,7 +687,7 @@ keep their separate behavior.
 | `updateTaskKind` | string | No | Required when `processingType="update"`: `startImmediate` (V1 restartable), `immediateStartNoRestart` (V1 non-restartable), or `startDelayed` (V2). Rejected for normal/RFC modules. |
 | `parameters` | array | No | FUNC structured signature: `{kind,name,type?,description?,byValue?,default?,optional?}` rows for importing/exporting/changing/tables/exceptions/raising. ARC-1 builds and splices the clauses; omit to send `source` verbatim. |
 | `name` | string | No | Object name (for single object actions) |
-| `expectedSourceHash` | string | No | SHA-256 from `SAPRead(format="editable")`; rejects changed source under the SAP lock before an update or class/procedural edit. Omitted/null/blank: no protection against stale replacements across calls. See [Source preconditions](#source-preconditions). |
+| `expectedSourceHash` | string | For `edit_content` | Required for `edit_content`; optional otherwise. SHA-256 from `SAPRead(format="editable")`; rejects changed source under the SAP lock before an update or class/procedural edit. For other actions, omitted/null/blank disables cross-call protection. See [Source preconditions](#source-preconditions). |
 | `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`/`add_unit`: the complete replacement/new `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
 | `include` | string | No | For CLAS write actions `update`, `edit_method`, and `edit_class_definition`: write a class-local include (`definitions`, `implementations`, `macros`, or `testclasses`) instead of `/source/main`. Omit this parameter for main class source updates. `add_method`/`edit_method_signature`/`delete_method`/`change_method_visibility` operate on the global class `/source/main` only and reject `include=`. Include writes create an inactive draft; verify with `SAPRead(version="inactive")` until activation. NOTE: `edit_class_definition` with `include=` skips the symmetry refuse-policy (cross-include validation is not performed; rely on `SAPActivate` to catch breaks). **Auto-init:** whole-include writes (`update` and `edit_class_definition` with `include=`) create the target include automatically if it does not exist yet — notably `testclasses` (CCAU) on a freshly-created class. No separate init step or user-supplied lock handle is needed; the success message notes when ARC-1 initialized it. |
 | `textPart` | string | No | For `edit_text_symbols`: which part of the textpool to write — `symbols` (default; the numbered `TEXT-nnn` literals), `selections` (a report's selection texts — the labels beside `PARAMETERS`/`SELECT-OPTIONS`), or `headings` (list header and column headers). A class has only `symbols`; `PROG` and `FUGR` have all three. On BTP, this action requires `type="CLAS"` and supports only `symbols` (or an omitted part). Read first with `SAPRead(type="CLAS", include="text_symbols")`. |
@@ -1234,7 +1234,7 @@ This returns JSON `{source, sourceHash}` from a fresh, uncached developer-view r
 inactive draft when one exists, otherwise active source. Omit `version`, `method`, `grep` and
 `action`; this mode hashes the complete source, not a formatted or extracted result.
 
-Omitted, null or blank hashes disable this optional protection. Pass the returned hash unchanged as `expectedSourceHash` on the write. ARC-1 acquires the SAP lock,
+`edit_content` requires the hash. For other actions, omitted, null or blank hashes disable this protection. Pass the returned hash unchanged as `expectedSourceHash` on the write. ARC-1 acquires the SAP lock,
 re-reads the editable source without caches, and compares its SHA-256 before writing. A mismatch
 refuses the write and releases the lock. Re-read and reconcile the changed source before retrying;
 do not simply obtain a new hash and resend a stale replacement.
@@ -1253,7 +1253,7 @@ on the write (or the matching method prefix). The hash covers that entire includ
 includes pass the same `group`; FUNC can resolve its group or accept it explicitly. Unsupported
 metadata, server-driven, create/delete and scaffold operations reject `expectedSourceHash`.
 
-**Limits:** the hash is optional for compatibility. Writes without it can still overwrite changes
+**Limits:** except for `edit_content`, the hash is optional for compatibility. Writes without it can still overwrite changes
 made since an earlier tool call; automatic locks alone do not prevent that. A guarded unit edit
 also refuses changes elsewhere in its containing source. Hashes compare exact UTF-8 content,
 including whitespace and line endings; they do not record edit history. A read does not hold a lock
@@ -1276,8 +1276,8 @@ source, and saves it as a draft. If the source changed, re-read and prepare the 
 Snippet line endings follow the source; bytes outside the match stay unchanged.
 
 For structural includes such as `LZGROUPTOP`, edits and activation can find the function group
-from SAP search. Supply `group` if search cannot verify it, including U01-style function-module
-routes. Ordinary Z/Y includes need no lookup. If a grouped write rejects the hash, re-read with
+from SAP search. Supply `group` when search cannot verify the owner; U01-style function-module
+includes are never resolved automatically. Ordinary Z/Y includes need no lookup. If a grouped write rejects the hash, re-read with
 that same `group`.
 
 Action-specific denials are independent: `SAPWrite.update` does not deny `edit_content`.
@@ -1590,7 +1590,7 @@ finished. ARC-1 does not replay activation after availability or database-sessio
 | `action` | string | No | `activate` (default), `publish_srvb`, or `unpublish_srvb`. Publish/unpublish makes an SRVB OData binding available/unavailable. |
 | `name` | string | No | Object name (for single activation) |
 | `type` | string | No | Object type (`PROG`, `CLAS`, `DDLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, etc.) |
-| `group` | string | No | Parent function group for `FUNC` or a function-group structural `INCL`. May also be set per batch item. |
+| `group` | string | No | Parent function group for `FUNC` or a structural `INCL`; looked up when omitted. May also be set per batch item. |
 | `version` | string | No | Service version for SRVB publish/unpublish (default `0001`). |
 | `service_type` | string | No | `odatav2` or `odatav4` for SRVB publish/unpublish routing; auto-detected from binding metadata when omitted. |
 | `preaudit` | boolean | No | Request pre-activation audit from SAP (default: `true`). Set `false` to skip pre-audit for faster activation. |

@@ -225,7 +225,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       descriptionTokenEstimate: 12_800,
       // Includes expectedSourceHash (#853) and SAPRead.source (#855).
       // LONG_TEXT adds eight field descriptions; shorter existing guidance preserves byte/token ceilings.
-      descriptionCount: 298, // Combined DDIC extension controls and own-method signature selector.
+      descriptionCount: 298, // Includes the two exact-text edit fields.
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: 23_850,
     },
@@ -283,7 +283,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       schemaTokenEstimate: 18_825,
       descriptionTokenEstimate: 12_800,
-      descriptionCount: 298, // Combined DDIC extension controls and own-method signature selector.
+      descriptionCount: 298, // Includes the two exact-text edit fields.
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: 23_850,
     },
