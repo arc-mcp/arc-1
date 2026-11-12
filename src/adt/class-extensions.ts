@@ -11,6 +11,7 @@ import {
   type ExtensionRequest,
   extensionKey,
 } from './extension-discovery.js';
+import { parseReleaseNumber } from './release.js';
 import {
   NativeRelationProvider,
   nativeRelationActionDenied,
@@ -274,6 +275,14 @@ export async function discoverClassSources(
         pendingSources = 0;
         return;
       }
+      // A cold/failed feature probe is not permission to try the known dumping generic route.
+      if (node.type === 'ENHO/XH' && parseReleaseNumber(release) === undefined) {
+        provider.status = 'unsupported';
+        provider.reason = 'class_source_release_unknown';
+        session.omit('sources');
+        pendingSources = 0;
+        return;
+      }
       const guarded = {
         http: client.http,
         safety: client.safety,
@@ -294,7 +303,7 @@ export async function discoverClassSources(
       const source = await session.read('ENHO', (options) =>
         protocol(() => readActiveClassEnhancementSource(guarded, node, options, expectedOwners, release)),
       );
-      if (source.source === undefined) {
+      if (source?.source === undefined) {
         provider.status = 'unsupported';
         provider.reason = 'source_unavailable';
         session.omit('sources');

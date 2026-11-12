@@ -86,7 +86,7 @@
         },
         "include": {
           "type": "string",
-          "description": "TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins over method routing. DDLS: elements returns field catalog (keys, aliases, associations, types). VERSIONS CLAS: selects include history. BSP: case-sensitive path; name also accepts APP/path."
+          "description": "SRVB: service_info = URL, entity sets. TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins. DDLS: elements returns field catalog (keys, aliases, associations, types). VERSIONS CLAS: selects include history. BSP: case-sensitive path; name also accepts APP/path."
         },
         "group": {
           "type": "string",
@@ -384,7 +384,7 @@
         },
         "expectedSourceHash": {
           "type": "string",
-          "description": "SHA-256 from SAPRead(format=editable). Refuses changed source under the lock. Text-source update and class/procedural surgery only; whole addressed source/include, not just the edited unit. Omitted/blank: no cross-call protection."
+          "description": "Optional SHA-256 from SAPRead(format=editable) for the whole source/include. Refuses changes under the lock. Text-source updates and class/procedural edits only."
         },
         "source": {
           "type": "string",
@@ -461,7 +461,7 @@
         },
         "group": {
           "type": "string",
-          "description": "FUNC: existing FUGR; required for create, otherwise resolved. INCL: parent FUGR for structural includes; omit for standalone."
+          "description": "FUNC: required for create; otherwise resolved. INCL: required for grouped create/delete; resolved for structural-include edits when omitted."
         },
         "dataType": {
           "type": "string",
@@ -1044,7 +1044,7 @@
         },
         "group": {
           "type": "string",
-          "description": "Parent FUGR for FUNC or structural INCL."
+          "description": "Parent FUGR for FUNC or structural INCL; auto-resolved if omitted."
         },
         "version": {
           "type": "string",
@@ -1721,7 +1721,7 @@
   },
   {
     "name": "SAPManage",
-    "description": "Probe and report SAP system capabilities (BTP ABAP Environment). Returns feature status and system type. Also handles package (DEVC) lifecycle operations.\n\nActions:\n- \"features\": Get cached feature status from last probe.\n- \"probe\": Re-probe the SAP system now (feature probes + discovery refresh).\n- \"cache_stats\": Show request-driven object cache health.\n- \"create_package\": Create a package (DEVC) via ADT packages API.\n- \"delete_package\": Delete an existing package.\n- FLP actions: flp_list_catalogs, flp_list_groups, flp_list_tiles, flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog. Classic designer model, deprecated since S/4HANA 2023 (successor: SAPRead type=UIAD).\n- \"set_api_state\": Release (or revoke) an object's API release contract for ABAP Cloud / Clean Core (requires \"objectUri\", or \"name\" + \"objectType\"; \"apiState\" defaults to RELEASED, \"contract\" defaults to C1 — pass C0 for SRVD, C3 for classic views). The write counterpart of SAPRead(type=\"API_STATE\").\n\nReturns JSON with features and systemType=\"btp\". On BTP, RAP/CDS and transports are always available. abapGit, AMDP, UI5/BSP, and FLP customization may not be available depending on the BTP ABAP configuration.",
+    "description": "Probe and report SAP system capabilities (BTP ABAP Environment). Returns feature status and system type. Also handles package (DEVC) lifecycle operations.\n\nActions:\n- \"features\": Get cached feature status from last probe.\n- \"probe\": Re-probe the SAP system now (feature probes + discovery refresh).\n- \"cache_stats\": Show request-driven object cache health.\n- \"create_package\": Create a package (DEVC) via ADT packages API.\n- \"delete_package\": Delete an existing package.\n- FLP actions: flp_list_catalogs, flp_list_groups, flp_list_tiles, flp_create_catalog, flp_create_group, flp_create_tile, flp_add_tile_to_group, flp_delete_catalog. Classic designer model, deprecated since S/4HANA 2023 (successor: SAPRead type=UIAD).\n- \"set_api_state\": Release (or revoke) an object's API release contract for ABAP Cloud / Clean Core (requires \"objectUri\", or \"name\" + \"objectType\"; \"apiState\" defaults to RELEASED, \"contract\" defaults to C1 — pass C0 for SRVD, C3 for classic views). The write counterpart of SAPRead(type=\"API_STATE\").\n\nReturns JSON with features and systemType=\"btp\". On BTP, RAP/CDS and transports are always available. abapGit, UI5/BSP, and FLP customization may not be available depending on the BTP ABAP configuration.",
     "inputSchema": {
       "type": "object",
       "properties": {

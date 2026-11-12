@@ -968,7 +968,6 @@ function featureLabel(name) {
     abapGit: 'abapGit',
     gcts: 'gCTS',
     rap: 'RAP/CDS',
-    amdp: 'AMDP',
     ui5: 'UI5/Fiori BSP',
     ui5repo: 'UI5 repository',
     flp: 'FLP customization',

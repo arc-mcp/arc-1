@@ -74,6 +74,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Where-used fixture pin (#1057)
+        run: npx vitest run tests/unit/workflows/where-used-containment.test.ts
+
       - name: SAP auth preflight
         id: sap_auth
         shell: bash

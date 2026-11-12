@@ -162,6 +162,15 @@ Use these constants for consistency. Add new constants to the helper when a new 
 - Tests that skip at runtime (missing fixtures, unsupported features) appear as SKIPPED in reports, not PASSED.
 - Runtime skips are recorded in `test-results/integration-skips.ndjson` and `test-results/e2e-skips.ndjson` so CI can summarize actual skip reasons, not just skipped test titles.
 
+### Tracked non-blocking diagnostic: #1057
+
+The required where-used test uses persistent fixtures and fails on missing fixtures or references;
+it never skips. The original fresh-activation test runs separately as a non-blocking diagnostic
+with unchanged assertions and cleanup. Its actual outcome, JSON/log and sanitized failure capture
+stay visible, separately from required test totals. This is CI containment, not a SAP fix or a
+general exception for flaky tests. Provisioning and limits are in
+[the developer guide](dev-guide.md#where-used-ci-containment-1057).
+
 ## Reference Patterns
 
 The canonical example of correct skip usage is `tests/e2e/navigate.e2e.test.ts`. It demonstrates:

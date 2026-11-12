@@ -112,7 +112,7 @@ Tool definitions automatically adapt to the target system (BTP vs on-premise), r
 
 ARC-1 probes the SAP system at startup and adapts its behavior:
 
-- Detects HANA, gCTS, abapGit, RAP/CDS, AMDP, UI5, and transport availability
+- Detects HANA, gCTS, abapGit, RAP/CDS, UI5, and transport availability
 - Auto-detects BTP vs on-premise systems
 - Maps SAP_BASIS release to the correct ABAP language version
 - Each feature can be forced on/off or left on auto-detect
