@@ -400,14 +400,13 @@ describe('SAPContext Integration Tests', () => {
       expect(features.hana).toBeDefined();
       expect(features.abapGit).toBeDefined();
       expect(features.rap).toBeDefined();
-      expect(features.amdp).toBeDefined();
       expect(features.ui5).toBeDefined();
       expect(features.transport).toBeDefined();
       expect(features.ui5repo).toBeDefined();
       expect(features.flp).toBeDefined();
 
       // Each feature should have required fields
-      const featureKeys = ['hana', 'abapGit', 'rap', 'amdp', 'ui5', 'transport', 'ui5repo', 'flp'] as const;
+      const featureKeys = ['hana', 'abapGit', 'rap', 'ui5', 'transport', 'ui5repo', 'flp'] as const;
       for (const key of featureKeys) {
         const feature = features[key];
         expect(typeof feature.available).toBe('boolean');

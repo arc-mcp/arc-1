@@ -411,6 +411,7 @@ SAPRead(type="DDLS", name="ZI_TRAVEL", include="elements")   — extract CDS vie
 SAPRead(type="DCLS", name="ZI_TRAVEL_DCL")       — CDS access control source
 SAPRead(type="DDLX", name="ZC_TRAVEL")          — metadata extension with UI annotations
 SAPRead(type="SRVB", name="ZUI_TRAVEL_O4")       — service binding metadata as JSON
+SAPRead(type="SRVB", name="ZUI_TRAVEL_O4", include="service_info")  — service versions, publish state, URL path relative to the SAP host, entity sets and navigations (OData V2/V4). Unpublished services report no URL or entity sets, with a note; not cached
 SAPRead(type="KTD", name="ZCL_ORDER")            — read the object's Knowledge Transfer Document as Markdown
 SAPRead(type="FUGR", name="ZUTILS", expand_includes=true)    — function group with bounded include expansion
 SAPRead(type="FUGR", name="ZUTILS", grep="ENQUEUE_")         — matches per include, not the whole include tree
@@ -2786,7 +2787,7 @@ group membership; inspect a group's tiles in SAP Fiori Launchpad Designer.
 | `tileInstanceId` | string | No | Required for `flp_add_tile_to_group` |
 | `tile` | object | No | Required for `flp_create_tile`. Fields: `id`, `title`, `semanticObject`, `semanticAction`, optional `icon`, `url`, `subtitle`, `info` |
 
-**Probed features:** `hana`, `abapGit`, `rap`, `amdp`, `ui5`, `transport`, `ui5repo`, `flp`. Each returns `available` (bool), `mode` (auto/on/off), `message`, and `probedAt` timestamp.
+**Probed features:** `hana`, `abapGit`, `rap`, `ui5`, `transport`, `ui5repo`, `flp`. Each returns `available` (bool), `mode` (auto/on/off), `message`, and `probedAt` timestamp.
 
 **cache_stats output:**
 ```json

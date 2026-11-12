@@ -164,7 +164,7 @@ const SAPTRANSPORT_DESC_BTP =
 // ─── SAPManage ──────────────────────────────────────────────────────
 const SAPMANAGE_DESC_ONPREM =
   'Probe and report SAP system capabilities. Use BEFORE operations that depend on optional features ' +
-  '(abapGit, RAP/CDS, AMDP, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\n' +
+  '(abapGit, RAP/CDS, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\n' +
   'Actions:\n' +
   '- "features": cached feature status (fast, no round-trip; id, available, mode, probedAt). "probe": re-probe now (feature probes + auth + discovery refresh). "cache_stats": object cache health.\n' +
   '- "create_package" / "delete_package" / "change_package": DEVC lifecycle via ADT packages API.\n' +
@@ -185,7 +185,7 @@ const SAPMANAGE_DESC_BTP =
   '- "set_api_state": Release (or revoke) an object\'s API release contract for ABAP Cloud / Clean Core ' +
   '(requires "objectUri", or "name" + "objectType"; "apiState" defaults to RELEASED, "contract" defaults to C1 — pass C0 for SRVD, C3 for classic views). The write counterpart of SAPRead(type="API_STATE").\n\n' +
   'Returns JSON with features and systemType="btp". On BTP, RAP/CDS and transports are always available. ' +
-  'abapGit, AMDP, UI5/BSP, and FLP customization may not be available depending on the BTP ABAP configuration.';
+  'abapGit, UI5/BSP, and FLP customization may not be available depending on the BTP ABAP configuration.';
 
 const SAPMANAGE_ACTIONS_READ = [
   'features',
@@ -431,7 +431,7 @@ export function getToolDefinitions(
           include: {
             type: 'string',
             description:
-              'TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins over method routing. ' +
+              'SRVB: service_info = URL, entity sets. TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins. ' +
               'DDLS: elements returns field catalog (keys, aliases, associations, types). VERSIONS CLAS: selects include history. BSP: case-sensitive path; name also accepts APP/path.' +
               // TEXT_ELEMENTS does not exist on BTP — keep the BTP surface byte-identical.
               (btp ? '' : ' TEXT_ELEMENTS: symbols|selections|headings; omit for pool (CLAS: symbols).'),

@@ -20,7 +20,6 @@ export interface FeatureConfig {
   abapGit: FeatureMode;
   gcts: FeatureMode;
   rap: FeatureMode;
-  amdp: FeatureMode;
   ui5: FeatureMode;
   transport: FeatureMode;
   ui5repo: FeatureMode;
@@ -34,7 +33,6 @@ export function defaultFeatureConfig(): FeatureConfig {
     abapGit: 'auto',
     gcts: 'auto',
     rap: 'auto',
-    amdp: 'auto',
     ui5: 'auto',
     transport: 'auto',
     ui5repo: 'auto',

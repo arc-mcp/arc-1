@@ -464,7 +464,6 @@ export async function probeClientFeatures(
   fc.abapGit = config.featureAbapGit as 'auto' | 'on' | 'off';
   fc.gcts = config.featureGcts as 'auto' | 'on' | 'off';
   fc.rap = config.featureRap as 'auto' | 'on' | 'off';
-  fc.amdp = config.featureAmdp as 'auto' | 'on' | 'off';
   fc.ui5 = config.featureUi5 as 'auto' | 'on' | 'off';
   fc.transport = config.featureTransport as 'auto' | 'on' | 'off';
   fc.ui5repo = config.featureUi5Repo as 'auto' | 'on' | 'off';
