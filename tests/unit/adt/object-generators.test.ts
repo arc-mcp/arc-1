@@ -412,6 +412,22 @@ describe('RAP service generators across releases', () => {
         'ZTRAVEL',
       ),
     ).toThrow(/referenced object/);
+    // 816 names the field referencedObjectName; either name is pinned and checked.
+    const proposal816 = { metadata: {}, general: { referencedObjectName: 'ZTRAVEL', description: 'Travel' } };
+    expect(buildGeneratorInput('ui-service', proposal816, undefined, 'ZPKG', 'EN', 'ztravel').general).toEqual({
+      referencedObjectName: 'ZTRAVEL',
+      description: 'Travel',
+    });
+    expect(() =>
+      buildGeneratorInput(
+        'ui-service',
+        proposal816,
+        { general: { referencedObjectName: 'ZOTHER' } },
+        'ZPKG',
+        'EN',
+        'ZTRAVEL',
+      ),
+    ).toThrow(/referenced object/);
     // Not added where SAP's proposal has no such field.
     expect(buildGeneratorInput('ui-service', { metadata: {} }, undefined, 'ZPKG', 'EN', 'ZTRAVEL')).toEqual({
       metadata: { package: 'ZPKG', masterLanguage: 'EN' },

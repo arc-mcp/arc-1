@@ -427,9 +427,10 @@ describe('SAPWrite action=generate: SAP validation', () => {
 describe('SAPWrite action=generate: RAP service generators', () => {
   beforeEach(() => vi.resetAllMocks());
 
+  // 816 names the field referencedObjectName, 758 referenceObjectName.
   const RAP_CONTENT = JSON.stringify({
     metadata: { package: '' },
-    general: { referenceObjectName: TABLE, description: 'Codes' },
+    general: { referencedObjectName: TABLE, description: 'Codes' },
     businessService: { serviceBinding: { name: 'ZUI_CODES_O4' } },
   });
   const RAP_PREVIEW_816 = `<?xml version="1.0" encoding="utf-8"?><massOperation:group xmlns:massOperation="http://www.sap.com/adt/massoperation" xmlns:adtcore="http://www.sap.com/adt/core" massOperation:name="Root"><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zr_codes" adtcore:type="DDLS/DF" adtcore:name="ZR_CODES"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><adtcore:objectReference adtcore:uri="/sap/bc/adt/businessservices/bindings/zui_codes_o4" adtcore:type="SRVB/SVB" adtcore:name="ZUI_CODES_O4"/></massOperation:object></massOperation:group>`;
@@ -486,7 +487,7 @@ describe('SAPWrite action=generate: RAP service generators', () => {
     expect(run?.path).toContain(`corrNr=${REQUEST}`);
     const sent = JSON.parse(String(run?.body));
     expect(Object.keys(sent)).toEqual(['metadata', 'general', 'businessService']);
-    expect(sent.general).toEqual({ referenceObjectName: TABLE, description: 'Code list' });
+    expect(sent.general).toEqual({ referencedObjectName: TABLE, description: 'Code list' });
   });
 
   it('refuses ui-service input that names another table', async () => {
@@ -495,7 +496,7 @@ describe('SAPWrite action=generate: RAP service generators', () => {
       createClient(),
       DEFAULT_CONFIG,
       'SAPWrite',
-      generateArgs({ generator: 'ui-service', source: '{"general":{"referenceObjectName":"ZOTHER"}}' }),
+      generateArgs({ generator: 'ui-service', source: '{"general":{"referencedObjectName":"ZOTHER"}}' }),
     );
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain('referenced object');

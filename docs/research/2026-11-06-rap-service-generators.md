@@ -75,3 +75,16 @@ it succeeded, but the entries already existed, so it does not add evidence about
 - **A generation that fails midway.** ARC-1 reads the objects back and reports them, but no live partial failure
   was observed, so SAP's rollback behavior is unknown.
 - **`smbc`.** The maintenance-object generator is not exposed. Its transport handling differs and it was not exercised.
+
+## SAP_BASIS 816 (live, 2026-11-12)
+
+Verified through `SAPWrite action=generate` on S/4HANA 2025 FPS01 (SAP_BASIS 816) with disposable tables in `$TMP` and in a transportable package, all generated objects deleted afterwards.
+
+- **Ids and paths.** `ui-service` and `webapi-service` under `/sap/bc/adt/rap/generators/ui/`, with the `serverdriven` media types of `generators.v1`, validation as `validationMessages` and the preview as a massOperation tree.
+- **The referenced table** is `general.referencedObjectName`, not `general.referenceObjectName` as on 758.
+- **`ui-service` plans 14 objects**: besides the 758 set also two access controls, a second class and the SAP object type and node type (`RONT`, `NONT`). `webapi-service` plans 12, without metadata extension and draft table.
+- **No collision on a repeated run.** SAP's proposal already avoids existing names: a second run on the same table validated OK and created a second complete set with suffixed names (`…_T1000`). On 758 validation refused the second run.
+- **Transports.** With `corrNr` every object was on the request; the request also gained `G4BA` and `SUSH` entries, no `STOB`. A task number instead of the request and a call without `transport` were refused by ARC-1 before any generator call.
+- **Publishing** the binding could not be checked: the system refuses `publish_srvb` in its customizing client. `SAPRead SRVB include=service_info` returned the unpublished OData V4 UI binding.
+- **Cleanup.** The generated `RONT`/`NONT` objects could not be deleted through ARC-1 on that system and were removed in ADT.
+

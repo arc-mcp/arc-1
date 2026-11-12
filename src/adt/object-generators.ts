@@ -60,16 +60,18 @@ export interface GeneratorRegistryEntry {
    */
   pinnedInput: Readonly<Record<string, unknown>>;
   /**
-   * Dot path of the input field that names the referenced object. SAP's validation does not check
-   * it against `referencedObject`, so ARC-1 sets it and refuses overrides naming another object.
+   * Dot paths of the input field that names the referenced object (the name differs per release).
+   * SAP's validation does not check it against `referencedObject`, so ARC-1 sets every one present
+   * in SAP's proposal and refuses overrides naming another object in any of them.
    */
-  referencedNamePath?: string;
+  referencedNamePaths?: readonly string[];
 }
 
 const RAP_SERVICE: Omit<GeneratorRegistryEntry, 'pathPrefixes'> = {
   referencedTypes: ['TABL'],
   pinnedInput: {},
-  referencedNamePath: 'general.referenceObjectName',
+  // 816: general.referencedObjectName (live, AEN 2026-11-12); 758: general.referenceObjectName (#1202).
+  referencedNamePaths: ['general.referencedObjectName', 'general.referenceObjectName'],
 };
 
 /**
@@ -485,9 +487,9 @@ export function buildGeneratorInput(
       throw new AdtSafetyError(`${path} must be ${JSON.stringify(value)} in ARC-1.`);
     }
   }
-  const namePath = entry.referencedNamePath;
-  if (namePath && overrides) {
-    const requested = getPath(overrides, namePath);
+  const namePaths = entry.referencedNamePaths ?? [];
+  for (const namePath of overrides ? namePaths : []) {
+    const requested = getPath(overrides as Record<string, unknown>, namePath);
     if (requested !== undefined && String(requested).toUpperCase() !== referencedName.toUpperCase()) {
       throw new AdtSafetyError(
         `${namePath} names the referenced object and must be ${referencedName.toUpperCase()}; pass another object as type/name instead.`,
@@ -506,7 +508,9 @@ export function buildGeneratorInput(
   };
   for (const [path, value] of Object.entries(entry.pinnedInput)) setPath(input, path, value);
   // Only where SAP's proposal has the field: adding it would change the structure SAP parses.
-  if (namePath && getPath(proposal, namePath) !== undefined) setPath(input, namePath, referencedName.toUpperCase());
+  for (const namePath of namePaths) {
+    if (getPath(proposal, namePath) !== undefined) setPath(input, namePath, referencedName.toUpperCase());
+  }
   return input;
 }
 
