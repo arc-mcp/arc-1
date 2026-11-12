@@ -1,9 +1,10 @@
-/** SAPWrite action for surgical FORM/MODULE replacement and insertion in PROG and INCL sources. */
+/** SAPWrite action for locked text replacement and FORM/MODULE surgery in PROG and INCL sources. */
 
 import { lockObject, unlockObject, updateSource } from '../../adt/crud.js';
 import { ABAPLINT_MAX_RELEASE, mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
 import { assertSourceHash } from '../../adt/source-precondition.js';
+import { spliceContent } from '../../context/content-splice.js';
 import { insertUnit, spliceUnit } from '../../context/unit-surgery.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
@@ -28,9 +29,10 @@ export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult>
   } = ctx;
   const action = String(args.action);
   const adding = action === 'add_unit';
+  const editingContent = action === 'edit_content';
   const unit = String(args.unit ?? '').trim();
-  if (!unit) return errorResult(`"unit" is required for ${action} action.`);
-  if (!source.trim()) {
+  if (!editingContent && !unit) return errorResult(`"unit" is required for ${action} action.`);
+  if (!editingContent && !source.trim()) {
     return errorResult(`"source" (complete FORM...ENDFORM or MODULE...ENDMODULE block) is required for ${action}.`);
   }
   if (type !== 'PROG' && type !== 'INCL') {
@@ -53,9 +55,11 @@ export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult>
       // Read after locking, without source or inactive-list caches.
       const currentSource = (await session.get(srcUrl, { 'Cache-Control': 'no-cache' })).body;
       assertSourceHash(currentSource, args.expectedSourceHash as string | undefined, srcUrl);
-      const spliced = adding
-        ? insertUnit(currentSource, name, unit, source, abaplintVersion)
-        : spliceUnit(currentSource, name, unit, source, abaplintVersion);
+      const spliced = editingContent
+        ? { ...spliceContent(currentSource, String(args.oldContent), String(args.newContent)), unit: undefined }
+        : adding
+          ? insertUnit(currentSource, name, unit, source, abaplintVersion)
+          : spliceUnit(currentSource, name, unit, source, abaplintVersion);
       if (!spliced.success) return errorResult(spliced.error ?? `Failed to splice unit "${unit}" in ${name}.`);
 
       const lint = runPreWriteLint(spliced.newSource, type, name, { ...config, abapRelease: release }, lintOverride);
@@ -84,7 +88,9 @@ export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult>
         type === 'INCL' && group
           ? ` Activate this structural include with SAPActivate(type="INCL", name="${name}", group="${group}").`
           : '';
-      const message = `Successfully ${adding ? 'added' : 'updated'} ${kind} "${unit}" in ${type} ${name}.${activationHint}`;
+      const message = editingContent
+        ? `Successfully ${args.newContent === '' ? 'removed' : 'replaced'} the matching text in ${type} ${name}.${activationHint}`
+        : `Successfully ${adding ? 'added' : 'updated'} ${kind} "${unit}" in ${type} ${name}.${activationHint}`;
       const extras = [lint.warnings, checkNotes].filter(Boolean).join('\n\n');
       return extras ? textResult(`${message}\n\n${extras}`) : textResult(message);
     } finally {

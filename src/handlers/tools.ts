@@ -164,7 +164,7 @@ const SAPTRANSPORT_DESC_BTP =
 // ─── SAPManage ──────────────────────────────────────────────────────
 const SAPMANAGE_DESC_ONPREM =
   'Probe and report SAP system capabilities. Use BEFORE operations that depend on optional features ' +
-  '(abapGit, RAP/CDS, AMDP, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\n' +
+  '(abapGit, RAP/CDS, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\n' +
   'Actions:\n' +
   '- "features": cached feature status (fast, no round-trip; id, available, mode, probedAt). "probe": re-probe now (feature probes + auth + discovery refresh). "cache_stats": object cache health.\n' +
   '- "create_package" / "delete_package" / "change_package": DEVC lifecycle via ADT packages API.\n' +
@@ -185,7 +185,7 @@ const SAPMANAGE_DESC_BTP =
   '- "set_api_state": Release (or revoke) an object\'s API release contract for ABAP Cloud / Clean Core ' +
   '(requires "objectUri", or "name" + "objectType"; "apiState" defaults to RELEASED, "contract" defaults to C1 — pass C0 for SRVD, C3 for classic views). The write counterpart of SAPRead(type="API_STATE").\n\n' +
   'Returns JSON with features and systemType="btp". On BTP, RAP/CDS and transports are always available. ' +
-  'abapGit, AMDP, UI5/BSP, and FLP customization may not be available depending on the BTP ABAP configuration.';
+  'abapGit, UI5/BSP, and FLP customization may not be available depending on the BTP ABAP configuration.';
 
 const SAPMANAGE_ACTIONS_READ = [
   'features',
@@ -431,7 +431,7 @@ export function getToolDefinitions(
           include: {
             type: 'string',
             description:
-              'TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins over method routing. ' +
+              'SRVB: service_info = URL, entity sets. TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins. ' +
               'DDLS: elements returns field catalog (keys, aliases, associations, types). VERSIONS CLAS: selects include history. BSP: case-sensitive path; name also accepts APP/path.' +
               // TEXT_ELEMENTS does not exist on BTP — keep the BTP surface byte-identical.
               (btp ? '' : ' TEXT_ELEMENTS: symbols|selections|headings; omit for pool (CLAS: symbols).'),
@@ -597,7 +597,7 @@ export function getToolDefinitions(
               'update',
               'delete',
               'edit_method',
-              ...(btp ? [] : ['edit_unit', 'add_unit']),
+              ...(btp ? [] : ['edit_unit', 'add_unit', 'edit_content']),
               'edit_class_definition',
               'add_method',
               'edit_method_signature',
@@ -613,7 +613,9 @@ export function getToolDefinitions(
             description:
               'Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). ' +
               'edit_method: replace a single method body — the token-cheap path for class edits. ' +
-              (btp ? '' : 'edit_unit replaces a FORM/MODULE in PROG/INCL; add_unit appends one at EOF. ') +
+              (btp
+                ? ''
+                : 'PROG/INCL: edit_unit replaces a FORM/MODULE; add_unit appends one; edit_content replaces one exact match and requires expectedSourceHash. ') +
               'batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. ' +
               'Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; ' +
               'add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); ' +
@@ -641,7 +643,8 @@ export function getToolDefinitions(
           expectedSourceHash: {
             type: 'string',
             description:
-              'SHA-256 from SAPRead(format=editable). Refuses changed source under the lock. Text-source update and class/procedural surgery only; whole addressed source/include, not just the edited unit. Omitted/blank: no cross-call protection.',
+              (btp ? 'Optional' : 'Required for edit_content; otherwise optional') +
+              ' SHA-256 from SAPRead(format=editable) for the whole source/include. Refuses changes under the lock. Text-source updates and class/procedural edits only.',
           },
           source: {
             type: 'string',
@@ -673,6 +676,8 @@ export function getToolDefinitions(
           ...(btp
             ? {}
             : {
+                oldContent: { type: 'string', description: 'edit_content: exact text to replace.' },
+                newContent: { type: 'string', description: 'edit_content: replacement; empty deletes.' },
                 unit: {
                   type: 'string',
                   description: 'edit_unit/add_unit: existing/new FORM or MODULE name (case-insensitive).',
@@ -736,7 +741,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'FUNC: existing FUGR; required for create, otherwise resolved. INCL: parent FUGR for structural includes; omit for standalone.',
+              'FUNC: required for create; otherwise resolved. INCL: required for grouped create/delete; resolved for structural-include edits when omitted.',
           },
           ...(btp ? {} : FuncProcessing.FUNCTION_PROCESSING_TOOL_PROPERTIES),
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
@@ -996,7 +1001,7 @@ export function getToolDefinitions(
           type: { type: 'string', description: 'Object type (PROG, CLAS, DDLS, DDLX, BDEF, SRVD, SRVB, etc.)' },
           group: {
             type: 'string',
-            description: 'Parent FUGR for FUNC or structural INCL.',
+            description: 'Parent FUGR for FUNC or structural INCL; auto-resolved if omitted.',
           },
           version: { type: 'string', description: 'Service version for publish/unpublish (default: "0001")' },
           service_type: {

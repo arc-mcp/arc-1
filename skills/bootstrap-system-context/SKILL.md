@@ -47,7 +47,7 @@ Returns an array of `{ name, release, description }`. Capture at minimum: `SAP_B
 SAPManage(action="probe")
 ```
 
-Returns feature flags for: `hana`, `abapGit`, `rap`, `amdp`, `ui5`, `ui5repo`, `transport`, `flp`. Each has `available` (bool), `mode`, and a `message`. These drive decisions like "can I generate a RAP stack?" or "is FLP catalog management wired in?"
+Returns feature flags for: `hana`, `abapGit`, `rap`, `ui5`, `ui5repo`, `transport`, `flp`. Each has `available` (bool), `mode`, and a `message`. These drive decisions like "can I generate a RAP stack?" or "is FLP catalog management wired in?"
 
 If the user requested to skip this step, mark features as "not probed" in the output.
 
@@ -108,7 +108,6 @@ _Generated: <ISO timestamp>_ · _Source: ARC-1_
 | RAP / CDS | <yes/no> | <auto/on/off> | <message> |
 | abapGit | <yes/no> | <auto/on/off> | <message> |
 | HANA | <yes/no> | <auto/on/off> | <message> |
-| AMDP | <yes/no> | <auto/on/off> | <message> |
 | UI5 | <yes/no> | <auto/on/off> | <message> |
 | UI5 Repository | <yes/no> | <auto/on/off> | <message> |
 | Transports | <yes/no> | <auto/on/off> | <message> |

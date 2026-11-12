@@ -80,7 +80,6 @@ export interface ServerConfig {
   featureAbapGit: FeatureToggle;
   featureGcts: FeatureToggle;
   featureRap: FeatureToggle;
-  featureAmdp: FeatureToggle;
   featureUi5: FeatureToggle;
   featureTransport: FeatureToggle;
   featureHana: FeatureToggle;
@@ -317,7 +316,6 @@ export const DEFAULT_CONFIG: ServerConfig = {
   featureAbapGit: 'auto',
   featureGcts: 'auto',
   featureRap: 'auto',
-  featureAmdp: 'auto',
   featureUi5: 'auto',
   featureTransport: 'auto',
   featureHana: 'auto',

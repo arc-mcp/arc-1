@@ -56,7 +56,6 @@ function buildReadOnlyRuntimeConfig(
     featureAbapGit: base.featureAbapGit,
     featureGcts: base.featureGcts,
     featureRap: base.featureRap,
-    featureAmdp: base.featureAmdp,
     featureUi5: base.featureUi5,
     featureTransport: base.featureTransport,
     featureHana: base.featureHana,

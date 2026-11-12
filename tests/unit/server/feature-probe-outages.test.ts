@@ -20,7 +20,7 @@ vi.mock('undici', async (original) => ({ ...(await original<typeof import('undic
 const components = '<feed><entry><id>SAP_BASIS</id><title>758;SAPK-75802;0002;SAP Basis</title></entry></feed>';
 const discovery =
   '<app:service><app:workspace><app:collection href="/sap/bc/adt/oo/classes"/></app:workspace></app:service>';
-const featureIds = ['hana', 'abapGit', 'gcts', 'rap', 'amdp', 'ui5', 'transport', 'ui5repo', 'flp'] as const;
+const featureIds = ['hana', 'abapGit', 'gcts', 'rap', 'ui5', 'transport', 'ui5repo', 'flp'] as const;
 
 function client(host = 'sap', semaphore?: Semaphore) {
   return new AdtClient({
@@ -68,7 +68,7 @@ it.each([502, 503, 504])(
     expect(hasCompletedFeatureProbe('DEV/001')).toBe(false);
     for (const id of featureIds) expect(getCachedFeatures('DEV/001')?.[id]).toBeUndefined();
     expect(getCachedFeatures('DEV/001')).not.toHaveProperty('releaseProbePending');
-    expect(mockFetch).toHaveBeenCalledTimes(15);
+    expect(mockFetch).toHaveBeenCalledTimes(14);
     expect(mockFetch.mock.calls.every(([, options]) => options.method === 'GET')).toBe(true);
   },
 );
@@ -87,7 +87,7 @@ it('coalesces an unavailable target while another target completes through the s
   expect(hasCompletedFeatureProbe('UP/001')).toBe(true);
   expect(getCachedFeatures('UP/001')?.abapRelease).toBe('758');
   const sends = mockFetch.mock.calls.map(([input]) => new URL(String(input)));
-  expect(sends.filter((url) => url.hostname.startsWith('down.'))).toHaveLength(15);
+  expect(sends.filter((url) => url.hostname.startsWith('down.'))).toHaveLength(14);
   expect(sends.filter((url) => url.hostname.startsWith('up.') && url.pathname.endsWith('/components'))).toHaveLength(1);
   const count = mockFetch.mock.calls.length;
   await invoke(up, 'UP/001');
@@ -123,7 +123,7 @@ it('keeps single-target startup retry behavior and allows a manual probe after r
   const sap = client();
   mockFetch.mockImplementation(async () => outage());
   await probeClientFeatures(DEFAULT_CONFIG, sap);
-  expect(mockFetch).toHaveBeenCalledTimes(30);
+  expect(mockFetch).toHaveBeenCalledTimes(28);
   expect(hasCompletedFeatureProbe()).toBe(false);
   expect(
     getToolDefinitions(DEFAULT_CONFIG, undefined, getCachedFeatures()).some((tool) => tool.name === 'SAPGit'),
