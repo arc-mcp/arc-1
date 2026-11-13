@@ -1,6 +1,8 @@
 # ADR 0010 — Pinned Principal Propagation writes in multi-target mode
 
-**Status:** Accepted — scoped, default-off; implemented and qualified in PR #1080.
+**Status:** Accepted — scoped, default-off; implemented and qualified in PR #1080. Its dedicated
+CLAS/INTF adapter is superseded by [ADR-0011](0011-broader-pinned-pp-mutations.md) (Proposed), which
+keeps the access gates below and serves pinned writes through the single-target handlers.
 **Date:** 22 October 2026.
 **Implementation contract:** [Pinned PP writes plan](../plans/2026-10-22-multi-target-pinned-writes.md).
 **Design research:** [Current-main assessment](../research/2026-10-22-multi-target-write-strategy.md).

@@ -191,9 +191,6 @@ function activationRequestOptions(): AdtRequestOptions {
 export interface ActivationOptions {
   preaudit?: boolean;
   name?: string;
-  /** Required on the multi-target boundary; validates initial and SAP-expanded references. */
-  validateReferences?: (refs: readonly { uri: string; name?: string }[]) => Promise<void>;
-  beforeSubmit?: () => void;
 }
 
 /** Activate (publish) ABAP objects.
@@ -208,13 +205,7 @@ export async function activate(
   objectUrl: string,
   options?: ActivationOptions,
 ): Promise<ActivationResult> {
-  return activateWithinBudget(
-    http,
-    safety,
-    objectUrl,
-    { ...activationRequestOptions(), noReplay: safety.multiTargetWrite?.enabled === true },
-    options,
-  );
+  return activateWithinBudget(http, safety, objectUrl, activationRequestOptions(), options);
 }
 
 async function activateWithinBudget(
@@ -225,12 +216,8 @@ async function activateWithinBudget(
   options?: ActivationOptions,
 ): Promise<ActivationResult> {
   checkOperation(safety, OperationType.Activate, 'Activate');
-  if (
-    safety.multiTargetWrite &&
-    (!safety.multiTargetWrite.enabled || !options?.validateReferences || options.preaudit === false)
-  )
-    throw new AdtSafetyError('Missing pinned activation validation context.');
-  await options?.validateReferences?.([{ uri: objectUrl, name: options.name }]);
+  if (safety.multiTargetWrite && (!safety.multiTargetWrite.enabled || options?.preaudit === false))
+    throw new AdtSafetyError('Multi-target activation requires preaudit on a write-enabled target.');
 
   try {
     const preaudit = options?.preaudit !== false;
@@ -241,7 +228,6 @@ async function activateWithinBudget(
 </adtcore:objectReferences>`;
 
     const phase1Start = Date.now();
-    options?.beforeSubmit?.();
     const resp = await http.post(
       `/sap/bc/adt/activation?method=activate&preauditRequested=${preaudit}`,
       body,
@@ -251,15 +237,14 @@ async function activateWithinBudget(
     );
     const phase1DurationMs = Date.now() - phase1Start;
 
-    const outcome = parseActivationOutcome(resp.body, safety.multiTargetWrite?.enabled === true);
+    const outcome = parseActivationOutcome(resp.body);
     if (outcome.kind !== 'preaudit' || !preaudit) {
       return outcomeToResult(outcome);
     }
 
-    await options?.validateReferences?.(outcome.refs);
-    options?.beforeSubmit?.();
     return await confirmPreaudit(http, outcome.refs, options?.name ?? objectUrl, phase1DurationMs, requestOptions, {
       safety,
+      requested: [objectUrl],
     });
   } catch (err) {
     return rethrowOrLockHint(err, options?.name ?? objectUrl);
@@ -280,7 +265,8 @@ export async function activateBatch(
   options?: { preaudit?: boolean },
 ): Promise<ActivationResult> {
   checkOperation(safety, OperationType.Activate, 'ActivateBatch');
-  if (safety.multiTargetWrite) throw new AdtSafetyError('Multi-target batch activation is forbidden.');
+  if (safety.multiTargetWrite && (!safety.multiTargetWrite.enabled || options?.preaudit === false))
+    throw new AdtSafetyError('Multi-target activation requires preaudit on a write-enabled target.');
   const requestOptions = activationRequestOptions();
 
   const preaudit = options?.preaudit !== false;
@@ -323,6 +309,7 @@ ${refs}
         ed064RetryObjects: objects,
         preaudit: options?.preaudit,
         safety,
+        requested: objects.map((o) => o.url),
       },
     );
   } catch (err) {
@@ -345,8 +332,23 @@ async function confirmPreaudit(
     ed064RetryObjects?: Array<{ url: string; name: string }>;
     preaudit?: boolean;
     safety: SafetyConfig;
+    requested?: string[];
   },
 ): Promise<ActivationResult> {
+  // Multi-target: SAP may add other inactive objects to the activation. Only the package-checked
+  // objects the caller named (and their own sub-resources) may be confirmed; anything else is refused.
+  if (options?.safety.multiTargetWrite) {
+    const own = (options.requested ?? []).map((uri) => uri.toLowerCase());
+    const extra = refs.filter((ref) => {
+      const uri = ref.uri.toLowerCase();
+      if (/[?#]|\/(?:\.|%2e){1,2}(?:\/|$)/.test(uri)) return true; // no query or dot segment
+      return !own.some((owner) => uri === owner || uri.startsWith(`${owner}/`));
+    });
+    if (extra.length)
+      throw new AdtSafetyError(
+        `SAP would also activate objects that were not requested: ${extra.map((ref) => ref.name || ref.uri).join(', ')}. Nothing was activated. List them explicitly in objects[] to include them.`,
+      );
+  }
   logger.debug('Activation preaudit: SAP returned inactive objects, confirming with preauditRequested=false', {
     count: refs.length,
     objects: refs.map((r) => ({ name: r.name, uri: r.uri })),
@@ -373,7 +375,7 @@ ${refLines}
       { Accept: 'application/xml' },
       requestOptions,
     );
-    result = outcomeToResult(parseActivationOutcome(resp.body, options?.safety.multiTargetWrite?.enabled === true));
+    result = outcomeToResult(parseActivationOutcome(resp.body));
     if (options?.ed064RetryObjects) {
       result = await retryBatchActivationIndividuallyAfterEd064(
         http,
@@ -978,8 +980,8 @@ export type ActivationOutcome =
     };
 
 /** Parse activation response into a discriminated outcome. */
-export function parseActivationOutcome(xml: string, requireExecutionEvidence = false): ActivationOutcome {
-  if (!xml.trim() && !requireExecutionEvidence) return { kind: 'success', messages: [], details: [] };
+export function parseActivationOutcome(xml: string): ActivationOutcome {
+  if (!xml.trim()) return { kind: 'success', messages: [], details: [] };
 
   const parsed = parseXml(xml);
   const msgs = findDeepNodes(parsed, 'msg');
@@ -1034,23 +1036,6 @@ export function parseActivationOutcome(xml: string, requireExecutionEvidence = f
     };
   }
 
-  if (requireExecutionEvidence) {
-    const properties = findDeepNodes(parsed, 'properties');
-    if (
-      !Object.hasOwn(parsed, 'messages') ||
-      properties.length !== 1 ||
-      properties[0]['@_activationExecuted'] !== 'true'
-    )
-      throw new AdtSafetyError(
-        'SAP did not affirm activation execution. Inspect the active and inactive owner before continuing.' +
-          (messages.length
-            ? ` SAP: ${messages
-                .slice(0, 5)
-                .map((text) => text.slice(0, 500))
-                .join('; ')}`
-            : ''),
-      );
-  }
   return { kind: 'success', messages, details };
 }
 

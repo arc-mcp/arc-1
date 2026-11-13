@@ -63,11 +63,14 @@ commas and optional surrounding spaces. Empty entries and malformed values quara
 A package list is required whenever the destination requests writes, even while the global switch is
 off. Missing destination transport policy allows only positively verified local objects.
 
-**Transport policy authorizes requests and their SAP-managed tasks.** In this example only
-`DEVK900123` is allowed. If a caller supplies one of its tasks, ARC-1 verifies membership and uses
-the parent request for the SAP save. A task-only allowlist entry does not grant its parent. The
-request must be a modifiable Workbench request; unknown/mismatched recording evidence denies the
-write. Manage requests in ADT/SAP GUI or a separately authorized single-target connection.
+**Transport policy authorizes requests.** In this example only `DEVK900123` is allowed. Every CTS
+request ARC-1 sends to SAP must be on both lists — whether the caller supplied it or SAP returned it
+from the object lock — and is checked again on the wire before the request leaves ARC-1. A request
+off either list is refused before SAP sees it; a lock already taken is released. Objects without a
+request (for example in `$TMP`) need no transport list. ARC-1 does not map a task to its parent
+request: a task ID is refused unless the task itself is on both lists. List and pass parent
+requests; on SAP_BASIS 758 a save with a task ID failed and left an empty object stub. Manage
+requests in ADT/SAP GUI or a separately authorized single-target connection.
 
 ## Assign the exact write grant
 
@@ -121,26 +124,33 @@ only the aggregate compatibility connection cannot write through that connection
 
 ## What the writer can do
 
-| Action | Requirements |
-|---|---|
-| `SAPWrite.create` | One CLAS or INTF; explicit package and complete source; required allowed request/task for a transportable package |
-| `SAPWrite.update` | CLAS/INTF main source; `expectedSourceHash` from `SAPRead(format="editable")` |
-| `SAPWrite.edit_method` | Existing CLAS main-source method; hash of the complete editable main source |
-| `SAPActivate` | One CLAS/INTF owner; activates all of that owner's existing inactive drafts and includes |
+`SAPWrite` (every action) and `SAPActivate action="activate"` (single and batch) behave as on a
+single-target connection: same types, fields and result text. The pinned connection adds only these
+controls, each enforced once for every handler:
 
-Creates and edits save inactive source. Review it before activation. **Activation is whole-owner**,
-including drafts created previously or by another session; it is not method-only activation.
-Use `SAP_DENY_ACTIONS=SAPActivate` if your team must activate separately in ADT. Hidden actions,
-other types, deletes, include editing, batches, RAP/DDIC, publication, transport management and Git
-are refused even if a client sends the call directly. Per-call lint-disable options are unavailable.
-ABAP Unit can execute newly authored code under the SAP user; deny `SAPDiagnose.unittest` unless
-that execution is intended. Global lint configuration applies; `SAP_CHECK_BEFORE_WRITE` remains advisory. SAP authorization is
-always required in addition to ARC-1 policy. Live qualification used SAP_BASIS 758 SP02 with
-Cloud Connector PP. Other releases must affirm the same lock, recording and activation evidence;
-unrecognized responses fail closed. An activation response without positive execution evidence
-is reported as unconfirmed, even when the HTTP request succeeded. On the qualified 758 system,
-activating an already-active owner returned no positive execution evidence and therefore this
-unconfirmed result. Read the active/inactive state before deciding whether any action is needed.
+| Control | Effect |
+|---|---|
+| Who may write | Pinned PP route, strict PP, raw write scope, exact read and write grants, destination opt-in |
+| Admission | Explicit `Tool.action` list. Fields outside the single-target schema and `preaudit=false` are refused. `publish_srvb`/`unpublish_srvb` are not admitted |
+| Package ceiling | Global **and** destination package lists, against the real SAP package |
+| Request ceiling | Global **and** destination transport lists, for the caller's request and every request sent to SAP |
+| No transient retry | POST/PUT/DELETE are not resent after a 503, 429 or lost database connection; the error is reported. Definitive rejections (expired session, CSRF token, content type) are retried once, as in single-target |
+| Activation scope | If SAP would also activate an object you did not list (other than a sub-resource of one you listed), nothing is activated; list it in `objects[]` to include it |
+
+CLAS and INTF follow the same rules as every other type; the earlier CLAS/INTF-only contract
+(ADR-0010) is replaced. Compared with it you no longer get read-back comparison after save,
+re-validation under the lock, task-to-parent request resolution, positive activation-execution
+evidence, a JSON `state`/`phase` result, or a mandatory source hash: `expectedSourceHash` is
+optional, as in single-target, and recommended for updates. Saves remain inactive until activation. Whole-object activation can include other
+users' inactive parts of the **same** object, as in single-target; other objects are never pulled in.
+Per-call `lintBeforeWrite=false` is accepted as in single-target; lint is not an access control.
+
+Package and CTS management, service-binding publication, Git, and plugin tools remain unavailable,
+even if a client sends the call directly. ABAP Unit can execute newly authored code under the SAP
+user; deny `SAPDiagnose.unittest` unless that execution is intended. Use `SAP_DENY_ACTIONS` to
+narrow further (for example `SAPWrite.delete`). SAP authorization is always required in addition
+to ARC-1 policy. This surface is tested against mocks only until live qualification is recorded
+(the earlier CLAS/INTF adapter was qualified on SAP_BASIS 758 SP02 with Cloud Connector PP).
 
 A hash establishes source freshness, not target identity. Verify the pinned connection before
 editing. SAP repository objects are generally cross-client: two clients of one physical system are
@@ -158,8 +168,9 @@ rule counts and a policy digest. No raw restriction list or destination credenti
 | No write tools on the pinned PP connection | Global switch, destination opt-in, target-filtered mode, fresh token's raw write scope, access grant and exact write grant |
 | Destination quarantined | Strict property syntax; PP required for write opt-in; standard mode rejects write properties; transport/Git enabling properties are unsupported |
 | Package denied | Both independent allowlists and the real SAP owner package; subtree metadata access |
-| CTS denied | Explicit destination request allowance, global allowance, modifiable parent and exact task membership |
-| Source changed | Read the same owner's editable main source again, review changes, and use its new hash |
+| CTS denied | The request (or task) itself must be on the destination list and the global list; this includes a request SAP returns from the object lock |
+| Source changed | You passed `expectedSourceHash`: read the editable source again, review changes, and use its new hash |
+| Activation refused: SAP would also activate … | Another inactive object is pending. Review it, then list it in `objects[]` or activate it separately |
 | `TARGET_CONFIG_CHANGED` | Restart all instances after reviewing the changed destination; never silently remap an old ID to another backend |
 | Partial/unknown write result | Inspect the object, inactive source, CTS recording and locks. Do not automatically replay; creation may have left a stub or a save may have completed |
 

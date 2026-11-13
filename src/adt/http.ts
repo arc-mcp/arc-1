@@ -15,7 +15,13 @@ import { acceptFallback } from './accept-fallback.js';
 import { connectivityProxyResponse, prepareBoundedResponse } from './bounded-response.js';
 import { loadCookiesFromFile, parseCookieString } from './cookies.js';
 import { resolveAcceptType, resolveContentType } from './discovery.js';
-import { AdtApiError, AdtCsrfBootstrapError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
+import {
+  AdtApiError,
+  AdtCsrfBootstrapError,
+  AdtNetworkError,
+  AdtResponseLimitError,
+  AdtSafetyError,
+} from './errors.js';
 import {
   type AdtRequestOptions,
   awaitWithinRequestBudget,
@@ -29,6 +35,7 @@ import { parseRetryAfter } from './http-retry-after.js';
 import { prepareDataPreviewWireBody } from './http-wire-body.js';
 import { legacyContentHandlerFallback, rejectEmptyAdtHtmlResponse } from './legacy-content-handler.js';
 import { fetchWithAttemptBudget } from './request-attempt-budget.js';
+import { isPinnedTransportAllowed, type MultiTargetWritePolicy } from './safety.js';
 import { hasSecuritySessionCookie, SecuritySessionGate } from './security-session-gate.js';
 import type { Semaphore } from './semaphore.js';
 import { resolveSapUserAgent } from './user-agent.js';
@@ -150,6 +157,12 @@ export interface AdtHttpConfig {
   disableSaml?: boolean;
   /** Retry one final 401 after resetting session state. Defaults to true. */
   retryUnauthorized?: boolean;
+  /**
+   * Write-enabled pinned target: POST/PUT/DELETE get no transient (503/429/DB) retry, and any
+   * `corrNr` must be on both the server and the destination request list — whichever handler sends it.
+   * Definitive rejections (401, CSRF 403, 406/415 negotiation) keep their single retry.
+   */
+  pinnedWrite?: MultiTargetWritePolicy;
   /** Secret-free hook invoked for the final 401 returned to the caller. */
   onUnauthorized?: (context: { path: string; statusCode: 401 }) => void;
   /** Optional concurrency limiter shared across requests */
@@ -375,6 +388,14 @@ export class AdtHttpClient {
     extraHeaders?: Record<string, string>,
     options?: AdtRequestOptions,
   ): Promise<AdtResponse> {
+    const pinned = this.config.pinnedWrite;
+    if (pinned?.enabled && isModifyingMethod(method)) {
+      options = { ...options, retryTransientErrors: false };
+      const query = path.indexOf('?');
+      const params = query < 0 ? [] : [...new URLSearchParams(path.slice(query + 1))];
+      if (params.some(([key, value]) => key.toLowerCase() === 'corrnr' && !isPinnedTransportAllowed(pinned, value)))
+        throw new AdtSafetyError('CTS request is not allowed by both server and destination transport policies.');
+    }
     throwIfRequestCancelled(options);
     const execute = async () => {
       try {

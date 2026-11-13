@@ -145,10 +145,10 @@ use SAP's separate **Multi-Target Application** packaging terminology.
 
 ### Change these together
 
-- Scoped pinned writes: `multi-target-write-surface.ts`, verified request projection/runtime config,
-  `src/adt/pinned-write-policy.ts`, `src/handlers/write/pinned{,-activation}.ts`, HTTP no-replay policy,
-  and focused `pinned-writes` / `multi-target-writes` tests. The low-level activation boundary must
-  require scoped validation; never let missing context select the legacy pipeline.
+- Pinned writes (ADR-0011): `multi-target-write-surface.ts` (admission), verified request
+  projection/runtime config, the `pinnedWrite` barrier in `src/adt/http.ts`, `isPinnedTransportAllowed`
+  in `safety.ts`, activation scope in `devtools.ts` (`confirmPreaudit`), the dispatch recheck, and the
+  focused `pinned-shared-{handlers,families}` / `http-pinned-write` / `multi-target-writes` tests.
 - Destination properties/validation: `multi-target-destination-config.ts`,
   `multi-target-identity.ts`, `destination-discovery.ts`, `destination-registry.ts`,
   `multi-target-runtime.ts`, and their tests. Target syntax, pinned route matchers, aggregate pattern,
@@ -196,31 +196,29 @@ npm run btp:validate
 
 ### Shared mutation lifecycle
 
-`src/adt/crud.ts::withLockedMutation` is shared by single-target `safeUpdateSource`,
-`safeUpdateClassInclude`, and the pinned CLAS/INTF adapter in `handlers/write/pinned.ts`.
-`mutation-context.ts` requires a factory-created legacy or pinned context; a multi-target client
-cannot enter the legacy wrapper. The required callbacks keep package/recording revalidation in
-the pinned adapter. This is not a generic metadata, deletion, transport or activation engine.
+`src/adt/crud.ts::withLockedMutation` (lock → operation → unlock in one stateful session; an unlock
+error replaces the primary error) serves `safeUpdateSource` and `safeUpdateClassInclude` in every
+mode. Pinned multi-target writes (ADR-0011) use the same single-target handlers; there is no separate
+pinned lifecycle or adapter. Their extra controls are central:
 
-`mutation-http.ts` gives nested helpers a scoped transport with the pinned deadline, cancellation
-and no-replay options. Child options cannot relax those limits; nested stateful sessions inherit
-them. The lifecycle retains the owning transport for unlock/close with independent bounded cleanup,
-including when the operation was cancelled. Facade bookkeeping is weakly keyed by the transport
-object; it is not a target or user cache. Do not unwrap this facade in an operation callback.
-Opening `withStatefulSession` through the facade creates an independent SAP context; never use
-the parent's lock handle there. Its close callback is independent. Only the coordinator's
-owning session updates the mutation result's `sessionClosed` field.
+- **Admission** — `multi-target-write-surface.ts` (`SHARED_PINNED_ACTIONS`, single-target Zod keys,
+  `preaudit=false`, caller transports on both lists), applied by the HTTP gate and again in
+  `handleToolCall`, which repeats `multiTargetInvocationDecision` for every tool when
+  `config.targetId` is set. A new `SAPWrite`/`SAPActivate` policy row fails
+  `pinned-shared-handlers.test.ts` until it is listed or explicitly not admitted.
+- **Wire barrier** — a write-enabled pinned client carries `pinnedWrite`; `AdtHttpClient.request()`
+  turns off transient (503/429/DB) retries for POST/PUT/DELETE and refuses any `corrNr` (any case,
+  every occurrence) not on both lists. Definitive rejections keep their single retry (401, CSRF 403,
+  406/415 negotiation). A write path carrying the CTS request anywhere other than `corrNr` must be
+  refused at admission.
+- **Activation scope** — `confirmPreaudit` refuses objects SAP adds that are neither requested nor a
+  sub-resource of a requested object.
+- **Disabled targets** — `isOperationAllowed` refuses mutations when `multiTargetWrite.enabled` is false.
 
-Preserve the legacy absence of request options, `localityKnown`, session identity and unlock-error
-precedence. Pinned cleanup instead retains the primary outcome and reports cleanup status. Its
-result serializer lives in `write/pinned-result.ts`; activation still uses its existing independent
-validator and state machine. Existing schemas, capabilities and ADR-0010 constraints are unchanged.
-
-Focused tests: `tests/unit/adt/mutation-{compatibility,lifecycle,isolation}.test.ts` and
-`tests/unit/handlers/pinned-writes.test.ts`. The optional destructive integration test
-`tests/integration/mutation-lifecycle.integration.test.ts` creates and deletes one unique `$TMP`
-class using the configured direct test identity. It exercises both adapters, not real PP routing.
-See the [implementation evidence](research/2026-10-29-shared-mutation-infrastructure.md).
+Focused tests: `tests/unit/adt/{mutation-compatibility,http-pinned-write}.test.ts`,
+`tests/unit/handlers/pinned-shared-{handlers,families}.test.ts`. The optional destructive integration
+test `tests/integration/mutation-lifecycle.integration.test.ts` creates and deletes one unique `$TMP`
+class using the configured direct test identity; it does not exercise PP routing.
 
 ## Key Files for Common Tasks — full reference
 
