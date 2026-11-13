@@ -65,6 +65,25 @@ describe('pinned write barrier', () => {
     expect(puts[1][1].headers['Content-Type']).toBe('application/xml');
   });
 
+  it.each(['post', 'put', 'delete'] as const)('%s: resends a 403 only on the CSRF challenge', async (method) => {
+    const send = (client: InstanceType<typeof AdtHttpClient>) =>
+      method === 'delete' ? client.delete('/sap/bc/adt/x') : client[method]('/sap/bc/adt/x', 'b', 'text/plain');
+    for (const [label, challenge, client, sends] of [
+      ['pinned, CSRF challenge', 'required', http(policy), 2],
+      ['pinned, plain 403', undefined, http(policy), 1],
+      ['single-target, plain 403', undefined, http(), 2],
+    ] as const) {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation(async (_url: unknown, init: any = {}) =>
+        init.method === 'HEAD'
+          ? mockResponse(200, '', { 'x-csrf-token': 'T' })
+          : mockResponse(403, 'Forbidden', challenge ? { 'x-csrf-token': challenge } : {}),
+      );
+      await expect(send(client)).rejects.toBeInstanceOf(AdtApiError);
+      expect(sent(method.toUpperCase()), label).toHaveLength(sends);
+    }
+  });
+
   it('still retries reads, and leaves clients without an enabled policy unaffected', async () => {
     await expect(http(policy).get('/sap/bc/adt/x')).rejects.toBeInstanceOf(AdtApiError);
     expect(sent('GET')).toHaveLength(2);

@@ -160,7 +160,7 @@ export interface AdtHttpConfig {
   /**
    * Write-enabled pinned target: POST/PUT/DELETE get no transient (503/429/DB) retry, and any
    * `corrNr` must be on both the server and the destination request list — whichever handler sends it.
-   * Definitive rejections (401, CSRF 403, 406/415 negotiation) keep their single retry.
+   * Definitive rejections (401, a 403 carrying SAP's CSRF challenge, 406/415 negotiation) keep their single retry.
    */
   pinnedWrite?: MultiTargetWritePolicy;
   /** Secret-free hook invoked for the final 401 returned to the caller. */
@@ -805,8 +805,15 @@ export class AdtHttpClient {
         // Fall through to downstream handlers (403/406/415/normal)
       }
 
-      // Handle CSRF token refresh on 403 (modifying requests only)
-      if (options?.noReplay !== true && response.status === 403 && isModifyingMethod(method)) {
+      // Handle CSRF token refresh on 403 (modifying requests only). Pinned writes resend only on SAP's
+      // CSRF challenge, never after a plain authorization 403.
+      const csrfChallenge = response.headers.get('x-csrf-token')?.trim().toLowerCase() === 'required';
+      if (
+        options?.noReplay !== true &&
+        response.status === 403 &&
+        isModifyingMethod(method) &&
+        (csrfChallenge || !this.config.pinnedWrite?.enabled)
+      ) {
         await this.fetchCsrfToken(withoutResponseBudget(options));
         headers['X-CSRF-Token'] = this.csrfToken;
         // Update cookie header after CSRF fetch may have set new cookies. Use the
