@@ -9,6 +9,7 @@
  */
 
 import type { MultiTargetWritePolicy } from '../adt/safety.js';
+import type { SpnegoMode } from '../adt/spnego.js';
 import { DEFAULT_USER_AGENT } from '../adt/user-agent.js';
 import type { MultiTargetAuthorizationMode } from './multi-target-authorization.js';
 
@@ -162,6 +163,18 @@ export interface ServerConfig {
   ppStrictExplicit: boolean;
   /** Opt-in: allow shared cookie auth to coexist with PP (shared client only) */
   ppAllowSharedCookies: boolean;
+
+  // --- SPNEGO / Kerberos (shared SAP identity) ---
+  /**
+   * Opt-in: authenticate to SAP with SPNEGO/Kerberos using the OS credential cache of the account
+   * this process runs under. That identity is SHARED by every MCP user of the instance, so it is
+   * rejected together with principal propagation, multi-target mode and every other SAP credential.
+   */
+  spnego: boolean;
+  /** Optional SPN override (e.g. `HTTP/sap.example.com`); defaults to `HTTP/<host of SAP_URL>`. */
+  spnegoSpn?: string;
+  /** `bootstrap` (default) trades one token for SAP session cookies; `per-request` signs every call. */
+  spnegoMode: SpnegoMode;
 
   // --- SAML Behavior ---
   /** Opt-in: disable SAML redirect for ADT requests (X-SAP-SAML2 + saml2=disabled) */
@@ -322,6 +335,8 @@ export const DEFAULT_CONFIG: ServerConfig = {
   ppStrict: false,
   ppStrictExplicit: false,
   ppAllowSharedCookies: false,
+  spnego: false,
+  spnegoMode: 'bootstrap',
   disableSaml2: false,
   ideLinks: 'off',
   ideSystemId: '',

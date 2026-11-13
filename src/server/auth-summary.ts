@@ -24,6 +24,9 @@ export function logAuthSummary(config: ServerConfig): void {
     if (hasDestination) sapMethod = 'destination+pp';
     else if (hasCookie) sapMethod = 'cookie+pp';
     else sapMethod = 'pp';
+  } else if (config.spnego) {
+    // Always shared: the token comes from the OS credential cache of the account running ARC-1.
+    sapMethod = 'spnego';
   } else if (hasBearer) {
     sapMethod = 'bearer';
   } else if (hasDestination) {
@@ -47,7 +50,11 @@ export function logAuthSummary(config: ServerConfig): void {
           ? 'per-user'
           : 'shared';
   const samlSuffix = config.disableSaml2 ? ' disable-saml=on' : '';
-  logger.info(`auth: MCP=[${mcpMethods.join(',')}] SAP=${sapMethod} (${scope})${samlSuffix}`);
+  // Secret-free: report THAT the SPN was overridden, never its value (it carries the SAP host).
+  const spnegoSuffix = config.spnego
+    ? `${config.spnegoSpn ? ' spn=override' : ''}${config.spnegoMode !== 'bootstrap' ? ` spnego-mode=${config.spnegoMode}` : ''}`
+    : '';
+  logger.info(`auth: MCP=[${mcpMethods.join(',')}] SAP=${sapMethod} (${scope})${samlSuffix}${spnegoSuffix}`);
 
   if (mixedSapIdentity) {
     logger.warn(

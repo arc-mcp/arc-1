@@ -302,6 +302,7 @@ export class AdtClient {
       bearerTokenProvider: config.bearerTokenProvider,
       samlAuthorization: config.samlAuthorization,
       disableSaml: config.disableSaml,
+      spnego: config.spnego,
       retryUnauthorized: config.retryUnauthorized,
       onUnauthorized: config.onUnauthorized,
       // Prefer the shared server-wide semaphore when provided so all per-user PP clients

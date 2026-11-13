@@ -73,6 +73,7 @@ sequence.
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
+| [COMPAT-08](#compat-08) | SPNEGO reach beyond Windows x64 | P3 | M | Needs research | Auth / Compatibility |
 | [COMPAT-16](#compat-16) | API-release directory cleanup | P2 | S | Needs research | Compatibility |
 | [COMPAT-17](#compat-17) | Direct package browser release coverage | P2 | S | Needs research | Compatibility |
 | [COMPAT-18](#compat-18) | Newly created program metadata on 7.50 | P2 | S | Needs research | Compatibility |
@@ -312,6 +313,30 @@ a live table-to-view-entity replacement capture.
 
 **Resume with.** A live table using a CDS view-entity replacement, verified `VIEWREF`/`STOB` identities,
 and graph-alias/blocklist regressions before broadening the catalog join.
+
+<a id="compat-08"></a>
+### COMPAT-08 — SPNEGO reach beyond Windows x64
+
+- **Priority / effort / status:** P3 / M / Needs research
+- **Category:** Auth / Compatibility
+
+**Remaining gap.** `SAP_SPNEGO` ships validated on domain-joined Windows x64, where the optional
+`kerberos` module installs a prebuilt binary and SSPI uses the caller's logon session. Three
+environments are documented as unsupported rather than solved: Windows on ARM and musl/Alpine have
+no prebuild, and the `.mcpb` Desktop bundle is packed with `npm ci --ignore-scripts`, so it carries
+no native binary at all. The Linux/macOS GSSAPI path is implemented but unverified against a real
+KDC, and it is unconfirmed whether the module can supply TLS channel bindings — a system enforcing
+Extended Protection for Authentication may reject a token that PowerShell gets accepted.
+
+**Why it remains.** Each item needs an environment this project does not have. Shipping a
+krb5-enabled Alpine image enlarges the published runtime for a feature most deployments do not use,
+and guessing at channel-binding support would put an unverifiable claim in the docs.
+
+**Resume with.** A domain-joined Linux host with an MIT krb5 credential cache for the GSSAPI path;
+a decision on whether to publish a second Docker image variant rather than add `krb5-libs` to the
+default one; and one system with Extended Protection enforced, to settle the channel-binding
+question. Analysis and the verified prebuild matrix:
+[docs/research/2026-11-11-spnego-kerberos-auth-analysis.md](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-11-spnego-kerberos-auth-analysis.md).
 
 <a id="compat-10"></a>
 ### COMPAT-10 — CDS set-operation lineage

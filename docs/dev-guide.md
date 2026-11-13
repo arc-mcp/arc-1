@@ -222,6 +222,65 @@ Focused tests: `tests/unit/adt/mutation-{compatibility,lifecycle,isolation}.test
 class using the configured direct test identity. It exercises both adapters, not real PP routing.
 See the [implementation evidence](research/2026-10-29-shared-mutation-infrastructure.md).
 
+## SPNEGO / Kerberos logon
+
+`src/adt/spnego.ts` owns SPN resolution and the lazy load of the optional `kerberos` module;
+`src/adt/http.ts` owns the exchange. Six rules keep it honest:
+
+1. **Shared identity, fail closed.** The token comes from the OS credential cache of the account
+   running ARC-1, so SPNEGO cannot be per-user. `validateConfig` rejects it together with PP,
+   multi-target, Basic, cookies, the BTP service key and a BTP destination, and `buildAdtConfig`
+   sets it only inside the `!opts?.perUser` block. A per-user client inheriting the process ticket
+   would silently widen every call to a shared identity.
+2. **Two entry points, not one.** `ensureSpnegoSession` runs at the top of `requestInner` AND at
+   the top of `fetchCsrfToken`, which issues its own `doFetch` and never reaches `requestInner`.
+   SAP binds the CSRF token to the session cookie, so a token fetched before the session exists is
+   bound to the wrong one; worse, with no other credential the startup auth preflight — which calls
+   `fetchCsrfToken` directly — probes SAP uncredentialed and reports the 401 as a Kerberos failure.
+   Any further path that calls `doFetch` without going through `requestInner` needs the same gate.
+3. **Never inside a lock.** ADR-0006 forbids interactive work between lock and unlock.
+   `withStatefulSession` copies `spnegoSessionEstablished` into the clone, so the clone reuses the
+   inherited session instead of negotiating mid-write. If you add another path that clones the
+   client, copy that flag too.
+4. **One retry, not two.** Re-negotiation reuses the existing single 401 slot
+   (`ensureSpnegoSession(options, true)` next to the cookie-file reload). A second retry dimension
+   would turn one expired ticket into a storm of logon attempts.
+5. **Both directions are secrets.** The request token rides `authorization`; the ICM's mutual-auth
+   reply rides `www-authenticate`. Both are in `HTTP_DEBUG_REDACT_HEADERS`, which
+   `responseHeadersToObject` applies to response headers too. The startup summary prints
+   `spn=override`, never the SPN value — it names the SAP host.
+6. **Pin the mechanism to SPNEGO.** `createSpnegoTokenAcquirer` passes the module's
+   `GSS_MECH_OID_SPNEGO`. The default mech is raw Krb5, which on Windows selects the `Kerberos` SSP
+   instead of `Negotiate` and emits a bare AP-REQ; the HTTP `Negotiate` scheme (RFC 4559) carries
+   SPNEGO tokens. The constant is read from the module, never hard-coded, so a constant change
+   cannot silently restore the raw default. Whether the raw default would also be accepted was
+   never tested — the pin costs nothing and matches the client known to work. **The pin has a
+   price:** `Negotiate` falls back to NTLM when it cannot get a service ticket, so a wrong SPN
+   returns an NTLM Type 1 token instead of failing (verified directly against SSPI). The acquirer
+   refuses any token starting with `TlRMTVNTUA` (`NTLMSSP\0`) — never relax that into a warning, or
+   a configuration mistake becomes a quiet downgrade to a protocol with no mutual authentication.
+
+**Platform matrix** (verified against the `kerberos@7.0.0` release assets): prebuilt N-API binaries
+for `win32-x64`, `linux-{x64,arm64,s390x}` (glibc ≥ 2.28), `darwin-{x64,arm64}` and FreeBSD. **No
+`win32-arm64`, no musl.** The published Alpine image and the `.mcpb` bundle (packed with
+`npm ci --ignore-scripts`, which skips `prebuild-install` entirely) therefore carry no binary; the
+loader reports that with the platform named. Remaining gaps are tracked as COMPAT-08.
+
+**Live evidence.** Verified on a domain-joined Windows x64 host against an on-premise SNC/Kerberos-only
+system over direct HTTPS, default `bootstrap` mode, no SPN override: discovery 200, CSRF bootstrap
+succeeded, search and transport authorization probes passed, `SAPSearch` returned a class. The run
+was repeated with the NTLM refusal in place and still succeeded, which proves two things at once:
+the guard does not reject a genuine ticket, and the protocol that system accepts really is Kerberos
+rather than an NTLM fallback that happened to be tolerated. The **write** path was then exercised on
+the same system with a disposable `$TMP` class: create → source update → activate → read-back →
+delete, all succeeding. That covers the two stateful-session steps (update and delete each run
+lock→modify→unlock), so rule 3 is no longer unit-tests-only. Still **unverified against a real
+system**: ticket/session expiry recovery — a one-shot `arc1-cli` call always negotiates afresh, so
+provoking it needs a long-running server and a `klist purge` mid-session — `per-request` mode, and
+everything outside win32-x64. Note `npm install kerberos` is a no-op when the package is already
+unpacked without its binary (npm considers it installed and skips the install script);
+`npm rebuild kerberos` is what fetches the prebuild.
+
 ## Key Files for Common Tasks — full reference
 
 | Task | Files |
