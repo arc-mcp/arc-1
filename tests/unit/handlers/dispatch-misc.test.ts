@@ -1130,7 +1130,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
     /** Create minimal BTP-detected features for testing */
     function setBtpMode(): void {
       setCachedFeatures({
-        ...features({ abapGit: false, gcts: false, amdp: false, ui5: false, ui5repo: false, flp: false }),
+        ...features({ abapGit: false, gcts: false, ui5: false, ui5repo: false, flp: false }),
         abapRelease: '758',
         systemType: 'btp',
       });

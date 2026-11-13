@@ -3,7 +3,7 @@ import { XMLValidator } from 'fast-xml-parser';
 import { DataResponseBudget } from './data-result-context.js';
 import { canonicalDataSourceName } from './data-source-name.js';
 import type { DataSourceBlocklistGuard } from './data-source-policy.js';
-import { AdtError } from './errors.js';
+import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import { buildTableQuerySql, clampPreviewRows, fitFreestyleSqlLines } from './table-query.js';
 import { parseDiscoveryDocument, parseTableContents, parseXml } from './xml-parser.js';
@@ -63,7 +63,22 @@ async function metadata(
   accept: string,
   options: AdtRequestOptions,
 ): Promise<string> {
-  return (await http.get(path, { Accept: accept }, options)).body;
+  try {
+    return (await http.get(path, { Accept: accept }, options)).body;
+  } catch (error) {
+    if (
+      error instanceof AdtApiError &&
+      error.statusCode === 403 &&
+      error.path === path &&
+      path.startsWith(`${CDS_PREVIEW_PATH}/`)
+    ) {
+      error.extraHint =
+        'CDS preview metadata was denied. Ask Basis to trace the failed request, including S_ADT_RES: ' +
+        'permission for /sap/bc/adt/datapreview/cds alone does not cover its child URI. ' +
+        'ARC-1 did not try another data route.';
+    }
+    throw error;
+  }
 }
 
 export async function resolveCdsPreviewTarget(

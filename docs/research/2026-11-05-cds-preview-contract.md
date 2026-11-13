@@ -44,3 +44,45 @@ Implementation validation used the same system: namespaced `/1BS/CDS_EXP_SALESOR
 lookahead was trimmed; blocklist-on classic/view-entity reads succeeded for unrelated exclusions.
 Blocking the DDLS stopped before any request; blocking its SQL-view alias or base table stopped
 before application data. Parameterized DDLS and SQL-view-as-DDLS inputs were refused.
+
+## Follow-up: restricted-role setup (2026-11-13)
+
+The [reporter tested `300814d` on 758 SP03](https://github.com/arc-mcp/arc-1/issues/1194#issuecomment-6735185286)
+with HTTP Streamable and HTTPS Basic. Their authorization trace attributes the metadata 403 to
+`S_ADT_RES`: the collection URI was granted, its child metadata URI was not. Eclipse requests that
+same child URI. The reporter has not yet confirmed DCL/permission-denial tests after the role change.
+
+The request list and deployment limits are in [CDS previews](../../docs_page/tools.md#cds-previews).
+Keep the native metadata check and propagate failures; do not switch to another route after a denial.
+The new 403 hint asks Basis to trace the request, without asserting that every 403 has the same cause.
+It preserves the native error and uses no object name or response body in its generic guidance.
+
+### Additional native checks
+
+Tested the branch combined with main `706e0556` on SAP_BASIS **758 SP02** and **816 SP01**,
+client 001, direct HTTPS Basic using development accounts and existing demo/reference objects only.
+Each system passed 15 native cases: literal/classic DCL allow and exclude controls, distinct
+DDLS/entity/SQL-view identities, escaped injection-like input, row/lookahead limits, long filters,
+parameterized-view/SQL-view-name/unknown-column refusals, DDLS and base-table blocklist denials,
+an allowed view with catalog lineage checks, no freestyle POST with the blocklist off, and the
+harmless mismatched-body control below. No source, SAP user or role was saved or changed.
+
+- Both systems accepted `SELECT SPRAS FROM T002` with `ddlSourceName=I_CURRENCY` on the native CDS
+  collection. That parameter does not bind the SQL body. ARC-1's own entity binding remains essential;
+  granting the endpoint is not an approved-view policy for other clients.
+- On 758, the installed `CL_ADT_DP_CDS_RES` delegates the submitted SQL to the data-preview helper.
+  `CL_ADT_DP_OSQL_AUTHORTIY_CHECK` checks the accessed entities through SAP's authorization-check
+  factory. These observations do not establish a universal role recipe or transitive table denial.
+- A local HTTP Streamable MCP server against 758 passed six checks with writes/free SQL off:
+  DCL allow/exclude, rejection without data scope, rejection of raw `sqlFilter`, separately denied
+  `TABLE_QUERY`, and unavailable free SQL. MCP authentication used temporary API keys; this is not
+  Entra ID or principal-propagation qualification.
+- A separate injected metadata 403 on each system stopped before any data POST. This is a client
+  failure-path test, **not** native SAP authorization evidence. Unit coverage also verifies that a
+  denied freestyle catalog request fails lineage verification before the CDS data POST.
+
+An enabled blocklist cannot currently prove allowed lineage when its fixed catalog reads are denied.
+Keep that failure closed. Do not tunnel those reads through `/cds`, bypass the policy, or add a
+direct-name allowlist and describe it as transitive protection. The reporter's shared SAP identity
+and reviewed-view use case require native role/DCL verification; the default flat preview does not
+provide per-Entra-user authorization. Parameters and associations are not needed for their first query.

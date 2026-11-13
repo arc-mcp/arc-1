@@ -108,7 +108,11 @@ export class ExtensionDiscoverySession {
     private readonly safety: SafetyConfig,
     parent: RequestDeadlineOptions = {},
   ) {
-    this.limits = EXTENSION_LIMITS[mode];
+    // Class identity validation and native relations can exceed the generic two-second summary budget.
+    this.limits =
+      mode === 'summary' && request.root.type === 'CLAS'
+        ? { ...EXTENSION_LIMITS.summary, timeMs: 5000 }
+        : EXTENSION_LIMITS[mode];
     this.options = {
       signal: parent.signal,
       deadline: Math.min(parent.deadline ?? Infinity, this.started + this.limits.timeMs),

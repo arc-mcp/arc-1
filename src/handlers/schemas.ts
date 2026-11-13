@@ -97,6 +97,8 @@ function validateSapReadInput(
     source?: string;
     version?: string;
     packageScope?: string;
+    grep?: string;
+    format?: string;
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
@@ -174,6 +176,16 @@ function validateSapReadInput(
         code: 'custom',
         path: ['include'],
         message: 'include=indexes requires type=TABL and lists available indexes without a version or diff selector.',
+      });
+    }
+    if (
+      include === 'service_info' &&
+      (input.type !== 'SRVB' || input.action || input.version || input.grep || input.format)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['include'],
+        message: 'include=service_info requires type=SRVB, without action, version, grep or format.',
       });
     }
     if (
@@ -479,6 +491,8 @@ function validateSapWriteInput(
     processingType?: string;
     updateTaskKind?: string;
     shortTexts?: unknown[];
+    oldContent?: string;
+    newContent?: string;
     expectedSourceHash?: string;
     rowTypeKind?: string;
     rowTypeLength?: number;
@@ -492,6 +506,14 @@ function validateSapWriteInput(
       path: ['action'],
       message: 'TABL/DTT supports update only; create or delete the parent TABL instead.',
     });
+  }
+  if (input.action === 'edit_content') {
+    const fail = (field: string, message: string) => ctx.addIssue({ code: 'custom', path: [field], message });
+    if (input.type !== 'PROG' && input.type !== 'INCL') fail('type', 'edit_content supports PROG or INCL only.');
+    if (!input.oldContent) fail('oldContent', 'oldContent must be non-empty exact source text.');
+    if (input.newContent === undefined)
+      fail('newContent', 'newContent is required; an empty string deletes the matched text.');
+    if (input.oldContent === input.newContent) fail('newContent', 'oldContent and newContent must differ.');
   }
   const preconditionError = sourcePreconditionError(input.type ?? '', input.action, input.expectedSourceHash);
   if (preconditionError) ctx.addIssue({ code: 'custom', path: ['expectedSourceHash'], message: preconditionError });
@@ -752,6 +774,7 @@ export const SAPWriteSchema = z
       'edit_method',
       'edit_unit',
       'add_unit',
+      'edit_content',
       'edit_class_definition',
       'add_method',
       'edit_method_signature',
@@ -773,6 +796,8 @@ export const SAPWriteSchema = z
     /** For action="edit_text_symbols": which textpool subobject to write. Defaults to symbols. */
     textPart: z.enum(SAPREAD_TEXT_ELEMENT_INCLUDES).optional(),
     method: z.string().optional(),
+    oldContent: z.string().optional(),
+    newContent: z.string().optional(),
     /** For edit_unit/add_unit: FORM or MODULE name to replace/add. */
     unit: z.string().optional(),
     /**

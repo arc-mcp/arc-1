@@ -1085,8 +1085,9 @@ export class AdtHttpClient {
           headers['X-sap-adt-sessiontype'] === undefined ? 'unspecified' : (this.config.sessionType ?? 'unspecified'),
         hasContext: /(?:^|;\s*)sap-contextid=/.test(headers.Cookie ?? ''),
       });
-      if (method === 'GET' && response.status === 200 && !usableCsrfToken(response)) {
-        // Check login pages, but preserve the header-only legacy discovery fallback.
+      const inspectBody = method === 'GET' && !options?.discardResponseBody;
+      if (inspectBody && response.status === 200 && !usableCsrfToken(response)) {
+        // Discarded bodies cannot be classified; a usable token is still required below.
         this.handleResponse(response.status, response.headers, await response.text(), path, false);
       }
       // Optional analyses account for control bodies in the same streamed allowance.

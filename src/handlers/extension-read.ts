@@ -43,6 +43,7 @@ export async function appendReadExtensions(
   base: ToolResult,
   version: 'active' | 'inactive',
   baseSource?: string,
+  configuredRelease?: string,
 ): Promise<ToolResult> {
   const mode = extensionReadMode(args);
   if (mode === 'none' || base.isError) return base;
@@ -83,7 +84,7 @@ export async function appendReadExtensions(
       session,
       request,
       { unit: { type: 'CLAS', name, section }, source: baseSource },
-      getCachedFeatures()?.abapRelease,
+      getCachedFeatures()?.abapRelease ?? configuredRelease,
     );
   } else
     session.result.providers.push({

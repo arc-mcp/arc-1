@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CDS_PREVIEW_PATH, parseCdsPreviewRows } from '../../../src/adt/cds-preview.js';
+import { AdtApiError } from '../../../src/adt/errors.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { handleToolCall } from '../../../src/handlers/dispatch.js';
 import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/feature-cache.js';
@@ -167,6 +168,60 @@ describe('native CDS preview', () => {
     ).rejects.toThrow();
     expect(posts()).toHaveLength(0);
   });
+  it('explains a denied metadata child URI without replacing the native error', async () => {
+    metadataStatus = 403;
+    const error = await client()
+      .runCdsPreview(ddl)
+      .catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(AdtApiError);
+    expect(error).toMatchObject({
+      statusCode: 403,
+      path: `${CDS_PREVIEW_PATH}/${ddl}/metadata`,
+      extraHint: expect.stringContaining('S_ADT_RES'),
+    });
+    expect(posts()).toHaveLength(0);
+  });
+  it('keeps metadata guidance generic in minimal errors', async () => {
+    metadataStatus = 403;
+    const result = await handleToolCall(
+      client(),
+      { ...DEFAULT_CONFIG, allowDataPreview: true, minimalErrors: true },
+      'SAPRead',
+      { type: 'CDS_PREVIEW', name: ddl },
+    );
+    expect(result.isError).toBe(true);
+    const text = JSON.stringify(result.content);
+    expect(text).toContain('S_ADT_RES');
+    expect(text).not.toContain(ddl);
+    expect(text).not.toContain(entity);
+    expect(posts()).toHaveLength(0);
+  });
+  it.each(['ddl', 'preview'])('does not misdiagnose a denied %s request as CDS metadata access', async (stage) => {
+    const original = fetch.getMockImplementation()!;
+    fetch.mockImplementation(async (url: string, init: RequestInit) => {
+      const path = new URL(url).pathname;
+      if (stage === 'ddl' ? path.includes('/ddic/ddl/sources/') : init.method === 'POST')
+        return mockResponse(403, 'Denied');
+      return original(url, init);
+    });
+    const error = await client()
+      .runCdsPreview(ddl)
+      .catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(AdtApiError);
+    expect(error).toMatchObject({ statusCode: 403 });
+    expect((error as AdtApiError).extraHint).toBeUndefined();
+    // The shared HTTP client refreshes CSRF once on POST 403; neither attempt may switch routes.
+    expect(posts()).toHaveLength(stage === 'ddl' ? 0 : 2);
+    expect(posts().every(([url]) => new URL(url).pathname === CDS_PREVIEW_PATH)).toBe(true);
+  });
+  it.each([401, 404, 500])('does not label metadata HTTP %i as a missing URI permission', async (status) => {
+    metadataStatus = status;
+    const error = await client()
+      .runCdsPreview(ddl)
+      .catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(AdtApiError);
+    expect((error as AdtApiError).extraHint).toBeUndefined();
+  });
   it.each(['<html>login</html>', '<tableData/>', '<tableData><columns>', '<!DOCTYPE x [<!ENTITY e "x">]><tableData/>'])(
     'rejects an invalid successful data body: %s',
     async (body) => {
@@ -181,7 +236,11 @@ describe('native CDS preview', () => {
     await expect(client().runCdsPreview(name)).rejects.toThrow();
     expect(fetch).not.toHaveBeenCalled();
   });
-  it.each(['view', 'view entity'])('allows an unblocked %s through the real lineage resolver', async (kind) => {
+  it.each([
+    ['view', 200],
+    ['view entity', 200],
+    ['view', 403],
+  ] as const)('requires live lineage proof for %s with catalog status %i', async (kind, status) => {
     ddlBody = ddlXml.replace('source_type="view"', `source_type="${kind}"`);
     const original = fetch.getMockImplementation()!;
     fetch.mockImplementation(async (url: string, init: RequestInit) => {
@@ -198,8 +257,10 @@ describe('native CDS preview', () => {
         );
       if (path.endsWith('/freestyle'))
         return mockResponse(
-          200,
-          readFileSync(new URL('../../fixtures/xml/replacement-catalog-scarr.xml', import.meta.url), 'utf8'),
+          status,
+          status === 200
+            ? readFileSync(new URL('../../fixtures/xml/replacement-catalog-scarr.xml', import.meta.url), 'utf8')
+            : 'Catalog access denied',
         );
       return original(url, init);
     });
@@ -207,8 +268,12 @@ describe('native CDS preview', () => {
       baseUrl: 'http://sap.invalid',
       safety: { ...defaultSafetyConfig(), allowDataPreview: true, blockedDataSources: ['USR02'] },
     });
-    await expect(c.runCdsPreview(ddl)).resolves.toMatchObject({ cdsEntityName: entity });
-    expect(posts().filter(([url]) => new URL(url).pathname === CDS_PREVIEW_PATH)).toHaveLength(1);
+    if (status === 200) {
+      await expect(c.runCdsPreview(ddl)).resolves.toMatchObject({ cdsEntityName: entity });
+    } else {
+      await expect(c.runCdsPreview(ddl)).rejects.toMatchObject({ code: 'DATA_LINEAGE_UNRESOLVED' });
+    }
+    expect(posts().filter(([url]) => new URL(url).pathname === CDS_PREVIEW_PATH)).toHaveLength(status === 200 ? 1 : 0);
   });
   it('encodes a namespaced DDLS in metadata paths and preserves the resolved entity', async () => {
     ddlBody = ddlXml.replace(ddl, '/NS/DDL');

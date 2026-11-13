@@ -98,6 +98,45 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(params.getAll('maxResults')).toEqual(['2']);
     });
 
+    it.each(['INCL', 'FUGR/I'])(
+      'objectType=%s filters unfiltered results locally (SAP type filter returns [] for includes)',
+      async (objectType) => {
+        const hit = (objectType: string, objectName: string) => ({
+          objectType,
+          objectName,
+          description: '',
+          packageName: 'ZPKG',
+          uri: `/sap/bc/adt/x/${objectName}`,
+        });
+        const client = createClient();
+        const spy = vi
+          .spyOn(client, 'searchObject')
+          .mockResolvedValue([hit('FUGR/I', 'LZGF_TEST$01'), hit('PROG/I', 'ZINCL_TEST'), hit('FUGR/FF', 'ZMF_TEST')]);
+        const result = await handleSAPSearch(client, { query: 'LZGF_TEST*', objectType }, false);
+        expect(spy.mock.calls[0]?.[2]).toBeUndefined(); // no server-side type filter
+        const names = (JSON.parse(result.content[0].text) as Array<{ objectName: string }>).map((r) => r.objectName);
+        expect(names).toEqual(
+          objectType === 'INCL'
+            ? ['LZGF_TEST$01', 'ZINCL_TEST']
+            : [objectType === 'FUGR/I' ? 'LZGF_TEST$01' : 'ZINCL_TEST'],
+        );
+      },
+    );
+
+    it('notes when the unfiltered include search hit its cap', async () => {
+      const client = createClient();
+      const filler = Array.from({ length: 1000 }, (_, i) => ({
+        objectType: 'FUGR/FF',
+        objectName: `ZMF_${i}`,
+        description: '',
+        packageName: 'ZPKG',
+        uri: `/sap/bc/adt/functions/groups/zgf_test/fmodules/zmf_${i}`,
+      }));
+      vi.spyOn(client, 'searchObject').mockResolvedValue(filler);
+      const result = await handleSAPSearch(client, { query: 'Z*', objectType: 'INCL' }, false);
+      expect(result.content[0].text).toContain('1000-result cap');
+    });
+
     it('executes search', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
         query: 'ZCL_*',
@@ -642,7 +681,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.content[0]?.type).toBe('text');
     });
 
-    it('surfaces datapreview metrics (totalRows, queryExecutionTimeMs, executedQueryString, rowsReturned)', async () => {
+    it('surfaces diagnostic SAP counts separately from returned-row counts', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
       mockFetch.mockResolvedValueOnce(
@@ -656,7 +695,8 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       });
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0]?.text);
-      expect(parsed.totalRows).toBe(511927);
+      expect(parsed.sapReportedTotalRows).toBe(511927);
+      expect(parsed).not.toHaveProperty('totalRows');
       expect(parsed.queryExecutionTimeMs).toBeCloseTo(12.5);
       expect(parsed.executedQueryString).toBe('SELECT MANDT FROM T000 UP TO 2 ROWS .');
       expect(parsed.rowsReturned).toBe(2);
@@ -680,8 +720,9 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       });
       expect(result.isError).toBeUndefined();
       expect(JSON.parse(result.content[0]!.text)).toEqual({
-        totalRows: 0,
+        sapReportedTotalRows: 0,
         rowsReturned: 1,
+        rowLimitReached: false,
         columns: ['N'],
         rows: [{ N: '0 ' }],
       });
@@ -856,7 +897,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         'Z09',
         'Z10',
       ]);
-      expect(data.totalRows).toBeUndefined();
+      expect(data.sapReportedTotalRows).toBeUndefined();
       expect(data.queryExecutionTimeMs).toBeUndefined();
       expect(data.executedQueryString).toBeUndefined();
 

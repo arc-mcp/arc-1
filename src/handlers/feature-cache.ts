@@ -21,9 +21,9 @@ interface FeatureStore {
   probeComplete: boolean;
 }
 
-const FEATURE_KEYS = ['hana', 'abapGit', 'gcts', 'rap', 'amdp', 'ui5', 'transport', 'ui5repo', 'flp'] as const;
+const FEATURE_KEYS = ['hana', 'abapGit', 'gcts', 'rap', 'ui5', 'transport', 'ui5repo', 'flp'] as const;
 // Non-ADT endpoints can respond independently of the caller's ADT access.
-const ADT_FEATURE_KEYS = ['hana', 'abapGit', 'rap', 'amdp', 'ui5', 'transport'] as const;
+const ADT_FEATURE_KEYS = ['hana', 'abapGit', 'rap', 'ui5', 'transport'] as const;
 
 /** Key for single-target mode. Multi-target feature state uses the public SID/client ID. */
 const DEFAULT_KEY = '';

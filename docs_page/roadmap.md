@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-11-01
+**Last reviewed:** 2026-11-06
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -90,6 +90,7 @@ sequence.
 | [SEC-22](#sec-22) | SBOMs for the Docker image, MCPB bundle and executables | P3 | S | Revisit on trigger | Security |
 | [SEC-19](#sec-19) | Registered agent identity and downstream tool scopes | P2 | L | Needs research | Auth / Security |
 | [COMPAT-22](#compat-22) | Integration Suite remote MCP gateway validation | P2 | M | Needs research | Compatibility |
+| [COMPAT-23](#compat-23) | Shared reader for function-group object URIs | P2 | M | Ready | Compatibility |
 | [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
 | [FEAT-85](#feat-85) | Set the ABAP language version of packages and objects | P1 | M | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
@@ -629,6 +630,31 @@ See the [source and validation boundary](https://github.com/arc-mcp/arc-1/blob/m
 authentication and two users with different SAP permissions. Verify identity, scopes, tool filtering,
 audit/traces, quotas, errors and reconnect behavior. Do not silently substitute a shared credential
 for PP or present transport success as ADT permission. The gateway is optional for custom MCP.
+
+<a id="compat-23"></a>
+### COMPAT-23 — Shared reader for function-group object URIs
+
+- **Priority / effort / status:** P2 / M / Ready
+- **Category:** Compatibility
+
+**Idea.** One small, pure function that reads a repository search-hit URI and returns what the
+object is (function-group include, function module or standalone include), its function group and
+its name, so callers stop re-deriving this from URIs one by one.
+
+**Why it remains.** SAP's search does not treat function modules and function-group includes as
+ordinary typed objects: on 7.57 the `objectType` filter returns nothing for `INCL`/`FUGR/I`, and the
+`U01`-style includes are typed `FUGR/I` but carry a function-module URI. ARC-1 therefore reads the
+URI in several places, for example `client.resolveFunctionGroup` and `resolveIncludeGroup` in
+`src/handlers/include-group.ts` (shared by transport, writes and activation). The type-filter symptom is fixed in the include-search change
+(`src/adt/include-search.ts`); the duplicated URI reading is not.
+
+**Resume with.** Add the reader under `src/adt/`. Move `resolveIncludeGroup` onto it first and keep
+its refusal to guess on ambiguous results, then `resolveFunctionGroup` (it accepts a trailing
+`/`, `?` or `#` that `resolveIncludeGroup` rejects). One caller per commit; leave the XML node-type
+handling in `xml-parser.ts` and the create-XML types alone. Open question: `resolveIncludeGroup`
+still refuses U01-style function-module routes. Live 7.58/8.16 search returns an `FUGR/I` hit with
+a `/fmodules/` URI; 7.50 returned no hit. Decide the intended function-module editing scope
+before broadening that resolver; the structural-include change does not require it.
 
 ## Developer workflows
 
@@ -1251,8 +1277,9 @@ separate evidence requirements. See [native evidence](https://github.com/arc-mcp
 - **Category:** Data access
 
 **Remaining gap.** The bounded single-target CDS preview addresses flat, non-parameterized reads.
-[#1194](https://github.com/arc-mcp/arc-1/issues/1194) also requests parameter binding and association
-navigation. Their native contracts and authorization behavior are not yet qualified.
+The [first consumer example in #1194](https://github.com/arc-mcp/arc-1/issues/1194#issuecomment-6735185286)
+needs neither parameters nor associations. Keep these as optional follow-ups; their native contracts
+and authorization behavior are not yet qualified.
 
 **Resume with.** A concrete consumer example and native ADT traces for parameter binding or
 association navigation, including restricted-user access controls and response limits. Keep querying
