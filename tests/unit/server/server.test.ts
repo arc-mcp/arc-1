@@ -850,6 +850,31 @@ function writeCookieFixture(content: string): { file: string; cleanup: () => voi
 }
 
 describe('buildAdtConfig', () => {
+  it('gives every multi-target per-user client the pinned write barrier policy', () => {
+    const multiTargetWrite = {
+      target: 'A4H/001',
+      enabled: true,
+      allowedPackages: ['$TMP'],
+      allowedTransports: ['A4HK900001'],
+      serverAllowedTransports: [],
+    };
+    const client = new AdtClient(
+      buildAdtConfig(
+        {
+          ...DEFAULT_CONFIG,
+          url: 'http://sap.example.com:8000',
+          targetId: 'A4H/001',
+          multiTargetEndpoints: true,
+          multiTargetWrite,
+        },
+        undefined,
+        undefined,
+        { perUser: true },
+      ),
+    );
+    expect((client.http as unknown as { config: { pinnedWrite?: unknown } }).config.pinnedWrite).toBe(multiTargetWrite);
+  });
+
   it('includes username/password in shared config', () => {
     const cfg = buildAdtConfig({
       ...DEFAULT_CONFIG,

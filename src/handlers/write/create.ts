@@ -17,7 +17,7 @@ import {
   normalizeAdtLanguage,
   rewriteKtdDocument,
 } from '../../adt/ddic-xml.js';
-import { activate, activateBatch } from '../../adt/devtools.js';
+import { ACTIVATION_NOT_EXECUTED, activate, activateBatch } from '../../adt/devtools.js';
 import { badiContainerXml, hasBadiImplementations } from '../../adt/enhancement-impl.js';
 import { AdtApiError, type AdtError, AdtSafetyError } from '../../adt/errors.js';
 import { type FmParameter, findFmHeader, spliceFmSignature } from '../../adt/fm-signature.js';
@@ -1214,7 +1214,8 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           );
           break;
         }
-        entry.activation = 'confirmed';
+        entry.activation = outcome.notExecuted ? 'unknown' : 'confirmed';
+        if (outcome.notExecuted) warnings.push(`${plan.name}: ${ACTIVATION_NOT_EXECUTED}`);
       }
       entry.status = 'success';
     } catch (err) {
@@ -1250,9 +1251,10 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         if (messages.length)
           activationMessages.push(batchFailureMessage([...new Set(messages)].join('; '), config.minimalErrors));
       }
+      if (outcome.notExecuted) warnings.push(ACTIVATION_NOT_EXECUTED);
       for (const plan of writtenPlans) {
         if (outcome.success) {
-          plan.result.activation = 'confirmed';
+          plan.result.activation = outcome.notExecuted ? 'unknown' : 'confirmed';
           continue;
         }
         const errors = outcome.details.filter(

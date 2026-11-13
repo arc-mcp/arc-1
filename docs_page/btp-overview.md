@@ -48,7 +48,7 @@ establish policy permission.
 !!! note "Writes require a separate pinned PP connection"
 
     Aggregate and Basic routes stay mutation-free. The [pinned write guide](multi-target-writes.md)
-    adds scoped CLAS/INTF writes and whole-owner activation through target-filtered PP routes,
+    adds `SAPWrite` and `SAPActivate` (activate) through target-filtered PP routes,
     with server, destination and exact user grants. CTS/Git management and plugins remain unavailable.
     An independent single-target `/mcp` can coexist only in standard read multi-target mode.
 

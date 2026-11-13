@@ -7,13 +7,7 @@ import type { ToolDefinition } from '../handlers/tools.js';
 import type { TargetDescriptor } from './destination-registry.js';
 import { TARGET_CATALOG_MAX_OFFSET, TARGET_CATALOG_MAX_QUERY_LENGTH } from './multi-target-catalog.js';
 import { TARGET_ID_PATTERN } from './multi-target-identity.js';
-import {
-  PINNED_ACTIVATE_FIELDS,
-  PINNED_WRITE_ACTIONS,
-  PINNED_WRITE_FIELDS,
-  pinnedMutationAllowed,
-  pinnedWriteEnabled,
-} from './multi-target-write-surface.js';
+import { pinnedMutationAllowed, pinnedWriteEnabled, SHARED_PINNED_ACTIONS } from './multi-target-write-surface.js';
 import type { ServerConfig } from './types.js';
 
 export const MULTI_TARGET_TOOLS = new Set([
@@ -125,63 +119,48 @@ export function multiTargetInvocationDecision(
   return 'forbidden';
 }
 
+// ponytail: the JSON schema has no per-action property map, so the guidance of excluded actions is listed here;
+// the pinned-surface test fails when tools.ts wording drifts.
+const EXCLUDED_GUIDANCE: ReadonlyArray<readonly [string, string]> = [
+  ['; edit_content replaces one exact match and requires expectedSourceHash.', '.'],
+  ['Required for edit_content; otherwise optional', 'Optional'],
+];
+
 function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefinition | undefined {
   if (tool.name === 'SAPWrite' || tool.name === 'SAPActivate') {
     if (!pinnedWriteEnabled(config)) return undefined;
-    const write = tool.name === 'SAPWrite';
-    const fields = write ? PINNED_WRITE_FIELDS : PINNED_ACTIVATE_FIELDS;
-    const properties = Object.fromEntries(
-      Object.entries(tool.inputSchema.properties as Record<string, unknown>).filter(([key]) => fields.has(key)),
+    // The single-target definition, narrowed to the admitted actions; preaudit is always on here.
+    const {
+      preaudit: _preaudit,
+      oldContent: _oldContent,
+      newContent: _newContent,
+      ...properties
+    } = tool.inputSchema.properties as Record<string, Record<string, unknown>>;
+    const pruned = Object.fromEntries(
+      Object.entries(properties).map(([name, property]) => [
+        name,
+        typeof property.description === 'string'
+          ? {
+              ...property,
+              description: EXCLUDED_GUIDANCE.reduce((text, [from, to]) => text.replace(from, to), property.description),
+            }
+          : property,
+      ]),
     );
+    const action = pruned.action;
     return {
       ...tool,
-      description: write
-        ? 'Create CLAS/INTF or update their main source on this pinned PP target. edit_method supports existing CLAS main methods. Updates require expectedSourceHash from SAPRead(format="editable"). Destination and server package/transport restrictions both apply. Saves remain inactive; SAPActivate activates the complete owner, including existing inactive includes.'
-        : 'Activate one CLAS/INTF owner on this pinned PP target, including ALL its existing inactive drafts and includes. Additional owners are refused. This is not method-only activation.',
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+      description: `${tool.description} Pinned target: destination and server package/transport lists both apply.`,
       inputSchema: {
-        type: 'object',
+        ...tool.inputSchema,
         properties: {
-          ...properties,
-          ...(write
-            ? {
-                name: {
-                  type: 'string',
-                  description: 'Uppercase CLAS/INTF owner name, at most 30 characters; optional registered namespace.',
-                },
-                source: {
-                  type: 'string',
-                  description:
-                    'Complete CLAS/INTF main source for create/update; an existing main method body or complete METHOD…ENDMETHOD block for edit_method.',
-                },
-                package: {
-                  type: 'string',
-                  description:
-                    'Required explicit package for create. Must match both server and destination policies. Omit for updates.',
-                },
-                transport: {
-                  type: 'string',
-                  description:
-                    'Required allowed Workbench request/task for transportable create. Existing objects may reuse their proven request. Omit for local objects; manage requests outside this connection.',
-                },
-                expectedSourceHash: {
-                  type: 'string',
-                  pattern: '^[a-f0-9]{64}$',
-                  description:
-                    'Required for update/edit_method: SHA-256 from SAPRead(format="editable") on this owner main source. Omit for create.',
-                },
-                method: {
-                  type: 'string',
-                  description:
-                    'Existing CLAS main-source method name, only for edit_method. Local-class/include methods are unavailable.',
-                },
-              }
-            : {}),
-          type: { type: 'string', enum: ['CLAS', 'INTF'] },
-          action: { type: 'string', enum: write ? [...PINNED_WRITE_ACTIONS] : ['activate'] },
+          ...pruned,
+          action: {
+            ...action,
+            enum: (action.enum as string[]).filter((value) => SHARED_PINNED_ACTIONS.has(`${tool.name}.${value}`)),
+          },
         },
-        required: write ? ['action', 'type', 'name', 'source'] : ['type', 'name'],
-        additionalProperties: false,
       },
     };
   }

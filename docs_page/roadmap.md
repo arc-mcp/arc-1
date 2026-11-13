@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-11-06
+**Last reviewed:** 2026-11-13
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -68,7 +68,7 @@ sequence.
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing | P1 | M | Ready | Architecture |
 | [ARCH-02](#arch-02) | Server-driven source-state version verification | P3 | S | Needs research | Architecture |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server API | P3 | L | Revisit on trigger | Architecture |
-| [FEAT-93](#feat-93) | Broader pinned PP mutation capabilities | P2 | XL | Design reviewed | Architecture |
+| [FEAT-93](#feat-93) | Broader pinned PP mutation capabilities | P2 | L | Implementing (ADR-0011) | Architecture |
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
@@ -91,6 +91,7 @@ sequence.
 | [SEC-19](#sec-19) | Registered agent identity and downstream tool scopes | P2 | L | Needs research | Auth / Security |
 | [COMPAT-22](#compat-22) | Integration Suite remote MCP gateway validation | P2 | M | Needs research | Compatibility |
 | [COMPAT-23](#compat-23) | Shared reader for function-group object URIs | P2 | M | Ready | Compatibility |
+| [COMPAT-24](#compat-24) | Uniform not-found for reads of deleted objects | P3 | S | Needs research | Compatibility |
 | [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
 | [FEAT-85](#feat-85) | Set the ABAP language version of packages and objects | P1 | M | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
@@ -189,34 +190,28 @@ and upgrade requirements. Do not widen the mutation-free multi-target contract a
 <a id="feat-93"></a>
 ### FEAT-93 — Broader pinned PP mutation capabilities
 
-- **Priority / effort / status:** P2 / XL / Design reviewed
+- **Priority / effort / status:** P2 / L / Implementing (ADR-0011)
 - **Category:** Architecture
 
-**Remaining gap.** PR [#1080](https://github.com/arc-mcp/arc-1/pull/1080) implements the scoped
-CLAS/INTF create/main-update, CLAS method-edit and whole-owner activation contract for local and
-transportable packages, with exact target write grants and independent server/destination policy.
-The owner selected broader built-in development and management parity, including object types,
-includes, deletes, batches, package changes, RAP/DDIC, publication, transport management, runtime
-tracing and classic FLP. Git and custom extensions/plugins are excluded. None of this expansion
-is enabled by the shared-infrastructure extraction; aggregate and Basic writes remain excluded.
+**Remaining gap.** PR [#1080](https://github.com/arc-mcp/arc-1/pull/1080) shipped the scoped
+CLAS/INTF contract (ADR-0010). [ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-broader-pinned-pp-mutations.md)
+(Proposed) replaces the per-resource adapter design of draft PR
+[#1142](https://github.com/arc-mcp/arc-1/pull/1142) with the single-target handlers plus six
+multi-target controls. Its [plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-11-12-pinned-writes-shared-handlers.md)
+PR 1 (every `SAPWrite` action except `edit_content`, and `SAPActivate activate`, CLAS/INTF included — the ADR-0010
+adapter is removed) is implemented with per-family mock tests. A first live run on A4H 758 found
+two defects (text-pool activation after `edit_text_symbols`, a plain 403 resent), both fixed with
+mock tests; it still needs a re-run of the plan's live-qualification checklist and the security
+review before merge.
+Later, each with its own admission keys, tests and live evidence: package and CTS management
+(`checkTransport` made dual; body-carried requests in `refactoring.ts`/`transport.ts`), SRVB
+publication, and — only on request — quickfix, formatter settings, profiler trace and FLP. Git,
+custom plugins and aggregate/Copilot/Basic writes stay excluded.
 
-**Design evidence.** The [26 October research](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-26-multi-target-write-parity.md)
-separates accepted scope from proposed resource policies and live qualification gaps. It proposes
-[PR 1](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-shared-mutation-infrastructure.md)
-for behavior-preserving shared mutation infrastructure, now implemented for review with
-[separate qualification evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-29-shared-mutation-infrastructure.md), followed by
-[PR 2](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-broader-pinned-pp-writes.md)
-for the capability expansion. Existing opted-in writers may gain the documented capabilities;
-read-only applications/destinations must remain mutation-free.
-Author review and two Claude Code Opus 5.5 max reviews are recorded with findings and dispositions
-in the research record. The remaining implementation is PR 2's capability expansion; its live
-qualification remains outstanding.
-
-**Resume when.** PR 1 is accepted and the owner requests PR 2. Preserve the shared foundation's
-existing behavior; PR 2 requires a new reviewed ADR qualifying ADR-0010, explicit per-operation
-resource policies, negative tests and real PP evidence. Do not remove the explicit action matrix
-or add a duplicate global write switch. Caching, SaaS and embedding remain separate work. The
-roadmap entry stays open until the expanded scope is implemented and verified.
+**Resume when.** A live pinned PP window is available for PR 1 qualification, or the owner requests
+a later PR. Do not add per-resource adapters, a duplicate write switch, or per-type allowlists; a
+type that cannot resolve its package or carries its request outside `corrNr` is refused at admission.
+The entry stays open until the expanded scope is implemented and verified live.
 
 **Prior work.** [#906](https://github.com/arc-mcp/arc-1/pull/906), the
 [alternatives assessment](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-22-multi-target-write-strategy.md)
@@ -654,6 +649,25 @@ handling in `xml-parser.ts` and the create-XML types alone. Open question: `reso
 still refuses U01-style function-module routes. Live 7.58/8.16 search returns an `FUGR/I` hit with
 a `/fmodules/` URI; 7.50 returned no hit. Decide the intended function-module editing scope
 before broadening that resolver; the structural-include change does not require it.
+
+<a id="compat-24"></a>
+### COMPAT-24 — Uniform not-found for reads of deleted objects
+
+- **Priority / effort / status:** P3 / S / Needs research
+- **Category:** Compatibility
+
+**Idea.** Report a deleted or missing object the same way for every `SAPRead` type, so a caller can
+verify a delete from the read alone.
+
+**Why it remains.** In the first live run of the pinned-write checklist (A4H SAP_BASIS 758,
+13 November 2026) the reads after delete differed: FUGR returned 422, FUNC a server error, DDLX and
+SKTD an informational absence, and ENHO reported no discoverable subtype. These are single-target
+read paths (`src/handlers/read.ts`, `src/adt/client.ts`) that the pinned-write change did not touch.
+The checklist therefore accepts any absence response corroborated by an exact `SAPSearch`.
+
+**Resume with.** Capture each type's native missing-object response on 7.50/7.58/8.16, then map
+only proven shapes to one not-found result. Keep authorization and server errors distinct from
+absence; never infer absence from an unclassified failure.
 
 ## Developer workflows
 

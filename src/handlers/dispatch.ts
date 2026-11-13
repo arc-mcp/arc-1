@@ -40,6 +40,7 @@ import { appendIdeLinks } from '../server/ide-links.js';
 import type { IdeLinkContext } from '../server/ide-request.js';
 import { logger } from '../server/logger.js';
 import { type McpRateLimiter, resolveRateLimitUserKey } from '../server/mcp-rate-limit.js';
+import { multiTargetInvocationDecision } from '../server/multi-target-tools.js';
 import { formatClientInfo } from '../server/trace-context.js';
 import type { ServerConfig } from '../server/types.js';
 import { handleSAPActivate } from './activate.js';
@@ -1020,6 +1021,24 @@ export async function handleToolCall(
     return errorResult(
       `Action '${toolName}${actionOrType ? `.${actionOrType}` : ''}' is denied by server policy (SAP_DENY_ACTIONS).`,
     );
+  }
+
+  // Multi-target: the HTTP gate decides first; repeat the same decision so direct dispatch cannot bypass it.
+  if (config.targetId && multiTargetInvocationDecision(toolName, normalizedArgs, config) !== 'allowed') {
+    logger.emitAudit({
+      timestamp: new Date().toISOString(),
+      level: 'warn',
+      event: 'safety_blocked',
+      requestId: reqId,
+      user,
+      clientId,
+      clientAgent,
+      target: config.targetId,
+      identity,
+      operation: `${toolName}${actionOrType ? `.${actionOrType}` : ''}`,
+      reason: 'Operation unavailable for this multi-target route',
+    });
+    return errorResult('This tool, input, or operation is not enabled for this multi-target connection.');
   }
 
   // Validate tool arguments with Zod schema (runs AFTER scope + deny check).

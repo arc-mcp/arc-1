@@ -1,4 +1,4 @@
-/** Characterization of the legacy contract before sharing the pinned mutation lifecycle. */
+/** Characterization of the single-target lock/save/unlock contract, which pinned targets now share. */
 import { describe, expect, it, vi } from 'vitest';
 import { lockObject, safeUpdateClassInclude, safeUpdateSource } from '../../../src/adt/crud.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
@@ -26,16 +26,15 @@ function fixture() {
 }
 
 describe('single-target mutation compatibility', () => {
-  it('keeps absent lock options distinct from explicit options in the returned locality evidence', async () => {
+  it('sends the lock request without request options', async () => {
     const { session } = fixture();
     const http = session as unknown as AdtHttpClient;
-    const safety = unrestrictedSafetyConfig();
-    expect(await lockObject(http, safety, owner)).not.toHaveProperty('localityKnown');
-    expect(await lockObject(http, safety, owner, 'MODIFY', undefined, undefined, {})).toMatchObject({
-      localityKnown: true,
+    expect(await lockObject(http, unrestrictedSafetyConfig(), owner)).toEqual({
+      lockHandle: 'test lock',
+      corrNr: '',
+      isLocal: true,
     });
-    expect(session.post.mock.calls[0]).toHaveLength(5);
-    expect(session.post.mock.calls[0][4]).toBeUndefined();
+    expect(session.post.mock.calls[0]).toHaveLength(4);
   });
 
   it('keeps the no-hash write request shape and session cleanup options unchanged', async () => {
