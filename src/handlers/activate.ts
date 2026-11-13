@@ -231,6 +231,10 @@ export async function handleSAPActivate(
   // Batch activation: multiple objects at once (for RAP stacks etc.)
   const type = normalizeObjectType(String(args.type ?? ''));
   const preaudit = args.preaudit !== undefined ? Boolean(args.preaudit) : undefined;
+  // Pinned routes keep SAP's preaudit prompt, so activation cannot widen past the requested objects.
+  // Internal exact-URI text-pool activation (text-elements.ts) uses preaudit=false and is not reachable here.
+  if (preaudit === false && client.safety.multiTargetWrite)
+    throw new AdtSafetyError('Multi-target activation requires preaudit.');
   const activateOpts = preaudit !== undefined ? { preaudit } : undefined;
   // Post-activation cache promotion + freshness guard are object-keyed (not user-keyed); disable
   // them whenever several SAP identities share the cache (PP on). See applyActivationToCache.

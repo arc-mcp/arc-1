@@ -216,8 +216,6 @@ async function activateWithinBudget(
   options?: ActivationOptions,
 ): Promise<ActivationResult> {
   checkOperation(safety, OperationType.Activate, 'Activate');
-  if (safety.multiTargetWrite && (!safety.multiTargetWrite.enabled || options?.preaudit === false))
-    throw new AdtSafetyError('Multi-target activation requires preaudit on a write-enabled target.');
 
   try {
     const preaudit = options?.preaudit !== false;
@@ -265,8 +263,6 @@ export async function activateBatch(
   options?: { preaudit?: boolean },
 ): Promise<ActivationResult> {
   checkOperation(safety, OperationType.Activate, 'ActivateBatch');
-  if (safety.multiTargetWrite && (!safety.multiTargetWrite.enabled || options?.preaudit === false))
-    throw new AdtSafetyError('Multi-target activation requires preaudit on a write-enabled target.');
   const requestOptions = activationRequestOptions();
 
   const preaudit = options?.preaudit !== false;
