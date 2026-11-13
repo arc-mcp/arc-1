@@ -1398,10 +1398,8 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
   }
 
   /**
-   * Like runQuery, but also returns the datapreview metrics ADT already includes in the response
-   * (totalRows, server-side queryExecutionTimeMs, executedQueryString). Kept separate from runQuery so
-   * these — including the internal generated SQL — only surface where asked (SAPQuery), not in every
-   * runQuery consumer that JSON-stringifies the result.
+   * Also returns SAP's count, timing and SQL echo, only where asked (SAPQuery).
+   * The count is not a result total; the timing may exclude SAP's separate count query.
    */
   async runQueryWithMetrics(
     sql: string,
@@ -1426,7 +1424,7 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
    * The whole batch runs inside ONE data-result scope, so the response-memory budget (#739) is
    * cumulative across chunks rather than reset per chunk — N chunks cannot together exceed the limit
    * a single response may consume. Metrics are reported only for a single statement, because an
-   * early break on the row cap would make a summed totalRows misleading.
+   * early break on the row cap would make combined SAP metrics misleading.
    */
   async runQueryBatch(
     statements: string[],
@@ -1441,7 +1439,9 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
       const post = (sql: string, limit: number): Promise<string> => this.postFreestyleQuery(sql, limit, budget, signal);
 
       if (statements.length === 1) {
-        return parseDataPreviewResult(await post(statements[0]!, rowLimit));
+        const result = parseDataPreviewResult(await post(statements[0]!, rowLimit));
+        // SAP ignores rowNumber for UNION; keep the returned-row cap independent of backend behavior.
+        return { ...result, rows: result.rows.slice(0, rowLimit) };
       }
       return executeDataPreviewStatements(post, parseTableContents, statements, rowLimit);
     });

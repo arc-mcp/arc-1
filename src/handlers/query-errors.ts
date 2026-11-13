@@ -142,7 +142,7 @@ function classifyParserHint(err: AdtApiError, sql: string, chunkingAttempted: bo
   }
   if (rowLimit) {
     const rows = rowLimit.rows ? ` (for example, maxRows: ${rowLimit.rows})` : '';
-    return `${rowLimit.syntax} belongs to another SQL dialect. Remove it from the SQL and pass the SAPQuery maxRows parameter${rows}; ARC-1 applies the ABAP row limit.`;
+    return `${rowLimit.syntax} belongs to another SQL dialect. Remove it from the SQL and pass the SAPQuery maxRows parameter${rows}; ARC-1 caps returned rows.`;
   }
 
   if (/^\s*WITH\b/i.test(maskedSql)) {

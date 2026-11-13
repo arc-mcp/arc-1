@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest';
+import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { CachingLayer } from '../../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -298,4 +299,98 @@ it('hyperfocused SAP routes add_unit through the same validated handler', async 
   });
   expect(result.isError, JSON.stringify(result)).toBeUndefined();
   expect(state.source).toContain(addArgs.source);
+});
+
+const textArgs = {
+  action: 'edit_content',
+  type: 'PROG',
+  name: 'ZRACE',
+  oldContent: "WRITE 'old'.",
+  newContent: "WRITE 'new'.",
+  expectedSourceHash: sourceHash(external),
+};
+it.each([false, true])('edit_content preserves the draft under lock (hyperfocused=%s)', async (hyperfocused) => {
+  const state = backend();
+  const result = await handleToolCall(
+    createClient(),
+    hyperfocused ? { ...config, toolMode: 'hyperfocused' } : config,
+    hyperfocused ? 'SAP' : 'SAPWrite',
+    hyperfocused ? { action: 'write', type: 'PROG', name: 'ZRACE', params: textArgs } : textArgs,
+  );
+  expect(result.isError, JSON.stringify(result)).toBeUndefined();
+  expect(state.source).toBe(external.replace(textArgs.oldContent, textArgs.newContent));
+  const calls = state.sends.filter((s) => s.url.pathname.startsWith(objectPath));
+  expect(calls.map((s) => s.url.searchParams.get('_action') ?? s.method)).toEqual(['LOCK', 'GET', 'PUT', 'UNLOCK']);
+  expect(calls.every((s) => s.headers['X-sap-adt-sessiontype'] === 'stateful')).toBe(true);
+  expect(calls[1]?.headers['Cache-Control']).toBe('no-cache');
+});
+it.each(['', ' '])('edit_content preserves intentional replacement %j', async (newContent) => {
+  const state = backend();
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', { ...textArgs, newContent });
+  expect(result.isError, JSON.stringify(result)).toBeUndefined();
+  expect(state.source).toBe(external.replace(textArgs.oldContent, newContent));
+  if (!newContent) expect(result.content[0]?.text).toContain('removed');
+});
+it.each([
+  { expectedSourceHash: undefined },
+  { expectedSourceHash: 'invalid' },
+  { oldContent: '' },
+  { oldContent: null },
+  { newContent: null },
+  { newContent: undefined },
+  { newContent: textArgs.oldContent },
+  { type: 'CLAS' },
+  { type: 'FUNC' },
+])('edit_content rejects invalid input %j before I/O', async (override) => {
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', { ...textArgs, ...override });
+  expect(result.isError).toBe(true);
+  expect(mockFetch).not.toHaveBeenCalled();
+});
+it.each([
+  { label: 'stale hash', changes: { expectedSourceHash: sourceHash(initial) } },
+  { label: 'missing anchor', changes: { oldContent: 'not found' } },
+  { label: 'ambiguous anchor', changes: { oldContent: 'WRITE' } },
+  { label: 'invalid ABAP', changes: { newContent: 'not_an_abap_statement.' } },
+])('edit_content refuses $label and unlocks without PUT', async ({ changes }) => {
+  const state = backend();
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', { ...textArgs, ...changes });
+  expect(result.isError).toBe(true);
+  expect(state.locked).toBe(false);
+  expect(state.sends.some((s) => s.method === 'PUT')).toBe(false);
+});
+it('edit_content refuses a delayed replay even when the old text remains in the replacement', async () => {
+  const newContent = textArgs.oldContent + "\n WRITE 'inserted'.";
+  const state = backend({ sourceAtLock: external.replace(textArgs.oldContent, newContent) });
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', { ...textArgs, newContent });
+  expect(result.isError).toBe(true);
+  expect(state.sends.some((s) => s.method === 'PUT')).toBe(false);
+  expect(state.locked).toBe(false);
+});
+it.each(['read-only', 'package', 'deny-action'] as const)('edit_content obeys %s before locking', async (mode) => {
+  const state = backend({ packageName: 'ZFORBIDDEN' });
+  const client = createClient();
+  const safety =
+    mode === 'read-only'
+      ? { ...client.safety, allowWrites: false }
+      : mode === 'package'
+        ? { ...client.safety, allowedPackages: ['$TMP'] }
+        : client.safety;
+  const result = await handleToolCall(
+    client.withSafety(safety),
+    mode === 'deny-action' ? { ...config, denyActions: ['SAPWrite.edit_content'] } : config,
+    'SAPWrite',
+    textArgs,
+  );
+  expect(result.isError).toBe(true);
+  expect(state.sends.some((s) => s.method === 'POST' || s.method === 'PUT')).toBe(false);
+});
+it.each(['write', 'unlock'] as const)('edit_content invalidates caches after a %s failure', async (phase) => {
+  const state = backend(phase === 'write' ? { putStatus: 500 } : { unlockStatus: 400 });
+  const cache = new CachingLayer(new MemoryCache());
+  const invalidate = vi.spyOn(cache, 'invalidate');
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', textArgs, undefined, undefined, cache);
+  expect(result.isError).toBe(true);
+  expect(state.sends.filter((s) => s.method === 'PUT')).toHaveLength(1);
+  expect(state.sends.filter((s) => s.url.searchParams.get('_action') === 'UNLOCK')).toHaveLength(1);
+  expect(invalidate).toHaveBeenCalledWith('PROG', 'ZRACE', 'all');
 });

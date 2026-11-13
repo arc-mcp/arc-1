@@ -40,6 +40,14 @@ catalog explicitly calls this out.
 | `handleSAPRead` | 1526 | `case 'SRVB'` | ✅ |
 | `src/probe/catalog.ts` | 161–167 + note | `SRVB` | ✅ — explicitly notes URL diverges from `/ddic/srvb` |
 | Publish action wiring (`/sap/bc/adt/businessservices/odatav2/publishjobs`) | various | special-case in `devtools.ts` | ✅ |
+| Service information (`/sap/bc/adt/businessservices/{odatav2,odatav4}/{name}`) | all | `src/adt/service-info.ts` | ✅ |
+
+### Service information contract (contributor evidence: SAP_BASIS 758, 2026-11-06)
+- `GET …/{odatav2,odatav4}/{binding}?servicename=&serviceversion=&srvdname=`; without `servicename` SAP answers HTTP 400.
+- V2 returns `odatav2:serviceList` (`published` per service). V4 returns `odatav4:serviceGroup` (`published` on the group).
+- Both nest `serviceInfo:serviceInformation` → `collection` (`name`, `isRoot`) → `navigation` (`name`, `target`).
+- `serviceUrl` is relative to the SAP host. An unpublished binding answers 200 with an empty `serviceUrl` and no collections.
+- The contributor reported the contributor’s survey of 200 `Z*` bindings found only OData V2/V4 with one service and one version each; several versions and non-OData bindings were not observed live.
 
 ## Verdict
 - **Status**: correct
@@ -50,3 +58,9 @@ catalog explicitly calls this out.
 - Keep as-is. The non-`/ddic/` URL prefix is legitimate — it matches what ADT serves.
 - **Breaking change**: no
 - **Test gap to close**: none.
+
+Maintainer verification (2026-11-12, direct HTTPS Basic, client 001): 12 bindings on SAP_BASIS
+758 SP02 and 3 on 816 SP01 matched the contract above. Built stdio MCP tests covered published
+V2/V4, unpublished V4, plain reads and missing bindings. Disposable V2 and V4 bindings on 758
+also returned `published: false` without entity sets and were deleted after the check. Multiple
+service versions and non-OData bindings remain mock-only coverage; BTP was not tested.

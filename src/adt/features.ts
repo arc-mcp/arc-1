@@ -2,7 +2,7 @@
  * Feature detection for ARC-1.
  *
  * Probes SAP system capabilities to determine which optional features
- * are available (abapGit, RAP, AMDP, UI5, Transport, HANA).
+ * are available (abapGit, RAP, UI5, Transport, HANA).
  *
  * Each feature can be:
  * - "auto": probe SAP system at startup, enable if available
@@ -38,8 +38,6 @@ const PROBES: FeatureProbe[] = [
   { id: 'abapGit', endpoint: '/sap/bc/adt/abapgit/repos', description: 'abapGit integration' },
   { id: 'gcts', endpoint: '/sap/bc/cts_abapvcs/system', description: 'gCTS (git-enabled CTS)' },
   { id: 'rap', endpoint: '/sap/bc/adt/ddic/ddl/sources', description: 'RAP/CDS development' },
-  // Path is /amdp/debugger, not /debugger/amdp (the latter resolves to the generic debugger node → 403). G-6.
-  { id: 'amdp', endpoint: '/sap/bc/adt/amdp/debugger', description: 'AMDP debugging' },
   // Probe /objects, not the bare node — the bare /…/ui5-bsp path has no handler → 404 → false-disables BSP.
   { id: 'ui5', endpoint: '/sap/bc/adt/filestore/ui5-bsp/objects', description: 'UI5/Fiori BSP' },
   { id: 'transport', endpoint: '/sap/bc/adt/cts/transportrequests', description: 'CTS transport management' },
@@ -99,7 +97,6 @@ export async function probeFeatures(
     abapGit: config.abapGit,
     gcts: config.gcts,
     rap: config.rap,
-    amdp: config.amdp,
     ui5: config.ui5,
     transport: config.transport,
     ui5repo: config.ui5repo,
@@ -612,7 +609,6 @@ export function resolveWithoutProbing(config: FeatureConfig): ResolvedFeatures {
     abapGit: 'abapGit integration',
     gcts: 'gCTS (git-enabled CTS)',
     rap: 'RAP/CDS development',
-    amdp: 'AMDP debugging',
     ui5: 'UI5/Fiori BSP',
     transport: 'CTS transport management',
     ui5repo: 'UI5 ABAP Repository Deploy',

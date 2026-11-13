@@ -250,6 +250,17 @@ describe('pinned PROG writes through the single-target handler', () => {
       ['SAPGit', { action: 'pull', repoId: 'R' }],
       ['SAPActivate', { action: 'publish_srvb', name: 'ZSB' }],
       ['SAPLint', { action: 'set_formatter_settings', indentation: true }],
+      [
+        'SAPWrite',
+        {
+          action: 'edit_content',
+          type: 'PROG',
+          name: 'ZTEST',
+          oldContent: 'old',
+          newContent: 'new',
+          expectedSourceHash: sourceHash('old'),
+        },
+      ],
     ] as const) {
       const result = await handleToolCall(client(), config, tool, args);
       expect(result.isError, `${tool} ${JSON.stringify(args)}`).toBe(true);

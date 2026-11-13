@@ -636,15 +636,16 @@ its name, so callers stop re-deriving this from URIs one by one.
 ordinary typed objects: on 7.57 the `objectType` filter returns nothing for `INCL`/`FUGR/I`, and the
 `U01`-style includes are typed `FUGR/I` but carry a function-module URI. ARC-1 therefore reads the
 URI in several places, for example `client.resolveFunctionGroup` and `resolveIncludeGroup` in
-`src/handlers/transport.ts` (#1151). The type-filter symptom is fixed in the include-search change
+`src/handlers/include-group.ts` (shared by transport, writes and activation). The type-filter symptom is fixed in the include-search change
 (`src/adt/include-search.ts`); the duplicated URI reading is not.
 
 **Resume with.** Add the reader under `src/adt/`. Move `resolveIncludeGroup` onto it first and keep
 its refusal to guess on ambiguous results, then `resolveFunctionGroup` (it accepts a trailing
 `/`, `?` or `#` that `resolveIncludeGroup` rejects). One caller per commit; leave the XML node-type
 handling in `xml-parser.ts` and the create-XML types alone. Open question: `resolveIncludeGroup`
-currently refuses for a function-module include such as `U01`; verify on a live system what the
-right answer is before changing it.
+still refuses U01-style function-module routes. Live 7.58/8.16 search returns an `FUGR/I` hit with
+a `/fmodules/` URI; 7.50 returned no hit. Decide the intended function-module editing scope
+before broadening that resolver; the structural-include change does not require it.
 
 ## Developer workflows
 

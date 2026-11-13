@@ -26,7 +26,6 @@ describe('Feature Detection', () => {
         abapGit: 'on',
         gcts: 'on',
         rap: 'on',
-        amdp: 'on',
         ui5: 'on',
         transport: 'on',
         ui5repo: 'on',
@@ -47,7 +46,6 @@ describe('Feature Detection', () => {
         abapGit: 'off',
         gcts: 'off',
         rap: 'off',
-        amdp: 'off',
         ui5: 'off',
         transport: 'off',
         ui5repo: 'off',
@@ -67,7 +65,6 @@ describe('Feature Detection', () => {
         abapGit: 'auto',
         gcts: 'auto',
         rap: 'auto',
-        amdp: 'auto',
         ui5: 'auto',
         transport: 'auto',
         ui5repo: 'auto',
@@ -85,7 +82,6 @@ describe('Feature Detection', () => {
         abapGit: 'off',
         gcts: 'auto',
         rap: 'auto',
-        amdp: 'on',
         ui5: 'off',
         transport: 'auto',
         ui5repo: 'auto',
@@ -97,7 +93,6 @@ describe('Feature Detection', () => {
       expect(result.abapGit.available).toBe(false);
       expect(result.gcts.available).toBe(false);
       expect(result.rap.available).toBe(false);
-      expect(result.amdp.available).toBe(true);
       expect(result.ui5.available).toBe(false);
       expect(result.transport.available).toBe(false);
     });
@@ -108,7 +103,6 @@ describe('Feature Detection', () => {
         abapGit: 'off',
         gcts: 'on',
         rap: 'auto',
-        amdp: 'auto',
         ui5: 'auto',
         transport: 'auto',
         ui5repo: 'auto',
@@ -128,7 +122,6 @@ describe('Feature Detection', () => {
         abapGit: 'auto',
         gcts: 'auto',
         rap: 'auto',
-        amdp: 'auto',
         ui5: 'auto',
         transport: 'auto',
         ui5repo: 'on',
@@ -145,7 +138,6 @@ describe('Feature Detection', () => {
         abapGit: 'auto',
         gcts: 'auto',
         rap: 'auto',
-        amdp: 'auto',
         ui5: 'auto',
         transport: 'auto',
         ui5repo: 'auto',
@@ -163,7 +155,6 @@ describe('Feature Detection', () => {
         abapGit: 'auto',
         gcts: 'auto',
         rap: 'auto',
-        amdp: 'auto',
         ui5: 'auto',
         transport: 'auto',
         ui5repo: 'auto',
@@ -180,7 +171,6 @@ describe('Feature Detection', () => {
         abapGit: 'auto',
         gcts: 'auto',
         rap: 'auto',
-        amdp: 'auto',
         ui5: 'auto',
         transport: 'auto',
         ui5repo: 'auto',
@@ -419,7 +409,6 @@ describe('Feature Detection', () => {
       abapGit: 'auto',
       gcts: 'auto',
       rap: 'auto',
-      amdp: 'auto',
       ui5: 'auto',
       transport: 'auto',
       ui5repo: 'auto',
@@ -976,13 +965,13 @@ describe('Feature Detection', () => {
     });
 
     it('returns available=false with forbidden reason on 403', () => {
-      const r = classifyFeatureProbeStatus('amdp', 403);
+      const r = classifyFeatureProbeStatus('abapGit', 403);
       expect(r.available).toBe(false);
       expect(r.reason).toMatch(/forbidden \(403\)/);
     });
 
     it('returns available=false with not-found reason on 404', () => {
-      const r = classifyFeatureProbeStatus('amdp', 404);
+      const r = classifyFeatureProbeStatus('abapGit', 404);
       expect(r.available).toBe(false);
       expect(r.reason).toMatch(/endpoint not found \(404\)/);
     });

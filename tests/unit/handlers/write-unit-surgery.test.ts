@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { featuresOff } from './handler-test-config.js';
@@ -335,4 +336,50 @@ describe('SAPWrite add_unit (#776)', () => {
       `MODULE first OUTPUT.\r\nENDMODULE.\r\n${wrapped.replaceAll('\n', '\r\n')}\r\n`,
     );
   });
+});
+
+describe('automatic function-group include routing', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    resetCachedFeatures();
+  });
+  it.each(['update', 'edit_unit', 'add_unit', 'edit_content'])(
+    'routes %s through the verified owner',
+    async (action) => {
+      const name = 'LZARC1TOP';
+      const objectPath = '/sap/bc/adt/functions/groups/zarc1/includes/lzarc1top';
+      const initial = 'FORM first.\nENDFORM.';
+      const calls = mockEditUnitFlow({ objectPath, activeSource: initial });
+      const client = createClient();
+      vi.spyOn(client, 'lookupObjects').mockResolvedValue([
+        {
+          name,
+          found: true,
+          matches: [
+            {
+              objectName: name,
+              objectType: 'FUGR/I',
+              uri: objectPath,
+              packageName: '$TMP',
+              description: '',
+            },
+          ],
+        },
+      ]);
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+        action,
+        type: 'INCL',
+        name,
+        unit: action === 'add_unit' ? 'added' : 'first',
+        source: action === 'add_unit' ? 'FORM added.\nENDFORM.' : 'FORM first.\n WRITE 1.\nENDFORM.',
+        oldContent: 'ENDFORM.',
+        newContent: ' WRITE 1.\nENDFORM.',
+        expectedSourceHash: sourceHash(initial),
+      });
+      expect(result.isError, JSON.stringify(result)).toBeUndefined();
+      expect(calls.find((c) => c.method === 'PUT')?.url).toContain(objectPath);
+      expect(calls.find((c) => c.method === 'PUT')?.body).toContain(action === 'add_unit' ? 'FORM added' : 'WRITE 1');
+      expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+    },
+  );
 });
