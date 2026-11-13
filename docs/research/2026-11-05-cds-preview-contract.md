@@ -61,7 +61,7 @@ It preserves the native error and uses no object name or response body in its ge
 
 Tested the branch combined with main `706e0556` on SAP_BASIS **758 SP02** and **816 SP01**,
 client 001, direct HTTPS Basic using development accounts and existing demo/reference objects only.
-Each system passed 15 native cases: literal/classic DCL allow and exclude controls, distinct
+Both systems passed literal/classic DCL allow and exclude controls, distinct
 DDLS/entity/SQL-view identities, escaped injection-like input, row/lookahead limits, long filters,
 parameterized-view/SQL-view-name/unknown-column refusals, DDLS and base-table blocklist denials,
 an allowed view with catalog lineage checks, no freestyle POST with the blocklist off, and the
@@ -71,15 +71,25 @@ harmless mismatched-body control below. No source, SAP user or role was saved or
   collection. That parameter does not bind the SQL body. ARC-1's own entity binding remains essential;
   granting the endpoint is not an approved-view policy for other clients.
 - On 758, the installed `CL_ADT_DP_CDS_RES` delegates the submitted SQL to the data-preview helper.
+  `CL_ADT_CDS_DATA_PREVIEW_UTIL` then calls `CL_ADT_DP_OPEN_SQL_HANDLER->get_query_result`, which
+  generates and runs the query program. This is the shared parser/execution path, not a separate
+  CDS-only SQL engine. [SAP Note 3772411](https://me.sap.com/notes/3772411) remains an independent
+  prerequisite; no host-expression exploit or mutation was attempted.
   `CL_ADT_DP_OSQL_AUTHORTIY_CHECK` checks the accessed entities through SAP's authorization-check
   factory. These observations do not establish a universal role recipe or transitive table denial.
+- The active `CL_ADT_WB_RES_APP->CHECK_RESOURCE_AUTHORIZATION` copies the URI to a 40-character
+  value before checking `S_ADT_RES`. Exact long metadata paths are therefore not a view policy.
+  Keep the collection grant and have Basis review `/sap/bc/adt/datapreview/cds/*` for its children.
+- Fresh-client HTTP request captures on both systems included GET discovery, active DDLS metadata,
+  CDS metadata, HEAD and GET core discovery for CSRF, then the CDS POST. The permission request list
+  includes this observed CSRF dependency; the legacy-discovery fallback is from the client code.
+- LF, CRLF and bare-CR filter literals followed by a column-one `*` and SQL-looking quoted text
+  returned empty results on both systems, as did an ordinary multiline literal. No extra rows or
+  widened query were observed. These are bounded harmless demo-data controls, not a general parser proof.
 - A local HTTP Streamable MCP server against 758 passed six checks with writes/free SQL off:
   DCL allow/exclude, rejection without data scope, rejection of raw `sqlFilter`, separately denied
   `TABLE_QUERY`, and unavailable free SQL. MCP authentication used temporary API keys; this is not
   Entra ID or principal-propagation qualification.
-- A separate injected metadata 403 on each system stopped before any data POST. This is a client
-  failure-path test, **not** native SAP authorization evidence. Unit coverage also verifies that a
-  denied freestyle catalog request fails lineage verification before the CDS data POST.
 
 An enabled blocklist cannot currently prove allowed lineage when its fixed catalog reads are denied.
 Keep that failure closed. Do not tunnel those reads through `/cds`, bypass the policy, or add a

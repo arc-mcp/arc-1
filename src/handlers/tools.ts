@@ -96,7 +96,7 @@ const SAPREAD_DESC_ONPREM =
   'SHLP: active partial interface metadata; missing headers/assignments/appends are explicit. No drafts or source formats. ' +
   'For specs, reviews or pre-change context, prefer SAPContext first. ' +
   'CDS_PREVIEW: active DDLS, no parameters/associations. ' +
-  'TABLE_QUERY: where filters; needs data preview; CDS needs SAP_BASIS 752+. TABLE_CONTENTS: unfiltered. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
+  'TABLE_QUERY: filter with where, data preview required; CDS needs SAP_BASIS 752+. TABLE_CONTENTS: unfiltered preview. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
   'SYNTAX: read-only check (objectType+name, optional source). Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers.';
 
 const SAPREAD_DESC_BTP =
@@ -511,7 +511,7 @@ export function getToolDefinitions(
           },
           maxRows: {
             type: 'number',
-            description: `Returned row cap: TABLE_CONTENTS/TABLE_QUERY${btp ? '' : '/CDS_PREVIEW'} (default 100, max 10,000; byte cap may apply sooner).`,
+            description: 'Returned row cap: data previews (default 100, max 10,000; byte cap may apply sooner).',
           },
           maxResults: {
             type: 'number',

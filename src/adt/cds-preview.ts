@@ -73,7 +73,7 @@ async function metadata(
       path.startsWith(`${CDS_PREVIEW_PATH}/`)
     ) {
       error.extraHint =
-        'CDS preview metadata was denied. Ask Basis to trace the failed request, including S_ADT_RES: ' +
+        'CDS preview metadata was denied. Ask Basis to run STAUTHTRACE for the SAP user, including S_ADT_RES: ' +
         'permission for /sap/bc/adt/datapreview/cds alone does not cover its child URI. ' +
         'ARC-1 did not try another data route.';
     }

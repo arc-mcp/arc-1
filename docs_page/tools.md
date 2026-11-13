@@ -468,7 +468,7 @@ Supported now: active, non-parameterized views and view entities on a single on-
 No raw SQL, association paths, BTP ABAP targets or multi-target mode. Columns and conditions are limited to
 100 each; unknown fields and unsupported options are rejected. Use `<>` for inequality on 758.
 The native collection must be advertised and its metadata available; there is no freestyle fallback.
-Verified on 758 SP02 with HTTPS Basic; the tested 750 SP02 metadata route returned 404.
+Verified on 758 SP02 and 816 SP01 with HTTPS Basic; the tested 750 SP02 metadata route returned 404.
 The response byte limit covers metadata and rows together. `SAP_GZIP_DATAPREVIEW_BODY` does not
 apply to this CDS route.
 
@@ -477,21 +477,25 @@ apply to this CDS route.
 | Request | Purpose |
 |---|---|
 | GET `/sap/bc/adt/discovery` | Discover native CDS preview support |
+| HEAD/GET `/sap/bc/adt/core/discovery` | Fetch the CSRF token for POST; `/sap/bc/adt/discovery` is the fallback if unavailable |
 | GET `/sap/bc/adt/ddic/ddl/sources/<DDLS>?version=active` | Verify the active view |
 | GET `/sap/bc/adt/datapreview/cds/<DDLS>/metadata` | Resolve the entity and its fields |
 | POST `/sap/bc/adt/datapreview/cds` | Read the filtered rows |
 
-An exact `S_ADT_RES` grant for the last URI does not cover the metadata child URI. On a 403,
-ask Basis to trace the failing request for the connected SAP user and review only the required
-permissions. Other SAP object/data checks still apply; this table is a request list, not a complete role.
-Do not grant `/sap/bc/adt/*` just to make the preview work.
+An exact `S_ADT_RES` grant for `/sap/bc/adt/datapreview/cds` does not cover its metadata child URI.
+Ask Basis to use STAUTHTRACE for the connected SAP user and review the collection grant **plus**
+`/sap/bc/adt/datapreview/cds/*` for the children. Other SAP object/data checks still apply; this is
+a request list, not a complete role. Do not grant `/sap/bc/adt/*` just to make the preview work.
 
 **Access limits:** the native `/cds` endpoint accepts SQL; its name alone does not restrict callers
-to approved views. ARC-1 binds each structured query to the verified CDS entity, but this action has
-no configured view allowlist. SAP roles and the selected view's DCL must enforce the intended access.
+to approved views. That SAP user can submit SQL for unrelated sources through `/cds`, subject to
+SAP's data authorizations; denying `/freestyle` alone does not prevent this. ARC-1 binds its own
+structured query to the verified CDS entity, but has no view allowlist. Apply the
+[SAP security guidance](security-guide.md) independently, including SAP Note 3772411.
 With shared Basic authentication, DCL sees the shared SAP user, not each Entra ID user. Other ARC-1
-data actions need their own restrictions. For fixed business reads, consider an approved business
-API through an [extension](extensions.md).
+data actions need separate restrictions; for example, `SAP_DENY_ACTIONS=SAPRead.TABLE_CONTENTS,SAPRead.TABLE_QUERY`
+blocks both table-preview actions. This is not a complete CDS-only profile. For fixed business reads,
+consider an approved business API through an [extension](extensions.md).
 
 An enabled `SAP_BLOCKED_DATA_SOURCES` policy also needs fixed freestyle catalog reads. If the SAP
 role denies that endpoint, lineage verification fails closed; ARC-1 will not reroute the catalog query
