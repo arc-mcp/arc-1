@@ -11,9 +11,9 @@
  */
 
 import { postCreate } from './create-request.js';
-import { AdtApiError, extractExceptionType, isNotFoundError } from './errors.js';
+import { AdtApiError, AdtSafetyError, extractExceptionType, isNotFoundError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
-import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
+import { checkOperation, isPinnedTransportAllowed, OperationType, type SafetyConfig } from './safety.js';
 import { assertSourceHash } from './source-precondition.js';
 /** Lock result from SAP */
 export interface LockResult {
@@ -62,6 +62,17 @@ export async function lockObject(
       423,
       objectUrl,
     );
+  }
+
+  // Pinned writes: a save without corrNr is recorded in the request the object is locked in, so check it here.
+  const pinned = safety.multiTargetWrite;
+  if (pinned?.enabled && corrNr && !isPinnedTransportAllowed(pinned, corrNr)) {
+    try {
+      await unlockObject(http, objectUrl, lockHandle);
+    } catch {
+      // best effort; the refusal below is the result
+    }
+    throw new AdtSafetyError('CTS request is not allowed by both server and destination transport policies.');
   }
 
   return { lockHandle, corrNr, isLocal };

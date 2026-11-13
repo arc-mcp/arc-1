@@ -1,7 +1,7 @@
 /** Multi-target write barrier in AdtHttpClient.request(): no transient retry + dual request ceiling on the wire. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError, AdtSafetyError } from '../../../src/adt/errors.js';
-import { isPinnedTransportAllowed } from '../../../src/adt/safety.js';
+import { defaultSafetyConfig, isPinnedTransportAllowed } from '../../../src/adt/safety.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 
 const mockFetch = vi.fn();
@@ -10,6 +10,7 @@ vi.mock('undici', async (importOriginal) => {
   return { ...actual, fetch: mockFetch };
 });
 const { AdtHttpClient } = await import('../../../src/adt/http.js');
+const { lockObject } = await import('../../../src/adt/crud.js');
 
 const policy = {
   target: 'A4H/001',
@@ -110,6 +111,37 @@ describe('pinned write barrier', () => {
       client.withStatefulSession((session) => session.post('/sap/bc/adt/x?corrNr=B4HK900001', 'b', 'text/plain')),
     ).rejects.toBeInstanceOf(AdtSafetyError);
     expect(sent('POST')).toHaveLength(0);
+  });
+
+  it('checks the request a lock returns before anything is saved, and unlocks on refusal', async () => {
+    const safety = { ...defaultSafetyConfig(), allowWrites: true, multiTargetWrite: policy };
+    const url = '/sap/bc/adt/programs/programs/ztest';
+    for (const [corrNr, allowed] of [
+      ['A4HK900002', false],
+      ['A4HK900001', true],
+      ['', true],
+    ] as const) {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation(async (path: unknown, init: any = {}) =>
+        init.method === 'HEAD'
+          ? mockResponse(200, '', { 'x-csrf-token': 'T' })
+          : mockResponse(
+              200,
+              String(path).includes('_action=LOCK')
+                ? `<DATA><LOCK_HANDLE>LH</LOCK_HANDLE><CORRNR>${corrNr}</CORRNR></DATA>`
+                : '',
+            ),
+      );
+      const save = http(policy).withStatefulSession(async (session) => {
+        const lock = await lockObject(session, safety, url);
+        await session.put(`${url}/source/main?lockHandle=${lock.lockHandle}`, 'REPORT ztest.', 'text/plain');
+      });
+      if (allowed) await save;
+      else await expect(save).rejects.toBeInstanceOf(AdtSafetyError);
+      expect(sent('PUT'), corrNr).toHaveLength(allowed ? 1 : 0);
+      const unlocks = mockFetch.mock.calls.filter(([path]) => String(path).includes('_action=UNLOCK'));
+      expect(unlocks, corrNr).toHaveLength(allowed ? 0 : 1);
+    }
   });
 
   it('requires both lists; an empty destination list refuses, an empty server list does not restrict', () => {
