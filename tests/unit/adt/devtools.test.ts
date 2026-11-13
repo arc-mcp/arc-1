@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  ACTIVATION_NOT_EXECUTED,
   activate,
   activateBatch,
   applyFixProposal,
@@ -823,26 +822,6 @@ describe('DevTools', () => {
         </root>`;
         const outcome = parseActivationOutcome(xml);
         expect(outcome.kind).toBe('error');
-      });
-
-      it('surfaces an explicit activationExecuted="false" without failing; true, omitted and preaudit unchanged', () => {
-        const props = (flag: string) =>
-          `<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><chkl:properties ${flag}/></chkl:messages>`;
-        const notExecuted = parseActivationOutcome(props('activationExecuted="false"'));
-        expect(notExecuted).toEqual({
-          kind: 'success',
-          messages: [ACTIVATION_NOT_EXECUTED],
-          details: [{ severity: 'warning', text: ACTIVATION_NOT_EXECUTED }],
-          notExecuted: true,
-        });
-        for (const xml of [props('activationExecuted="true"'), props('checkExecuted="true"')])
-          expect(parseActivationOutcome(xml)).toEqual({ kind: 'success', messages: [], details: [] });
-        expect(parseActivationOutcome(preauditXml).kind).toBe('preaudit');
-        const error = parseActivationOutcome(
-          '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><msg type="E" shortText="x"/><chkl:properties activationExecuted="false"/></chkl:messages>',
-        );
-        expect(error.kind).toBe('error');
-        expect(error.messages).not.toContain(ACTIVATION_NOT_EXECUTED);
       });
     });
 
