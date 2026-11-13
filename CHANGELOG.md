@@ -5,6 +5,23 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.11.0](https://github.com/arc-mcp/arc-1/compare/v1.10.1...v1.11.0) (2026-11-13)
+
+
+### Features
+
+* find include function groups and replace small source snippets ([#1223](https://github.com/arc-mcp/arc-1/issues/1223)) ([a96560f](https://github.com/arc-mcp/arc-1/commit/a96560f3fe0089ed73e175f9e2d0da6d1f0f2016))
+* read OData service info of a service binding ([#1199](https://github.com/arc-mcp/arc-1/issues/1199)) ([c54a7e0](https://github.com/arc-mcp/arc-1/commit/c54a7e0a2d54e216ed3be062ac07644e56165d32))
+* remove the unused AMDP feature probe and toggle ([#1222](https://github.com/arc-mcp/arc-1/issues/1222)) ([86bd652](https://github.com/arc-mcp/arc-1/commit/86bd6527b07805c834084da290c5c45bb074d24f))
+
+
+### Bug Fixes
+
+* cap SQL rows and rename totalRows to sapReportedTotalRows ([#1225](https://github.com/arc-mcp/arc-1/issues/1225)) ([706e055](https://github.com/arc-mcp/arc-1/commit/706e0556e9e6a523097daa2e16ee81e28b845333))
+* **deps:** update Hono adapter to 2.1.6 ([#1228](https://github.com/arc-mcp/arc-1/issues/1228)) ([6df1fa8](https://github.com/arc-mcp/arc-1/commit/6df1fa8f44f426d205db54107688331ae43a0531))
+* persist MSAG messages during batch creation ([#1233](https://github.com/arc-mcp/arc-1/issues/1233)) ([9a92ff3](https://github.com/arc-mcp/arc-1/commit/9a92ff3362a4ff889a7ede1131e246a54bcc7c37))
+* refuse MSAG names longer than 20 characters before create ([#1229](https://github.com/arc-mcp/arc-1/issues/1229)) ([5f2c4e2](https://github.com/arc-mcp/arc-1/commit/5f2c4e27681fa985e26877b367080bd03e8340f6))
+
 ## [1.10.1](https://github.com/arc-mcp/arc-1/compare/v1.10.0...v1.10.1) (2026-11-07)
 
 
