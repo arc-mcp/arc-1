@@ -202,21 +202,27 @@ mode. Pinned multi-target writes (ADR-0011) use the same single-target handlers;
 pinned lifecycle or adapter. Their extra controls are central:
 
 - **Admission** — `multi-target-write-surface.ts` (`SHARED_PINNED_ACTIONS`, single-target Zod keys,
-  `preaudit=false`, caller transports on both lists), applied by the HTTP gate and again in
+  `preaudit=false`, caller transports on both lists; `edit_content` is not admitted, and
+  `pruneDefinition` drops its fields and guidance from the catalog), applied by the HTTP gate and again in
   `handleToolCall`, which repeats `multiTargetInvocationDecision` for every tool when
   `config.targetId` is set. A new `SAPWrite`/`SAPActivate` policy row fails
   `pinned-shared-handlers.test.ts` until it is listed or explicitly not admitted.
 - **Wire barrier** — a write-enabled pinned client carries `pinnedWrite`; `AdtHttpClient.request()`
   turns off transient (503/429/DB) retries for POST/PUT/DELETE and refuses any `corrNr` (any case,
-  every occurrence) not on both lists. Definitive rejections keep their single retry (401, CSRF 403,
-  406/415 negotiation). A write path carrying the CTS request anywhere other than `corrNr` must be
-  refused at admission.
+  every occurrence) not on both lists. Definitive rejections keep their single retry (401, 406/415
+  negotiation, and a 403 only with `x-csrf-token: Required`; a plain 403 is not resent). A write path
+  carrying the CTS request anywhere other than `corrNr` must be refused at admission.
+- **Lock request** — `lockObject` checks the `CORRNR` SAP returns (a save without `corrNr` is
+  recorded there) and unlocks before refusing. A save with no request at all is SAP's decision.
 - **Activation scope** — `confirmPreaudit` refuses objects SAP adds that are neither requested nor a
-  sub-resource of a requested object.
+  sub-resource of a requested object. Caller `preaudit=false` is refused at admission and in
+  `handlers/activate.ts`; the only internal `preaudit=false` is the exact text-pool URI after
+  `edit_text_symbols` (`text-elements.ts`), which SAP cannot widen.
 - **Disabled targets** — `isOperationAllowed` refuses mutations when `multiTargetWrite.enabled` is false.
 
 Focused tests: `tests/unit/adt/{mutation-compatibility,http-pinned-write}.test.ts`,
-`tests/unit/handlers/pinned-shared-{handlers,families}.test.ts`. The optional destructive integration
+`tests/unit/handlers/pinned-shared-{handlers,families}.test.ts`, and `pinned-post-save.test.ts` for the
+steps after a save (text-pool activation, `batch_create` activation, REPT repair). The optional destructive integration
 test `tests/integration/mutation-lifecycle.integration.test.ts` creates and deletes one unique `$TMP`
 class using the configured direct test identity; it does not exercise PP routing.
 

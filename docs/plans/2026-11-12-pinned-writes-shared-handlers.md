@@ -1,6 +1,6 @@
 # Plan: pinned PP writes through the shared handlers
 
-**Status:** Steps 1–6 implemented and revised after review (uncommitted, 13 November 2026); step 7 (live) outstanding — see [Live qualification checklist](#live-qualification-checklist). Decision record: [ADR-0011 (proposed revision)](../adr/0011-broader-pinned-pp-mutations.md).
+**Status:** Steps 1–6 implemented and revised after review (13 November 2026). Step 7: first live run of `896320813` on A4H 758 — 12 pass, 2 fail, 3 not run; both failures and three review findings fixed in follow-up commits; a re-run of the [Live qualification checklist](#live-qualification-checklist) is outstanding. Decision record: [ADR-0011 (proposed revision)](../adr/0011-broader-pinned-pp-mutations.md).
 **Supersedes the approach of** draft [PR #1142](https://github.com/arc-mcp/arc-1/pull/1142) (not its goal).
 **Roadmap:** FEAT-93.
 
@@ -19,10 +19,10 @@ Later PRs are listed at the end.
 | # | Control | Enforced once at |
 |---|---|---|
 | 1 | Who may write: pinned route, strict PP, raw write scope, exact read and write target grant, destination opt-in. Aggregate, Copilot, Basic and read-only destinations never write. | Existing HTTP gate and `isOperationAllowed` (`src/adt/safety.ts`) — unchanged |
-| 2 | Admission: an explicit list of `Tool.action` keys. A new single-target action is not writable here until listed. Unknown fields and `preaudit=false` are refused. | `src/server/multi-target-write-surface.ts`; `handleToolCall` repeats the gate's decision for every tool |
+| 2 | Admission: an explicit list of `Tool.action` keys (`edit_content` is not on it). A new single-target action is not writable here until listed. Unknown fields and `preaudit=false` are refused. | `src/server/multi-target-write-surface.ts`; `handleToolCall` repeats the gate's decision for every tool; the `SAPActivate` handler refuses `preaudit=false` |
 | 3 | Package ceiling: server **and** destination list, against the real package. | `checkPackage` / `enforceAllowedPackageForObjectUrl` — already dual, unchanged |
-| 4 | Request ceiling: server **and** destination transport list. | Caller-supplied: admission (2). Sent on the wire, including a request taken from the lock: `AdtHttpClient.request()` |
-| 5 | No transient replay of POST/PUT/DELETE (503, 429, lost DB connection); definitive rejections keep their single retry. | `AdtHttpClient.request()` |
+| 4 | Request ceiling: server **and** destination transport list, for every request ID ARC-1 sends or SAP returns from a lock. A save with no request is decided by SAP. | Caller-supplied: admission (2). Sent on the wire: `AdtHttpClient.request()`. Returned by the lock: `lockObject` |
+| 5 | No transient replay of POST/PUT/DELETE (503, 429, lost DB connection); definitive rejections keep their single retry, and a 403 is resent only on SAP's CSRF challenge. | `AdtHttpClient.request()` |
 | 6 | Activation scope: SAP may add other inactive objects in its preaudit answer. Only the requested, package-checked objects and their own sub-resources may be confirmed. | `confirmPreaudit` in `src/adt/devtools.ts` |
 
 Everything else is the single-target behaviour. Do **not** add read-back, under-lock re-validation,
@@ -88,6 +88,19 @@ Steps 1–6 are implemented, then revised after review:
 - The central predicate keeps the existing semantics: empty destination list refuses, empty server
   list does not restrict. Unknown fields are checked against the single-target Zod schema keys.
 - No type failed step 5; none is refused at admission. Schema budget raise approved by the maintainer.
+
+After the first live run and review (follow-up commits on this branch):
+
+- **Merged `main`;** its new `SAPWrite.edit_content` stays excluded. The pinned catalog drops
+  `oldContent`/`newContent` and the `edit_content` guidance, so no budget was raised.
+- **Text-symbol activation:** `edit_text_symbols` activated its pool with `preaudit=false`, which
+  devtools refused on pinned targets after the PUT had saved. That internal exact-URI activation now
+  proceeds; caller `preaudit=false` is refused in the `SAPActivate` handler as well as at admission
+  and dispatch. Tests drive save → activation → state read for PROG, CLAS and FUGR.
+- **403 resend:** pinned clients resend POST/PUT/DELETE after a 403 only when SAP sends
+  `x-csrf-token: Required`. Single-target is unchanged (possible follow-up for all modes).
+- **Lock request:** `lockObject` refuses, after unlocking, a lock `CORRNR` that is off either list.
+- **`activationExecuted="false"`:** reported as a warning in every mode, not as success.
 
 Numbers: production +169/−905 (net −736) in 17 `src/` files; tests: 3 new files (704 lines),
 tracked tests +142/−1,125; 267 family cases. Full gate green. In the generic mock some families stop
@@ -195,6 +208,14 @@ available, say so and keep the PR draft. Mock results are not live evidence.
   single-target. Other objects are never pulled in.
 - Direct dispatch with a multi-target config now applies the HTTP gate's tool/action decision to
   every tool, not only writes.
+- A plain authorization 403 on a pinned write is reported, not resent; only SAP's CSRF challenge
+  triggers the one refresh-and-resend.
+- A lock whose request is off either list is released and the write refused, even when the caller
+  passed no `transport`.
+- `SAPWrite edit_content` (new on `main`) is not available on pinned routes.
+- In every mode, an activation that SAP answers with `activationExecuted="false"` and no errors is
+  reported with a warning ("Activation request completed for …", batch status `requested`,
+  `batch_create` activation `unknown`) instead of "Successfully activated".
 
 ## Later PRs (not in this plan)
 
@@ -233,7 +254,10 @@ report if a gate expected to refuse lets a call through; do not work around it.
 5. **Identity:** one user with role collection granting `arc1_targets=[SH1142/001, A4H/100]` and
    `arc1_write_targets=[SH1142/001]`; raw scopes `read`, `write`. Connect an MCP client to
    `https://<route>/SH1142/001/mcp`, sign in fresh, list tools.
-6. **Names:** prefix every object with `ZARC1_SH_<MMDD>_`; keep a list for cleanup.
+6. **Names:** prefix every object with `ZARC1_SH_<MMDD>_`; keep a list for cleanup. SAP naming rules
+   override the prefix: ENQU names start with `E` (`EZARC1_SH_<MMDD>`, max 16 characters);
+   function-group includes are `L<GROUP>` plus a suffix (`LZARC1_SH_<MMDD>_FGF01` for group
+   `ZARC1_SH_<MMDD>_FG`).
 
 For every call record: tool + arguments (minus source bodies), `isError`, the first 300 characters
 of the result, and for mutations the SAP state afterwards (`SAPRead` active/inactive, or
@@ -244,9 +268,9 @@ of the result, and for mutations the SAP state afterwards (`SAPRead` active/inac
 
 | # | Call(s) | Expected | Record |
 |---|---|---|---|
-| 0 | `tools/list` on the pinned route | `SAPWrite` with 15 actions, `SAPActivate` with only `activate` and no `preaudit`; no `SAPManage`/`SAPGit` write actions | Action enums |
-| 1 | Per family in `$TMP`: `SAPWrite create` → `update` → `SAPActivate` → `SAPWrite delete` for PROG, INCL, CLAS, INTF, DDLS, DDLX, DCLS, BDEF, SRVD, FUGR, FUNC (`group`), group INCL (`group`), DOMA, DTEL, TABL, TTYP, MSAG, ENQU, one server-driven type (APLO if available), SRVB, SKTD, ENHO | Each step succeeds as in single-target; delete leaves GET 404 | Per call result + final state |
-| 2 | Families the mock did not reach — run their save path explicitly: PROG delete and FUGR delete (text-pool check), `TABL/DTT update`, `TABL/DTI create`+`delete`, `ENQU update`, `APLO delete`, `SKTD update`, `ENHO update`+`delete`, CLAS `add_method`/`edit_class_definition`/`edit_method_signature`/`delete_method`/`change_method_visibility`, local `edit_method` (`lcl_*~m`), PROG `edit_unit`/`add_unit`, `edit_text_symbols` (PROG and CLAS) | Same as single-target; no lock left (SM12 empty for the user) | Result, SM12 check |
+| 0 | `tools/list` on the pinned route | `SAPWrite` with 15 actions (no `edit_content`, no `oldContent`/`newContent`), `SAPActivate` with only `activate` and no `preaudit`; no `SAPManage`/`SAPGit` write actions | Action enums |
+| 1 | Per family in `$TMP`: `SAPWrite create` → `update` → `SAPActivate` → `SAPWrite delete` for PROG, INCL, CLAS, INTF, DDLS, DDLX, DCLS, BDEF, SRVD, FUGR, FUNC (`group`), group INCL (`group`), DOMA, DTEL, TABL, TTYP, MSAG, ENQU, one server-driven type (APLO if available), SRVB, SKTD, ENHO | Each step succeeds as in single-target. After delete the read no longer returns the object (404 or the type's absence response — run 1 saw 422 for FUGR, a server error for FUNC, an informational absence for DDLX/SKTD; see roadmap COMPAT-24), corroborated by an exact `SAPSearch` with no hit | Per call result + final state + search |
+| 2 | Families the mock did not reach — run their save path explicitly: PROG delete and FUGR delete (text-pool check), `TABL/DTT update`, `TABL/DTI create`+`delete`, `ENQU update`, `APLO delete`, `SKTD update`, `ENHO update`+`delete`, CLAS `add_method`/`edit_class_definition`/`edit_method_signature`/`delete_method`/`change_method_visibility`, local `edit_method` (`lcl_*~m`), PROG `edit_unit`/`add_unit`, `edit_text_symbols` (PROG, CLAS and FUGR), RAP `generate_behavior_implementation` with activation | Same as single-target; no lock left (SM12 empty for the user). `edit_text_symbols`: saved, activation succeeds (no error), `SAPRead TEXT_ELEMENTS` shows the new text active, deleting the owner then works, SM12 empty | Result, read-back, SM12 check |
 | 3 | RAP: `batch_create` DDLS+BDEF+SRVD (+ behavior pool CLAS) with `activateAtEnd=true`; then `scaffold_rap_handlers autoApply=true` and `generate_behavior_implementation` on the pool | Stack active; handlers saved; activation result as single-target | Results, active state |
 | 4 | `batch_create` without `activateAtEnd` (two PROGs) | Both created, each activated inline | Results |
 | 5 | Transportable create in `ZARC1_DEMO` with `transport=REQ_A` (PROG and CLAS) | Created; objects recorded under `REQ_A` (SE09) | Request contents |
@@ -254,13 +278,14 @@ of the result, and for mutations the SAP state afterwards (`SAPRead` active/inac
 | 7 | `transport=TASK_A` (task not listed) | Refused at admission | Result |
 | 8 | Lock-derived request off the list: lock an existing `ZARC1_DEMO` object into `REQ_B` in ADT (make a change, save into `REQ_B`, release your editor lock), then `SAPWrite update` without `transport` | Refused (`CTS request is not allowed…`); source unchanged; no lock left (SM12) | Result, source hash before/after, SM12 |
 | 9 | Server list: set `SAP_ALLOWED_TRANSPORTS=<some other request>` and restart; repeat step 5 with `REQ_A` | Refused (server ceiling) | Result; restore setting afterwards |
-| 10 | Preaudit expansion: create two PROGs A and B in `$TMP`, make B include-dependent on A or just leave B inactive in the same package, then `SAPActivate` A only. If SAP's preaudit answer lists B | Refused with `SAP would also activate objects that were not requested: B`; nothing activated. If SAP does not add B, record that the case was not reproducible and how it was attempted | Result, active state of A and B |
+| 10 | Preaudit expansion: create two PROGs A and B in `$TMP`, make B include-dependent on A or just leave B inactive in the same package, then `SAPActivate` A only. If SAP's preaudit answer lists B | Refused with `SAP would also activate objects that were not requested: B`; nothing activated. If SAP does not add B, record that the case was not reproducible and how it was attempted. **Stays open** until a live fixture produces an expanded preaudit | Result, active state of A and B |
 | 11 | `SAPActivate objects=[A, B]` after step 10 | Both active | Result |
 | 12 | Second writer: hold a lock on a `$TMP` PROG in ADT (open in editor, change without saving), then `SAPWrite update` | Clean lock error; no lock left by ARC-1 (SM12 shows only the ADT lock) | Result, SM12 |
 | 13 | Negatives: same writes on `/multi/mcp` (aggregate), the read-only A4H/100 route, a Basic target if configured, a token without `arc1_write_targets`, a token with only `read` scope | All refused; write tools hidden in `tools/list` | Results |
 | 14 | Direct non-write mutations on the pinned route: `SAPManage create_package`, `SAPTransport create`, `SAPDiagnose set_sql_trace_state`, `SAPActivate publish_srvb` | `MULTI_TARGET_OPERATION_FORBIDDEN`; nothing changed in SAP | Results |
 | 15 | Optional — older release (7.50/7.40 target, if one is reachable by PP): a DTEL create (versioned content type) | Succeeds after one 415 renegotiation; with `ARC1_LOG_HTTP_DEBUG=true` the log shows one 415 then success | Result + log excerpt |
-| 16 | Optional — transient failure: if a 503 can be provoked safely, confirm the write is reported as an error and not resent | One request in the audit log | Log excerpt |
+| 16 | Optional — transient failure: if a 503 can be provoked safely, confirm the write is reported as an error and not resent. Also a plain authorization 403 (for example a write to a package the SAP user may not change): one send. A CSRF challenge 403 (`x-csrf-token: Required`) is refreshed and sent twice | One request in the audit/HTTP log for 503 and plain 403 | Log excerpt |
+| 17 | Optional — text-pool repair: if a program's pool is inactive (edit texts in ADT without activating), `SAPActivate type="REPT"` on it; if SAP proposes the program as well, repeat with `objects=[REPT, PROG]` | Pool active; deleting the program then works | Result, read-back |
 
 ### Cleanup
 

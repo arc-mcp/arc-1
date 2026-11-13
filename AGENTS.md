@@ -24,7 +24,7 @@ Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/arc-mcp/arc-1`).
    pinned/aggregate targets; ADR-0007 keeps shared Basic mutation-free and one-instance. ADR-0010
    permitted scoped CLAS/INTF writes on pinned strict-PP routes with destination restrictions and
    exact verified write grants; ADR-0011 (Proposed) replaces its adapter with the shared handlers for
-   all `SAPWrite` actions and activation. Aggregate/Copilot remain mutation-free.
+   the listed `SAPWrite` actions and activation. Aggregate/Copilot remain mutation-free.
    Broader writes or another discovery/auth model require a new ADR/security review.
 8. **ABAP execution and RFC belong in extensions** — no built-in report/class execution, direct RFC,
    or installed/temporary ABAP helpers. Core uses existing SAP APIs and TypeScript; user ABAP
@@ -321,7 +321,7 @@ and [its contract](docs/plans/xsuaa-target-authorization.md); [ADR-0011](docs/ad
 3. **SAP client** (`src/server/server.ts`): normally `ppEnabled` + JWT → per-user SAP session; ADR-0007 multi-target Basic resolves one request-local shared credential behind the process guard.
 4. **`handleToolCall`** (`src/handlers/dispatch.ts`): arg normalization (`stripLlmEmptyValues`) → scope check (`ACTION_POLICY`) → Zod validation → per-tool handler → package check for writes. Source reads consult the inactive-list + ETag source cache.
 5. **ADT client** (`src/adt/{client,crud,devtools}.ts`): every endpoint behind `checkOperation(safety, …)`.
-6. **HTTP** (`src/adt/http.ts`): MIME negotiation, conditional GET, CSRF auto-refresh, 406/415 one-retry, cookie hot-reload, stateful lock→modify→unlock sessions. Write-enabled pinned clients turn off transient retries for POST/PUT/DELETE and check every `corrNr` against both transport lists.
+6. **HTTP** (`src/adt/http.ts`): MIME negotiation, conditional GET, CSRF auto-refresh, 406/415 one-retry, cookie hot-reload, stateful lock→modify→unlock sessions. Write-enabled pinned clients turn off transient retries for POST/PUT/DELETE, resend a 403 only on the CSRF challenge, and check every `corrNr` and lock request against both transport lists.
 7. **SAP**: native auth (`S_DEVELOP`, `S_ADT_RES`, `S_TRANSPRT`).
 
 **Key invariant:** scope ∧ safety ∧ SAP auth — all must pass; pinned writes additionally require exact verified target capability and destination restrictions.

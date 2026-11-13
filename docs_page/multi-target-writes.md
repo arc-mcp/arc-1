@@ -61,13 +61,15 @@ Destination package lists support exact names, prefix patterns (`ZTEAM*`), DEVCL
 Lists are bounded to 128 entries, 128 characters per entry and 8192 characters total; use ASCII,
 commas and optional surrounding spaces. Empty entries and malformed values quarantine the destination.
 A package list is required whenever the destination requests writes, even while the global switch is
-off. Missing destination transport policy allows only positively verified local objects.
+off. Without a destination transport list, every request is refused; only saves that carry no
+request at all remain possible.
 
 **Transport policy authorizes requests.** In this example only `DEVK900123` is allowed. Every CTS
 request ARC-1 sends to SAP must be on both lists — whether the caller supplied it or SAP returned it
 from the object lock — and is checked again on the wire before the request leaves ARC-1. A request
-off either list is refused before SAP sees it; a lock already taken is released. Objects without a
-request (for example in `$TMP`) need no transport list. ARC-1 does not map a task to its parent
+off either list is refused before SAP sees it; a lock already taken is released. A save with no
+request at all is decided by SAP, which refuses a transportable object without one; ARC-1 does not
+prove that an object is local (for example in `$TMP`). ARC-1 does not map a task to its parent
 request: a task ID is refused unless the task itself is on both lists. List and pass parent
 requests; on SAP_BASIS 758 a save with a task ID failed and left an empty object stub. Manage
 requests in ADT/SAP GUI or a separately authorized single-target connection.
@@ -124,23 +126,24 @@ only the aggregate compatibility connection cannot write through that connection
 
 ## What the writer can do
 
-`SAPWrite` (every action) and `SAPActivate action="activate"` (single and batch) behave as on a
+`SAPWrite` (every action except `edit_content`) and `SAPActivate action="activate"` (single and batch) behave as on a
 single-target connection: same types, fields and result text. The pinned connection adds only these
 controls, each enforced once for every handler:
 
 | Control | Effect |
 |---|---|
 | Who may write | Pinned PP route, strict PP, raw write scope, exact read and write grants, destination opt-in |
-| Admission | Explicit `Tool.action` list. Fields outside the single-target schema and `preaudit=false` are refused. `publish_srvb`/`unpublish_srvb` are not admitted |
+| Admission | Explicit `Tool.action` list. Fields outside the single-target schema and `preaudit=false` are refused. `edit_content` and `publish_srvb`/`unpublish_srvb` are not admitted |
 | Package ceiling | Global **and** destination package lists, against the real SAP package |
-| Request ceiling | Global **and** destination transport lists, for the caller's request and every request sent to SAP |
-| No transient retry | POST/PUT/DELETE are not resent after a 503, 429 or lost database connection; the error is reported. Definitive rejections (expired session, CSRF token, content type) are retried once, as in single-target |
-| Activation scope | If SAP would also activate an object you did not list (other than a sub-resource of one you listed), nothing is activated; list it in `objects[]` to include it |
+| Request ceiling | Global **and** destination transport lists, for the caller's request, every request sent to SAP and the request an object is locked in |
+| No transient retry | POST/PUT/DELETE are not resent after a 503, 429 or lost database connection; the error is reported. Definitive rejections (expired session, a 403 with SAP's CSRF challenge, content type) are retried once; a plain authorization 403 is not resent |
+| Activation scope | If SAP would also activate an object you did not list (other than a sub-resource of one you listed), nothing is activated; list it in `objects[]` to include it. `edit_text_symbols` activates exactly its own text pool after the save |
 
 CLAS and INTF follow the same rules as every other type; the earlier CLAS/INTF-only contract
 (ADR-0010) is replaced. Compared with it you no longer get read-back comparison after save,
 re-validation under the lock, task-to-parent request resolution, positive activation-execution
-evidence, a JSON `state`/`phase` result, or a mandatory source hash: `expectedSourceHash` is
+evidence (an explicit "not executed" answer from SAP is reported as a warning), a JSON
+`state`/`phase` result, or a mandatory source hash: `expectedSourceHash` is
 optional, as in single-target, and recommended for updates. Saves remain inactive until activation. Whole-object activation can include other
 users' inactive parts of the **same** object, as in single-target; other objects are never pulled in.
 Per-call `lintBeforeWrite=false` is accepted as in single-target; lint is not an access control.
@@ -171,6 +174,8 @@ rule counts and a policy digest. No raw restriction list or destination credenti
 | CTS denied | The request (or task) itself must be on the destination list and the global list; this includes a request SAP returns from the object lock |
 | Source changed | You passed `expectedSourceHash`: read the editable source again, review changes, and use its new hash |
 | Activation refused: SAP would also activate … | Another inactive object is pending. Review it, then list it in `objects[]` or activate it separately |
+| Text elements saved, activation not confirmed | Program pool: `SAPActivate type="REPT"`; if SAP proposes the program too, list both in `objects[]`. An inactive pool blocks deleting its program |
+| Activation not executed (warning) | SAP accepted the request without activating. Check the object with `SAPRead version="inactive"` |
 | `TARGET_CONFIG_CHANGED` | Restart all instances after reviewing the changed destination; never silently remap an old ID to another backend |
 | Partial/unknown write result | Inspect the object, inactive source, CTS recording and locks. Do not automatically replay; creation may have left a stub or a save may have completed |
 

@@ -305,21 +305,27 @@ scoped lifecycle. [Qualification evidence](research/2026-10-22-multi-target-writ
 distinguishes live SAP checks from fault-injection tests and untested release shapes.
 
 ADR-0011 (Proposed) replaces ADR-0010's CLAS/INTF adapter: pinned writes use the single-target
-handlers for every listed `SAPWrite` action and `SAPActivate activate`. Admission is an explicit
-`Tool.action` list (`src/server/multi-target-write-surface.ts`); fields outside the single-target
-schema and `preaudit=false` are refused. `handleToolCall` repeats the HTTP gate's decision for every
-tool when `config.targetId` is set. A write-enabled pinned `AdtHttpClient` turns off transient retries
-for POST/PUT/DELETE and refuses any `corrNr` not on both transport lists; `confirmPreaudit` refuses
-objects SAP adds that were not requested. Given up versus ADR-0010: read-back, under-lock
-revalidation, recording preflight, task-to-parent resolution (a task must itself be listed),
-positive activation-execution evidence and a mandatory source hash. Per-family mock tests cover
-package resolution and request placement; live qualification is pending.
+handlers for every listed `SAPWrite` action (not `edit_content`) and `SAPActivate activate`.
+Admission is an explicit `Tool.action` list (`src/server/multi-target-write-surface.ts`); fields
+outside the single-target schema and `preaudit=false` are refused (also in the `SAPActivate`
+handler). `handleToolCall` repeats the HTTP gate's decision for every tool when `config.targetId` is
+set. A write-enabled pinned `AdtHttpClient` turns off transient retries for POST/PUT/DELETE, resends a
+403 only on SAP's CSRF challenge and refuses any `corrNr` not on both transport lists; `lockObject`
+refuses (and unlocks) when the lock's request is off either list; `confirmPreaudit` refuses objects
+SAP adds that were not requested. The one internal `preaudit=false` call activates exactly the text
+pool `edit_text_symbols` just saved. Given up versus ADR-0010: read-back, under-lock revalidation,
+recording preflight, task-to-parent resolution (a task must itself be listed), positive
+activation-execution evidence (an explicit "not executed" is reported as a warning) and a mandatory
+source hash. Per-family mock tests cover package resolution and request placement; a first live run
+found two defects, both fixed, and a re-run is pending.
 
 Residual limits: one process shares availability; route/client identity does not isolate the
 cross-client ABAP repository; package rules do not sandbox the eventual behavior of authored ABAP;
 ABAP Unit can execute authored code under the SAP user (deny `SAPDiagnose.unittest` when unintended);
 activation includes preexisting drafts for the complete owner; an interrupted create/save may leave
-partial state. CTS allowance matches the ID ARC-1 sends; a task is allowed only if listed itself.
+partial state. CTS allowance matches every ID ARC-1 sends or SAP returns from a lock; a task is
+allowed only if listed itself. ARC-1 does not prove locality: a save with no request at all is decided
+by SAP, which refuses transportable objects without one (maintainer decision, ADR-0011).
 Audit delivery remains asynchronous. Removed IAM assignments may survive in old tokens/refresh
 sessions, so immediate disable uses server/destination policy and restart, and admitted calls may
 still complete. New backends require new public IDs and grants. Operators must assess these limits
