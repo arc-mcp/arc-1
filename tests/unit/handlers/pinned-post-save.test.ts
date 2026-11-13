@@ -161,6 +161,35 @@ describe('repairing a stranded program text pool on a pinned route', () => {
   });
 });
 
+describe('activationExecuted="false" is reported, not claimed as success', () => {
+  it('single, batch and batch_create keep a non-failing result without "Successfully activated"', async () => {
+    activation = () =>
+      '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><chkl:properties activationExecuted="false"/></chkl:messages>';
+    const single = await handleToolCall(client(), config, 'SAPActivate', { type: 'PROG', name: 'ZTEST' });
+    const batch = await handleToolCall(client(), config, 'SAPActivate', {
+      objects: [
+        { type: 'PROG', name: 'ZTEST' },
+        { type: 'PROG', name: 'ZTEST2' },
+      ],
+    });
+    for (const result of [single, batch]) {
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0].text).not.toContain('Successfully activated');
+      expect(result.content[0].text).toContain('activation was not executed');
+    }
+    expect(batch.content[0].text).toContain('ZTEST (PROG): requested');
+    const created = await write({
+      action: 'batch_create',
+      package: '$TMP',
+      activateAtEnd: true,
+      objects: [{ type: 'PROG', name: 'ZTEST_A', source: 'REPORT ztest_a.' }],
+    });
+    expect(created.isError).toBeUndefined();
+    expect(created.content[0].text).toContain('batch activation requested');
+    expect(created.content[0].text).toContain('activation was not executed');
+  });
+});
+
 describe('other internal activations after a pinned save keep the preaudit scope check', () => {
   const batch = (activateAtEnd: boolean) =>
     write({

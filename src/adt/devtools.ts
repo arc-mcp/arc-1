@@ -174,7 +174,12 @@ export interface ActivationResult {
   success: boolean;
   messages: string[];
   details: ActivationMessage[];
+  /** SAP answered activationExecuted="false" without errors; success is not proof of an active object. */
+  notExecuted?: boolean;
 }
+
+export const ACTIVATION_NOT_EXECUTED =
+  'SAP reported that activation was not executed; verify the object state with SAPRead version=inactive.';
 
 const ACTIVATION_TIMEOUT_MS = 300_000;
 
@@ -527,7 +532,12 @@ function outcomeToResult(outcome: ActivationOutcome): ActivationResult {
     }
     return { success: false, messages, details };
   }
-  return { success: outcome.kind === 'success', messages: outcome.messages, details: outcome.details };
+  return {
+    success: outcome.kind === 'success',
+    messages: outcome.messages,
+    details: outcome.details,
+    ...(outcome.kind === 'success' && outcome.notExecuted && { notExecuted: true }),
+  };
 }
 
 /** Result of a publish/unpublish operation */
@@ -966,7 +976,7 @@ export async function applyFixProposal(
 
 /** Discriminated outcome from parsing an activation response. */
 export type ActivationOutcome =
-  | { kind: 'success'; messages: string[]; details: ActivationMessage[] }
+  | { kind: 'success'; messages: string[]; details: ActivationMessage[]; notExecuted?: boolean }
   | { kind: 'error'; messages: string[]; details: ActivationMessage[] }
   | {
       kind: 'preaudit';
@@ -1032,6 +1042,12 @@ export function parseActivationOutcome(xml: string): ActivationOutcome {
     };
   }
 
+  // Not an error: some types (e.g. MSAG) become active on save. Only an explicit "false" counts.
+  if (findDeepNodes(parsed, 'properties').some((p) => String(p['@_activationExecuted']) === 'false')) {
+    messages.push(ACTIVATION_NOT_EXECUTED);
+    details.push({ severity: 'warning', text: ACTIVATION_NOT_EXECUTED });
+    return { kind: 'success', messages, details, notExecuted: true };
+  }
   return { kind: 'success', messages, details };
 }
 
@@ -1050,7 +1066,12 @@ export function parseActivationResult(xml: string): ActivationResult {
     }
     return { success: false, messages, details };
   }
-  return { success: outcome.kind === 'success', messages: outcome.messages, details: outcome.details };
+  return {
+    success: outcome.kind === 'success',
+    messages: outcome.messages,
+    details: outcome.details,
+    ...(outcome.kind === 'success' && outcome.notExecuted && { notExecuted: true }),
+  };
 }
 
 /** Extract still-inactive object refs from an <ioc:inactiveObjects> response.

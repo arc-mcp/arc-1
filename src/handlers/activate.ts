@@ -342,7 +342,8 @@ export async function handleSAPActivate(
       }
       invalidateInactiveList(cachingLayer, client, cacheSecurity);
       const textPools = objects.filter((o) => o.type === 'REPT');
-      const summary = textPools.length > 0 ? 'Activation request completed for' : 'Successfully activated';
+      const summary =
+        textPools.length > 0 || result.notExecuted ? 'Activation request completed for' : 'Successfully activated';
       const hints = textPools.map((o) => textPoolActivationHint(o.name)).join('');
       return textResult(`${summary} ${objects.length} objects: ${names}.${statusDetails}${globalMessages}${hints}`);
     }
@@ -441,7 +442,8 @@ export async function handleSAPActivate(
         `Text-pool activation requested for ${name}.${formatActivationMessages(result)}${textPoolActivationHint(name)}`,
       );
     }
-    return textResult(`Successfully activated ${type} ${name}.${formatActivationMessages(result)}`);
+    const summary = result.notExecuted ? 'Activation request completed for' : 'Successfully activated';
+    return textResult(`${summary} ${type} ${name}.${formatActivationMessages(result)}`);
   }
   // On failure, try to enrich with the actual compiler errors from the inactive version —
   // especially useful when SAP returned <ioc:inactiveObjects> with no <msg> detail.
@@ -523,7 +525,7 @@ export function buildBatchActivationStatuses(
           ? 'unknown'
           : details.some((detail) => detail.severity === 'warning')
             ? 'warning'
-            : obj.type === 'REPT'
+            : obj.type === 'REPT' || result.notExecuted
               ? 'requested'
               : 'active',
       messages,
