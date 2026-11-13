@@ -505,6 +505,10 @@ function isKtdCreateEndpointUnavailable(err: unknown): err is AdtApiError {
   return combined.includes('resource') && combined.includes('/sap/bc/adt/documentation/ktd/documents');
 }
 
+// SAP (seen on 758) silently truncates a longer MSAG name, leaving an empty class under the shorter name.
+const MSAG_MAX_NAME_LENGTH = 20;
+const MSAG_NAME_TOO_LONG = `MSAG names must be at most ${MSAG_MAX_NAME_LENGTH} characters. Nothing was created.`;
+
 export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResult> {
   const {
     client,
@@ -524,6 +528,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   // Discovery gate before any SAP call (the TTYP/DOMA gates live in write.ts, which is at its size budget).
   if (type === 'ENQU' && isLockObjectsEndpointAvailable() === false) return errorResult(ENQU_WRITE_UNAVAILABLE_HINT);
   if (type === 'ENHO' && isEnhoXhbEndpointAvailable() === false) return errorResult(ENHO_WRITE_UNAVAILABLE_HINT);
+  if (type === 'MSAG' && name.length > MSAG_MAX_NAME_LENGTH) return errorResult(MSAG_NAME_TOO_LONG);
   // FUNC and FUGR structural includes both INHERIT the parent group's package — SAP ignores
   // _package for them — so the allowlist must be checked against the group's real package.
   // Gating on args.package here would let a caller write into a disallowed package by claiming $TMP.
@@ -946,6 +951,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       if (previous !== undefined)
         errors.push(`Duplicate object: entry ${plan.result.index + 1} repeats entry ${previous + 1}.`);
       else seen.set(key, plan.result.index);
+      if (plan.type === 'MSAG' && plan.name.length > MSAG_MAX_NAME_LENGTH) errors.push(MSAG_NAME_TOO_LONG);
       if (plan.type === 'FUNC' && !plan.group) {
         errors.push(`FUNC ${plan.name} in batch_create requires "group" on the object entry or top-level request.`);
       }
