@@ -76,7 +76,7 @@ beforeEach(() => {
   });
 });
 const activations = () => requests.filter((r) => r.path.includes('/activation?'));
-const index = (pick: (r: (typeof requests)[number]) => boolean) => requests.findIndex(pick);
+const index = (pick: (r: (typeof requests)[number], i: number) => boolean) => requests.findIndex(pick);
 const write = (args: Record<string, unknown>) => handleToolCall(client(), config, 'SAPWrite', args);
 
 describe('pinned text-symbol writes activate exactly their text pool', () => {
