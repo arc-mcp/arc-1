@@ -127,7 +127,7 @@ does not ensure the next call re-authenticates; follow
 Needs the optional `kerberos` native module. Prebuilt binaries exist for Windows x64, Linux
 x64/arm64/s390x (glibc 2.28+) and macOS; **Windows on ARM, musl/Alpine images and the `.mcpb`
 Desktop bundle have none** and report an actionable error at first use. Full walkthrough:
-[enterprise-auth.md → SPNEGO / Kerberos](enterprise-auth.md#spnego--kerberos-windows-sso-snc-only-systems).
+[enterprise-auth.md → SPNEGO / Kerberos](enterprise-auth.md#spnego-kerberos-windows-sso-snc-only-systems).
 
 Cookie auth is not for production. See [local-development.md → SSO cookie extractor](local-development.md#sso-only-on-prem-cookie-extractor). On startup, the auth preflight is non-blocking when `SAP_COOKIE_FILE` is set, so the server starts even if cookies are about to be re-extracted out-of-band. Per-user PP clients never inherit cookie state — `cookieFile`/`cookieString` are stripped from per-user configs.
 

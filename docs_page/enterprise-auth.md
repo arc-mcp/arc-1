@@ -29,7 +29,7 @@ After starting, check the server's first INFO log line: `auth: MCP=[...] SAP=[..
 |----------------|-------------------|-------------|-------------|
 | **Local dev** (single user, `npx`) | None needed | Basic Auth | [Quickstart](quickstart.md) |
 | **Local dev + RFC/SAProuter-only access** | None needed | Local ADT-to-RFC bridge | [Local bridge](#local-adt-to-rfc-bridge-rfcsaprouter-only-local-systems) |
-| **SNC/Kerberos-only SAP** (no SAP password, domain-joined host) | None / API Key | SPNEGO (shared OS identity) | [SPNEGO / Kerberos](#spnego--kerberos-windows-sso-snc-only-systems) |
+| **SNC/Kerberos-only SAP** (no SAP password, domain-joined host) | None / API Key | SPNEGO (shared OS identity) | [SPNEGO / Kerberos](#spnego-kerberos-windows-sso-snc-only-systems) |
 | **Shared server** (team, quick start) | API Key | Basic Auth | [API Key Setup](api-key-setup.md) |
 | **Team server** (role-based access) | API Keys (multi) | Basic Auth | [API Key Setup](api-key-setup.md) |
 | **Enterprise** (per-user identity) | OIDC / JWT | Basic Auth (shared user) | [OAuth / JWT Setup](oauth-jwt-setup.md) |
