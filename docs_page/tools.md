@@ -735,7 +735,7 @@ keep their separate behavior.
 | `defaultComponentName` | string | No | DTEL: default component name |
 | `deactivateInputHistory` | boolean | No | DTEL: `true` disables SAP GUI input history for fields using the data element; `false` does not suppress it |
 | `changeDocument` | boolean | No | DTEL: change document flag |
-| `messages` | array | No | MSAG: message entries (`[{number, shortText, longText?}]`) — `number` is a 3-digit string (e.g., `"001"`), `shortText` is the message text (max 73 chars) |
+| `messages` | array | No | MSAG: message entries (`[{number, shortText}]`) for `create`, `update`, or each `batch_create` entry — `number` is a 3-digit string (e.g., `"001"`), `shortText` is the message text (max 73 chars) |
 | `serviceDefinition` | string | No | SRVB: referenced service definition name (SRVD). Required for SRVB create. |
 | `bindingType` | string | No | SRVB: binding type (default `ODATA`) |
 | `odataVersion` | string | No | SRVB OData protocol version, `V2` (default) or `V4`; overrides the value inferred from `bindingType`. |

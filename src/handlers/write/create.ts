@@ -918,6 +918,9 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       transport: normalizeTransportOverride(obj.transport) ?? transport,
       description: String(obj.description ?? name),
       metadataObject: isMetadataWriteType(type),
+      // SAP creates only a shell for these types; the messages/metadata need a locked PUT.
+      needsMetadataPut:
+        type === 'DTEL' || (type === 'MSAG' && Array.isArray(metadata.messages) && metadata.messages.length > 0),
       body: '',
       contentType: '',
       sourceUrl: '',
@@ -1003,7 +1006,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           plan.type === 'FUNC' ? `${plan.objectUrl}/source/main` : sourceUrlForType(plan.type, plan.name);
       }
       if (
-        plan.type === 'DTEL' ||
+        plan.needsMetadataPut ||
         plan.type === 'TTYP' ||
         plan.type === 'ENHO' ||
         (plan.type === 'FUNC' && plan.metadata.processingType !== undefined) ||
@@ -1149,7 +1152,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           plan.transport,
           config.minimalErrors,
         );
-      if (plan.type === 'DTEL') {
+      if (plan.needsMetadataPut) {
         await client.http.withStatefulSession(async (session) => {
           const lock = await lockObject(
             session,
@@ -1157,6 +1160,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
             plan.objectUrl,
             'MODIFY',
             getCachedFeatures()?.abapRelease,
+            systemType,
           );
           try {
             await updateObject(
