@@ -119,15 +119,35 @@ export function multiTargetInvocationDecision(
   return 'forbidden';
 }
 
+// ponytail: the JSON schema has no per-action property map, so the guidance of excluded actions is listed here;
+// the pinned-surface test fails when tools.ts wording drifts.
+const EXCLUDED_GUIDANCE: ReadonlyArray<readonly [string, string]> = [
+  ['; edit_content replaces one exact match and requires expectedSourceHash.', '.'],
+  ['Required for edit_content; otherwise optional', 'Optional'],
+];
+
 function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefinition | undefined {
   if (tool.name === 'SAPWrite' || tool.name === 'SAPActivate') {
     if (!pinnedWriteEnabled(config)) return undefined;
     // The single-target definition, narrowed to the admitted actions; preaudit is always on here.
-    const { preaudit: _preaudit, ...properties } = tool.inputSchema.properties as Record<
-      string,
-      Record<string, unknown>
-    >;
-    const action = properties.action;
+    const {
+      preaudit: _preaudit,
+      oldContent: _oldContent,
+      newContent: _newContent,
+      ...properties
+    } = tool.inputSchema.properties as Record<string, Record<string, unknown>>;
+    const pruned = Object.fromEntries(
+      Object.entries(properties).map(([name, property]) => [
+        name,
+        typeof property.description === 'string'
+          ? {
+              ...property,
+              description: EXCLUDED_GUIDANCE.reduce((text, [from, to]) => text.replace(from, to), property.description),
+            }
+          : property,
+      ]),
+    );
+    const action = pruned.action;
     return {
       ...tool,
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
@@ -135,7 +155,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
       inputSchema: {
         ...tool.inputSchema,
         properties: {
-          ...properties,
+          ...pruned,
           action: {
             ...action,
             enum: (action.enum as string[]).filter((value) => SHARED_PINNED_ACTIONS.has(`${tool.name}.${value}`)),

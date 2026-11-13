@@ -9,6 +9,7 @@ import { projectMultiTargetRequest } from '../../../src/server/multi-target-requ
 import { buildMultiTargetConfig } from '../../../src/server/multi-target-runtime.js';
 import { buildMultiTargetServerInstructions, prepareMultiTargetCall } from '../../../src/server/multi-target-server.js';
 import { multiTargetInvocationDecision, multiTargetToolDefinitions } from '../../../src/server/multi-target-tools.js';
+import { SHARED_PINNED_ACTIONS } from '../../../src/server/multi-target-write-surface.js';
 import { NATIVE_NAVIGATION_INSTRUCTIONS } from '../../../src/server/server-instructions.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
@@ -230,12 +231,17 @@ describe('pinned write policy composition', () => {
     expect(write.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: false });
     const single = getToolDefinitions(config);
     const singleWrite = single.find((t) => t.name === 'SAPWrite')!;
+    const excludedFields = new Set(['oldContent', 'newContent']);
     expect(Object.keys(write.inputSchema.properties as object)).toEqual(
-      Object.keys(singleWrite.inputSchema.properties as object),
+      Object.keys(singleWrite.inputSchema.properties as object).filter((key) => !excludedFields.has(key)),
     );
     expect((write.inputSchema.properties as any).action.enum).toEqual(
-      (singleWrite.inputSchema.properties as any).action.enum,
+      (singleWrite.inputSchema.properties as any).action.enum.filter((a: string) =>
+        SHARED_PINNED_ACTIONS.has(`SAPWrite.${a}`),
+      ),
     );
+    expect((singleWrite.inputSchema.properties as any).action.enum).toContain('edit_content');
+    expect(JSON.stringify(write)).not.toMatch(/edit_content|oldContent|newContent/);
     const activate = definitions.find((t) => t.name === 'SAPActivate')!;
     expect(activate.inputSchema.properties).not.toHaveProperty('preaudit');
     expect((activate.inputSchema.properties as any).action.enum).toEqual(['activate']);
