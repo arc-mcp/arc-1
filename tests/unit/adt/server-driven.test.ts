@@ -586,3 +586,22 @@ describe('deleteServerDrivenObject', () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe('SMBC as a server-driven type', () => {
+  it('addresses SMBC in lower case like the other SAP clients', () => {
+    expect(serverDrivenObjectUrl('SMBC', '/NS/CONFIG')).toBe('/sap/bc/adt/bct/smbctyp/%2Fns%2Fconfig');
+    expect(serverDrivenObjectUrl('DESD', 'ZSCHEMA')).toBe('/sap/bc/adt/ddic/desd/ZSCHEMA');
+  });
+
+  it('refuses SMBC create in the engine before any request', async () => {
+    const post = vi.fn();
+    const http = { post } as unknown as AdtHttpClient;
+    await expect(
+      createServerDrivenObject(http, unrestrictedSafetyConfig(), 'SMBC', 'ZCONFIG', {
+        package: '$TMP',
+        description: 'd',
+      }),
+    ).rejects.toThrow(/object generator/);
+    expect(post).not.toHaveBeenCalled();
+  });
+});
