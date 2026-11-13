@@ -501,6 +501,7 @@ function validateSapWriteInput(
     rowTypeKind?: string;
     rowTypeLength?: number;
     rowTypeDecimals?: number;
+    generator?: string;
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
@@ -509,6 +510,13 @@ function validateSapWriteInput(
       code: 'custom',
       path: ['action'],
       message: 'TABL/DTT supports update only; create or delete the parent TABL instead.',
+    });
+  }
+  if (input.generator !== undefined && input.action !== 'generate') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['generator'],
+      message: 'generator is only supported with action="generate".',
     });
   }
   if (input.action === 'edit_content') {
@@ -788,6 +796,7 @@ export const SAPWriteSchema = z
       'scaffold_rap_handlers',
       'generate_behavior_implementation',
       'edit_text_symbols',
+      'generate',
     ]),
     type: z.enum(SAPWRITE_TYPES_ONPREM).optional(),
     name: z.string().optional(),
@@ -880,6 +889,8 @@ export const SAPWriteSchema = z
      * loop and only the already-written subset is batch-activated. */
     activateAtEnd: looseOptionalBoolean,
     dryRun: looseOptionalBoolean,
+    /** For action="generate": the SAP object generator id (SAPRead type=GENERATORS lists them). */
+    generator: z.string().optional(),
     /** FUNC structured signature parameters (issue #252). When provided, ARC-1 builds the
      * IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING clause from the array and
      * splices it into the FM source body. Backward-compatible: when omitted, the existing
@@ -906,6 +917,7 @@ export const SAPWriteSchemaBtp = z
       'scaffold_rap_handlers',
       'generate_behavior_implementation',
       'edit_text_symbols',
+      'generate',
     ]),
     type: z.enum(SAPWRITE_TYPES_BTP).optional(),
     name: z.string().optional(),
@@ -982,6 +994,8 @@ export const SAPWriteSchemaBtp = z
      * pass. See SAPWriteSchema (on-prem) for the full contract. */
     activateAtEnd: looseOptionalBoolean,
     dryRun: looseOptionalBoolean,
+    /** For action="generate": the SAP object generator id (SAPRead type=GENERATORS lists them). */
+    generator: z.string().optional(),
     /** FUNC structured signature parameters — same shape as on-prem. Harmless on BTP since FUNC write
      * is on-prem-only. */
     parameters: z.array(fmParameterSchema).optional(),

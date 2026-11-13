@@ -321,6 +321,7 @@ approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated
 | `TEXT_ELEMENTS` | Text elements for `PROG`, `CLAS`, or `FUGR`, selected with `objectType`; see [Text elements](#text-elements). |
 | `VARIANTS` | Program variants, only where SAP serves the ADT resource. No tested release does: SAP_BASIS 750, 758 and 816 return an error, not an empty list. ARC-1 adds no table-data alternative. |
 | `INACTIVE_OBJECTS` | List all objects pending activation for the calling user (no `name` needed). Returns rich metadata: `name`, `type`, `uri`, `description?`, `user`, `deleted`, `transport`, `parentTransport`. |
+| `GENERATORS` | SAP object generators the system offers ("Generate ABAP Repository Objects"): `id`, `title`, `description`, `category`, `referencedObjectTypes` and `supported` (ARC-1 can run it with `SAPWrite action="generate"`). No `name` lists all; `name` plus `objectType` (e.g. `TABL`) lists those applicable to that object. The list is backend-driven and differs per release; see [Object generators](#object-generators). |
 
 For a global class declaration (`INTERFACES`, `INHERITING FROM`) or its implementation,
 read MAIN: omit `include` or use `include="main"`. `definitions` and `implementations`
@@ -442,6 +443,7 @@ SAPRead(type="TABLE_CONTENTS", name="MARA", maxRows=10) — legacy unfiltered pr
 SAPRead(type="TABLE_QUERY", name="MARA", columns=["MANDT","MATNR"], where=[{field:"MANDT",op:"=",value:"001"}], maxRows=10)
 SAPRead(type="SYSTEM")
 SAPRead(type="INACTIVE_OBJECTS")                 — list objects pending activation
+SAPRead(type="GENERATORS", name="ZCUSTOMIZING", objectType="TABL") — generators applicable to a table
 ```
 
 Data-preview cells are strings and preserve SAP’s whitespace, including leading blanks and numeric
@@ -677,7 +679,7 @@ keep their separate behavior.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit`, `add_unit`, `edit_content` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` replaces one FORM or MODULE in a PROG/INCL; `add_unit` inserts a new one; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes one part of a CLAS/PROG/FUGR text pool — see [Text elements](#text-elements). |
+| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit`, `add_unit`, `edit_content` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, `edit_text_symbols`, or `generate` (run an SAP object generator, see [Object generators](#object-generators)). `edit_unit` replaces one FORM or MODULE in a PROG/INCL; `add_unit` inserts a new one; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes one part of a CLAS/PROG/FUGR text pool — see [Text elements](#text-elements). |
 | `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP`, `TABL/DT`, `TABL/DS`, `TABL/DTT` (update only), `DOMA`, `DTEL`, `ENQU`, `ENHO` (BAdI implementations), `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT`/`TABL/DTI` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `create`, `update`, `delete`, `edit_unit`, `add_unit`, and `edit_content`. For edits and activation, ARC-1 finds the group when SAP returns one unambiguous structural-include match. Ignored for other types. |
 | `rowType` | string | No | `TTYP` create/update: the row type — a built-in ABAP type (`STRING`, `I`, …) or a DDIC type name such as `BAPIRET2`. Required for create. An update without it keeps the stored row type where ARC-1 can; see [table type updates](#table-type-updates). |
@@ -689,7 +691,7 @@ keep their separate behavior.
 | `parameters` | array | No | FUNC structured signature: `{kind,name,type?,description?,byValue?,default?,optional?}` rows for importing/exporting/changing/tables/exceptions/raising. ARC-1 builds and splices the clauses; omit to send `source` verbatim. |
 | `name` | string | No | Object name (for single object actions) |
 | `expectedSourceHash` | string | For `edit_content` | Required for `edit_content`; optional otherwise. SHA-256 from `SAPRead(format="editable")`; rejects changed source under the SAP lock before an update or class/procedural edit. For other actions, omitted/null/blank disables cross-call protection. See [Source preconditions](#source-preconditions). |
-| `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`/`add_unit`: the complete replacement/new `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
+| `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`/`add_unit`: the complete replacement/new `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. For `generate`: optional JSON object overriding the generator input SAP proposes (see [Object generators](#object-generators)). |
 | `include` | string | No | For CLAS write actions `update`, `edit_method`, and `edit_class_definition`: write a class-local include (`definitions`, `implementations`, `macros`, or `testclasses`) instead of `/source/main`. Omit this parameter for main class source updates. `add_method`/`edit_method_signature`/`delete_method`/`change_method_visibility` operate on the global class `/source/main` only and reject `include=`. Include writes create an inactive draft; verify with `SAPRead(version="inactive")` until activation. NOTE: `edit_class_definition` with `include=` skips the symmetry refuse-policy (cross-include validation is not performed; rely on `SAPActivate` to catch breaks). **Auto-init:** whole-include writes (`update` and `edit_class_definition` with `include=`) create the target include automatically if it does not exist yet — notably `testclasses` (CCAU) on a freshly-created class. No separate init step or user-supplied lock handle is needed; the success message notes when ARC-1 initialized it. |
 | `textPart` | string | No | For `edit_text_symbols`: which part of the textpool to write — `symbols` (default; the numbered `TEXT-nnn` literals), `selections` (a report's selection texts — the labels beside `PARAMETERS`/`SELECT-OPTIONS`), or `headings` (list header and column headers). A class has only `symbols`; `PROG` and `FUGR` have all three. On BTP, this action requires `type="CLAS"` and supports only `symbols` (or an omitted part). Read first with `SAPRead(type="CLAS", include="text_symbols")`. |
 | `method` | string | No | For `edit_method`/`edit_method_signature`/`delete_method`/`change_method_visibility`: method NAME (e.g., `"get_name"`, `"zif_order~process"`, `"lhc_project~approve_project"`). For `add_method`: the full METHODS CLAUSE as ABAP source (e.g., `"METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string."`). |
@@ -702,7 +704,8 @@ keep their separate behavior.
 | `autoApply` | boolean | No | For `scaffold_rap_handlers`: when `true`, create missing `lhc_*` skeletons, inject missing signatures plus empty method stubs into the behavior pool, and write back. Not used by `generate_behavior_implementation` (which always applies; use `dryRun=true` there to preview). |
 | `targetAlias` | string | No | For `scaffold_rap_handlers` and `generate_behavior_implementation`: optional RAP entity alias filter (scaffold only one alias/handler class) |
 | `activate` | boolean | No | For `generate_behavior_implementation`: when `true` (default), runs `SAPActivate` on the class after writing. When `false`, only the source is written. Activation failures matching the well-known `Local classes of CL_ABAP_BEHAVIOR_HANDLER…` stale-active coupling do **not** throw — they return `activation.success=false` with a guided recovery hint so the just-written CCDEF/CCIMP source remains useful. |
-| `dryRun` | boolean | No | For `generate_behavior_implementation`: when `true`, runs discovery + cross-validation + scaffold planning and returns the report **without** writing or activating. Use this to preview what would change. For SKTD/KTD `update`: runs the identical validation of `source` and `shortTexts` and reports which nodes would change and which keep their text, without a PUT. |
+| `dryRun` | boolean | No | For `generate_behavior_implementation`: when `true`, runs discovery + cross-validation + scaffold planning and returns the report **without** writing or activating. Use this to preview what would change. For SKTD/KTD `update`: runs the identical validation of `source` and `shortTexts` and reports which nodes would change and which keep their text, without a PUT. For `generate`: returns SAP's validation messages, the planned objects, the proposed input and its fields without writing. |
+| `generator` | string | No | For `generate`: generator id from `SAPRead(type="GENERATORS")`. Supported: `smbc`. |
 | `description` | string | No | Object description for `create` (defaults to name if omitted, max 60 chars) |
 | `package` | string | No | Package for new objects (default `$TMP`) |
 | `transport` | string | No | Transport request number. For `update` and `delete`, if omitted ARC-1 auto-uses the correction number returned by the SAP lock (if any). Explicit value takes precedence. |
@@ -1573,6 +1576,53 @@ replacement/clearing, unchanged sibling parts, rejected malformed bodies, subseq
 writes and cleanup.
 
 ---
+
+### Object generators
+
+ABAP systems ship server-side object generators (Eclipse ADT: *Generate ABAP Repository Objects*). The system decides which generators exist, what input they take and what they create, so the list differs per release: SAP_BASIS 816 (S/4HANA 2025) offered 10, BTP ABAP Environment 2608 (SAP_BASIS 920) 19. `SAPRead(type="GENERATORS")` lists them; ARC-1 runs the ones it has verified (`supported: true`):
+
+| Generator | Starts from | Creates |
+|-----------|-------------|---------|
+| `smbc` | customizing table | *Business Configuration Maintenance Object*: a Fiori table maintenance app (SMBC, transport object, draft tables, CDS views, behavior definitions and pools, metadata extensions, access controls, service definition and binding) |
+| `ui-service` (SAP_BASIS 816, BTP), `uiservice` (758) | database table | a RAP OData UI service: CDS view entity, behavior definition and pool, draft table, projection view and behavior, metadata extension, service definition and binding; on 816 also two access controls, a second class and the SAP object type and node type (`RONT`/`NONT`), 14 objects in all |
+| `webapi-service` (816, BTP), `webapiservice` (758) | database table | the same as a Web API service, without the metadata extension |
+
+The ids and endpoint paths of the RAP service generators differ per release; use the id `SAPRead(type="GENERATORS")` lists on the system. SAP proposes names that are still free: on 816 a second run on the same table does not fail but creates another set with suffixed names (`…1000`), so check `plannedObjects` in a dry run first.
+
+```
+SAPRead(type="GENERATORS", name="ZCUSTOMIZING", objectType="TABL")
+
+# 1. Preview: SAP's proposal, validation and the objects it would create
+SAPWrite(action="generate", generator="smbc", type="TABL", name="ZCUSTOMIZING",
+  package="ZMY_PACKAGE", dryRun=true)
+
+# 2. Adjust names/options, then run
+SAPWrite(action="generate", generator="smbc", type="TABL", name="ZCUSTOMIZING",
+  package="ZMY_PACKAGE", transport="A4HK900123",
+  source="{\"options\":{\"addCopyAction\":true},\"businessConfManagement\":{\"maintenanceObjectId\":\"ZMY_CUSTOMIZING\"}}")
+
+# RAP UI service from a table, then publish and inspect the binding
+SAPWrite(action="generate", generator="ui-service", type="TABL", name="ZTRAVEL",
+  package="$TMP", dryRun=true)
+SAPWrite(action="generate", generator="ui-service", type="TABL", name="ZTRAVEL", package="$TMP")
+SAPActivate(action="publish_srvb", name="ZUI_TRAVEL_O4")
+SAPRead(type="SRVB", name="ZUI_TRAVEL_O4", include="service_info")
+```
+
+`type`/`name` name the referenced object the generator starts from. Every call fetches SAP's proposed input for that object and package, merges the JSON object in `source` into it (objects by key, arrays by position), and has SAP validate it and preview the result:
+
+- `dryRun=true` returns `valid`, SAP's `messages`, `plannedObjects`, the effective `input` and a compact `fields` list (title, type, enum values, maximum length) derived from SAP's JSON Schema. It also runs the package and transport checks below. Nothing is written.
+- Without `dryRun`, a validation error stops the call before anything is created. SAP reports one problem per call. Otherwise ARC-1 runs the generator once, never replayed, and reads every previewed object back, because SAP's run response names only part of what it created. `generatedObjects` reports each with a `state`: `found`, `missing`, `other_package`, `other_transport` or `unknown`; the call is an error unless all are `found`. `additionalRequestObjects` lists what SAP put on the request beyond the preview (for example the binding's `G4BA`, `SUSH` and CDS `STOB` entries). `inactiveObjects` lists generated objects still waiting for activation (`"unknown"` when the inactive list could not be read). The smbc generator took 34 s on SAP_BASIS 816 for 24 objects.
+- After a failed run ARC-1 still reads the objects back and reports them; it deletes nothing.
+- SAP's input parser is order-sensitive (`metadata` first, the referenced table's name before `description`). ARC-1 keeps the order of SAP's proposal and merges `source` into it; a parser error (HTTP 400) is reported with that hint.
+
+Safety and scope:
+
+- The action creates many objects at once. It needs `SAP_ALLOW_WRITES`, the `write` scope, and `package` must pass `SAP_ALLOWED_PACKAGES`; every generated object lands in that package. Block it separately with `SAP_DENY_ACTIONS=SAPWrite.generate`.
+- `metadata` (package, master language from `SAP_LANGUAGE`) is set by ARC-1 and cannot be overridden; the field naming the referenced table (`general.referencedObjectName` on 816, `general.referenceObjectName` on 758) is set to `name`, and input naming another table is refused. SAP's validation checks neither. `options.overwriteExistingObjects` stays `false`, because overwriting existing objects would bypass their own package check. For the same reason the run is refused when SAP's preview plans anything other than new objects. SAP's validation is the only collision check (the 758 preview reports `CREATE` even for existing objects), and an answer ARC-1 cannot read counts as failed.
+- Packages and transports: SAP's generators check neither the package nor the request, and without `corrNr` SAP picked an open request of the user by itself. `$TMP` therefore takes no `transport`, other local (`$`) packages are refused, and any other package needs an explicit `transport`. Before generating, ARC-1 checks that the package exists and records changes, and that the request exists, is a request rather than a task, and is still modifiable. Afterwards each object must be on that request (`other_transport` otherwise).
+- A system without the generator framework answers `SAPRead(type="GENERATORS")` with a clear "not available" error. Generators ARC-1 has not verified are listed with `supported: false` and are refused by `generate`.
+- Not available on pinned multi-target routes (ADR-0010 allows only scoped CLAS/INTF writes there).
 
 ## SAPActivate
 

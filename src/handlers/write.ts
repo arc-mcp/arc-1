@@ -20,6 +20,7 @@ import {
   isTablesEndpointAvailable,
   isTableTypesEndpointAvailable,
 } from './feature-cache.js';
+import { writeActionGenerate } from './generators.js';
 import { resolveIncludeGroupForMutation } from './include-group.js';
 import {
   canonicalTablType,
@@ -288,6 +289,8 @@ export async function handleSAPWrite(
       return writeActionScaffoldRapHandlers(ctx);
     case 'generate_behavior_implementation':
       return writeActionGenerateBehaviorImplementation(ctx);
+    case 'generate':
+      return writeActionGenerate(ctx);
     case 'delete':
       return writeActionDelete(ctx);
     case 'batch_create':

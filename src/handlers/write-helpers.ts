@@ -918,6 +918,7 @@ export const NAME_CASE_GUARD_ACTIONS = new Set([
   'edit_content',
   'delete',
   'edit_text_symbols',
+  'generate',
 ]);
 
 /**

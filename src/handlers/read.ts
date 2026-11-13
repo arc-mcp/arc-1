@@ -46,6 +46,7 @@ import { type CacheSecurityContext, inactiveListUserKey, invalidateInactiveList 
 import { readEditableSource } from './editable-source.js';
 import { includeSearchHint, readExpandedSource } from './expanded-read.js';
 import { getCachedFeatures, isBtpSystem } from './feature-cache.js';
+import { readGenerators } from './generators.js';
 import {
   detectLocalHandlerInclude,
   functionModuleObjectUrl,
@@ -354,6 +355,8 @@ async function handleSAPReadBase(
       return errorResult(serverDrivenUnavailableMessage('SAPRead', 'TABL/DTI'));
     return textResult(toolJson(await listTableIndexes(client.http, client.safety, name)));
   }
+
+  if (type === 'GENERATORS') return readGenerators(client, args);
 
   // Publish state and entity sets change outside the object's source version, so this stays uncached.
   if (type === 'SRVB' && String(args.include ?? '').toLowerCase() === 'service_info') {
