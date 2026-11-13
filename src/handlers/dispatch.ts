@@ -242,7 +242,8 @@ function buildBaseErrorMessage(
       message: hint
         ? `The SAP diagnostic response exceeded the ${displayLimit} limit. ${hint}`
         : `The SAP data-preview result exceeded the ${displayLimit} server limit. ` +
-          'Submit a new request with lower maxRows, fewer columns, or a restrictive non-overlapping key-range WHERE clause.',
+          'Submit a new request with lower maxRows, fewer columns, or a restrictive non-overlapping key-range WHERE clause. ' +
+          'For UNION, maxRows may not reduce the transfer; narrow each branch with WHERE.',
       limitBytes: err.limitBytes,
       retryable: false,
       requestId: err.requestId ?? getCurrentContext()?.requestId,
