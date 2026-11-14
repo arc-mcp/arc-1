@@ -95,6 +95,7 @@ const SAPREAD_DESC_ONPREM =
   'Read SAP ABAP source/metadata. DDIC metadata: omit format. ' +
   'SHLP: active partial interface metadata; missing headers/assignments/appends are explicit. No drafts or source formats. ' +
   'For specs, reviews or pre-change context, prefer SAPContext first. ' +
+  'CDS_PREVIEW: active DDLS, no parameters/associations. ' +
   'TABLE_QUERY: filter with where, data preview required; CDS needs SAP_BASIS 752+. TABLE_CONTENTS: unfiltered preview. INACTIVE_OBJECTS: no name. TABL/DTT: technical settings. ' +
   'SYNTAX: read-only check (objectType+name, optional source). Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers.';
 
@@ -510,8 +511,7 @@ export function getToolDefinitions(
           },
           maxRows: {
             type: 'number',
-            description:
-              'Returned row cap for TABLE_CONTENTS/TABLE_QUERY (default 100, max 10,000; byte limit may apply sooner).',
+            description: 'Returned row cap: data previews (default 100, max 10,000; byte cap may apply sooner).',
           },
           maxResults: {
             type: 'number',
@@ -548,12 +548,12 @@ export function getToolDefinitions(
           columns: {
             type: 'array',
             items: { type: 'string' },
-            description: 'TABLE_QUERY only: columns to select (default all), e.g. ["MATNR","BWART"].',
+            description: `TABLE_QUERY${btp ? '' : '/CDS_PREVIEW'}: columns (default all).`,
           },
           where: {
             type: 'array',
             description:
-              'For TABLE_QUERY: structured WHERE conditions, ANDed together. Each item: {field, op, value?}. ' +
+              `For TABLE_QUERY${btp ? '' : '/CDS_PREVIEW'}: ANDed conditions: {field, op, value?}. ` +
               'Ops: =, <>, <, <=, >, >=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL; STARTS_WITH: literal prefix. Use <>; 758 rejects !=. ' +
               'IN/NOT IN: bare comma-separated values, e.g. "261,262". ARC-1 quotes/escapes them; no subqueries. ' +
               'Example: [{"field":"MATNR","op":"=","value":"300006888"},{"field":"BUDAT_MKPF","op":">=","value":"20250101"}].',

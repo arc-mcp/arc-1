@@ -1,22 +1,11 @@
 /**
- * ADT Client — main facade for all SAP ADT operations.
- *
- * Entry point for SAP interactions, wiring together:
- * - AdtHttpClient (HTTP transport, CSRF, cookies)
- * - SafetyConfig (operation/package/transport gating)
- * - FeatureConfig (optional feature detection)
- *
- * Every public method checks safety before making any HTTP call.
- * The client is stateless between calls (no cached object state),
- * except for CSRF token and session cookies managed by AdtHttpClient.
- *
- * Architecture: The client exposes high-level operations grouped by domain.
- * Read operations are directly on the client, while CRUD, DevTools, etc.
- * are imported from their respective modules by handlers.
+ * ADT client facade. Public methods check safety before calling SAP.
+ * HTTP handles transport, CSRF and sessions; domain modules implement the wire contracts.
  */
 import { getCurrentContext } from '../server/context.js';
 import { type ApiReleaseVisibility, parseApiReleaseState, setApiReleaseState } from './api-release.js';
 import { BSP_OBJECTS_PATH, bspContentPath, resolveBspNameAndPath } from './bsp-path.js';
+import { type CdsPreviewOptions, executeCdsPreview } from './cds-preview.js';
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
 import { type DataResponseBudget, DataResultScope } from './data-result-context.js';
@@ -1487,6 +1476,17 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
       await this.dataSourceBlocklistGuard(budget, signal).enforceSources([source]);
       return parseTableContents(await this.postFreestyleQuery(sql, maxRows, budget, signal));
     });
+  }
+
+  async runCdsPreview(name: string, options: CdsPreviewOptions = {}) {
+    checkOperation(this.safety, OperationType.Query, 'RunCdsPreview');
+    return this.withDataResultScope((budget, signal) =>
+      executeCdsPreview(this.http, this.dataSourceBlocklistGuard(budget, signal), name, options, {
+        responseBudget: budget,
+        signal,
+        retryTransientErrors: false,
+      }),
+    );
   }
 
   // ─── System Information ────────────────────────────────────────────

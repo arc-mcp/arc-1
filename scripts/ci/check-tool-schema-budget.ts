@@ -128,7 +128,7 @@ const FULL_ACCESS_CONFIG: ServerConfig = {
 // #585 adds two source-window parameters without shortening existing guidance.
 // Full surface: 74,287 bytes; retain a 74,500-byte ceiling.
 // #1018 adds two opt-in fields (+556 bytes); retain existing model guidance per maintainer request.
-// Exact-text edits with #1199/#1222: measured 75,244 wire bytes / 23,764 for SAPWrite.
+// CDS preview with #1199/#1222: measured 75,290 wire bytes / 23,764 for SAPWrite.
 const WRITE_WIRE_WALL = 75_300;
 const READ_WIRE_WALL = 50_000;
 const PER_TOOL_WIRE_WALL = 23_000;

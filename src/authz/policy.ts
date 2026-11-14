@@ -65,6 +65,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   // TABLE_QUERY builds the SELECT server-side (no user SQL injection) — same gate as TABLE_CONTENTS.
   // Uses the freestyle endpoint internally to support multi-column WHERE and CDS views.
   'SAPRead.TABLE_QUERY': { scope: 'data', opType: OperationType.Query },
+  'SAPRead.CDS_PREVIEW': { scope: 'data', opType: OperationType.Query },
 
   // ── SAPSearch ────────────────────────────────────────────────────
   SAPSearch: { scope: 'read', opType: OperationType.Search },

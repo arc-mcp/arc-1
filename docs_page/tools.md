@@ -113,12 +113,12 @@ the complete inherited API.
 | `expand_includes` | boolean | No | For FUGR: expand include source inline, up to 80 source blocks (including main) and five include levels. `grep` implies this expansion; see [Function-group source search](#function-group-source-search). For PROG and INCL: read the program with every include it names, recursively, in one bounded call, or search them all with `grep`; see [Program include expansion](#program-include-expansion). |
 | `group` | string | No | For FUNC, and for VERSIONS or API_STATE with `objectType="FUNC"`: function group name; resolved through search when omitted, including namespaced functions and SAP_BASIS 750's decorated search names. |
 | `versionUri` | string | No | For VERSION_SOURCE: canonical source/revision URI from a VERSIONS response (`revisions[].uri`). Only known source endpoint shapes are accepted; unrelated ADT endpoints, absolute URLs, authority changes, dot segments, queries, fragments, controls, encoded backslashes, and ambiguous nested encodings are rejected. Encoded slashes remain valid inside namespaced ABAP object names. |
-| `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY: requested row cap (default 100, clamped to 10,000). Wide results can hit the server's cumulative byte ceiling at fewer rows. ARC-1 caps returned rows even when SAP includes a lookahead row. |
+| `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY/CDS_PREVIEW: requested row cap (default 100, clamped to 10,000). Wide results can hit the server's cumulative byte ceiling at fewer rows. Zero or negative values use the default. ARC-1 caps returned rows even when SAP includes a lookahead row. |
 | `maxResults` | number | No | DEVC result cap (default 200, clamped to 1–1000). Indexed search sends it to SAP; direct mode applies it locally without reducing SAP's response. |
 | `packageScope` | string | No | DEVC: `"direct"` uses bounded native package browsing without recursion or descriptions. Omit for indexed search. `objectType` optionally selects an advertised folder such as `CLAS/OC`. |
 | `sqlFilter` | string | No | Legacy TABLE_CONTENTS condition. Do not rely on it for portable automation: the 758 endpoint expects a different SELECT-shaped payload, so condition-only filters are unusable there (816 behaves the same). Prefer TABLE_QUERY `where`. A non-empty `sqlFilter` on any other type, TABLE_QUERY included, is rejected before SAP is called. |
-| `columns` | array | No | For TABLE_QUERY: fields to project; omit for all columns. Example: `["MANDT","MATNR"]`. Rejected on other types when non-empty. |
-| `where` | array | No | For TABLE_QUERY: ANDed `{field,op,value?}` conditions; rejected on other types when non-empty. Operators: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE`, `NOT LIKE`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`, `STARTS_WITH` (literal prefix; `%` and `_` are not wildcards). IN values are bare comma-separated values; ARC-1 quotes/escapes them. On 758 use `<>`, because accepted `!=` is sent unchanged and SAP rejects it. |
+| `columns` | array | No | For TABLE_QUERY/CDS_PREVIEW: fields to project; omit for all columns. Example: `["MANDT","MATNR"]`. Rejected on other types when non-empty. |
+| `where` | array | No | For TABLE_QUERY/CDS_PREVIEW: ANDed `{field,op,value?}` conditions; rejected on other types when non-empty. Operators: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE`, `NOT LIKE`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`, `STARTS_WITH` (literal prefix; `%` and `_` are not wildcards). IN values are bare comma-separated values; ARC-1 quotes/escapes them. On 758 use `<>`, because accepted `!=` is sent unchanged and SAP rejects it. |
 | `source` | string | No | SYNTAX only: proposed source to check without saving. |
 | `objectType` | string | No | Required for SYNTAX: repository type (e.g. CLAS, PROG, DDLS). For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, FUNC, etc.) — auto-detected from name if omitted; FUNC also uses `group` |
 | `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except SMBC and [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view (TABL/DTI explicitly prefers pending source) and explicit `active`/`inactive` must be confirmed by metadata. [TABL/DTT settings](#technical-table-settings) also prefer pending state and verify explicit versions. ENHO uses the developer view and refuses explicit version selection. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
@@ -313,6 +313,7 @@ approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated
 | `API_STATE` | API release state (clean core compliance — contract states C0-C4, successor info) |
 | `TABLE_CONTENTS` | Legacy table preview. Useful for an unfiltered sample; filtering and exact row caps are backend-dependent (see parameters above). Prefer `TABLE_QUERY` for deterministic structured projection/filtering. With experimental `SAP_BLOCKED_DATA_SOURCES` active, only unfiltered requests are supported — a `sqlFilter` returns `DATA_SQL_UNSUPPORTED`, so use `TABLE_QUERY`. |
 | `TABLE_QUERY` | Structured table/CDS query through data preview (`columns`, `where`, `maxRows`); requires the data-preview gate. A configured experimental source blocklist checks direct and transitive active CDS/replacement lineage before execution. |
+| `CDS_PREVIEW` | On-premise, single-target preview of an active DDLS view or view entity through native CDS preview. Uses `columns`, `where`, `maxRows`; requires the data-preview gate and applies the experimental source blocklist. See [CDS previews](#cds-previews). |
 | `DEVC` | Package contents |
 | `SYSTEM` | ADT discovery collections and configured/token-derived user (`{user, collections}`). It does not return SID, release, kernel, or prove the SAP login identity; use `COMPONENTS` for installed releases. |
 | `COMPONENTS` | Installed software components |
@@ -450,6 +451,56 @@ padding. `SAPQuery.executedQueryString` preserves SAP’s SQL echo; it is not a 
 For `TABLE_QUERY` on 758, use `op:"<>"` for inequality. Although the current input schema also accepts
 `!=`, ARC-1 sends it unchanged and that backend rejects it; normalization is tracked as a focused
 follow-up.
+
+### CDS previews
+
+Use the **DDLS source name**; ARC-1 resolves and queries its CDS entity, never its generated SQL view:
+
+```text
+SAPRead(type="CDS_PREVIEW", name="DEMO_CDS_AUTHORITY_LIT_PFCG", columns=["CARRID"], where=[{field:"CARRID",op:"=",value:"LH"}], maxRows=10)
+```
+
+The result names the DDLS and entity and marks `truncated` when more rows exist. This operation
+requires `SAP_ALLOW_DATA_PREVIEW`; free SQL can stay disabled. SAP evaluates CDS access controls
+for the connected user. It does not grant SAP permissions or make other ARC-1 operations CDS-only.
+
+Supported now: active, non-parameterized views and view entities on a single on-premise target.
+No raw SQL, association paths, BTP ABAP targets or multi-target mode. Columns and conditions are limited to
+100 each; unknown fields and unsupported options are rejected. Use `<>` for inequality on 758.
+The native collection must be advertised and its metadata available; there is no freestyle fallback.
+Verified on 758 SP02 and 816 SP01 with HTTPS Basic; the tested 750 SP02 metadata route returned 404.
+The response byte limit covers metadata and rows together. `SAP_GZIP_DATAPREVIEW_BODY` does not
+apply to this CDS route.
+
+**Setting up a restricted SAP user:** the preview needs these requests under the same SAP identity:
+
+| Request | Purpose |
+|---|---|
+| GET `/sap/bc/adt/discovery` | Discover native CDS preview support |
+| HEAD/GET `/sap/bc/adt/core/discovery` | Fetch the CSRF token for POST; `/sap/bc/adt/discovery` is the fallback if unavailable |
+| GET `/sap/bc/adt/ddic/ddl/sources/<DDLS>?version=active` | Verify the active view |
+| GET `/sap/bc/adt/datapreview/cds/<DDLS>/metadata` | Resolve the entity and its fields |
+| POST `/sap/bc/adt/datapreview/cds` | Read the filtered rows |
+
+An exact `S_ADT_RES` grant for `/sap/bc/adt/datapreview/cds` does not cover its metadata child URI.
+Ask Basis to use STAUTHTRACE for the connected SAP user and review the collection grant **plus**
+`/sap/bc/adt/datapreview/cds/*` for the children. Other SAP object/data checks still apply; this is
+a request list, not a complete role. Do not grant `/sap/bc/adt/*` just to make the preview work.
+
+**Access limits:** the native `/cds` endpoint accepts SQL; its name alone does not restrict callers
+to approved views. That SAP user can submit SQL for unrelated sources through `/cds`, subject to
+SAP's data authorizations; denying `/freestyle` alone does not prevent this. ARC-1 binds its own
+structured query to the verified CDS entity, but has no view allowlist. Apply the
+[SAP security guidance](security-guide.md) independently, including SAP Note 3772411.
+With shared Basic authentication, DCL sees the shared SAP user, not each Entra ID user. Other ARC-1
+data actions need separate restrictions; for example, `SAP_DENY_ACTIONS=SAPRead.TABLE_CONTENTS,SAPRead.TABLE_QUERY`
+blocks both table-preview actions. This is not a complete CDS-only profile. For fixed business reads,
+consider an approved business API through an [extension](extensions.md).
+
+An enabled `SAP_BLOCKED_DATA_SOURCES` policy also needs fixed freestyle catalog reads. If the SAP
+role denies that endpoint, lineage verification fails closed; ARC-1 will not reroute the catalog query
+through CDS or skip the policy. If that policy is required, this restricted-role setup is not supported.
+Restricted-user and principal-propagation qualification remain open.
 
 ### Function-group source search
 
