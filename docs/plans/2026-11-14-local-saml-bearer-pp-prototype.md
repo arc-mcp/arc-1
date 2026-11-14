@@ -62,7 +62,7 @@ or XSUAA mode, missing `SAP_URL`, non-PEM files.
   `auth: MCP=[api-keys,oidc] SAP=pp (mixed: JWT per-user, API keys shared)` and the issuer parameters.
 - Standalone script (`gen-assertion.mjs`, scratchpad) produced assertions whose signatures verify
   locally. A4H answered a plain 401 to a signed assertion because SAML 2.0 is not yet enabled on client
-  001 (`/sap/saml2/*` ICF nodes return 403 "Service cannot be reached").
+  001 (the SAML2 ICF nodes returned 403 "Service cannot be reached").
 
 ## Not yet verified
 
@@ -72,15 +72,22 @@ or XSUAA mode, missing `SAP_URL`, non-PEM files.
 
 ## SAP-side setup for A4H (operator steps)
 
-1. SICF: activate `/sap/saml2` (with sub-nodes) and `/sap/bc/webdynpro/sap/saml2` on client 001.
-2. Transaction SAML2 → Enable SAML 2.0 Support → Local Provider; note the provider name (this is
-   `SAP_PP_SAML_AUDIENCE`). Keep the SP active; no browser SSO settings are needed.
-3. Trusted Providers → first try the **OAuth 2.0 Identity Providers** list (bearer-assertion consumer),
-   add → Upload Metadata File → `arc1-local-saml-idp-metadata.xml` → finish, then **Enable**. If the
-   header logon still fails, add the same metadata under **Identity Providers**.
-4. Identity Federation on that provider: NameID format **E-mail**, user mapping via SU01 e-mail (the
-   e-mail must equal the IAS `email` claim exactly). For `unspecified`, map NameID to the user name.
-5. SU01: maintain the user's e-mail.
+Source: SAP Help, ABAP Platform, "SAML Bearer Assertions for Principle Propagation"
+(loio 236960c96324416c8ed84b2666212d49). SAP calls the `Authorization: SAML2.0 <b64>` binding
+proprietary; it is consumed only by a trusted provider of the **SAML Bearer Assertion Providers**
+category, not by the web-SSO "Identity Providers" list and not by "OAuth 2.0 Identity Providers".
+
+1. SICF on client 001: activate `/sap/bc/saml2`, `/sap/public/bc/sec/saml2` and
+   `/sap/bc/webdynpro/sap/saml2` (there is no `/sap/saml2` node).
+2. Transaction SAML2 → Enable SAML 2.0 Support → Create SAML 2.0 Local Provider; the name you enter
+   is `SAP_PP_SAML_AUDIENCE` (A4H: `A4H_WL`). Do not use the "upload" option of that wizard: it
+   expects an exported local provider with PSEs and fails with "Selected file does not contain PSEs".
+3. Trusted Providers → Show: **SAML Bearer Assertion Providers** → Add → Upload Metadata File →
+   `arc1-local-saml-idp-metadata.xml` → Finish. The metadata only needs entity ID and signing
+   certificate.
+4. Edit → Identity Federation → Add: NameID format **E-mail**, user ID source e-mail (1:1 match with
+   the SU01 e-mail). For `unspecified`, map NameID to the logon ID. Save, then Enable.
+5. SU01: maintain the user's e-mail (`wouter@lemaire.tech` for the Keycloak test user).
 6. Diagnose rejected assertions with the SAML2 troubleshooting tab or `SEC_DIAG_TOOL`.
 
 ## Decisions pending before this becomes a feature
