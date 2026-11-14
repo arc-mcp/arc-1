@@ -61,14 +61,25 @@ or XSUAA mode, missing `SAP_URL`, non-PEM files.
 - Docker image `arc1-saml-proto` built from the branch; startup with the issuer configured logs
   `auth: MCP=[api-keys,oidc] SAP=pp (mixed: JWT per-user, API keys shared)` and the issuer parameters.
 - Standalone script (`gen-assertion.mjs`, scratchpad) produced assertions whose signatures verify
-  locally. A4H answered a plain 401 to a signed assertion because SAML 2.0 is not yet enabled on client
-  001 (the SAML2 ICF nodes returned 403 "Service cannot be reached").
+  locally. A4H answered a plain 401 until SAML2 trust was configured on client 001.
+- Keycloak 26.4 test IdP (`compose.saml.yaml`, realm `arc1`, issuer
+  `http://arc1-idp.localhost:8180/realms/arc1`): ARC-1 validates the token, expands the six scopes,
+  lists 12 tools and resolves NameID `wouter@lemaire.tech` from the `email` claim.
+- **End to end against A4H/001 (2026-11-14, release 2025):** after the trusted provider was added
+  under *SAML Bearer Assertion Providers* with NameID format E-mail, the same assertion that got 401
+  returned 200 on `/sap/bc/adt/discovery` with a `SAP_SESSIONID_A4H_001` cookie. Through ARC-1:
+  `SAPRead CLAS CL_ABAP_CHAR_UTILITIES` succeeded; `SAPWrite create PROG ZARC1_PP_PROBE` in `$TMP`
+  succeeded and SAP recorded `adtcore:responsible="WOUTER"` / `adtcore:changedBy="WOUTER"`, i.e.
+  the propagated user, not the shared `SAP_USER`. The probe program was deleted afterwards. Audit:
+  `auth_pp_created success=true user=wouter@lemaire.tech destination=local-saml-bearer`.
 
 ## Not yet verified
 
-- A4H accepts the assertion and logs on the mapped user (the central claim of the spike).
-- IAS OIDC application + an MCP client completing the flow (Claude Code supports `--client-id`).
-- Scope claims: IAS tokens without `scope`/`scp` fall back to read-only in ARC-1.
+- IAS as the OIDC issuer (only Keycloak was used); IAS tokens without `scope`/`scp` fall back to
+  read-only in ARC-1 and need a scope mapping decision.
+- An MCP client (Claude Code `--client-id arc1-local --callback-port 56789`) completing the
+  browser login; only the password grant was exercised with curl.
+- Behaviour when the SU01 e-mail is missing or ambiguous (SAP requires a 1:1 match).
 
 ## SAP-side setup for A4H (operator steps)
 
