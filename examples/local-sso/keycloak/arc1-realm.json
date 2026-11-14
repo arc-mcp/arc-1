@@ -1,0 +1,220 @@
+{
+  "realm": "arc1",
+  "enabled": true,
+  "displayName": "ARC-1 local test IdP",
+  "sslRequired": "none",
+  "accessTokenLifespan": 3600,
+  "ssoSessionIdleTimeout": 28800,
+  "clientScopes": [
+    {
+      "name": "read",
+      "protocol": "openid-connect",
+      "description": "ARC-1: read ABAP objects",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "write",
+      "protocol": "openid-connect",
+      "description": "ARC-1: create/change/activate",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "data",
+      "protocol": "openid-connect",
+      "description": "ARC-1: table preview",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "sql",
+      "protocol": "openid-connect",
+      "description": "ARC-1: free SQL",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "transports",
+      "protocol": "openid-connect",
+      "description": "ARC-1: transport mutations",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "git",
+      "protocol": "openid-connect",
+      "description": "ARC-1: abapGit/gCTS mutations",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "arc1",
+      "protocol": "openid-connect",
+      "description": "ARC-1 audience and identity claims (realm default so dynamically registered clients inherit it)",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "arc1-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "arc1-local",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "email",
+            "claim.name": "email",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "defaultDefaultClientScopes": [
+    "arc1",
+    "read",
+    "write",
+    "data",
+    "sql",
+    "transports",
+    "git"
+  ],
+  "defaultOptionalClientScopes": [
+    "profile",
+    "email"
+  ],
+  "clients": [
+    {
+      "clientId": "arc1-local",
+      "name": "ARC-1 local MCP clients (pre-registered; curl tests)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:56789/*",
+        "http://127.0.0.1:56789/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+"
+      },
+      "defaultClientScopes": [
+        "arc1",
+        "read",
+        "write",
+        "data",
+        "sql",
+        "transports",
+        "git"
+      ],
+      "optionalClientScopes": [
+        "profile",
+        "email"
+      ]
+    }
+  ],
+  "components": {
+    "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy": [
+      {
+        "name": "Trusted Hosts",
+        "providerId": "trusted-hosts",
+        "subType": "anonymous",
+        "config": {
+          "host-sending-registration-request-must-match": [
+            "false"
+          ],
+          "client-uris-must-match": [
+            "true"
+          ],
+          "trusted-hosts": [
+            "localhost",
+            "127.0.0.1",
+            "vscode.dev",
+            "insiders.vscode.dev"
+          ]
+        }
+      },
+      {
+        "name": "Max Clients Limit",
+        "providerId": "max-clients",
+        "subType": "anonymous",
+        "config": {
+          "max-clients": [
+            "50"
+          ]
+        }
+      },
+      {
+        "name": "Full Scope Disabled",
+        "providerId": "scope",
+        "subType": "anonymous",
+        "config": {}
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "developer",
+      "enabled": true,
+      "email": "REPLACE_ME@example.com",
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "REPLACE_ME",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

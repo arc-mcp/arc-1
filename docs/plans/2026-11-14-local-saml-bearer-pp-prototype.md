@@ -3,6 +3,8 @@
 **Status:** prototype on branch `proto/saml-bearer-pp` (roadmap SEC-23). Not merged, not an ADR.
 **Target system used:** A4H (ABAP Platform 2025), client 001, `https://a4h-2025.marianzeis.de:50001`.
 
+Operator guide with reusable templates: `docs_page/local-sso-prototype.md` and `examples/local-sso/`.
+
 ## Problem
 
 A self-hosted ARC-1 (Docker, npm) with OIDC authentication knows who the MCP caller is, but every

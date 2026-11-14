@@ -629,13 +629,15 @@ destination uses (supported on-premise from S/4HANA 2020).
 **Why it remains.** Today every per-user path requires a BTP binding (`createPerUserClient` needs
 `VCAP_SERVICES`), so local deployments always use the shared `SAP_USER`. The prototype on branch
 `proto/saml-bearer-pp` adds `src/adt/saml-bearer.ts`, `src/server/saml-bearer-client.ts`, the
-`SAP_PP_SAML_*` options and unit tests; live acceptance on A4H and the IAS client flow are still open
+`SAP_PP_SAML_*` options and unit tests, and was verified end to end on 2026-11-14 against an S/4HANA
+2025 trial system (Keycloak login from Claude Code and VS Code; `SAPWrite` recorded the propagated SU01
+user). Setup guide: [Local SSO Prototype](local-sso-prototype.md), templates in `examples/local-sso/`
 ([plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-11-14-local-saml-bearer-pp-prototype.md)).
 
-**Resume with.** A4H SAML2 trust configured, one `SAPRead` accepted as the propagated user (verify
-in SM04/`sy-uname`), and an IAS OIDC application that an MCP client can complete. Then decide: ADR
-and security review (design principle 7), key lifecycle and rotation, assertion/session reuse
-(OPS-06), scope claims for writes, and whether the issuer belongs in core or an extension.
+**Resume with.** An IAS OIDC application completing the same flow (IAS tokens carry no `scope`
+claim, so a scope mapping is needed). Then decide: ADR and security review (design principle 7), key
+lifecycle and rotation, assertion/session reuse per user (OPS-06), and whether the issuer belongs in
+core or an extension.
 
 <a id="compat-22"></a>
 ### COMPAT-22 — Integration Suite remote MCP gateway validation
