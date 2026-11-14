@@ -17,6 +17,7 @@ import { resolveCookies } from '../adt/cookies.js';
 import { AdtApiError } from '../adt/errors.js';
 import { shouldWarnPreStatefulRelease } from '../adt/release.js';
 import { deriveUserSafety, deriveUserSafetyFromProfile } from '../adt/safety.js';
+import type { SamlBearerIdp } from '../adt/saml-bearer.js';
 import { Semaphore } from '../adt/semaphore.js';
 import { hasRequiredScope } from '../authz/policy.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
@@ -77,6 +78,7 @@ import { injectTargetSchema, multiTargetToolDefinitions, sapTargetsDefinition } 
 import { type PerUserClient, PerUserTransportPool } from './per-user-transport.js';
 import { loadPlugins } from './plugin-loader.js';
 import { createDataResultSemaphore, runtimeMemoryEnvelope } from './runtime-memory.js';
+import { createSamlBearerPerUserClient, loadSamlBearerIssuer } from './saml-bearer-client.js';
 import { createCachingLayer } from './server-cache.js';
 import { buildServerInstructions } from './server-instructions.js';
 import { closeHttpServer, registerShutdownHandlers } from './shutdown.js';
@@ -673,6 +675,8 @@ export interface CreateServerOptions {
   defaultHttp?: AdtClient['http'];
   /** Single-target PP transports keyed by per-user credential; never consulted for multi-target clients. */
   perUserTransports?: PerUserTransportPool;
+  /** PROTOTYPE: locally issued SAML bearer assertions for OIDC users (single-target, no BTP). */
+  samlBearerIdp?: SamlBearerIdp;
 }
 
 // Mark startup-401 cookies stale once per transport, preserving cookies refreshed by earlier HTTP calls.
@@ -682,6 +686,7 @@ export const SHARED_TRANSPORT_MAX_AGE_MS = 10 * 60_000;
 
 export function createServer(config: ServerConfig, options: CreateServerOptions = {}): Server {
   const {
+    samlBearerIdp,
     btpProxy,
     btpConfig,
     bearerTokenProvider,
@@ -934,7 +939,20 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
       });
     }
 
-    if (activeConfig.ppEnabled && isJwt) {
+    if (activeConfig.ppEnabled && isJwt && samlBearerIdp && !multiTarget) {
+      // PROTOTYPE: locally issued SAML bearer assertion for the verified OIDC user (no BTP hop).
+      const saml = createSamlBearerPerUserClient({
+        idp: samlBearerIdp,
+        token,
+        requestId,
+        fallbackUser: (extra.authInfo?.extra?.userName ?? extra.authInfo?.clientId) as string | undefined,
+        buildPerUserAdtConfig: () =>
+          buildAdtConfig(activeConfig, undefined, undefined, { perUser: true }, adtSemaphore, dataResultSemaphore),
+      });
+      if (!saml.ok) return saml.error as Record<string, unknown>;
+      client = saml.client;
+      isPerUserClient = true;
+    } else if (activeConfig.ppEnabled && isJwt) {
       const ppUser = (extra.authInfo?.extra?.userName ?? extra.authInfo?.clientId) as string | undefined;
       const ppDest = resolvePpDestinationName(activeConfig) ?? '';
       if (!btpConfig) {
@@ -1218,6 +1236,9 @@ export async function createAndStartServer(
     });
   }
 
+  // PROTOTYPE: local SAML bearer issuer (per-user SAP identity for OIDC callers without BTP).
+  const samlBearerIdp = loadSamlBearerIssuer(config);
+
   // Resolve the optional single-target destination. It remains independent from discovered targets.
   let btpProxy: BTPProxyConfig | undefined;
   let btpConfig: BTPConfig | undefined;
@@ -1399,6 +1420,7 @@ export async function createAndStartServer(
       mcpRateLimiter,
       defaultHttp: defaultHttp(),
       perUserTransports,
+      samlBearerIdp,
     });
   const aggregateConfig = registry
     ? buildAggregateToolSurfaceConfig(

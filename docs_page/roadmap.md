@@ -89,6 +89,7 @@ sequence.
 | [SEC-21](#sec-21) | Socket policy calibration | P3 | S | Revisit on trigger | Security |
 | [SEC-22](#sec-22) | SBOMs for the Docker image, MCPB bundle and executables | P3 | S | Revisit on trigger | Security |
 | [SEC-19](#sec-19) | Registered agent identity and downstream tool scopes | P2 | L | Needs research | Auth / Security |
+| [SEC-23](#sec-23) | Per-user SAP identity without BTP: local SAML bearer issuer | P2 | M | Prototype | Auth / Security |
 | [COMPAT-22](#compat-22) | Integration Suite remote MCP gateway validation | P2 | M | Needs research | Compatibility |
 | [COMPAT-23](#compat-23) | Shared reader for function-group object URIs | P2 | M | Ready | Compatibility |
 | [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
@@ -611,6 +612,30 @@ See the [2026-10-21 evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/re
 agent registration, delegation and scope contract. Prove user/agent attribution and fail-closed
 behavior without broadening existing PP or multi-target exceptions. Do not invent an IAS setup
 requirement or claim this resolves the separate ADT-channel permission question.
+
+<a id="sec-23"></a>
+### SEC-23 — Per-user SAP identity without BTP: local SAML bearer issuer
+
+- **Priority / effort / status:** P2 / M / Prototype
+- **Category:** Auth / Security
+
+**Idea.** Let a self-hosted ARC-1 (Docker, npm) propagate the OIDC caller's identity to an
+on-premise ABAP system without BTP Destination Service or Cloud Connector. ARC-1 validates the IdP
+token (for example SAP Cloud Identity Services), signs a short-lived SAML 2.0 bearer assertion for the
+user's e-mail, and sends it on the existing `Authorization: SAML2.0` path. The ABAP system trusts
+ARC-1's signing certificate in transaction SAML2, the same trust shape a BTP `SAMLAssertion`
+destination uses (supported on-premise from S/4HANA 2020).
+
+**Why it remains.** Today every per-user path requires a BTP binding (`createPerUserClient` needs
+`VCAP_SERVICES`), so local deployments always use the shared `SAP_USER`. The prototype on branch
+`proto/saml-bearer-pp` adds `src/adt/saml-bearer.ts`, `src/server/saml-bearer-client.ts`, the
+`SAP_PP_SAML_*` options and unit tests; live acceptance on A4H and the IAS client flow are still open
+([plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-11-14-local-saml-bearer-pp-prototype.md)).
+
+**Resume with.** A4H SAML2 trust configured, one `SAPRead` accepted as the propagated user (verify
+in SM04/`sy-uname`), and an IAS OIDC application that an MCP client can complete. Then decide: ADR
+and security review (design principle 7), key lifecycle and rotation, assertion/session reuse
+(OPS-06), scope claims for writes, and whether the issuer belongs in core or an extension.
 
 <a id="compat-22"></a>
 ### COMPAT-22 — Integration Suite remote MCP gateway validation

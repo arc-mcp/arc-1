@@ -115,6 +115,7 @@
     "@sap-cloud-sdk/connectivity": "^4.10.0",
     "@sap/xsenv": "^6.2.2",
     "@sap/xssec": "^4.16.0",
+    "@xmldom/xmldom": "^0.9.8",
     "ajv": "^8.18.0",
     "better-sqlite3": "^13.1.1",
     "commander": "^15.1.0",
@@ -129,6 +130,7 @@
     "on-headers": "^1.1.0",
     "rate-limiter-flexible": "^11.4.1",
     "undici": "^8.12.4",
+    "xml-crypto": "^6.1.2",
     "zod": "^4.6.7"
   },
   "overrides": {
