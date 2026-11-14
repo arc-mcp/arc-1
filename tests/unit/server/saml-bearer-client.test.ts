@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import type { AdtHttpConfig } from '../../../src/adt/http.js';
 import type { SamlBearerIdp } from '../../../src/adt/saml-bearer.js';
 import { createSamlBearerPerUserClient, loadSamlBearerIssuer } from '../../../src/server/saml-bearer-client.js';
 import { buildAdtConfig } from '../../../src/server/server.js';
@@ -47,7 +48,8 @@ describe('createSamlBearerPerUserClient', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.nameId).toBe('jane@example.com');
-    const cfg = result.client.http.config;
+    // `config` is private on AdtHttpClient; the test inspects the per-user Layer B fields it received.
+    const cfg = (result.client.http as unknown as { config: AdtHttpConfig }).config;
     expect(cfg.samlAuthorization?.startsWith('SAML2.0 ')).toBe(true);
     expect(cfg.username).toBe('jane@example.com');
     expect(cfg.password).toBeUndefined();
