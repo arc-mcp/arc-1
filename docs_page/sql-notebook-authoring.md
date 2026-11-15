@@ -62,9 +62,10 @@ already matches the serializer's formatting. ARC-1's separate `maxRows` cap is 1
 Use ABAP SQL (`alias~field`, `DESCENDING`), and a row cap rather than SQL `LIMIT`.
 See [SAPQuery syntax and backend limits](tools.md#freestyle-sql-behavior).
 
-For ARC-1 query responses, `rowsReturned` counts output rows. SAP's `totalRows`
-can describe matching input records. Observed on SAP_BASIS 758: a scalar `COUNT`
-returns one row containing `"0 "` while `totalRows` is `0`. Read the aggregate value from its result column.
+For ARC-1 query responses, `rowsReturned` counts output rows. `rowLimitReached=true`
+means the returned-row cap was reached and more rows may exist. `sapReportedTotalRows`
+is an unreliable SAP diagnostic count, not the result size.
+See the [SQL backend limits](tools.md#freestyle-sql-behavior) for COUNT/HAVING quirks.
 Values remain strings, including padding, leading zeros and decimal precision.
 Separate cell executions are not an atomic snapshot.
 

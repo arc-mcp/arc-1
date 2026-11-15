@@ -681,7 +681,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.content[0]?.type).toBe('text');
     });
 
-    it('surfaces datapreview metrics (totalRows, queryExecutionTimeMs, executedQueryString, rowsReturned)', async () => {
+    it('surfaces diagnostic SAP counts separately from returned-row counts', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
       mockFetch.mockResolvedValueOnce(
@@ -695,7 +695,8 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       });
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0]?.text);
-      expect(parsed.totalRows).toBe(511927);
+      expect(parsed.sapReportedTotalRows).toBe(511927);
+      expect(parsed).not.toHaveProperty('totalRows');
       expect(parsed.queryExecutionTimeMs).toBeCloseTo(12.5);
       expect(parsed.executedQueryString).toBe('SELECT MANDT FROM T000 UP TO 2 ROWS .');
       expect(parsed.rowsReturned).toBe(2);
@@ -719,8 +720,9 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       });
       expect(result.isError).toBeUndefined();
       expect(JSON.parse(result.content[0]!.text)).toEqual({
-        totalRows: 0,
+        sapReportedTotalRows: 0,
         rowsReturned: 1,
+        rowLimitReached: false,
         columns: ['N'],
         rows: [{ N: '0 ' }],
       });
@@ -895,7 +897,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         'Z09',
         'Z10',
       ]);
-      expect(data.totalRows).toBeUndefined();
+      expect(data.sapReportedTotalRows).toBeUndefined();
       expect(data.queryExecutionTimeMs).toBeUndefined();
       expect(data.executedQueryString).toBeUndefined();
 

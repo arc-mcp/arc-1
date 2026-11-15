@@ -218,6 +218,37 @@ describe('batch preflight and persisted outcomes', () => {
     expect(creates()).toHaveLength(0);
   });
 
+  // SAP truncates a longer MSAG name to 20 characters and creates an empty class under that name.
+  it.each(['create', 'batch_create'])(
+    '%s refuses an MSAG name over 20 characters before any SAP call',
+    async (action) => {
+      const msag = { type: 'MSAG', name: `Z${'M'.repeat(20)}` };
+      const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+        action,
+        package: '$TMP',
+        ...(action === 'create' ? msag : { objects: [msag] }),
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('MSAG names must be at most 20 characters. Nothing was created.');
+      expect(mockFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['create', 'batch_create'])('%s still creates an MSAG with a 20-character name', async (action) => {
+    const msag = { type: 'MSAG', name: `Z${'M'.repeat(19)}` };
+    const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+      action,
+      package: '$TMP',
+      ...(action === 'create' ? msag : { objects: [msag] }),
+    });
+    expect(result.isError).toBeFalsy();
+    expect(
+      mockFetch.mock.calls.some(
+        ([url, options]) => options?.method === 'POST' && new URL(String(url)).pathname === '/sap/bc/adt/messageclass',
+      ),
+    ).toBe(true);
+  });
+
   it('rejects a later MSAG transport lookup failure before creating the first object', async () => {
     mockFetch.mockImplementation((url) => {
       if (new URL(String(url)).pathname.includes('/cts/transportrequests/')) {
