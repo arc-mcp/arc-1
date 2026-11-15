@@ -1048,7 +1048,9 @@ describe('Tool Definitions', () => {
 
       expect(sapQuery.description).toContain('ABAP SQL SELECT');
       expect(sapQuery.description).toContain('DD02L/DD03L/TADIR/TFDIR/SWOTLV');
-      expect(sapQuery.description).toContain('Long literal IN-lists auto-chunk in plain projection SELECTs');
+      expect(sapQuery.description).toContain('IN-lists auto-chunk in plain SELECTs');
+      expect(sapQuery.description).toContain('sapReportedTotalRows is not a result total');
+      expect(sapQuery.description).toContain('rowLimitReached: more may exist');
       expect(sapQuery.description).toContain('alias~field');
       expect(sapQuery.description).toContain('alias~*');
       expect(sapQuery.description).toContain('ASCENDING/DESCENDING');
