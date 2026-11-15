@@ -184,6 +184,31 @@ describe('E2E RAP write lifecycle tests', () => {
     }
   });
 
+  it.for([false, true])('batch MSAG preserves messages (activateAtEnd=%s)', async (activateAtEnd, ctx) => {
+    const name = uniqueName('ZBMSG').slice(0, 20);
+    const messages = [
+      { number: '001', shortText: 'Batch message &1 <check>' },
+      { number: '002', shortText: 'Second batch message' },
+    ];
+    try {
+      expectToolSuccessOrSkip(
+        ctx,
+        await callTool(client, 'SAPWrite', {
+          action: 'batch_create',
+          package: '$TMP',
+          activateAtEnd,
+          objects: [{ type: 'MSAG', name, description: 'ARC-1 batch message test', messages }],
+        }),
+      );
+      const read = JSON.parse(expectToolSuccess(await callTool(client, 'SAPRead', { type: 'MSAG', name })));
+      expect(read.name).toBe(name);
+      expect(read.messages).toEqual(messages);
+      expectToolSuccess(await callTool(client, 'SAPWrite', { action: 'delete', type: 'MSAG', name }));
+    } finally {
+      await bestEffortDelete(client, 'MSAG', name);
+    }
+  });
+
   it('SAPWrite create MSAG, read, update with messages, delete', async (ctx) => {
     const msagName = uniqueName('ZARC1MC').slice(0, 20);
 
