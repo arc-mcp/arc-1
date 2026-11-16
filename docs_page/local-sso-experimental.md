@@ -70,8 +70,8 @@ SAP password. The metadata file is what you upload into SAML2; it contains only 
 The realm file `keycloak/arc1-realm.json` is imported on every Keycloak start and contains:
 
 - client scopes `read write data sql transports git`, which ARC-1 reads from the token's `scope` claim;
-- a realm-default scope `arc1` that adds the audience `arc1-local` and the `email` and
-  `preferred_username` and boolean `email_verified` claims to every client's tokens;
+- a realm-default scope `arc1` that adds the audience `arc1-local`, immutable `sub`, `email`,
+  `preferred_username`, and boolean `email_verified` claims to every client's tokens;
 - anonymous dynamic client registration, limited to clients whose redirect URIs are on `localhost`,
   `127.0.0.1` or `vscode.dev`. Claude Code and VS Code register themselves this way;
 - a pre-registered public client `arc1-local` with the password grant enabled for curl tests;

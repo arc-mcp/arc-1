@@ -17,8 +17,12 @@ describe('experimental local SSO example', () => {
     expect(profile.unmanagedAttributePolicy).toBe('ADMIN_EDIT');
     const arc1Scope = realm.clientScopes.find((scope: { name: string }) => scope.name === 'arc1');
     expect(arc1Scope.protocolMappers.map((mapper: { name: string }) => mapper.name)).toEqual(
-      expect.arrayContaining(['email', 'email-verified']),
+      expect.arrayContaining(['subject', 'email', 'email-verified']),
     );
+    expect(arc1Scope.protocolMappers.find((mapper: { name: string }) => mapper.name === 'subject')).toMatchObject({
+      protocolMapper: 'oidc-sub-mapper',
+      config: { 'access.token.claim': 'true' },
+    });
     const compose = readFileSync(new URL('../../../examples/local-sso/compose.saml.yaml', import.meta.url), 'utf8');
     expect(compose).toMatch(/^\s+SAP_PP_SAML_NAMEID_CLAIM: email$/m);
   });
