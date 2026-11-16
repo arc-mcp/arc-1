@@ -2,7 +2,8 @@
 
 ## Decision
 
-Keep [#844](https://github.com/arc-mcp/arc-1/pull/844) open. Its STXL use case overlaps with
+[#844](https://github.com/arc-mcp/arc-1/pull/844) was closed without merging on 2026-11-16; its
+remaining scope is parked as roadmap FEAT-89. Its STXL use case overlaps with
 [#1012](https://github.com/arc-mcp/arc-1/pull/1012), but INDX/custom clusters, generic DDIC layouts,
 and legacy formats are absent from main. Application-log messages are useful for diagnosing failed
 imports and background processing; a small native reader is preferable to generic BALDAT decoding.
