@@ -368,6 +368,21 @@ describe('multi-target HTTP route authentication', () => {
     expect(aggregateFactory).toHaveBeenCalledTimes(1);
   });
 
+  it('audits a non-user token in standard mode and classifies /authorize/ as aggregate', async () => {
+    const audit = vi.spyOn(logger, 'emitAudit');
+    try {
+      const body = { jsonrpc: '2.0', id: 1, method: 'tools/list' };
+      const refused = await request(app).post('/authorize/').set('Authorization', 'Bearer machine-token').send(body);
+      expect(refused.status).toBe(403);
+      const denials = audit.mock.calls.map(([event]) => event).filter((event) => event.event === 'mcp_route_denied');
+      expect(denials).toEqual([expect.objectContaining({ route: 'aggregate-mcp', reason: 'user_token_required' })]);
+      const scope = await request(app).post('/authorize/').set('Authorization', 'Bearer data-token').send(body);
+      expect(scope.headers['www-authenticate']).toContain('/.well-known/oauth-protected-resource/multi/mcp');
+    } finally {
+      audit.mockRestore();
+    }
+  });
+
   it('routes the side-by-side Copilot /authorize alias to the mutation-free aggregate server', async () => {
     const singleFactory = vi.fn(() => ({
       connect: vi.fn(async () => {

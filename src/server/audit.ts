@@ -671,7 +671,8 @@ function redactValue(key: string, value: unknown, state: RedactionState, depth: 
   if (canonicalKey(key) === 'longtext') return summarizeLongTextArgs(value);
   if (canonicalKey(key) === 'applicationlog') return '[REDACTED application-log parameters]';
   if (isSensitiveKey(key)) return '[REDACTED]';
-  if (CONTENT_KEYS.has(canonicalKey(key))) return summarizeContent(key, value);
+  // Schema keys are ASCII; a non-ASCII key (e.g. a homoglyph `sоurce`) is summarized before validation rejects it.
+  if (CONTENT_KEYS.has(canonicalKey(key)) || /[^\x20-\x7e]/.test(key)) return summarizeContent(key, value);
   if (mode === 'audit-event' && PAYLOAD_BODY_KEYS.has(canonicalKey(key))) {
     if (value == null) return value;
     return redactPayloadValue(value);

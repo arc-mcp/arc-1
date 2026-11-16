@@ -577,17 +577,12 @@ export async function startHttpServer(
             // originalUrl preserves the public route, so the Copilot alias can
             // advertise the aggregate PRM instead of a non-existent root PRM.
             const originalPath = req.originalUrl?.split('?', 1)[0] || req.path;
-            const lowerPath = originalPath.toLowerCase();
+            const lowerPath = originalPath.replace(/\/+$/, '').toLowerCase();
             const resourcePath = lowerPath === '/authorize' ? '/multi/mcp' : originalPath;
             const multiResourceMetadataUrl = `${oauthFullBase}/.well-known/oauth-protected-resource${resourcePath}`;
             const route = resourcePath.toLowerCase() === '/multi/mcp' ? 'aggregate-mcp' : 'pinned-mcp';
             if (enforcedTargets) protectPrivateMcpResponse(res);
-            const authenticate = enforcedTargets
-              ? requireXsuaaUserBearerAuth(multiXsuaaVerifier, multiResourceMetadataUrl, route)
-              : requireBearerAuth({
-                  verifier: { verifyAccessToken: multiXsuaaVerifier },
-                  resourceMetadataUrl: multiResourceMetadataUrl,
-                });
+            const authenticate = requireXsuaaUserBearerAuth(multiXsuaaVerifier, multiResourceMetadataUrl, route);
             authenticate(req, res, (error) => {
               if (error) {
                 next(error);

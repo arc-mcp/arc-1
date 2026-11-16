@@ -213,4 +213,8 @@ describe('content summaries', () => {
     const longDigits = '[REDACTED content 4111111111111111 chars sha256:deadbeefcafe]';
     expect(sanitizeArgs({ source: longDigits }).source).not.toContain('4111111111111111');
   });
+
+  it('summarizes values under non-ASCII keys before schema validation rejects them', () => {
+    expect(JSON.stringify(sanitizeArgs({ s\u043eurce: S, nested: [{ \u0441ontent: S }] }))).not.toContain(S);
+  });
 });
