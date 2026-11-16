@@ -78,6 +78,24 @@ describe('FUGR read given a function module name (A25)', () => {
     expect(String(mockFetch.mock.calls[2]?.[0])).toContain('query=Z_MY_FUNC');
   });
 
+  it('reads an empty 7.50 group from its generated includes', async () => {
+    mockFetch.mockResolvedValueOnce(mockResponse(404, 'No suitable resource found'));
+    mockFetch.mockResolvedValueOnce(
+      mockResponse(
+        200,
+        '<projectexplorer:objectstructure xmlns:projectexplorer="http://www.sap.com/adt/projectexplorer">' +
+          '<projectexplorer:node isfolder="false" objecttype="FUGR/I" objectname="LZGROUPTOP"/>' +
+          '<projectexplorer:node isfolder="false" objecttype="FUGR/I" objectname="LZGROUPUXX"/>' +
+          '</projectexplorer:objectstructure>',
+      ),
+    );
+    expect(await createClient().getFunctionGroup('ZGROUP')).toEqual({
+      name: 'ZGROUP',
+      functions: [],
+      includes: ['LZGROUPTOP', 'LZGROUPUXX'],
+    });
+  });
+
   const read = (client: ReturnType<typeof createClient>, extra = {}) =>
     handleSAPRead(client, { type: 'FUGR', name: 'Z_MY_FUNC', ...extra }, undefined, { isPerUserClient: false }, false);
 
