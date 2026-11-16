@@ -81,7 +81,7 @@ nav:
       - Other Authentication Methods:
           - API Key: api-key-setup.md
           - OAuth / JWT: oauth-jwt-setup.md
-          - Local SSO Prototype (SAML bearer, no BTP): local-sso-prototype.md
+          - Experimental Local SSO (SAML bearer, no BTP): local-sso-experimental.md
   - Using ARC-1:
       - Tools Reference: tools.md
       - Extensions (Custom Tools): extensions.md

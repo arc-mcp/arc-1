@@ -77,8 +77,9 @@ import { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js'
 import { injectTargetSchema, multiTargetToolDefinitions, sapTargetsDefinition } from './multi-target-tools.js';
 import { type PerUserClient, PerUserTransportPool } from './per-user-transport.js';
 import { loadPlugins } from './plugin-loader.js';
+import { strictPpNonJwtError } from './pp-strict.js';
 import { createDataResultSemaphore, runtimeMemoryEnvelope } from './runtime-memory.js';
-import { createSamlBearerPerUserClient, loadSamlBearerIssuer } from './saml-bearer-client.js';
+import { loadSamlBearerIssuer, runSamlBearerToolCall } from './saml-bearer-client.js';
 import { createCachingLayer } from './server-cache.js';
 import { buildServerInstructions } from './server-instructions.js';
 import { closeHttpServer, registerShutdownHandlers } from './shutdown.js';
@@ -675,7 +676,6 @@ export interface CreateServerOptions {
   defaultHttp?: AdtClient['http'];
   /** Single-target PP transports keyed by per-user credential; never consulted for multi-target clients. */
   perUserTransports?: PerUserTransportPool;
-  /** PROTOTYPE: locally issued SAML bearer assertions for OIDC users (single-target, no BTP). */
   samlBearerIdp?: SamlBearerIdp;
 }
 
@@ -940,18 +940,14 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
     }
 
     if (activeConfig.ppEnabled && isJwt && samlBearerIdp && !multiTarget) {
-      // PROTOTYPE: locally issued SAML bearer assertion for the verified OIDC user (no BTP hop).
-      const saml = createSamlBearerPerUserClient({
-        idp: samlBearerIdp,
+      return runSamlBearerToolCall(
+        samlBearerIdp,
         token,
         requestId,
-        fallbackUser: (extra.authInfo?.extra?.userName ?? extra.authInfo?.clientId) as string | undefined,
-        buildPerUserAdtConfig: () =>
-          buildAdtConfig(activeConfig, undefined, undefined, { perUser: true }, adtSemaphore, dataResultSemaphore),
-      });
-      if (!saml.ok) return saml.error as Record<string, unknown>;
-      client = saml.client;
-      isPerUserClient = true;
+        (extra.authInfo?.extra?.userName ?? extra.authInfo?.clientId) as string | undefined,
+        () => buildAdtConfig(activeConfig, undefined, undefined, { perUser: true }, adtSemaphore, dataResultSemaphore),
+        (samlClient) => dispatchWithClient(samlClient, true),
+      );
     } else if (activeConfig.ppEnabled && isJwt) {
       const ppUser = (extra.authInfo?.extra?.userName ?? extra.authInfo?.clientId) as string | undefined;
       const ppDest = resolvePpDestinationName(activeConfig) ?? '';
@@ -1042,24 +1038,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
         } as Record<string, unknown>;
       }
     } else if (activeConfig.ppStrictExplicit && activeConfig.ppStrict && activeConfig.ppEnabled && !isJwt) {
-      // Strict mode with non-JWT token (e.g., API key) — reject
-      if (multiTarget) {
-        return multiError(
-          'PP_SETUP_FAILED',
-          'Multi-target routes require an XSUAA JWT for strict principal propagation. Sign in with XSUAA and try again.',
-          { retryable: true },
-          'pp_exchange_failed',
-        );
-      }
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: 'Principal propagation requires a JWT token (SAP_PP_STRICT=true). API key authentication is not supported in strict PP mode.',
-          },
-        ],
-        isError: true,
-      } as Record<string, unknown>;
+      return strictPpNonJwtError(!!multiTarget, multiError);
     }
 
     if (!client) {
@@ -1235,9 +1214,6 @@ export async function createAndStartServer(
       callbackPort: config.btpOAuthCallbackPort || 'auto',
     });
   }
-
-  // PROTOTYPE: local SAML bearer issuer (per-user SAP identity for OIDC callers without BTP).
-  const samlBearerIdp = loadSamlBearerIssuer(config);
 
   // Resolve the optional single-target destination. It remains independent from discovered targets.
   let btpProxy: BTPProxyConfig | undefined;
@@ -1420,7 +1396,7 @@ export async function createAndStartServer(
       mcpRateLimiter,
       defaultHttp: defaultHttp(),
       perUserTransports,
-      samlBearerIdp,
+      samlBearerIdp: loadSamlBearerIssuer(config),
     });
   const aggregateConfig = registry
     ? buildAggregateToolSurfaceConfig(

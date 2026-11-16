@@ -91,8 +91,7 @@ const BUDGETS = {
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed
   // XSUAA startup from main.
   // PP pool wiring and secret-free reuse audit status; logic lives in per-user-transport.ts (#1085).
-  // +21 for the PROTOTYPE local SAML bearer issuer hook (options plumbing + per-user branch).
-  'src/server/server.ts': 1520,
+  'src/server/server.ts': 1497,
 };
 
 const DEFAULT_SRC = 1500;

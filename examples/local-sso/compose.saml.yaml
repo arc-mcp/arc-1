@@ -1,4 +1,4 @@
-# PROTOTYPE overlay: per-user SAP identity via OIDC (Keycloak) -> locally issued SAML 2.0 bearer assertion.
+# Experimental overlay: per-user SAP identity via OIDC (Keycloak) -> locally issued SAML 2.0 bearer assertion.
 # Start:  docker compose -f compose.yaml -f compose.saml.yaml up -d
 # Back to API-key only: docker compose up -d
 #
@@ -9,7 +9,7 @@
 # The API key keeps working beside PP because SAP_PP_STRICT=false; those calls stay on SAP_USER.
 services:
   arc1:
-    image: arc1-saml-proto          # built from branch proto/saml-bearer-pp: docker build -t arc1-saml-proto .
+    image: arc1-saml-experimental   # docker build -t arc1-saml-experimental .
     volumes:
       - ./saml:/home/arc1/saml:ro
     environment:

@@ -1,13 +1,17 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import type { AdtHttpConfig } from '../../../src/adt/http.js';
 import type { SamlBearerIdp } from '../../../src/adt/saml-bearer.js';
-import { createSamlBearerPerUserClient, loadSamlBearerIssuer } from '../../../src/server/saml-bearer-client.js';
+import {
+  createSamlBearerPerUserClient,
+  loadSamlBearerIssuer,
+  runSamlBearerToolCall,
+} from '../../../src/server/saml-bearer-client.js';
 import { buildAdtConfig } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
+import { makeSamlMaterial } from '../../helpers/saml-material.js';
 
-const fixture = (name: string) => fileURLToPath(new URL(`../../fixtures/saml/${name}`, import.meta.url));
+const material = makeSamlMaterial();
+afterAll(material.cleanup);
 
 const idp: SamlBearerIdp = {
   issuer: 'arc1-unit-test-saml-idp',
@@ -17,8 +21,8 @@ const idp: SamlBearerIdp = {
   nameIdFormat: 'email',
   authnContextClassRef: 'urn:oasis:names:tc:SAML:2.0:ac:classes:PreviousSession',
   ttlSeconds: 300,
-  privateKeyPem: readFileSync(fixture('test-idp.key'), 'utf8'),
-  certificatePem: readFileSync(fixture('test-idp.crt'), 'utf8'),
+  privateKeyPem: material.privateKeyPem,
+  certificatePem: material.certificatePem,
 };
 
 const serverConfig: ServerConfig = {
@@ -40,7 +44,7 @@ describe('createSamlBearerPerUserClient', () => {
   it('builds a request-local client carrying only the SAML Authorization header, never the shared password', () => {
     const result = createSamlBearerPerUserClient({
       idp,
-      token: jwtWith({ sub: 'abc', email: 'jane@example.com' }),
+      token: jwtWith({ sub: 'abc', email: 'jane@example.com', email_verified: true }),
       requestId: 'req-1',
       fallbackUser: 'oidc-user',
       buildPerUserAdtConfig,
@@ -74,6 +78,29 @@ describe('createSamlBearerPerUserClient', () => {
     expect(result.error.isError).toBe(true);
     expect(result.error.content[0]?.text).toMatch(/Principal propagation failed: .*no usable 'email' claim/);
   });
+
+  it('refuses a changed unverified email for the same subject before building an assertion', () => {
+    const accepted = createSamlBearerPerUserClient({
+      idp,
+      token: jwtWith({ sub: 'same-subject', email: 'b@example.com', email_verified: true }),
+      requestId: 'req-3',
+      buildPerUserAdtConfig,
+    });
+    expect(accepted.ok).toBe(true);
+    let built = false;
+    const rejected = createSamlBearerPerUserClient({
+      idp,
+      token: jwtWith({ sub: 'same-subject', email: 'a@example.com', email_verified: false }),
+      requestId: 'req-4',
+      buildPerUserAdtConfig: () => {
+        built = true;
+        return buildPerUserAdtConfig();
+      },
+    });
+    expect(rejected.ok).toBe(false);
+    expect(built).toBe(false);
+    if (!rejected.ok) expect(rejected.error.content[0]?.text).toMatch(/email_verified === true/);
+  });
 });
 
 describe('loadSamlBearerIssuer', () => {
@@ -84,12 +111,42 @@ describe('loadSamlBearerIssuer', () => {
   it('loads the configured issuer', () => {
     const loaded = loadSamlBearerIssuer({
       ...serverConfig,
-      samlIdpKeyFile: fixture('test-idp.key'),
-      samlIdpCertFile: fixture('test-idp.crt'),
+      samlIdpKeyFile: material.keyFile,
+      samlIdpCertFile: material.certFile,
       samlIdpIssuer: 'arc1-unit-test-saml-idp',
       samlAudience: 'A4H_001',
+      samlNameIdClaim: 'email',
     });
     expect(loaded?.issuer).toBe('arc1-unit-test-saml-idp');
     expect(loaded?.recipient).toBe('https://sap.example:50001');
+  });
+});
+
+describe('runSamlBearerToolCall', () => {
+  it('dispatches with the per-user client and refuses an unverified email before dispatch', async () => {
+    let calls = 0;
+    const dispatch = async () => {
+      calls++;
+      return { content: [{ type: 'text', text: 'ok' }] };
+    };
+    const accepted = await runSamlBearerToolCall(
+      idp,
+      jwtWith({ email: 'jane@example.com', email_verified: true }),
+      'req-ok',
+      undefined,
+      buildPerUserAdtConfig,
+      dispatch,
+    );
+    expect(accepted).toMatchObject({ content: [{ text: 'ok' }] });
+    const rejected = await runSamlBearerToolCall(
+      idp,
+      jwtWith({ email: 'admin@example.com', email_verified: false }),
+      'req-denied',
+      undefined,
+      buildPerUserAdtConfig,
+      dispatch,
+    );
+    expect(rejected).toMatchObject({ isError: true });
+    expect(calls).toBe(1);
   });
 });

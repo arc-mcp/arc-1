@@ -1,7 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { DOMParser } from '@xmldom/xmldom';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { SignedXml } from 'xml-crypto';
 import {
   buildSamlBearerAssertion,
@@ -12,9 +10,11 @@ import {
   type SamlBearerIdp,
 } from '../../../src/adt/saml-bearer.js';
 import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
+import { makeSamlMaterial } from '../../helpers/saml-material.js';
 
-const fixture = (name: string) => fileURLToPath(new URL(`../../fixtures/saml/${name}`, import.meta.url));
-const certPem = readFileSync(fixture('test-idp.crt'), 'utf8');
+const material = makeSamlMaterial();
+const certPem = material.certificatePem;
+afterAll(material.cleanup);
 
 function idp(overrides: Partial<SamlBearerIdp> = {}): SamlBearerIdp {
   return {
@@ -25,7 +25,7 @@ function idp(overrides: Partial<SamlBearerIdp> = {}): SamlBearerIdp {
     nameIdFormat: 'email',
     authnContextClassRef: 'urn:oasis:names:tc:SAML:2.0:ac:classes:PreviousSession',
     ttlSeconds: 300,
-    privateKeyPem: readFileSync(fixture('test-idp.key'), 'utf8'),
+    privateKeyPem: material.privateKeyPem,
     certificatePem: certPem,
     ...overrides,
   };
@@ -69,7 +69,7 @@ describe('buildSamlBearerAssertion', () => {
     expect(children[1]?.localName).toBe('Signature');
 
     const signature = doc.getElementsByTagNameNS('http://www.w3.org/2000/09/xmldsig#', 'Signature')[0]!;
-    const verifier = new SignedXml({ publicCert: certPem });
+    const verifier = new SignedXml({ publicCert: material.publicKeyPem });
     verifier.loadSignature(signature);
     expect(verifier.checkSignature(result.xml)).toBe(true);
     expect(verifier.signatureAlgorithm).toBe('http://www.w3.org/2001/04/xmldsig-more#rsa-sha256');
@@ -80,7 +80,7 @@ describe('buildSamlBearerAssertion', () => {
     const tampered = result.xml.replace('jane@example.com', 'admin@example.com');
     const doc = new DOMParser().parseFromString(tampered, 'text/xml');
     const signature = doc.getElementsByTagNameNS('http://www.w3.org/2000/09/xmldsig#', 'Signature')[0]!;
-    const verifier = new SignedXml({ publicCert: certPem });
+    const verifier = new SignedXml({ publicCert: material.publicKeyPem });
     verifier.loadSignature(signature);
     let valid: boolean;
     try {
@@ -109,7 +109,9 @@ describe('buildSamlBearerAssertion', () => {
 
 describe('resolveSamlNameId', () => {
   it('reads the configured claim from the verified JWT payload', () => {
-    expect(resolveSamlNameId(jwtWith({ email: ' Jane@Example.com ' }), 'email')).toBe('Jane@Example.com');
+    expect(resolveSamlNameId(jwtWith({ email: ' Jane@Example.com ', email_verified: true }), 'email')).toBe(
+      'Jane@Example.com',
+    );
     expect(resolveSamlNameId(jwtWith({ user_name: 'JDOE' }), 'user_name')).toBe('JDOE');
   });
 
@@ -118,6 +120,20 @@ describe('resolveSamlNameId', () => {
     expect(() => resolveSamlNameId(jwtWith({ email: '' }), 'email')).toThrow(/no usable 'email' claim/);
     expect(() => resolveSamlNameId(jwtWith({ email: ['a@b'] }), 'email')).toThrow(/no usable 'email' claim/);
     expect(() => resolveSamlNameId('not.a-jwt', 'email')).toThrow(/not decodable/);
+  });
+
+  it('requires a boolean verified email and rejects controls or long NameIDs', () => {
+    for (const email_verified of [undefined, false, 'true']) {
+      expect(() => resolveSamlNameId(jwtWith({ email: 'a@example.com', email_verified }), 'email')).toThrow(
+        /email_verified === true/,
+      );
+    }
+    expect(() => resolveSamlNameId(jwtWith({ user_name: 'A\nB' }), 'user_name')).toThrow(/contains controls/);
+    expect(() => resolveSamlNameId(jwtWith({ user_name: '\nA' }), 'user_name')).toThrow(/contains controls/);
+    expect(() => resolveSamlNameId(jwtWith({ user_name: 'A'.repeat(257) }), 'user_name')).toThrow(/256 characters/);
+    expect(() => resolveSamlNameId(jwtWith({ user_name: `${'A'.repeat(256)} ` }), 'user_name')).toThrow(
+      /256 characters/,
+    );
   });
 });
 
@@ -129,10 +145,11 @@ describe('loadSamlBearerIdp', () => {
   it('loads key material and defaults the recipient to the SAP URL', () => {
     const loaded = loadSamlBearerIdp(
       serverConfig({
-        samlIdpKeyFile: fixture('test-idp.key'),
-        samlIdpCertFile: fixture('test-idp.crt'),
+        samlIdpKeyFile: material.keyFile,
+        samlIdpCertFile: material.certFile,
         samlIdpIssuer: 'arc1-unit-test-saml-idp',
         samlAudience: 'A4H_001',
+        samlNameIdClaim: 'email',
       }),
     );
     expect(loaded).toMatchObject({
@@ -148,18 +165,42 @@ describe('loadSamlBearerIdp', () => {
   });
 
   it('throws on incomplete trust parameters or non-PEM files', () => {
-    expect(() => loadSamlBearerIdp(serverConfig({ samlIdpKeyFile: fixture('test-idp.key') }))).toThrow(
+    expect(() => loadSamlBearerIdp(serverConfig({ samlIdpKeyFile: material.keyFile }))).toThrow(
       /requires SAP_PP_SAML_IDP_CERT_FILE/,
     );
     expect(() =>
       loadSamlBearerIdp(
         serverConfig({
-          samlIdpKeyFile: fixture('test-idp.crt'),
-          samlIdpCertFile: fixture('test-idp.crt'),
+          samlIdpKeyFile: material.certFile,
+          samlIdpCertFile: material.certFile,
           samlIdpIssuer: 'x',
           samlAudience: 'y',
+          samlNameIdClaim: 'email',
         }),
       ),
     ).toThrow(/does not contain a PEM private key/);
+  });
+
+  it('rejects an EC key, a mismatched certificate, and an expired certificate', () => {
+    const ec = makeSamlMaterial('ec');
+    const other = makeSamlMaterial();
+    const config = serverConfig({
+      samlIdpKeyFile: material.keyFile,
+      samlIdpCertFile: material.certFile,
+      samlIdpIssuer: 'x',
+      samlAudience: 'y',
+      samlNameIdClaim: 'email',
+    });
+    try {
+      expect(() => loadSamlBearerIdp({ ...config, samlIdpKeyFile: ec.keyFile })).toThrow(/RSA private key/);
+      expect(() => loadSamlBearerIdp({ ...config, samlIdpCertFile: other.certFile })).toThrow(/valid signing pair/);
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2100-01-01T00:00:00Z'));
+      expect(() => loadSamlBearerIdp(config)).toThrow(/not currently valid/);
+    } finally {
+      vi.useRealTimers();
+      ec.cleanup();
+      other.cleanup();
+    }
   });
 });

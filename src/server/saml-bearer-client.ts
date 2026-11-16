@@ -1,5 +1,5 @@
 /**
- * PROTOTYPE: per-user ADT client backed by a locally issued SAML 2.0 bearer assertion.
+ * Experimental per-user ADT client backed by a locally issued SAML 2.0 bearer assertion.
  *
  * Used by `createServer` for JWT-authenticated calls when the local SAML issuer is configured.
  * No BTP destination, no Cloud Connector and no shared-credential fallback: a failure here is a
@@ -22,7 +22,7 @@ export const SAML_BEARER_DESTINATION_LABEL = 'local-saml-bearer';
 export function loadSamlBearerIssuer(config: ServerConfig): SamlBearerIdp | undefined {
   const idp = loadSamlBearerIdp(config);
   if (idp) {
-    logger.info('Principal propagation: local SAML bearer issuer enabled (prototype)', {
+    logger.info('Principal propagation: local SAML bearer issuer enabled (experimental)', {
       issuer: idp.issuer,
       audience: idp.audience,
       recipient: idp.recipient,
@@ -91,4 +91,17 @@ export function createSamlBearerPerUserClient(request: SamlBearerClientRequest):
       error: { content: [{ type: 'text', text: `Principal propagation failed: ${errorMessage}` }], isError: true },
     };
   }
+}
+
+/** Complete a local SAML tool call without exposing assertion details to the main server branch. */
+export async function runSamlBearerToolCall(
+  idp: SamlBearerIdp,
+  token: string,
+  requestId: string,
+  fallbackUser: string | undefined,
+  buildPerUserAdtConfig: () => Partial<AdtClientConfig>,
+  dispatch: (client: AdtClient) => Promise<Record<string, unknown>>,
+): Promise<Record<string, unknown>> {
+  const result = createSamlBearerPerUserClient({ idp, token, requestId, fallbackUser, buildPerUserAdtConfig });
+  return result.ok ? dispatch(result.client) : result.error;
 }

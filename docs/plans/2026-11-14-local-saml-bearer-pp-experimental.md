@@ -1,9 +1,11 @@
-# Prototype: per-user SAP identity without BTP via a local SAML bearer issuer
+# Experimental: per-user SAP identity without BTP via a local SAML bearer issuer
 
-**Status:** prototype on branch `proto/saml-bearer-pp` (roadmap SEC-23). Not merged, not an ADR.
+**Status:** Historical design and early-build evidence. The experimental decision is
+[ADR-0011](../adr/0011-local-saml-bearer-issuer.md); use the current guide and PR validation for
+the final build.
 **Target system used:** A4H (ABAP Platform 2025), client 001, `https://a4h-2025.marianzeis.de:50001`.
 
-Operator guide with reusable templates: `docs_page/local-sso-prototype.md` and `examples/local-sso/`.
+Operator guide with reusable templates: `docs_page/local-sso-experimental.md` and `examples/local-sso/`.
 
 ## Problem
 
@@ -30,7 +32,7 @@ spike: IAS (or any OIDC IdP) in front, the user's own SAP identity behind, no BT
 The shared `SAP_USER` remains only the single-target startup identity (discovery, feature probes, and
 API-key calls when `SAP_PP_STRICT=false`). JWT calls never fall back to it.
 
-## Code (branch `proto/saml-bearer-pp`)
+## Initial code
 
 | File | Role |
 |------|------|
@@ -39,9 +41,9 @@ API-key calls when `SAP_PP_STRICT=false`). JWT calls never fall back to it.
 | `src/server/server.ts` | `CreateServerOptions.samlBearerIdp`; the JWT branch prefers the local issuer when configured and single-target |
 | `src/server/{config,types}.ts` | `SAP_PP_SAML_*` options (also CLI flags), fail-closed validation |
 | `tests/unit/adt/saml-bearer.test.ts`, `tests/unit/server/config-saml-bearer.test.ts` | Signature round-trip, tampering, escaping, claim resolution, config gates |
-| `tests/fixtures/saml/test-idp.{key,crt}` | Throwaway test-only signing pair |
-| `package.json` | New dependencies `xml-crypto`, `@xmldom/xmldom` |
-| `scripts/ci/check-file-sizes.mjs` | `server.ts` budget raised 1497 → 1520 for the hook |
+| `tests/helpers/saml-material.ts` | Generates a throwaway RSA key and certificate at test time; no private key committed |
+| `package.json` | Runtime `xml-crypto`; test-only `@xmldom/xmldom` |
+| `scripts/ci/check-file-sizes.mjs` | `server.ts` budget remains 1497 after extraction |
 
 Configuration:
 
@@ -51,7 +53,7 @@ Configuration:
 | `SAP_PP_SAML_ISSUER` | SAML entity ID trusted by SAP |
 | `SAP_PP_SAML_AUDIENCE` | SAP local provider name (SAML2 → Local Provider) |
 | `SAP_PP_SAML_RECIPIENT` | Optional; defaults to `SAP_URL` |
-| `SAP_PP_SAML_NAMEID_CLAIM` / `SAP_PP_SAML_NAMEID_FORMAT` | Default `email` / `email`; `unspecified` maps the claim to the SAP user name |
+| `SAP_PP_SAML_NAMEID_CLAIM` / `SAP_PP_SAML_NAMEID_FORMAT` | Explicit admin-controlled claim required (no default); format defaults to `email`; `email` requires boolean `email_verified=true` |
 | `SAP_PP_SAML_AUTHN_CONTEXT`, `SAP_PP_SAML_TTL_SECONDS` | Defaults `PreviousSession`, 300 (clamped 30–3600) |
 
 Validation refuses: partial configuration, `SAP_PP_ENABLED` unset, no `SAP_OIDC_ISSUER`, multi-target
@@ -60,7 +62,7 @@ or XSUAA mode, missing `SAP_URL`, non-PEM files.
 ## Verified so far (2026-11-14)
 
 - Unit tests pass; `npm run typecheck`, Biome, `validate:policy` and `check:sizes` pass.
-- Docker image `arc1-saml-proto` built from the branch; startup with the issuer configured logs
+- An early Docker image built from the branch; startup with the issuer configured logged
   `auth: MCP=[api-keys,oidc] SAP=pp (mixed: JWT per-user, API keys shared)` and the issuer parameters.
 - Standalone script (`gen-assertion.mjs`, scratchpad) produced assertions whose signatures verify
   locally. A4H answered a plain 401 until SAML2 trust was configured on client 001.
@@ -103,9 +105,7 @@ category, not by the web-SSO "Identity Providers" list and not by "OAuth 2.0 Ide
 5. SU01: maintain the user's e-mail (`wouter@lemaire.tech` for the Keycloak test user).
 6. Diagnose rejected assertions with the SAML2 troubleshooting tab or `SEC_DIAG_TOOL`.
 
-## Decisions pending before this becomes a feature
+## Remaining experiments
 
-- ADR + security review (design principle 7: new auth model, fail-closed, no shared fallback).
-- Key lifecycle: generation, storage, rotation, metadata publication; certificate pinning on SAP side.
-- Session handling: each call sends `x-sap-security-session: create`; reuse per user (OPS-06).
-- Where it lives: core vs. extension; CLI surface; documentation in `docs_page/enterprise-auth.md`.
+- Session handling: each call sends `x-sap-security-session: create`; measure pressure and consider reuse per user (OPS-06).
+- IAS validation and other S/4HANA releases. See SEC-23 for the resume trigger.

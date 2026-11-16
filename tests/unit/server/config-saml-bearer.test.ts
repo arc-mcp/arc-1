@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseArgs, validateConfig } from '../../../src/server/config.js';
 
-describe('local SAML bearer issuer config (prototype)', () => {
+describe('experimental local SAML bearer issuer config', () => {
   const savedEnv = { ...process.env };
 
   beforeEach(() => {
@@ -24,14 +24,22 @@ describe('local SAML bearer issuer config (prototype)', () => {
     process.env.SAP_PP_SAML_AUDIENCE = 'A4H_001';
   }
 
-  it('parses defaults: email claim and format, PreviousSession context, 300 s TTL', () => {
+  it('has no default NameID claim but defaults format, context and TTL', () => {
     const config = parseArgs([]);
     expect(config.samlIdpKeyFile).toBeUndefined();
-    expect(config.samlNameIdClaim).toBe('email');
+    expect(config.samlNameIdClaim).toBeUndefined();
     expect(config.samlNameIdFormat).toBe('email');
     expect(config.samlAuthnContextClassRef).toBe('urn:oasis:names:tc:SAML:2.0:ac:classes:PreviousSession');
     expect(config.samlAssertionTtlSeconds).toBe(300);
     expect(() => validateConfig(config)).not.toThrow();
+  });
+
+  it('requires an explicit NameID claim whenever the issuer is configured', () => {
+    setIssuer();
+    process.env.SAP_PP_ENABLED = 'true';
+    process.env.SAP_OIDC_ISSUER = 'https://tenant.accounts.ondemand.com';
+    process.env.SAP_OIDC_AUDIENCE = 'arc1-client';
+    expect(() => validateConfig(parseArgs([]))).toThrow(/requires SAP_PP_SAML_NAMEID_CLAIM/);
   });
 
   it('accepts a complete issuer with PP and OIDC enabled, clamping the TTL', () => {
@@ -68,6 +76,7 @@ describe('local SAML bearer issuer config (prototype)', () => {
 
   it('requires SAP_PP_ENABLED and an OIDC issuer', () => {
     setIssuer();
+    process.env.SAP_PP_SAML_NAMEID_CLAIM = 'email';
     process.env.SAP_OIDC_ISSUER = 'https://tenant.accounts.ondemand.com';
     process.env.SAP_OIDC_AUDIENCE = 'arc1-client';
     expect(() => validateConfig(parseArgs([]))).toThrow(/requires SAP_PP_ENABLED=true/);
@@ -80,6 +89,7 @@ describe('local SAML bearer issuer config (prototype)', () => {
 
   it('refuses to combine with multi-target mode or XSUAA', () => {
     setIssuer();
+    process.env.SAP_PP_SAML_NAMEID_CLAIM = 'email';
     process.env.SAP_PP_ENABLED = 'true';
     process.env.SAP_OIDC_ISSUER = 'https://tenant.accounts.ondemand.com';
     process.env.SAP_OIDC_AUDIENCE = 'arc1-client';

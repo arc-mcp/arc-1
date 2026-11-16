@@ -163,7 +163,7 @@ export interface ServerConfig {
   /** Opt-in: allow shared cookie auth to coexist with PP (shared client only) */
   ppAllowSharedCookies: boolean;
 
-  // --- PROTOTYPE: local SAML 2.0 bearer-assertion issuer (per-user SAP auth without BTP) ---
+  // --- Experimental local SAML 2.0 bearer-assertion issuer ---
   /** PEM private key used to sign assertions; setting it enables the local issuer. */
   samlIdpKeyFile?: string;
   /** PEM certificate matching the key; uploaded to the ABAP system as trusted provider. */
@@ -174,8 +174,8 @@ export interface ServerConfig {
   samlAudience?: string;
   /** SubjectConfirmationData Recipient; defaults to the SAP URL. */
   samlRecipient?: string;
-  /** JWT claim carrying the SAP-side identity (default `email`). */
-  samlNameIdClaim: string;
+  /** Explicit JWT claim carrying the SAP-side identity. */
+  samlNameIdClaim?: string;
   samlNameIdFormat: 'email' | 'unspecified';
   samlAuthnContextClassRef: string;
   /** Assertion validity in seconds (default 300, clamped 30-3600). */
@@ -340,7 +340,6 @@ export const DEFAULT_CONFIG: ServerConfig = {
   ppStrict: false,
   ppStrictExplicit: false,
   ppAllowSharedCookies: false,
-  samlNameIdClaim: 'email',
   samlNameIdFormat: 'email',
   samlAuthnContextClassRef: 'urn:oasis:names:tc:SAML:2.0:ac:classes:PreviousSession',
   samlAssertionTtlSeconds: 300,

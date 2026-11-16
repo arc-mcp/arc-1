@@ -89,7 +89,7 @@ sequence.
 | [SEC-21](#sec-21) | Socket policy calibration | P3 | S | Revisit on trigger | Security |
 | [SEC-22](#sec-22) | SBOMs for the Docker image, MCPB bundle and executables | P3 | S | Revisit on trigger | Security |
 | [SEC-19](#sec-19) | Registered agent identity and downstream tool scopes | P2 | L | Needs research | Auth / Security |
-| [SEC-23](#sec-23) | Per-user SAP identity without BTP: local SAML bearer issuer | P2 | M | Prototype | Auth / Security |
+| [SEC-23](#sec-23) | Local SAML bearer: session reuse and wider validation | P2 | M | Experimental | Auth / Security |
 | [COMPAT-22](#compat-22) | Integration Suite remote MCP gateway validation | P2 | M | Needs research | Compatibility |
 | [COMPAT-23](#compat-23) | Shared reader for function-group object URIs | P2 | M | Ready | Compatibility |
 | [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
@@ -614,30 +614,22 @@ behavior without broadening existing PP or multi-target exceptions. Do not inven
 requirement or claim this resolves the separate ADT-channel permission question.
 
 <a id="sec-23"></a>
-### SEC-23 — Per-user SAP identity without BTP: local SAML bearer issuer
+### SEC-23 — Local SAML bearer: session reuse and wider validation
 
-- **Priority / effort / status:** P2 / M / Prototype
+- **Priority / effort / status:** P2 / M / Experimental
 - **Category:** Auth / Security
 
-**Idea.** Let a self-hosted ARC-1 (Docker, npm) propagate the OIDC caller's identity to an
-on-premise ABAP system without BTP Destination Service or Cloud Connector. ARC-1 validates the IdP
-token (for example SAP Cloud Identity Services), signs a short-lived SAML 2.0 bearer assertion for the
-user's e-mail, and sends it on the existing `Authorization: SAML2.0` path. The ABAP system trusts
-ARC-1's signing certificate in transaction SAML2, the same trust shape a BTP `SAMLAssertion`
-destination uses (supported on-premise from S/4HANA 2020).
+**Remaining gap.** The experimental, single-target OIDC issuer signs a short-lived SAML bearer
+assertion for an explicitly configured, administrator-controlled NameID claim. SAP trusts its
+certificate in SAML2. The [setup guide](local-sso-experimental.md), [ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-local-saml-bearer-issuer.md) and security risk register describe this PR's scope.
 
-**Why it remains.** Today every per-user path requires a BTP binding (`createPerUserClient` needs
-`VCAP_SERVICES`), so local deployments always use the shared `SAP_USER`. The prototype on branch
-`proto/saml-bearer-pp` adds `src/adt/saml-bearer.ts`, `src/server/saml-bearer-client.ts`, the
-`SAP_PP_SAML_*` options and unit tests, and was verified end to end on 2026-11-14 against an S/4HANA
-2025 trial system (Keycloak login from Claude Code and VS Code; `SAPWrite` recorded the propagated SU01
-user). Setup guide: [Local SSO Prototype](local-sso-prototype.md), templates in `examples/local-sso/`
-([plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-11-14-local-saml-bearer-pp-prototype.md)).
+Each tool call currently creates one security session. Per-user transport/session reuse needs
+measurement and isolation design, including expiry and revocation handling (OPS-06). IAS token
+scope/claim mapping and the flow on SAP releases beyond the tested builds remain unverified.
 
-**Resume with.** An IAS OIDC application completing the same flow (IAS tokens carry no `scope`
-claim, so a scope mapping is needed). Then decide: ADR and security review (design principle 7), key
-lifecycle and rotation, assertion/session reuse per user (OPS-06), and whether the issuer belongs in
-core or an extension.
+**Resume when.** A supported deployment hits SAP session pressure, IAS is available for an
+end-to-end test, or another S/4HANA release needs qualification. Keep any reuse tied to a verified
+user and credential lifetime; never reuse a session across users or fall back to `SAP_USER`.
 
 <a id="compat-22"></a>
 ### COMPAT-22 — Integration Suite remote MCP gateway validation

@@ -170,20 +170,20 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   {
     name: 'pp-saml-idp-key-file',
     valueName: 'path',
-    description: 'PROTOTYPE: PEM key signing local SAML bearer assertions',
+    description: 'Experimental: PEM key signing local SAML bearer assertions',
   },
   {
     name: 'pp-saml-idp-cert-file',
     valueName: 'path',
-    description: 'PROTOTYPE: PEM certificate trusted by the SAP system',
+    description: 'Experimental: PEM certificate trusted by the SAP system',
   },
-  { name: 'pp-saml-issuer', valueName: 'id', description: 'PROTOTYPE: SAML issuer / entity ID' },
-  { name: 'pp-saml-audience', valueName: 'id', description: 'PROTOTYPE: SAML audience (SAP local provider name)' },
-  { name: 'pp-saml-recipient', valueName: 'url', description: 'PROTOTYPE: SAML recipient (default SAP URL)' },
-  { name: 'pp-saml-nameid-claim', valueName: 'claim', description: 'PROTOTYPE: JWT claim used as SAML NameID' },
-  { name: 'pp-saml-nameid-format', valueName: 'format', description: 'PROTOTYPE: email or unspecified' },
-  { name: 'pp-saml-authn-context', valueName: 'uri', description: 'PROTOTYPE: AuthnContextClassRef URI' },
-  { name: 'pp-saml-ttl-seconds', valueName: 'seconds', description: 'PROTOTYPE: assertion validity (30-3600)' },
+  { name: 'pp-saml-issuer', valueName: 'id', description: 'Experimental: SAML issuer / entity ID' },
+  { name: 'pp-saml-audience', valueName: 'id', description: 'Experimental: SAML audience (SAP local provider name)' },
+  { name: 'pp-saml-recipient', valueName: 'url', description: 'Experimental: SAML recipient (default SAP URL)' },
+  { name: 'pp-saml-nameid-claim', valueName: 'claim', description: 'Experimental: JWT claim used as SAML NameID' },
+  { name: 'pp-saml-nameid-format', valueName: 'format', description: 'Experimental: email or unspecified' },
+  { name: 'pp-saml-authn-context', valueName: 'uri', description: 'Experimental: AuthnContextClassRef URI' },
+  { name: 'pp-saml-ttl-seconds', valueName: 'seconds', description: 'Experimental: assertion validity (30-3600)' },
   { name: 'disable-saml', valueName: 'boolean', description: 'Disable SAP SAML redirects (true/false)' },
   { name: 'tool-mode', valueName: 'mode', description: 'Tool mode: standard or hyperfocused' },
   {
@@ -943,13 +943,13 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     'ppAllowSharedCookies',
   );
 
-  // ── PROTOTYPE: local SAML bearer issuer (per-user SAP auth without BTP) ──
+  // ── Experimental local SAML bearer issuer ──
   config.samlIdpKeyFile = resolveOptionalStr('pp-saml-idp-key-file', 'SAP_PP_SAML_IDP_KEY_FILE', 'samlIdpKeyFile');
   config.samlIdpCertFile = resolveOptionalStr('pp-saml-idp-cert-file', 'SAP_PP_SAML_IDP_CERT_FILE', 'samlIdpCertFile');
   config.samlIdpIssuer = resolveOptionalStr('pp-saml-issuer', 'SAP_PP_SAML_ISSUER', 'samlIdpIssuer');
   config.samlAudience = resolveOptionalStr('pp-saml-audience', 'SAP_PP_SAML_AUDIENCE', 'samlAudience');
   config.samlRecipient = resolveOptionalStr('pp-saml-recipient', 'SAP_PP_SAML_RECIPIENT', 'samlRecipient');
-  config.samlNameIdClaim = resolveStr('pp-saml-nameid-claim', 'SAP_PP_SAML_NAMEID_CLAIM', 'email', 'samlNameIdClaim');
+  config.samlNameIdClaim = resolveOptionalStr('pp-saml-nameid-claim', 'SAP_PP_SAML_NAMEID_CLAIM', 'samlNameIdClaim');
   const samlNameIdFormat = resolveStr(
     'pp-saml-nameid-format',
     'SAP_PP_SAML_NAMEID_FORMAT',
@@ -1274,7 +1274,7 @@ export function validateConfig(config: ServerConfig): void {
   const hasCookieAuth = !!(config.cookieFile || config.cookieString);
   const hasBtpServiceKey = !!(config.btpServiceKey || config.btpServiceKeyFile);
 
-  // PROTOTYPE: local SAML bearer issuer. Fail closed on half-configured issuers; the feature is a
+  // Experimental local SAML bearer issuer. Fail closed on half-configured issuers; the feature is a
   // single-target, OIDC-only per-user path and must not combine with BTP-discovered targets.
   const samlIssuerFields = [config.samlIdpKeyFile, config.samlIdpCertFile, config.samlIdpIssuer, config.samlAudience];
   if (samlIssuerFields.some(Boolean)) {
@@ -1282,6 +1282,9 @@ export function validateConfig(config: ServerConfig): void {
       throw new Error(
         'Local SAML bearer issuer needs all of SAP_PP_SAML_IDP_KEY_FILE, SAP_PP_SAML_IDP_CERT_FILE, SAP_PP_SAML_ISSUER and SAP_PP_SAML_AUDIENCE.',
       );
+    }
+    if (!config.samlNameIdClaim) {
+      throw new Error('Local SAML bearer issuer requires SAP_PP_SAML_NAMEID_CLAIM to be set explicitly.');
     }
     if (!config.ppEnabled) {
       throw new Error(

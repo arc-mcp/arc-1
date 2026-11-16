@@ -1,9 +1,9 @@
 /**
- * Local SAML 2.0 bearer-assertion issuer (PROTOTYPE).
+ * Experimental local SAML 2.0 bearer-assertion issuer.
  *
  * ARC-1 acts as the SAML identity provider that the ABAP system trusts (transaction SAML2), the
  * same role the BTP subaccount plays for a `SAMLAssertion` destination. After the OIDC middleware
- * has verified the end user's JWT, the user's NameID claim (default `email`) is placed into a
+ * has verified the end user's JWT, the explicitly configured NameID claim is placed into a
  * short-lived, signed SAML 2.0 bearer assertion that `AdtHttpClient` sends verbatim as
  * `Authorization: SAML2.0 <base64>` plus `x-sap-security-session: create`.
  *
@@ -11,7 +11,7 @@
  * No BTP Destination Service or Cloud Connector is involved. The shared SAP_USER never leaks into
  * this path: the caller builds the per-user client with `buildAdtConfig(..., { perUser: true })`.
  */
-import { randomBytes } from 'node:crypto';
+import { createPrivateKey, randomBytes, X509Certificate } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { SignedXml } from 'xml-crypto';
 import type { ServerConfig } from '../server/types.js';
@@ -29,7 +29,7 @@ export interface SamlBearerIdp {
   audience: string;
   /** SubjectConfirmationData Recipient; defaults to the SAP base URL. */
   recipient: string;
-  /** JWT claim carrying the SAP-side identity (default `email`). */
+  /** Explicit JWT claim carrying the SAP-side identity. */
   nameIdClaim: string;
   nameIdFormat: SamlNameIdFormat;
   authnContextClassRef: string;
@@ -57,20 +57,36 @@ const isoSeconds = (date: Date): string => date.toISOString().replace(/\.\d{3}Z$
  */
 export function loadSamlBearerIdp(config: ServerConfig): SamlBearerIdp | undefined {
   if (!config.samlIdpKeyFile) return undefined;
-  if (!config.samlIdpCertFile || !config.samlIdpIssuer || !config.samlAudience) {
+  if (!config.samlIdpCertFile || !config.samlIdpIssuer || !config.samlAudience || !config.samlNameIdClaim) {
     throw new Error(
-      'SAP_PP_SAML_IDP_KEY_FILE requires SAP_PP_SAML_IDP_CERT_FILE, SAP_PP_SAML_ISSUER and SAP_PP_SAML_AUDIENCE.',
+      'SAP_PP_SAML_IDP_KEY_FILE requires SAP_PP_SAML_IDP_CERT_FILE, SAP_PP_SAML_ISSUER, SAP_PP_SAML_AUDIENCE and SAP_PP_SAML_NAMEID_CLAIM.',
     );
   }
   const privateKeyPem = readFileSync(config.samlIdpKeyFile, 'utf8');
   const certificatePem = readFileSync(config.samlIdpCertFile, 'utf8');
-  if (!/-----BEGIN (RSA |EC )?PRIVATE KEY-----/.test(privateKeyPem)) {
+  if (!/^-----BEGIN (?:RSA )?PRIVATE KEY-----[\s\S]+-----END (?:RSA )?PRIVATE KEY-----\s*$/.test(privateKeyPem)) {
     throw new Error(`SAP_PP_SAML_IDP_KEY_FILE does not contain a PEM private key: ${config.samlIdpKeyFile}`);
   }
-  if (!/-----BEGIN CERTIFICATE-----/.test(certificatePem)) {
+  if (!/^-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----\s*$/.test(certificatePem)) {
     throw new Error(`SAP_PP_SAML_IDP_CERT_FILE does not contain a PEM certificate: ${config.samlIdpCertFile}`);
   }
-  return {
+  let certificate: X509Certificate;
+  try {
+    if (createPrivateKey(privateKeyPem).asymmetricKeyType !== 'rsa') throw new Error('not RSA');
+  } catch {
+    throw new Error('SAP_PP_SAML_IDP_KEY_FILE must contain a valid RSA private key');
+  }
+  try {
+    certificate = new X509Certificate(certificatePem);
+    if (certificate.publicKey.asymmetricKeyType !== 'rsa') throw new Error('not RSA');
+  } catch {
+    throw new Error('SAP_PP_SAML_IDP_CERT_FILE must contain a valid RSA certificate');
+  }
+  const now = Date.now();
+  if (now < Date.parse(certificate.validFrom) || now >= Date.parse(certificate.validTo)) {
+    throw new Error('SAP_PP_SAML_IDP_CERT_FILE is not currently valid (check certificate dates)');
+  }
+  const idp: SamlBearerIdp = {
     issuer: config.samlIdpIssuer,
     audience: config.samlAudience,
     recipient: config.samlRecipient || config.url || '',
@@ -81,6 +97,17 @@ export function loadSamlBearerIdp(config: ServerConfig): SamlBearerIdp | undefin
     privateKeyPem,
     certificatePem,
   };
+  try {
+    const assertion = buildSamlBearerAssertion(idp, 'arc1-startup-self-check', new Date(now));
+    const verifier = new SignedXml({ publicCert: certificatePem });
+    const signature = assertion.xml.match(/<(?:\w+:)?Signature\b[\s\S]*?<\/(?:\w+:)?Signature>/)?.[0];
+    if (!signature) throw new Error('signature missing');
+    verifier.loadSignature(signature);
+    if (!verifier.checkSignature(assertion.xml)) throw new Error('signature mismatch');
+  } catch {
+    throw new Error('SAP_PP_SAML_IDP_KEY_FILE and SAP_PP_SAML_IDP_CERT_FILE do not form a valid signing pair');
+  }
+  return idp;
 }
 
 /**
@@ -97,6 +124,19 @@ export function resolveSamlNameId(verifiedJwt: string, claim: string): string {
   const value = payload[claim];
   if (typeof value !== 'string' || value.trim() === '') {
     throw new Error(`Principal propagation (SAML bearer): user token has no usable '${claim}' claim`);
+  }
+  if (claim === 'email' && payload.email_verified !== true) {
+    throw new Error("Principal propagation (SAML bearer): 'email' claim requires email_verified === true");
+  }
+  const characters = Array.from(value);
+  const hasControl = characters.some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
+  });
+  if (characters.length > 256 || hasControl) {
+    throw new Error(
+      `Principal propagation (SAML bearer): '${claim}' claim contains controls or exceeds 256 characters`,
+    );
   }
   return value.trim();
 }
