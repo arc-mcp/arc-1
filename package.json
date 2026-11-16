@@ -117,7 +117,7 @@
     "@sap/xssec": "^4.16.0",
     "ajv": "^8.18.0",
     "better-sqlite3": "^13.1.1",
-    "commander": "^15.0.0",
+    "commander": "^15.1.0",
     "cors": "2.8.6",
     "diff": "^9.0.0",
     "dotenv": "^18.0.9",
