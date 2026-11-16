@@ -85,7 +85,10 @@ const BUDGETS = {
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
   // +3: classify caller cancellation before generic network wrapping (#1045).
-  'src/adt/http.ts': 1566, // Combined metadata discovery/language access and optional-analysis CSRF accounting.
+  // +50: bounded same-cookie local-SAML security-session logoff stays beside the owning cookie jar
+  // and stateful clone lifecycle; no separate transport or cross-user session pool is introduced.
+  'src/adt/http.ts': 1616,
+  'tests/unit/adt/http.test.ts': 3008, // Same-cookie logoff must omit SAML Authorization.
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1477, // Exhaustive lock-holder parsing extracted to transport-locks.ts (#1080).
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed

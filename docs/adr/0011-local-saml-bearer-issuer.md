@@ -38,8 +38,12 @@ are rejected at startup. There is no user-to-user transport reuse, automatic tru
 claim transformation, alternate signing algorithm, or fallback credential. The final build was
 verified on SAP_BASIS 758 only. The original contributor verified 816 on an earlier build; IAS and
 final-build 816 qualification remain in SEC-23. Keycloak is the only validated IdP.
-The same-cookie SAP logoff request returned 200, but immediate SM05 release could not be established
-on A4H 758; session cleanup remains open in SEC-23.
+On A4H 758/001, 20 sequential reads created 20 `SECURITY_CONTEXT` rows (one per call) with a
+120-second effective security-session timeout. A raw same-cookie SAP logoff removed its row
+immediately, so the local-SAML call boundary now performs bounded, best-effort logoff after
+dispatch returns. The resulting build passed 50 sequential plus 10 parallel reads and six updates,
+including five parallel same-user updates, with the test user's row count back at baseline
+immediately and after 10 seconds. Other releases and IdPs remain unqualified in SEC-23.
 
 See the [operator guide](../../docs_page/local-sso-experimental.md), [R24](../security-model.md)
 and [R25](../security-model.md).

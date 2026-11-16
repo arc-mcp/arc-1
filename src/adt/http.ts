@@ -196,6 +196,8 @@ export class AdtHttpClient {
    * (domain, path, expiry) because all requests go to the same SAP host.
    */
   private cookieJar: Map<string, string> = new Map();
+  /** Security sessions opened by stateful clones also belong to this request-local client. */
+  private readonly samlSessionJars: Map<string, Map<string, string>> = new Map();
   /** Guard to prevent infinite retry loops for DB connection errors */
   private dbRetryInProgress = false;
   /** Set after a 401 clears stale cookies — triggers file reload on the next request */
@@ -328,6 +330,54 @@ export class AdtHttpClient {
         await sessionClient.statefulProxyClient?.close();
       } catch {
         logger.warn('Failed to close stateful Connectivity proxy client.');
+      }
+      if (this.config.samlAuthorization) this.rememberSamlSession(sessionClient.cookieJar);
+    }
+  }
+
+  private rememberSamlSession(jar: Map<string, string>): void {
+    const session = [...jar].find(([name, value]) => name.startsWith('SAP_SESSIONID_') && value !== '0');
+    if (session) this.samlSessionJars.set(`${session[0]}=${session[1]}`, new Map(jar));
+  }
+
+  /** End only security sessions owned by this local-SAML tool call, after its dispatch has returned. */
+  async logoffSamlSecuritySessions(timeoutMs = 2_000): Promise<void> {
+    if (!this.config.samlAuthorization) return;
+    this.rememberSamlSession(this.cookieJar);
+    const jars = [...this.samlSessionJars.values()];
+    this.samlSessionJars.clear();
+    const deadline = Date.now() + timeoutMs;
+    for (const jar of jars) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      // The assertion must not accompany logoff: it could create a replacement session.
+      const logoff = new AdtHttpClient(
+        {
+          ...this.config,
+          samlAuthorization: undefined,
+          username: undefined,
+          password: undefined,
+          cookies: Object.fromEntries(jar),
+        },
+        this.authenticationAttemptState,
+      );
+      try {
+        await logoff.get(
+          '/sap/public/bc/icf/logoff',
+          { Accept: '*/*' },
+          {
+            deadline,
+            fetchTimeoutMs: remaining,
+            noReplay: true,
+            retryTransientErrors: false,
+            discardResponseBody: true,
+            probe: true,
+          },
+        );
+      } catch (error) {
+        logger.warn('Failed to end local SAML security session.', {
+          statusCode: error instanceof AdtApiError ? error.statusCode : undefined,
+        });
       }
     }
   }

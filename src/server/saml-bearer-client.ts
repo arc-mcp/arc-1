@@ -123,5 +123,15 @@ export async function runSamlBearerToolCall(
   dispatch: (client: AdtClient) => Promise<Record<string, unknown>>,
 ): Promise<Record<string, unknown>> {
   const result = createSamlBearerPerUserClient({ idp, token, requestId, fallbackUser, buildPerUserAdtConfig });
-  return result.ok ? dispatch(result.client) : result.error;
+  if (!result.ok) return result.error;
+  try {
+    return await dispatch(result.client);
+  } finally {
+    // Dispatch owns all locks. Logoff runs only after it settles and must never replace its result.
+    try {
+      await result.client.http.logoffSamlSecuritySessions();
+    } catch {
+      logger.warn('Failed to end local SAML security session.');
+    }
+  }
 }

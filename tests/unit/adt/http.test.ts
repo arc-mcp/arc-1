@@ -192,6 +192,21 @@ describe('AdtHttpClient', () => {
       }
     });
 
+    it('logs off with the same security cookie and without replaying the assertion', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(200, 'ok', {}, ['SAP_SESSIONID_A4H_001=test-session; Path=/; HttpOnly']))
+        .mockResolvedValueOnce(mockResponse(200, 'logged off'));
+      const client = new AdtHttpClient(samlConfig());
+      await client.get('/sap/bc/adt/core/discovery');
+      await client.logoffSamlSecuritySessions();
+
+      expect(fetchUrl(1)).toContain('/sap/public/bc/icf/logoff');
+      expect(fetchHeaders(1).Cookie).toContain('SAP_SESSIONID_A4H_001=test-session');
+      expect(fetchHeaders(1).Authorization).toBeUndefined();
+      expect(fetchHeaders(1)['x-sap-security-session']).toBeUndefined();
+      expect(fetchOptions(1).method).toBe('GET');
+    });
+
     it('does NOT send Basic auth when a SAML assertion is configured', async () => {
       mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
 

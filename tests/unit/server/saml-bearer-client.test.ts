@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import type { AdtHttpConfig } from '../../../src/adt/http.js';
+import { AdtHttpClient } from '../../../src/adt/http.js';
 import type { SamlBearerIdp } from '../../../src/adt/saml-bearer.js';
 import { logger } from '../../../src/server/logger.js';
 import {
@@ -171,5 +172,57 @@ describe('runSamlBearerToolCall', () => {
     );
     expect(rejected).toMatchObject({ isError: true });
     expect(calls).toBe(1);
+  });
+
+  it('attempts logoff after both successful and failed handlers have returned', async () => {
+    const logoff = vi.spyOn(AdtHttpClient.prototype, 'logoffSamlSecuritySessions').mockResolvedValue();
+    const success = { content: [{ type: 'text', text: 'ok' }] };
+    const token = jwtWith({ email: 'jane@example.com', email_verified: true });
+    let dispatchReturned = false;
+    try {
+      await expect(
+        runSamlBearerToolCall(idp, token, 'req-success', undefined, buildPerUserAdtConfig, async () => {
+          expect(logoff).not.toHaveBeenCalled();
+          dispatchReturned = true;
+          return success;
+        }),
+      ).resolves.toBe(success);
+      expect(dispatchReturned).toBe(true);
+      expect(logoff).toHaveBeenCalledTimes(1);
+
+      const handlerError = new Error('handler failed');
+      await expect(
+        runSamlBearerToolCall(idp, token, 'req-error', undefined, buildPerUserAdtConfig, async () => {
+          throw handlerError;
+        }),
+      ).rejects.toBe(handlerError);
+      expect(logoff).toHaveBeenCalledTimes(2);
+    } finally {
+      logoff.mockRestore();
+    }
+  });
+
+  it('preserves the tool result when logoff fails', async () => {
+    const logoff = vi
+      .spyOn(AdtHttpClient.prototype, 'logoffSamlSecuritySessions')
+      .mockRejectedValue(new Error('logoff failed'));
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const expected = { content: [{ type: 'text', text: 'ok' }] };
+    try {
+      await expect(
+        runSamlBearerToolCall(
+          idp,
+          jwtWith({ email: 'jane@example.com', email_verified: true }),
+          'req-logoff-error',
+          undefined,
+          buildPerUserAdtConfig,
+          async () => expected,
+        ),
+      ).resolves.toBe(expected);
+      expect(warn).toHaveBeenCalledWith('Failed to end local SAML security session.');
+    } finally {
+      logoff.mockRestore();
+      warn.mockRestore();
+    }
   });
 });
