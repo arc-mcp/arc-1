@@ -677,7 +677,7 @@
         },
         "messages": {
           "type": "array",
-          "description": "MSAG: message entries for create/update",
+          "description": "MSAG: create; update merges by number",
           "items": {
             "type": "object",
             "properties": {
