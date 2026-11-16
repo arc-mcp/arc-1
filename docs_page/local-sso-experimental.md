@@ -217,24 +217,16 @@ curl -s -X POST http://localhost:8091/mcp -H "Authorization: Bearer $TOKEN" \
 - ARC-1 scopes come from the token and restrict only; SAP authorizations of the propagated user still
   apply. `SAP_PP_STRICT=false` keeps the API key usable beside per-user identity; set it to `true` to
   refuse every non-JWT caller.
-- A4H 758/001's effective `http/security_session_timeout` was 120 seconds. With no test-user
-  sessions at baseline, 20 sequential SAML SAPRead calls created 20 `SECURITY_CONTEXT` rows: one
-  per call. Their `START_TIMESTAMP` values were 10:03:44–46 UTC and `EOL_TIMESTAMP` values were
-  10:05:44–46 UTC. All 20 still existed about 20 seconds after EOL and were gone by the next poll
-  about 30 seconds later. A separate raw SAML request created one row; SAP's logoff request with
-  the same cookie removed it immediately (1 → 0), and it remained absent after 10 seconds. ARC-1
-  now sends that bounded, best-effort logoff after each local-SAML tool call. On the resulting build,
-  50 sequential plus 10 parallel reads, one lock/modify/unlock write, and five parallel same-user
-  writes all succeeded; the test user's row count was 0 immediately afterward and after 10 seconds.
-  `http/security_context_cache_size=2500` is a **per-application-server cache capacity**, not a
-  per-user session limit. When the cache fills, SAP documents missing session cookies and possible
-  HTTP 401 responses. See [SAP's HTTP security session documentation](https://help.sap.com/saphelp_snc700_ehp01/helpdata/en/bb/1bcf2122fd4a76948816b1342f20d7/content.htm?no_cache=true)
-  and [KBA 3083426](https://userapps.support.sap.com/sap/support/knowledge/en/3083426).
+- Each local-SAML tool call creates one SAP security session, which ARC-1 ends with a best-effort
+  logoff after the call finishes. If logoff fails, SAP expires the session after
+  `http/security_session_timeout`.
+- `http/security_context_cache_size` is a per-application-server cache capacity, not a per-user
+  session limit ([SAP's HTTP security session documentation](https://help.sap.com/saphelp_snc700_ehp01/helpdata/en/bb/1bcf2122fd4a76948816b1342f20d7/content.htm?no_cache=true),
+  [KBA 3083426](https://userapps.support.sap.com/sap/support/knowledge/en/3083426)).
 - A4H 7.58/001 rejected a wrong audience and an untrusted signing certificate, but accepted an
   assertion with an unrelated `SubjectConfirmationData/@Recipient`. Do not rely on this SAP release
   to enforce Recipient. One signing key/certificate per SAP target and a unique SAML2 local provider
-  name across systems trusting ARC-1 certificates are required, including after system copies. See
-  the PR validation record for exact inputs and results.
+  name across systems trusting ARC-1 certificates are required, including after system copies.
 - The NameID claim must not be editable by end users. Entra's `email` claim is unsuitable for this
   mapping even if `email_verified=true`; use an administrator-controlled stable claim instead.
 

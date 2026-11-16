@@ -127,7 +127,7 @@ describe('loadSamlBearerIssuer', () => {
     expect(loaded?.recipient).toBe('https://sap.example:50001');
   });
 
-  it('warns once when the local issuer disables SAP TLS verification', () => {
+  it('warns when the local issuer disables SAP TLS verification', () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const config = {
       ...serverConfig,
@@ -138,7 +138,6 @@ describe('loadSamlBearerIssuer', () => {
       samlAudience: 'A4H_001',
       samlNameIdClaim: 'email',
     };
-    loadSamlBearerIssuer(config);
     loadSamlBearerIssuer(config);
     expect(warn).toHaveBeenCalledOnce();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('captured assertion is a bearer credential'));

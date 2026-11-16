@@ -1383,6 +1383,7 @@ export async function createAndStartServer(
     return shared.http;
   };
   const perUserTransports = new PerUserTransportPool(SHARED_TRANSPORT_MAX_AGE_MS); // same bound per PP user
+  const samlBearerIdp = loadSamlBearerIssuer(config);
   const buildDefaultServer = () =>
     createServer(config, {
       btpProxy,
@@ -1396,7 +1397,7 @@ export async function createAndStartServer(
       mcpRateLimiter,
       defaultHttp: defaultHttp(),
       perUserTransports,
-      samlBearerIdp: loadSamlBearerIssuer(config),
+      samlBearerIdp,
     });
   const aggregateConfig = registry
     ? buildAggregateToolSurfaceConfig(

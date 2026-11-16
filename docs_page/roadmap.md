@@ -621,7 +621,7 @@ requirement or claim this resolves the separate ADT-channel permission question.
 
 **Remaining gap.** The experimental, single-target OIDC issuer signs a short-lived SAML bearer
 assertion for an explicitly configured, administrator-controlled NameID claim. SAP trusts its
-certificate in SAML2. The [setup guide](local-sso-experimental.md), [ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-local-saml-bearer-issuer.md) and security risk register describe this PR's scope.
+certificate in SAML2. The [setup guide](local-sso-experimental.md), [ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-local-saml-bearer-issuer.md), [completed design plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/2026-11-14-local-saml-bearer-pp-experimental.md) and security risk register describe this PR's scope.
 
 On A4H 758/001, 20 sequential SAML reads created 20 `SECURITY_CONTEXT` rows, one per call.
 Same-cookie SAP logoff removed an isolated row immediately; bounded automatic cleanup then passed

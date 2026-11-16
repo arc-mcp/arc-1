@@ -17,14 +17,12 @@ import { logger } from './logger.js';
 import type { ServerConfig } from './types.js';
 
 export const SAML_BEARER_DESTINATION_LABEL = 'local-saml-bearer';
-let warnedInsecureIssuer = false;
 
 /** Load the issuer once at startup and log its (non-secret) trust parameters. */
 export function loadSamlBearerIssuer(config: ServerConfig): SamlBearerIdp | undefined {
   const idp = loadSamlBearerIdp(config);
   if (idp) {
-    if (config.insecure && !warnedInsecureIssuer) {
-      warnedInsecureIssuer = true;
+    if (config.insecure) {
       logger.warn(
         'Local SAML bearer issuer with SAP_INSECURE=true: SAP TLS verification is disabled; a captured assertion is a bearer credential until it expires.',
       );

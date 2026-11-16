@@ -1,7 +1,7 @@
 # Experimental: per-user SAP identity without BTP via a local SAML bearer issuer
 
 **Status:** Historical design and early-build evidence. The experimental decision is
-[ADR-0011](../adr/0011-local-saml-bearer-issuer.md); use the current guide and PR validation for
+[ADR-0011](../../adr/0011-local-saml-bearer-issuer.md); use the current guide and PR validation for
 the final build.
 **Target system used:** A4H (ABAP Platform 2025), client 001, `https://a4h-2025.marianzeis.de:50001`.
 

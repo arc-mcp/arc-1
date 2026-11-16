@@ -45,5 +45,6 @@ dispatch returns. The resulting build passed 50 sequential plus 10 parallel read
 including five parallel same-user updates, with the test user's row count back at baseline
 immediately and after 10 seconds. Other releases and IdPs remain unqualified in SEC-23.
 
-See the [operator guide](../../docs_page/local-sso-experimental.md), [R24](../security-model.md)
-and [R25](../security-model.md).
+See the [operator guide](../../docs_page/local-sso-experimental.md),
+[completed design plan](../plans/completed/2026-11-14-local-saml-bearer-pp-experimental.md),
+[R24](../security-model.md) and [R25](../security-model.md).
