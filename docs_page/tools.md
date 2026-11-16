@@ -1791,7 +1791,7 @@ Use `SAP_DENY_ACTIONS` to disable `SAPQuery.long_text` or `SAPQuery.application_
 |-----------|------|----------|-------------|
 | `action` | string | No | `"long_text"` for stored SAPscript or `"application_log"` for saved SLG1 messages. Omit it or use `"sql"` for freestyle ABAP SQL. |
 | `longText` | object | For `action="long_text"` | Required request: `mode="discover"` with `object`+`namePrefix` (optional `id`, `language`, `limit`), `mode="read"` with `keys`, or `mode="search"` with `keys`+`phrase`. |
-| `applicationLog` | object | For `action="application_log"` | Exact `logNumber`, optional `maxRows` (default 50, max 100) and `offset` (default 0, max 5000). |
+| `applicationLog` | object | For `action="application_log"` | Exact `logNumber`, optional `maxRows` (default 50, max 100), `offset` (default 0, max 5000) and `severities` (1–5 unique upper-case values from `A`, `E`, `W`, `I`, `S`). |
 | `sql` | string | For freestyle SQL | ABAP SQL SELECT statement; omit for bounded data actions. |
 | `maxRows` | number | No | Freestyle SQL only: maximum rows (default 100, clamped to 10,000). Wide results can hit the server byte ceiling much earlier. |
 
@@ -1870,11 +1870,30 @@ A successful empty result contains no messages on that page. `hasLongText` and `
 indicate availability; their contents are not returned. Message `number` identifies a row in
 the log, not a T100 message class/number.
 
-This first version does not discover logs or expand message details/long texts. It is qualified
-on the tested 7.58 system; other systems need the native service enabled and accessible. BTP ABAP
-targets and deployments with `SAP_BLOCKED_DATA_SOURCES` configured are unsupported. SAP loads
-the selected log internally even when ARC-1 returns a small page. To disable this action alone,
-set `SAP_DENY_ACTIONS=SAPQuery.application_log`.
+`header.messageCount`, when supplied by SAP, is the total for the whole log. `severities` filters
+messages in SAP (`A` abort, `E` error, `W` warning, `I` info, `S` success); `maxRows`, `offset`,
+`nextOffset` and the 5000 offset ceiling then apply to the filtered list, and the result echoes
+`severities`.
+A severity filter can therefore reach messages beyond the 5000 offset ceiling of unfiltered
+paging. `messageCount` stays the whole-log total under a filter.
+
+```json
+{"action":"application_log","applicationLog":{"logNumber":"00000000000000000042","severities":["E","A"]}}
+```
+
+A message carries `detailLevel` when SAP sets one and `context` when the log's context fields hold
+values: five strings in SAP's field order, empty where unset. Their labels depend on the log's
+context structure and are not returned. Message class, number and variables are not available
+from this service.
+If a service version omits these enrichment fields, the read still succeeds without them.
+Context is returned only when all five positions are supplied; malformed field types are refused.
+Omit `severities` (or pass `null`) for all types; an explicit empty array is rejected.
+
+This action does not discover logs or expand message details/long texts. It is qualified on 758;
+other releases need the native service enabled and accessible. BTP ABAP targets and deployments
+with `SAP_BLOCKED_DATA_SOURCES` configured are unsupported. SAP loads the selected log internally
+even when ARC-1 returns a small page. To disable this action alone, set
+`SAP_DENY_ACTIONS=SAPQuery.application_log`.
 
 If SAP returns `No service found` (`/IWFND/MED/170`), ask Basis to check this service's Gateway
 registration in `/IWFND/MAINT_SERVICE`. That response can be HTTP 403; it does not establish

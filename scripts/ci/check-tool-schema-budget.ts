@@ -129,7 +129,8 @@ const FULL_ACCESS_CONFIG: ServerConfig = {
 // Full surface: 74,287 bytes; retain a 74,500-byte ceiling.
 // #1018 adds two opt-in fields (+556 bytes); retain existing model guidance per maintainer request.
 // Exact-text edits with #1199/#1222: measured 75,244 wire bytes / 23,764 for SAPWrite.
-const WRITE_WIRE_WALL = 75_300;
+// application_log severities: 75,297 -> 75,384 measured bytes (+87); the old wall had 3 bytes free.
+const WRITE_WIRE_WALL = 75_384;
 const READ_WIRE_WALL = 50_000;
 const PER_TOOL_WIRE_WALL = 23_000;
 
@@ -228,7 +229,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Raised 17_700 -> 17_800 and descriptions 265 -> 270 for structured KTD shortTexts while
       // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
       // Combined automatic relations + ATC batches; same budgets with explicit discovery below.
-      schemaTokenEstimate: 18_825,
+      schemaTokenEstimate: 18_846,
       descriptionTokenEstimate: 12_800,
       // Includes expectedSourceHash (#853) and SAPRead.source (#855).
       // LONG_TEXT adds eight field descriptions; shorter existing guidance preserves byte/token ceilings.
@@ -288,7 +289,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: LIVE_RELATIONS_FEATURES,
     budget: {
-      schemaTokenEstimate: 18_825,
+      schemaTokenEstimate: 18_846,
       descriptionTokenEstimate: 12_800,
       descriptionCount: 298, // Includes the two exact-text edit fields.
       maxTotalWireBytes: WRITE_WIRE_WALL,

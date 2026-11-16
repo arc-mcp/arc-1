@@ -171,6 +171,37 @@ const scenarios: Omit<EvalScenario, 'category'>[] = [
     mockToolExecutor: storedTextFixtureExecutor,
     finalAnswer: { required: [/Payment within 30 days/i], requireNonEmpty: true },
   },
+  {
+    id: 'application-log-severity-filter',
+    description: 'Filter natively by severity; header.messageCount counts the whole log, not the filtered rows.',
+    prompt: `List only the type E error messages of SLG1 log ${logNumber} and say how many messages the whole log has.`,
+    optimal: [
+      {
+        tool: 'SAPQuery',
+        requiredArgs: { action: 'application_log' },
+        absentArgPaths: [['sql'], ['maxRows'], ['longText']],
+        exactArgs: { applicationLog: { logNumber, severities: ['E'] } },
+      },
+    ],
+    mockResponses: {
+      SAPQuery: JSON.stringify({
+        ...base,
+        header: { messageCount: 31 },
+        severities: ['E'],
+        offset: 0,
+        messages: [
+          { number: '000007', text: 'Object could not be imported', type: 'E' },
+          { number: '000019', text: 'Import step ended with errors', type: 'E' },
+        ],
+        more: false,
+      }),
+    },
+    finalAnswer: {
+      required: [/could not be imported/i, /ended with errors/i, /\b31\b/],
+      forbidden: [/\b31 (?:error|type E)/i],
+      requireNonEmpty: true,
+    },
+  },
 ];
 export const SCENARIOS: EvalScenario[] = scenarios.map((scenario) => ({
   category: 'application-log',
