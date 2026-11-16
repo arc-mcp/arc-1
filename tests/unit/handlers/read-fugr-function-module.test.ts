@@ -2,16 +2,19 @@
  * SAPRead FUGR handed a function module name (tracker A25): the hint must name the real group.
  * The undici mock + AdtClient + createClient live in ./setup-undici-mock.ts — keep src-module imports dynamic.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { handleSAPRead } = await import('../../../src/handlers/read.js');
 const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 
 beforeEach(() => {
+  vi.restoreAllMocks();
+  mockFetch.mockReset();
   resetCachedFeatures();
 });
 
@@ -26,6 +29,7 @@ describe('FUGR read given a function module name (A25)', () => {
       404,
       '/sap/bc/adt/functions/groups/Z_MY_FUNC/source/main',
     ],
+    ['grep (404 from source/main)', { grep: 'FUNCTION' }, 404, '/sap/bc/adt/functions/groups/Z_MY_FUNC/source/main'],
   ])('names the real group when the name is a function module: %s', async (_label, extra, status, path) => {
     mockFetch.mockReset();
     mockFetch.mockRejectedValueOnce(notFound(status, path));
@@ -59,4 +63,46 @@ describe('FUGR read given a function module name (A25)', () => {
     expect(result.content[0]?.text).not.toContain('is a function module');
     expect(result.content[0]?.text).toContain('was not found');
   });
+
+  const read = (client: ReturnType<typeof createClient>, extra = {}) =>
+    handleSAPRead(client, { type: 'FUGR', name: 'Z_MY_FUNC', ...extra }, undefined, { isPerUserClient: false }, false);
+
+  it.each([403, 500])('does not resolve a module after HTTP %i', async (status) => {
+    const client = createClient();
+    const error = new AdtApiError(
+      'Original group error',
+      status,
+      '/sap/bc/adt/functions/groups/Z_MY_FUNC/objectstructure',
+    );
+    vi.spyOn(client, 'getFunctionGroup').mockRejectedValue(error);
+    const lookup = vi.spyOn(client, 'resolveFunctionGroup');
+
+    await expect(read(client)).rejects.toBe(error);
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it('does not resolve a module after a non-API error', async () => {
+    const client = createClient();
+    const error = new Error('Connection unavailable');
+    vi.spyOn(client, 'getFunctionGroupExpanded').mockRejectedValue(error);
+    const lookup = vi.spyOn(client, 'resolveFunctionGroup');
+
+    await expect(read(client, { expand_includes: true })).rejects.toBe(error);
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it.each(['missing', 'same name', 'lookup failed'])(
+    'preserves the original error when resolution is %s',
+    async (outcome) => {
+      const client = createClient();
+      const error = notFound(422, '/sap/bc/adt/functions/groups/Z_MY_FUNC/objectstructure');
+      vi.spyOn(client, 'getFunctionGroup').mockRejectedValue(error);
+      const lookup = vi.spyOn(client, 'resolveFunctionGroup');
+      if (outcome === 'lookup failed') lookup.mockRejectedValue(new Error('Search unavailable'));
+      else lookup.mockResolvedValue(outcome === 'same name' ? 'z_my_func' : null);
+
+      await expect(read(client)).rejects.toBe(error);
+      expect(lookup).toHaveBeenCalledExactlyOnceWith('Z_MY_FUNC');
+    },
+  );
 });
