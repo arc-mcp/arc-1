@@ -116,7 +116,7 @@
     "@sap/xsenv": "^6.2.2",
     "@sap/xssec": "^4.16.0",
     "ajv": "^8.18.0",
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "^13.1.1",
     "commander": "^15.0.0",
     "cors": "2.8.6",
     "diff": "^9.0.0",
