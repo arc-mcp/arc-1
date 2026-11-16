@@ -1203,6 +1203,8 @@ BTP ABAP, principal propagation and additional active-service releases. The nati
 expose message class, number or variables; those exist only in BALDAT and stay excluded. Positive
 `$top` limits output, not SAP's full-log load. Do not add `/$count`, broad text searches, or BALDAT
 fallback without separate authorization and resource-cost evidence.
+The earlier restricted-user checks covered unfiltered reads; severity filtering still needs its
+own restricted-user allow/deny qualification.
 
 **Resume with.** A concrete support workflow and an active service on the target landscape.
 Qualify native filters, time zones, DCL/BAdI restrictions and pagination before expanding the tool;

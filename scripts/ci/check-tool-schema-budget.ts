@@ -129,7 +129,7 @@ const FULL_ACCESS_CONFIG: ServerConfig = {
 // Full surface: 74,287 bytes; retain a 74,500-byte ceiling.
 // #1018 adds two opt-in fields (+556 bytes); retain existing model guidance per maintainer request.
 // Exact-text edits with #1199/#1222: measured 75,244 wire bytes / 23,764 for SAPWrite.
-// application_log severities: +84 measured bytes after trimming duplicate logNumber lengths.
+// application_log severities: 75,297 -> 75,384 measured bytes (+87); the old wall had 3 bytes free.
 const WRITE_WIRE_WALL = 75_384;
 const READ_WIRE_WALL = 50_000;
 const PER_TOOL_WIRE_WALL = 23_000;

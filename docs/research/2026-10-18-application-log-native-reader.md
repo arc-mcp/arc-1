@@ -179,6 +179,82 @@ context values, so they are not a reliable presence signal either. FEAT-88 recor
 Text filters such as `substringof('error',Text)` are accepted natively and remain excluded for
 the render-the-whole-log reason above.
 
+### Independent PR #1250 review — 2026-11-16
+
+Reviewed `22445dc45`; runtime fixes are in `406e24083`. Read-only checks used the built public
+`node dist/cli.js call SAPQuery --json -`, Basic authentication, client 001, data preview enabled,
+and writes/free SQL disabled. No service activation, SAP data writes, or role/user changes.
+
+Two review fixes preserve the original read boundary:
+
+- Direct CLI calls previously ran ADT authentication and feature probes before dispatch, even
+  for invalid severity inputs or disabled data access. Native application-log calls now go
+  directly through the existing dispatcher and authenticate on their OData GETs. Standard and
+  hyperfocused invalid inputs and the data gates produce zero outbound HTTP audit events.
+  Native 401/403 failures are still propagated; other CLI operations retain their bootstrap.
+- The new count/detail/context fields were mandatory even on unfiltered reads. Live 7.58
+  metadata supplies them, but that is evidence for this service version, not a cross-version
+  guarantee. Replaying the formerly accepted response shape reproduced a compatibility break.
+  Missing enrichment fields are now omitted; supplied wrong types still fail closed. Partial
+  context is omitted as a whole so an unavailable position is never presented as a known empty
+  value. Required log/message identity checks and filtered-type verification remain strict.
+
+An explicit `severities: []` remains an error. Treating it as omission would broaden a supplied
+selection to every type. Null padding is still stripped, and the normalizer never rewrites
+array contents into accepted enum values. The reader's independent enum check protects direct
+callers; it is not redundant with the public Zod/wire contracts.
+
+For each fixture below, all five single-type filters and both `E/W` and `I/S` filters equalled
+client-side filtering of its complete unfiltered public-tool result: 63 comparisons in total.
+Every page retained the whole-log count. Message content was compared in memory; this record
+contains only family names, counts and shapes.
+
+| Family | Complete messages | Types/counts | Context rows |
+| --- | ---: | --- | ---: |
+| IDENTITY / BOR_DELETED | 9 | I 6, S 3 | 0 |
+| /UI2/BE / /UI2/TRACE | 11 | I 10, S 1 | 0 |
+| SRT_CA / CFG_FW | 4 | I 1, S 3 | 0 |
+| /UI2/BE / /UI2/PAGE_BUILDER | 18 | I 14, E 4 | 0 |
+| /UI2/BE / /UI2/PFCG | 15 | I 9, W 3, S 3 | 0 |
+| STC / SESSION | 27 | S 23, I 4 | 0 |
+| /STMC/ / /TM_SYSTEM | 24 | I 2, S 22 | 0 |
+| /IWFND/ / /RUNTIM | 161 | I 157, W 4 | 161 |
+| ATC / RUN | 0 | Empty | 0 |
+
+The 12,920-message log returned A 0 (one empty page), E 760 (eight pages), W 258 (three pages),
+and I 255 (three pages), exactly matching native `HeaderSet.MessageCountA/E/W/I`. E/W/I included
+message numbers beyond 5000. Every continuation used `nextOffset`. At offset 5000, unfiltered
+and S-filtered reads returned `more=true`, `limitReached=true`, and no `nextOffset`; the complete
+11,647-message S selection was not claimed as readable through this bounded action.
+
+All seven requested invalid input shapes were refused in both standard and hyperfocused CLI
+mode, with zero outbound HTTP audit events. Data preview off, deny action and an unrelated
+configured blocklist also produced zero requests. Across the 92 successful CLI page calls,
+184 native request audit events redacted keys/filters and payloads; arguments and result previews
+were redacted too. The shared admission lease, cumulative byte budget and deadline were reviewed
+and exercised by unit tests; this review did not repeat the earlier live cancellation/load probes.
+
+A real local `http-streamable` server with a `viewer-data` API key returned the same filtered
+result as the CLI. A `viewer` key had no SAPQuery tool and its direct call was denied for missing
+data scope with no per-call SAP I/O. Startup probes were excluded from that per-call count.
+The available secondary test account could read the sampled log both with and without a filter;
+it did not establish a limited `S_APPL_LOG` grant. A restricted-user allow/deny matrix remains
+unqualified for severity filtering; no roles were changed to create one.
+
+Fresh built-CLI calls on 8.16 and 7.50 returned HTTP 403 with `/IWFND/MED/170` and the
+`/IWFND/MAINT_SERVICE` registration hint, without the generic authorization hint. These are
+negative checks only. The initial 7.50 HTTP route failed authentication; the configured HTTPS
+route produced the registration response. PP, BTP ABAP and other active-service releases were
+not tested. No actual-model evaluation was run; eval tests are scripted/mock coverage.
+
+Automated gates passed: 459 unit files / 12,425 tests, typecheck, lint, policy validation, build
+and size checks. The CLI runtime (48 tests) and shutdown (12 tests) files also passed alone.
+The existing read-only integration test passed for all nine fixtures above (nine tests, no skips).
+Only the four intended full on-prem tool snapshots changed. Actual full-surface wire size is
+75,297 -> 75,384 bytes (+87); the wall increases by 84 because the former 75,300-byte wall had
+3 bytes free. The byte/4 token estimate is 18,825 -> 18,846 (+21). The review recommends accepting
+this explicit increase: no field descriptions or unrelated guidance were removed to hide it.
+
 ## Generic cluster proposal
 
 Focused review of #844 at `d27d7cab0bfbf87cbda8e83a783427d42cf3dcca` reproduced unbounded inflate,
