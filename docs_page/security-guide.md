@@ -350,12 +350,13 @@ tool call. See [setup](btp-cloud-foundry-deployment.md#optional-btp-audit-log-si
 
 | Event | Description |
 |-------|-------------|
-| `tool_call_start` | Tool name and centrally redacted arguments. |
+| `tool_call_start` | Tool name and centrally redacted arguments. Source and content arguments (`source`, `content`, `oldContent`, `newContent`, `proposalUserContent`, `fixedValues`, `messages`, `shortTexts`, `parameters`, at any depth incl. `batch_create` objects) are replaced by `[REDACTED content <n> chars sha256:<12 hex>]` for correlation, never logged. SQL text and filters are still logged, truncated. |
 | `tool_call_end` | Tool, duration, success/error status, error class, and result size/preview after central redaction. |
 | `http_request` | SAP HTTP method, ADT path, status, and duration. Optional debug bodies/headers are centrally redacted; authentication response bodies are never logged. |
 | `data_response_limited` | A successful or retry response crossed the configured data-preview byte ceiling. Includes tool, limit/observed bytes, endpoint family, queue wait, request ID, and selected target/identity when applicable; never SQL or response bodies. |
 | `http_csrf_fetch` | Debug-level CSRF probe response: method, endpoint, HTTP status, duration, session mode and context-cookie presence. `success` means this response supplied a usable token; a failed probe may recover through a fallback. Presence includes reset markers; it does not establish a valid context. No token/cookie values or bodies. |
 | `auth_scope_denied` | Tool, required scope, and caller's available scopes when authorization rejects a call. |
+| `mcp_route_denied` | A multi-target MCP route refused an authenticated caller with `403` before tool dispatch: `route` (`pinned-mcp`/`aggregate-mcp`), `reason` (`missing_scope` or `user_token_required`), user/client ID when known and request ID. Never the target, path, token or body. |
 | `auth_pp_created` | Success or failure while creating a per-user Principal Propagation ADT client. |
 | `auth_shared_created` | Successful shared technical-user authentication after the Basic canary. Includes tool and `identity: "shared"`. |
 | `target_resolution_failed` | Multi-target ID/registry resolution failed. Includes tool and safe `errorCode`. |

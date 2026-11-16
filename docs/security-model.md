@@ -146,6 +146,15 @@ Where: [`src/server/logger.ts`](../src/server/logger.ts) (`redactSensitive`),
 Fails when: redaction lives in one sink but not others (R5), or is shallow and a secret is logged
 nested under a non-sensitive key.
 
+Source and business content in tool arguments (`source`, `content`, `oldContent`, `newContent`,
+`proposalUserContent`, `fixedValues`, `messages`, `shortTexts`, `parameters`, at any depth) is never
+written to a sink: the same central redactor replaces it with its length and a 12-hex SHA-256 prefix.
+The prefix correlates events; it is not secrecy for short or guessable values. Other free-text
+arguments (descriptions, labels, commit messages, SQL text and filters) are still logged truncated.
+Multi-target routes audit authenticated `403` refusals before dispatch as `mcp_route_denied`, without
+target, path or token. Admin-scope `403`s on the optional UI routes come from the MCP SDK middleware
+and are not audited.
+
 abapGit error diagnostics are inspected before extraction or truncation. Responses with credential
 terminology, sensitive URLs, ambiguous duplicate properties, unresolved encodings, or more than
 64 KiB are replaced by an omission notice, including additional messages, T100 values, check results
