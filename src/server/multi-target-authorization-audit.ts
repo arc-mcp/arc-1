@@ -1,6 +1,7 @@
 /** Operator-only grant failure evidence; never serialize claims or role names. */
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { McpRouteDeniedEvent } from './audit.js';
+import { generateRequestId } from './context.js';
 import { logger } from './logger.js';
 import type { TargetGrant } from './multi-target-authorization.js';
 
@@ -30,7 +31,6 @@ export function auditTargetGrantDenial(
 /** Authenticated caller refused at the route edge; no target, path, claims or token. */
 export function auditMcpRouteDenial(
   authInfo: AuthInfo | undefined,
-  requestId: string,
   route: McpRouteDeniedEvent['route'],
   reason: McpRouteDeniedEvent['reason'] = 'missing_scope',
 ): void {
@@ -38,7 +38,7 @@ export function auditMcpRouteDenial(
     timestamp: new Date().toISOString(),
     level: 'warn',
     event: 'mcp_route_denied',
-    requestId,
+    requestId: generateRequestId(),
     user: authInfo?.extra?.userName as string | undefined,
     clientId: authInfo?.clientId,
     route,

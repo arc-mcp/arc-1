@@ -276,7 +276,7 @@ export function createPinnedTargetMcpHandler(multi: MultiTargetRouting) {
     if (enforced) {
       protectPrivateMcpResponse(res);
       if (!projection?.read) {
-        auditMcpRouteDenial(req.auth, generateRequestId(), 'pinned-mcp');
+        auditMcpRouteDenial(req.auth, 'pinned-mcp');
         res.status(403).json({ error: 'forbidden' });
         return;
       }
@@ -321,7 +321,7 @@ export function createAggregateMcpHandler(multi: MultiTargetRouting) {
     if (projection) {
       protectPrivateMcpResponse(res);
       if (!projection.read) {
-        auditMcpRouteDenial(req.auth, generateRequestId(), 'aggregate-mcp');
+        auditMcpRouteDenial(req.auth, 'aggregate-mcp');
         res.status(403).json({ error: 'forbidden' });
         return;
       }
@@ -598,7 +598,7 @@ export async function startHttpServer(
               // request the four mutation-free scopes advertised by the route PRM;
               // XSUAA still grants only the subset assigned to the authenticated user.
               if (!req.auth || !hasRequiredScope(req.auth.scopes, 'read')) {
-                auditMcpRouteDenial(req.auth, generateRequestId(), route);
+                auditMcpRouteDenial(req.auth, route);
                 res
                   .set(
                     'WWW-Authenticate',
