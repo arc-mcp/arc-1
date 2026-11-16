@@ -829,7 +829,7 @@ export function classifyMultiTargetSapError(
           : error.isServerError && mutation
             ? `SAP denied this operation for the propagated user on target ${target}. Grant the required SAP authorization. ${readBack}`
             : `SAP denied this operation for the propagated user on target ${target}. Grant the required SAP authorization, then try again now.`,
-      retryable: identity !== 'shared' && !error.isServerError,
+      retryable: identity !== 'shared' && !(error.isServerError && mutation),
     };
   }
   if (error.statusCode === 401 || (error.statusCode === 403 && identity === 'per-user')) {

@@ -99,6 +99,16 @@ describe('multi-target deterministic SAP refusals and unknown mutation outcomes'
     expect(payload.message).not.toContain('try again now');
   });
 
+  it('keeps the existing retry advice for a read after a structured authorization 500', async () => {
+    const payload = await call(
+      'SAPRead',
+      { type: 'SYSTEM' },
+      sapError(500, 'ExceptionNotAuthorized', 'SECRETUSER cannot read', '/sap/bc/adt/core/discovery'),
+    );
+    expect(payload).toMatchObject({ error: 'SAP_AUTHORIZATION_DENIED', retryable: true });
+    expect(payload.message).toContain('then try again now');
+  });
+
   it('retains the existing retry advice for a structured authorization 403', async () => {
     writeFailure.error = sapError(403, 'ExceptionNotAuthorized', 'SECRETUSER cannot update ZSECRET_PROG');
     const payload = await call('SAPWrite', update);
