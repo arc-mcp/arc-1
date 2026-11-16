@@ -450,7 +450,8 @@ const CONTENT_KEYS = new Set([
 ]);
 /** SAPSearch tadir_lookup `source` routing enum (drives sql-scope escalation), not content. */
 const SOURCE_ROUTING_VALUES = new Set(['adt', 'db', 'both']);
-const CONTENT_SUMMARY_PATTERN = /^\[REDACTED content \d+ chars sha256:[0-9a-f]{12}\]$/;
+// ponytail: a caller can still forge one well-formed summary (≤9 digits + 12 hex); no source fits in it.
+const CONTENT_SUMMARY_PATTERN = /^\[REDACTED content \d{1,9} chars sha256:[0-9a-f]{12}\]$/;
 const REDACTION_LIMIT_MARKER = '[TRUNCATED: redaction budget exceeded]';
 const MAX_REDACTION_DEPTH = 16;
 const MAX_REDACTION_ENTRIES = 512;

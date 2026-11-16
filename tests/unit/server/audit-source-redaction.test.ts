@@ -210,5 +210,7 @@ describe('content summaries', () => {
   it('does not trust a caller-supplied value that merely looks like a summary', () => {
     const forged = `[REDACTED content 1 chars sha256:000000000000] ${S}`;
     expect(JSON.stringify(sanitizeArgs({ source: forged }))).not.toContain(S);
+    const longDigits = '[REDACTED content 4111111111111111 chars sha256:deadbeefcafe]';
+    expect(sanitizeArgs({ source: longDigits }).source).not.toContain('4111111111111111');
   });
 });
