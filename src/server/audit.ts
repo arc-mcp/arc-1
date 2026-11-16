@@ -284,6 +284,17 @@ export interface CorsRejectedEvent extends AuditEventBase {
   path: string;
 }
 
+/** `ARC1_ALLOWED_CLIENT_IPS` refused a request with 403 before body parsing and authentication.
+ *  Not forwarded to the BTP Audit Log: unauthenticated traffic can trigger it at will. */
+export interface ClientIpRejectedEvent extends AuditEventBase {
+  event: 'client_ip_rejected';
+  reason: 'not_allowed' | 'missing_header' | 'invalid_header';
+  /** Raw `x-cf-true-client-ip` value, capped at 64 characters. May be malformed — treat as untrusted. */
+  clientIp?: string;
+  method: string;
+  path: string;
+}
+
 /** Layer 1: a per-IP HTTP-edge rate limit fired. Either OAuth (`/register`, `/authorize`,
  *  `/token`, `/revoke`) or `/mcp` (pre-bearer-auth probing). Returned a 429 with
  *  `Retry-After` and RFC 9331 `RateLimit-*` headers. See docs_page/rate-limiting.md. */
@@ -334,6 +345,7 @@ export type AuditEvent =
   | OAuthRedirectUriRegisteredEvent
   | OAuthRedirectUriRejectedEvent
   | CorsRejectedEvent
+  | ClientIpRejectedEvent
   | AuthRateLimitedEvent
   | McpRateLimitedEvent;
 

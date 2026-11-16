@@ -33,6 +33,7 @@ import type { Request, Response } from 'express';
 import express from 'express';
 import helmet from 'helmet';
 import { expandScopes, hasRequiredScope } from '../authz/policy.js';
+import { createClientIpAllowlist } from './client-ip-allowlist.js';
 import { API_KEY_PROFILES } from './config.js';
 import { generateRequestId, requestContext } from './context.js';
 import type { DestinationRegistry, TargetDescriptor } from './destination-registry.js';
@@ -106,9 +107,16 @@ function toApiKeyEntries(config: ServerConfig): ApiKeyEntry[] {
  * silently dropped by the browser and surfaced server-side as `cors_rejected`
  * audit events.
  *
+ * The optional client-IP allowlist runs after helmet (its 403 carries the headers) and before CORS,
+ * body parsing, rate limiting and authentication — see client-ip-allowlist.ts.
+ *
  * Exported for unit tests; also called from `startHttpServer` below.
  */
-export function applySecurityMiddleware(app: express.Application, allowedOrigins: string[]): void {
+export function applySecurityMiddleware(
+  app: express.Application,
+  allowedOrigins: string[],
+  allowedClientIps: string[] = [],
+): void {
   const hasCorsOrigins = allowedOrigins.length > 0;
   app.use(
     helmet({
@@ -130,6 +138,11 @@ export function applySecurityMiddleware(app: express.Application, allowedOrigins
         : undefined,
     }),
   );
+
+  if (allowedClientIps.length > 0) {
+    app.use(createClientIpAllowlist(allowedClientIps));
+    logger.info('Client IP allowlist enabled', { entries: allowedClientIps.length });
+  }
 
   if (hasCorsOrigins) {
     const allowed = new Set(allowedOrigins);
@@ -375,7 +388,7 @@ export async function startHttpServer(
   // and correct client IP detection behind CF's reverse proxy.
   app.set('trust proxy', 1);
 
-  applySecurityMiddleware(app, config.allowedOrigins);
+  applySecurityMiddleware(app, config.allowedOrigins, config.allowedClientIps);
 
   // ─── Layer 1: HTTP-edge rate limiter helper ──────────────────────────
   // `ARC1_AUTH_RATE_LIMIT` (default 20/min/IP) controls OAuth endpoints uniformly.

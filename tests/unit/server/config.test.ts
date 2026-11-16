@@ -179,6 +179,69 @@ describe('parseArgs', () => {
     expect(fromCli.sources.gzipDataPreviewBody).toEqual({ flag: '--gzip-datapreview-body' });
   });
 
+  describe('ARC1_ALLOWED_CLIENT_IPS', () => {
+    const http = ['--transport', 'http-streamable', '--api-keys', 'test-key:viewer'];
+    const vcap = JSON.stringify({ application_uris: ['arc1.cfapps.example.test'] });
+
+    it('defaults to off', () => {
+      const { config, sources } = resolveConfig(http);
+      expect(config.allowedClientIps).toEqual([]);
+      expect(sources.allowedClientIps).toBe('default');
+    });
+
+    it('parses env and lets the flag win, with source attribution', () => {
+      process.env.VCAP_APPLICATION = vcap;
+      process.env.ARC1_ALLOWED_CLIENT_IPS = ' 10.0.0.0/8, 2001:db8::/32 ';
+      const fromEnv = resolveConfig(http);
+      expect(fromEnv.config.allowedClientIps).toEqual(['10.0.0.0/8', '2001:db8::/32']);
+      expect(fromEnv.sources.allowedClientIps).toEqual({ env: 'ARC1_ALLOWED_CLIENT_IPS' });
+
+      const fromCli = resolveConfig([...http, '--allowed-client-ips', '192.0.2.7']);
+      expect(fromCli.config.allowedClientIps).toEqual(['192.0.2.7']);
+      expect(fromCli.sources.allowedClientIps).toEqual({ flag: '--allowed-client-ips' });
+    });
+
+    it('treats blank as off, even outside Cloud Foundry', () => {
+      delete process.env.VCAP_APPLICATION;
+      process.env.ARC1_ALLOWED_CLIENT_IPS = '  ';
+      const { config, sources } = resolveConfig(http);
+      expect(config.allowedClientIps).toEqual([]);
+      expect(sources.allowedClientIps).toEqual({ env: 'ARC1_ALLOWED_CLIENT_IPS' });
+    });
+
+    it('fails startup on an invalid or empty entry, naming it', () => {
+      process.env.VCAP_APPLICATION = vcap;
+      process.env.ARC1_ALLOWED_CLIENT_IPS = '10.0.0.0/8,example.com';
+      expect(() => resolveConfig(http)).toThrow("ARC1_ALLOWED_CLIENT_IPS: invalid entry 'example.com'");
+      process.env.ARC1_ALLOWED_CLIENT_IPS = '10.0.0.0/8,';
+      expect(() => resolveConfig(http)).toThrow('ARC1_ALLOWED_CLIENT_IPS entry #2 of 2 is empty');
+      expect(() => resolveConfig([...http, '--allowed-client-ips', '10.0.0.0/99'])).toThrow(
+        "--allowed-client-ips: invalid entry '10.0.0.0/99'",
+      );
+    });
+
+    it('refuses HTTP mode outside Cloud Foundry', () => {
+      delete process.env.VCAP_APPLICATION;
+      process.env.ARC1_ALLOWED_CLIENT_IPS = '10.0.0.0/8';
+      expect(() => resolveConfig(http)).toThrow(/ARC1_ALLOWED_CLIENT_IPS requires SAP BTP Cloud Foundry/);
+      const handBuilt = {
+        ...DEFAULT_CONFIG,
+        transport: 'http-streamable' as const,
+        allowHttpNoAuth: true,
+        allowedClientIps: ['10.0.0.0/8'],
+      };
+      expect(() => validateConfig(handBuilt)).toThrow(/client-controlled/);
+      process.env.VCAP_APPLICATION = vcap;
+      expect(() => validateConfig(handBuilt)).not.toThrow();
+    });
+
+    it('is ignored in stdio mode', () => {
+      delete process.env.VCAP_APPLICATION;
+      process.env.ARC1_ALLOWED_CLIENT_IPS = '10.0.0.0/8';
+      expect(resolveConfig([]).config.transport).toBe('stdio');
+    });
+  });
+
   it('normalizes, deduplicates, and source-attributes the experimental data-source blocklist', () => {
     process.env.SAP_BLOCKED_DATA_SOURCES = ' usr02,SCARR,usr02 ';
     const fromEnv = resolveConfig([]);
