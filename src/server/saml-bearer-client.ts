@@ -49,10 +49,23 @@ export type SamlBearerClientResult =
   | { ok: true; client: AdtClient; nameId: string }
   | { ok: false; error: { content: Array<{ type: 'text'; text: string }>; isError: true } };
 
+function auditSubject(verifiedJwt: string): string | undefined {
+  try {
+    const payload = JSON.parse(Buffer.from(verifiedJwt.split('.')[1] ?? '', 'base64url').toString('utf8')) as Record<
+      string,
+      unknown
+    >;
+    return typeof payload.sub === 'string' && payload.sub !== '' ? `oidc-sub:${payload.sub}` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Mint a fresh assertion for the caller and build a request-local per-user client. */
 export function createSamlBearerPerUserClient(request: SamlBearerClientRequest): SamlBearerClientResult {
   const { idp, token, requestId, buildPerUserAdtConfig } = request;
-  let user = request.fallbackUser;
+  // Even a rejected NameID must retain the verified caller's stable identity in the audit log.
+  let user = auditSubject(token) ?? request.fallbackUser;
   try {
     const nameId = resolveSamlNameId(token, idp.nameIdClaim);
     user = nameId;

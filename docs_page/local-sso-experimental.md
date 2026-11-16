@@ -199,8 +199,14 @@ curl -s -X POST http://localhost:8091/mcp -H "Authorization: Bearer $TOKEN" \
   apply. `SAP_PP_STRICT=false` keeps the API key usable beside per-user identity; set it to `true` to
   refuse every non-JWT caller.
 - Each tool call sends a fresh assertion with `x-sap-security-session: create` and can create one SAP
-  security session. Per-user session reuse is not implemented. Monitor SM04/SM05 during repeated and
-  parallel calls; the measured session count for a qualified build belongs in the PR validation record.
+  security session. Per-user session reuse is not implemented. On A4H 7.58/001, 50 sequential plus
+  10 parallel `SAPRead` calls succeeded without session errors; SM05's local cache rose from 14 to
+  71 live entries (57 net at the post-run refresh, with some earlier entries expiring during the run)
+  and displayed `ZPR1234_A` SAML BT sessions. Monitor SM05 and size session capacity for the workload.
+- A4H 7.58/001 rejected a wrong audience and an untrusted signing certificate, but accepted an
+  assertion with an unrelated `SubjectConfirmationData/@Recipient`. Do not rely on this SAP release
+  to enforce Recipient; use a dedicated issuer/certificate for each SAP target and keep its audience
+  target-specific. See the PR validation record for exact inputs and results.
 - The NameID claim must not be editable by end users. Entra's `email` claim is unsuitable for this
   mapping even if `email_verified=true`; use an administrator-controlled stable claim instead.
 

@@ -623,9 +623,11 @@ requirement or claim this resolves the separate ADT-channel permission question.
 assertion for an explicitly configured, administrator-controlled NameID claim. SAP trusts its
 certificate in SAML2. The [setup guide](local-sso-experimental.md), [ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-local-saml-bearer-issuer.md) and security risk register describe this PR's scope.
 
-Each tool call currently creates one security session. Per-user transport/session reuse needs
-measurement and isolation design, including expiry and revocation handling (OPS-06). IAS token
-scope/claim mapping and the flow on SAP releases beyond the tested builds remain unverified.
+Each tool call currently creates one security session. A4H 7.58/001 passed 50 sequential and
+10 parallel reads, but SM05 still showed many per-user sessions. Per-user transport/session reuse
+needs isolation design, including expiry and revocation handling (OPS-06). IAS token scope/claim
+mapping and the flow on SAP releases beyond the tested build remain unverified. A4H 7.58 did not
+reject an unrelated SAML bearer Recipient; validate this on other releases before relying on it.
 
 **Resume when.** A supported deployment hits SAP session pressure, IAS is available for an
 end-to-end test, or another S/4HANA release needs qualification. Keep any reuse tied to a verified

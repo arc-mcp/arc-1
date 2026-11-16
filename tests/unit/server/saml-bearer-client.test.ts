@@ -1,6 +1,7 @@
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import type { AdtHttpConfig } from '../../../src/adt/http.js';
 import type { SamlBearerIdp } from '../../../src/adt/saml-bearer.js';
+import { logger } from '../../../src/server/logger.js';
 import {
   createSamlBearerPerUserClient,
   loadSamlBearerIssuer,
@@ -67,16 +68,20 @@ describe('createSamlBearerPerUserClient', () => {
   });
 
   it('returns a tool error (no shared fallback) when the token lacks the NameID claim', () => {
+    const audit = vi.spyOn(logger, 'emitAudit').mockImplementation(() => {});
     const result = createSamlBearerPerUserClient({
       idp,
       token: jwtWith({ sub: 'abc' }),
       requestId: 'req-2',
+      fallbackUser: 'arc1-local',
       buildPerUserAdtConfig,
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.isError).toBe(true);
     expect(result.error.content[0]?.text).toMatch(/Principal propagation failed: .*no usable 'email' claim/);
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ user: 'oidc-sub:abc', success: false }));
+    audit.mockRestore();
   });
 
   it('refuses a changed unverified email for the same subject before building an assertion', () => {
