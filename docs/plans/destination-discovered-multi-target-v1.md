@@ -778,7 +778,7 @@ Required classifications:
 | `SAP_AUTHENTICATION_FAILED` | Backend returned login/401 behavior. For PP, do not claim a specific missing-user cause. For Basic, the credential generation is blocked to protect the SAP account. | Fix PP/mapping or rotate the Basic destination credentials, then retry. |
 | `SAP_AUTHORIZATION_DENIED` | Structured SAP 403/authorization refusal. | Grant the required SAP authorization, then retry. |
 | `SAP_SERVICE_INACTIVE` | SAP ICF/ADT service is inactive rather than a user authorization issue. | Activate/fix the service, then retry. |
-| `SAP_REQUEST_FAILED` | A post-resolution network failure or SAP 5xx prevented the request without proving an authentication cause. | Check Cloud Connector/SAP health, then retry once. |
+| `SAP_REQUEST_FAILED` | A post-resolution network failure or SAP 5xx prevented the request without proving an authentication cause. | Reads: check Cloud Connector/SAP health, then retry once. Writes and structured SAP refusals (object exists, locked, unsupported) are `retryable: false`; read the object back before any replay. |
 | `SAP_TARGET_BUSY` | Basic target's bounded serialization queue is full or its 30-second acquisition timed out. | Retry after the active shared-identity request completes. |
 | `SAP_TARGET_TEMPORARILY_UNAVAILABLE` | Basic canary had a network, timeout, 429, SAP 5xx, or unrecognized non-login 2xx protocol response. | Retry after checking SAP/intermediary health; the credential generation remains eligible. |
 
