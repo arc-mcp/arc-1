@@ -173,6 +173,25 @@ describe('AdtHttpClient', () => {
       expect(headers['x-sap-security-session']).toBe('create');
     });
 
+    it('redacts the SAML assertion from HTTP debug audit fields', async () => {
+      const { logger } = await import('../../../src/server/logger.js');
+      const audit = vi.spyOn(logger, 'emitAudit').mockImplementation(() => undefined);
+      const previousDebug = process.env.ARC1_LOG_HTTP_DEBUG;
+      process.env.ARC1_LOG_HTTP_DEBUG = 'true';
+      try {
+        mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+        const client = new AdtHttpClient(samlConfig());
+        await client.get('/sap/bc/adt/core/discovery');
+        const event = audit.mock.calls.map(([entry]) => entry).find((entry) => entry.event === 'http_request');
+        expect(event?.requestHeaders?.Authorization).toBe('[REDACTED]');
+        expect(JSON.stringify(event)).not.toContain('base64assertion');
+      } finally {
+        if (previousDebug === undefined) delete process.env.ARC1_LOG_HTTP_DEBUG;
+        else process.env.ARC1_LOG_HTTP_DEBUG = previousDebug;
+        audit.mockRestore();
+      }
+    });
+
     it('does NOT send Basic auth when a SAML assertion is configured', async () => {
       mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
 

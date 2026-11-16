@@ -19,11 +19,11 @@ ABAP system      SAML2 "SAML Bearer Assertion Provider" trusts ARC-1's certifica
 ```
 
 The SAP side uses a documented ABAP Platform feature: [SAML Bearer Assertions for Principle Propagation](https://help.sap.com/docs/ABAP_PLATFORM_NEW/e815bb97839a4d83be6c4fca48ee5777/236960c96324416c8ed84b2666212d49.html)
-(S/4HANA 2020 and later; verified on ABAP Platform 2025). The MCP-facing side is ARC-1's existing
+(S/4HANA 2020 and later). The MCP-facing side is ARC-1's existing
 OIDC support plus the new `SAP_PP_SAML_*` settings.
 
-Earlier-build evidence from 2026-11-14 covered Keycloak login, `SAPRead` and `SAPWrite` on an
-S/4HANA 2025 trial system. Check the PR's final-build validation record before relying on that result.
+The final build is verified on SAP_BASIS 758 only and validated with Keycloak only. The original
+contributor verified SAP_BASIS 816 on an earlier build; that is not final-build coverage.
 
 ## Prerequisites
 
@@ -79,6 +79,17 @@ The realm file `keycloak/arc1-realm.json` is imported on every Keycloak start an
   of the SAP user this person should become. Keycloak requires email verification and only an admin
   can edit the email attribute in this example.
 
+Choose the NameID claim before configuring SAP user mapping:
+
+| OIDC provider | Claim for NameID | Validation |
+|---|---|---|
+| Keycloak | Verified `email` with administrator-only edits, or a custom administrator-set attribute | Verified `email` on SAP_BASIS 758; custom attribute untested |
+| Entra ID | An administrator-controlled stable claim; never `email` | Untested. Entra's `email` can be user-editable, so verification alone is insufficient. |
+| SAP Cloud Identity Services | An administrator-controlled stable claim | Untested. Its tokens carry no `scope` claim; validate ARC-1 scope mapping separately before use. |
+
+An IdP administrator can still assign a verified identity to another account; protect that
+privilege and audit changes to the chosen claim.
+
 Replace `KC_BOOTSTRAP_ADMIN_PASSWORD` in `compose.saml.yaml`. Keycloak runs in dev mode without a data
 volume: anything you change in the admin console at `http://localhost:8180/admin/` is lost on the next
 recreate. Edit the JSON instead.
@@ -107,10 +118,15 @@ container, and ARC-1 can fetch the signing keys from it.
 The key, certificate, issuer, audience and NameID claim are required together with
 `SAP_PP_ENABLED=true` and an OIDC issuer. Multi-target and XSUAA mode are refused. Startup signs
 and verifies a sample assertion; an invalid key, expired certificate or mismatch aborts startup.
+If `SAP_INSECURE=true`, ARC-1 warns at startup: a captured assertion is a bearer credential until
+it expires.
 
 ## 6. Trust on the ABAP system (transaction SAML2)
 
-Do this on the target client. The provider category matters: only a **SAML Bearer Assertion Provider**
+Do this on the target client. **Use a distinct signing key and certificate for each SAP target.**
+The SAML2 local provider name must be unique across every system that trusts any ARC-1 certificate.
+Check and rename copied systems before creating their ARC-1 trust; system copies can duplicate local
+provider names. The provider category matters: only a **SAML Bearer Assertion Provider**
 consumes an assertion sent in the HTTP `Authorization` header. The web-SSO "Identity Providers" list
 and the "OAuth 2.0 Identity Providers" list both answer a bare `401` to it.
 
@@ -199,14 +215,20 @@ curl -s -X POST http://localhost:8091/mcp -H "Authorization: Bearer $TOKEN" \
   apply. `SAP_PP_STRICT=false` keeps the API key usable beside per-user identity; set it to `true` to
   refuse every non-JWT caller.
 - Each tool call sends a fresh assertion with `x-sap-security-session: create` and can create one SAP
-  security session. Per-user session reuse is not implemented. On A4H 7.58/001, 50 sequential plus
-  10 parallel `SAPRead` calls succeeded without session errors; SM05's local cache rose from 14 to
-  71 live entries (57 net at the post-run refresh, with some earlier entries expiring during the run)
-  and displayed `ZPR1234_A` SAML BT sessions. Monitor SM05 and size session capacity for the workload.
+  security session. Per-user session reuse is not implemented. An earlier A4H 758 run of 50 sequential
+  plus 10 parallel reads passed without session errors, while SM05 rose from 14 to 71 entries. On
+  2026-11-16, a separate uncached 60-call run passed in 11.3 seconds; the monitored SM05 occupancy
+  was 3 before and immediately after the run, then fluctuated with other sessions. A direct SAML call
+  returned a `SAP_SESSIONID_A4H_001` cookie, and a same-cookie request to SAP's logoff endpoint returned
+  200 and reset cookies. The new entry was not identifiable in SM05, so neither immediate release nor
+  return-to-baseline time was proven. A4H's effective `http/security_session_timeout` was 120 seconds;
+  SM05 showed a 2,500-entry local cache, and SM51 showed one application server. Session cleanup
+  remains unqualified for this experimental route.
 - A4H 7.58/001 rejected a wrong audience and an untrusted signing certificate, but accepted an
   assertion with an unrelated `SubjectConfirmationData/@Recipient`. Do not rely on this SAP release
-  to enforce Recipient; use a dedicated issuer/certificate for each SAP target and keep its audience
-  target-specific. See the PR validation record for exact inputs and results.
+  to enforce Recipient. One signing key/certificate per SAP target and a unique SAML2 local provider
+  name across systems trusting ARC-1 certificates are required, including after system copies. See
+  the PR validation record for exact inputs and results.
 - The NameID claim must not be editable by end users. Entra's `email` claim is unsuitable for this
   mapping even if `email_verified=true`; use an administrator-controlled stable claim instead.
 

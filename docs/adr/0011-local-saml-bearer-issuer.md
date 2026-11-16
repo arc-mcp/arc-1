@@ -21,6 +21,10 @@ The signing key and currently valid certificate must be a matching RSA pair. Sta
 sample assertion and verifies it against the certificate. Operators mount the key privately
 outside the repository, protect it like a root credential and rotate it with the SAML2 trust.
 Any holder of the key can assert an identity mapped in the trusted provider.
+Use one signing key and certificate per SAP target. The SAML2 local provider name must be unique
+across all systems that trust any ARC-1 certificate. System copies can duplicate that name, so
+operators must check and rename it before establishing the copied system's ARC-1 trust. This is
+required because SAP_BASIS 758 accepted an unrelated SAML bearer Recipient (R25).
 
 JWT propagation failures always return a tool error; they never fall back to `SAP_USER`.
 An API-key caller uses the shared SAP identity only when `SAP_PP_STRICT=false` explicitly permits
@@ -31,7 +35,11 @@ continue to apply.
 
 The route is single-target and OIDC-only. Multi-target, XSUAA and BTP destination combinations
 are rejected at startup. There is no user-to-user transport reuse, automatic trust provisioning,
-claim transformation, alternate signing algorithm, or fallback credential. Each tool call creates
-one SAP security session; session reuse and IAS/release qualification remain in SEC-23.
+claim transformation, alternate signing algorithm, or fallback credential. The final build was
+verified on SAP_BASIS 758 only. The original contributor verified 816 on an earlier build; IAS and
+final-build 816 qualification remain in SEC-23. Keycloak is the only validated IdP.
+The same-cookie SAP logoff request returned 200, but immediate SM05 release could not be established
+on A4H 758; session cleanup remains open in SEC-23.
 
-See the [operator guide](../../docs_page/local-sso-experimental.md) and [R24](../security-model.md).
+See the [operator guide](../../docs_page/local-sso-experimental.md), [R24](../security-model.md)
+and [R25](../security-model.md).
