@@ -195,13 +195,13 @@ and upgrade requirements. Do not widen the mutation-free multi-target contract a
 
 **Remaining gap.** PR [#1080](https://github.com/arc-mcp/arc-1/pull/1080) shipped the scoped
 CLAS/INTF contract (ADR-0010). [ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-broader-pinned-pp-mutations.md)
-(Proposed) replaces the per-resource adapter design of draft PR
+replaces the per-resource adapter design of draft PR
 [#1142](https://github.com/arc-mcp/arc-1/pull/1142) with the single-target handlers plus six
 multi-target controls. Its [plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-11-12-pinned-writes-shared-handlers.md)
 PR 1 (every `SAPWrite` action except `edit_content`, and `SAPActivate activate`, CLAS/INTF included — the ADR-0010
 adapter is removed) is implemented. Three live runs on A4H 758 (Cloud Connector PP) found and
 confirmed fixes for four defects; the last run passed 14 of 15 items. Package refusals held live with
-asymmetric lists. Still open: accepting ADR-0011; preaudit expansion, which SAP never produced in
+asymmetric lists. Still open: preaudit expansion, which SAP never produced in
 seven fixtures (unit tests only); keeping `source` out of audit arguments; a denial audit event for
 HTTP-edge refusals; and reporting SAP's "already exists" as non-retryable on pinned routes.
 Later, each with its own admission keys, tests and live evidence: package and CTS management

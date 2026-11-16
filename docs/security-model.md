@@ -304,7 +304,7 @@ cleanup, no automatic mutation replay and positive activation-execution evidence
 scoped lifecycle. [Qualification evidence](research/2026-10-22-multi-target-write-qualification.md)
 distinguishes live SAP checks from fault-injection tests and untested release shapes.
 
-ADR-0011 (Proposed) replaces ADR-0010's CLAS/INTF adapter: pinned writes use the single-target
+ADR-0011 replaces ADR-0010's CLAS/INTF adapter: pinned writes use the single-target
 handlers for every listed `SAPWrite` action (not `edit_content`) and `SAPActivate activate`.
 Admission is an explicit `Tool.action` list (`src/server/multi-target-write-surface.ts`); fields
 outside the single-target schema and `preaudit=false` are refused (also in the `SAPActivate`

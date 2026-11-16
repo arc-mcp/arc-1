@@ -1,6 +1,6 @@
 # Plan: pinned PP writes through the shared handlers
 
-**Status:** Steps 1–6 implemented and revised after review (13 November 2026). Step 7: first live run of `896320813` on A4H 758 — 12 pass, 2 fail, 3 not run; both failures and three review findings fixed. Final run of `234fea534`: 14 pass, 0 fail, 1 not run (preaudit expansion). Step 18 on `78bdc14b1`: 46 pass, 0 fail. Decision record: [ADR-0011 (proposed revision)](../adr/0011-broader-pinned-pp-mutations.md).
+**Status:** Steps 1–6 implemented and revised after review (13 November 2026). Step 7: first live run of `896320813` on A4H 758 — 12 pass, 2 fail, 3 not run; both failures and three review findings fixed. Final run of `234fea534`: 14 pass, 0 fail, 1 not run (preaudit expansion). Step 18 on `78bdc14b1`: 46 pass, 0 fail. Decision record: [ADR-0011](../adr/0011-broader-pinned-pp-mutations.md).
 **Supersedes the approach of** draft [PR #1142](https://github.com/arc-mcp/arc-1/pull/1142) (not its goal).
 **Roadmap:** FEAT-93.
 
@@ -186,7 +186,7 @@ target, read-only destination, `SAPGit`, `Custom_*` and `SAPTransport` writes fo
 - AGENTS.md and ADR-0010 currently say "explicit action/type/input allowlists" for multi-target.
   State the change (action allowlist; types and inputs from the single-target schema) in ADR-0011.
 - `docs_page/roadmap.md` FEAT-93: narrow to the later PRs, overview and details.
-- ADR-0011 stays Proposed until the security review.
+- ADR-0011 was accepted on 16 November 2026 after the security review.
 
 ### 7. Live qualification (required before merge) — not done
 

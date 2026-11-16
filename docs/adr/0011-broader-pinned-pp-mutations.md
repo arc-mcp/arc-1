@@ -1,6 +1,6 @@
 # ADR 0011 — Broader built-in mutations on pinned PP targets (shared-handler revision)
 
-**Status:** Proposed. Replaces the per-resource adapter design of draft [PR #1142](https://github.com/arc-mcp/arc-1/pull/1142) and supersedes ADR-0010's CLAS/INTF adapter. Not accepted; needs security review.
+**Status:** Accepted (16 November 2026). Replaces the per-resource adapter design of draft [PR #1142](https://github.com/arc-mcp/arc-1/pull/1142) and supersedes ADR-0010's CLAS/INTF adapter. Not accepted; needs security review.
 **Date:** 12 November 2026 (revised 13 November 2026 after review and the first live run).
 **Builds on:** [ADR-0010](0010-pinned-pp-multi-target-writes.md) — its access gates (who may write where) stay; its dedicated adapter is removed.
 **Evidence:** implementation on `main` at `0698468a6` (uncommitted worktree, 13 November 2026):

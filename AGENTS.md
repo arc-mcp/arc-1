@@ -23,7 +23,7 @@ Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/arc-mcp/arc-1`).
 7. **Single target by default; explicit BTP exceptions** — ADR-0006 permits default-off discovered
    pinned/aggregate targets; ADR-0007 keeps shared Basic mutation-free and one-instance. ADR-0010
    permitted scoped CLAS/INTF writes on pinned strict-PP routes with destination restrictions and
-   exact verified write grants; ADR-0011 (Proposed) replaces its adapter with the shared handlers for
+   exact verified write grants; ADR-0011 replaces its adapter with the shared handlers for
    the listed `SAPWrite` actions and activation. Aggregate/Copilot remain mutation-free.
    Broader writes or another discovery/auth model require a new ADR/security review.
 8. **ABAP execution and RFC belong in extensions** — no built-in report/class execution, direct RFC,
@@ -398,7 +398,7 @@ never present mocks or skipped tests as live coverage. Documentation-only change
 - Never commit `.env`, `cookies.txt`, `.arc1.json`; sensitive fields are redacted in logs.
 - **Safety config is the server ceiling** — per-user scopes only restrict.
 - **Multi-system boundary** — single target remains the default. ADR-0006/0007/0008 define discovered
-  BTP/XSUAA routes, shared Basic read-only identity and verified target grants. ADR-0011 (Proposed,
+  BTP/XSUAA routes, shared Basic read-only identity and verified target grants. ADR-0011 (
   superseding ADR-0010's adapter) admits listed `SAPWrite` actions and activation on pinned strict-PP
   routes through the single-target handlers. Every call requires the server ceiling, destination opt-in/restrictions, read access, raw write scope
   and exact write grant. Aggregate/Copilot and Basic remain mutation-free; no PP fallback. Follow the
