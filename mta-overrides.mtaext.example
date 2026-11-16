@@ -162,12 +162,13 @@ modules:
       # ARC1_ALLOWED_ORIGINS: "https://my-app.cfapps.eu10.hana.ondemand.com"
 
       # ── Client IP allowlist ──────────────────────────────────────────
-      # Defense in depth, not a replacement for authentication. Only callers
-      # whose address (as set by BTP CF on routed requests) is listed reach
-      # ARC-1; /health stays open. Restrict direct C2C ingress separately.
-      # Hosted clients (Copilot Studio, claude.ai) call from the vendor's
-      # addresses. Comma-separated IPs/CIDR; IPv6 ranges must be listed
-      # separately. Set "" to turn it off again. See docs_page/security-guide.md.
+      # Only the listed addresses reach ARC-1 through its public route; every
+      # other caller gets 403 (/health stays open). An extra layer, not a
+      # replacement for authentication. Not for hosted clients (Copilot
+      # Studio, claude.ai): they call from the vendor's addresses.
+      # Comma-separated IPv4/IPv6 addresses or CIDR ranges; list IPv4 and
+      # IPv6 separately. "" turns it off. Setup and limits:
+      # docs_page/security-guide.md ("Client IP allowlist").
       # ARC1_ALLOWED_CLIENT_IPS: "198.51.100.0/24,2001:db8:1234::/48"
 
       # ── Read-only UI ─────────────────────────────────────────────────
