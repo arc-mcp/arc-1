@@ -320,12 +320,16 @@ and deployment-isolation option.
 **Medium if the platform ever passes a client-supplied header through; observed replaced on one landscape.**
 
 `ARC1_ALLOWED_CLIENT_IPS` trusts `x-cf-true-client-ip` alone and refuses requests without exactly one
-address in it. SAP documents that BTP Cloud Foundry sets the header to the connecting address, but
-not that it replaces a value the client sent itself. If it did not, any client could name an
-allowed address and pass the filter; authentication, scopes and the safety ceiling would still
-apply, so the loss is the allowlist only. Outside Cloud Foundry the setting is refused at startup.
-Other limits: a fronting proxy becomes the client, IPv6 ranges are separate, and the `/health`
-exemption stays reachable from anywhere.
+address in it. SAP documents that BTP Cloud Foundry sets the header to the connecting address on
+requests through its public router, but not that it replaces a value the client sent itself. If it
+did not, any client could name an allowed address and pass the filter; authentication, scopes and
+the safety ceiling would still
+apply, so the loss is the allowlist only. Normal HTTP startup refuses a configured list when
+`VCAP_APPLICATION` is absent; that variable is not proof a request traversed the CF router.
+An internal `apps.internal` route or direct C2C policy bypasses the router: a reachable caller can
+forge an allowed header. Operators must restrict direct ingress separately. Other limits: a
+fronting proxy may become the client, IPv4 literals match only IPv4 rules (mapped IPv6 values can
+also match IPv6 rules), and the `/health` exemption stays reachable from anywhere.
 
 **Live evidence (2026-11-16):** SAP BTP Cloud Foundry `us10-001` (AWS), `cf push` with
 `nodejs_buildpack` 1.9.7 on `cflinuxfs4`, build `f1d4b8f68`, API-key auth, no SAP target. The

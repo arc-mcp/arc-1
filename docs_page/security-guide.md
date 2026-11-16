@@ -496,9 +496,10 @@ curl -sI -X OPTIONS \
 
 ### Client IP allowlist (SAP BTP Cloud Foundry, opt-in)
 
-`ARC1_ALLOWED_CLIENT_IPS` limits which client addresses can reach ARC-1 at all. It is off by
-default and is **defense in depth**: it narrows who can attempt to authenticate and never replaces
-XSUAA, OIDC or API-key authentication, scopes, or the safety ceiling.
+`ARC1_ALLOWED_CLIENT_IPS` limits which client addresses can reach ARC-1 through its main HTTP
+listener on SAP BTP Cloud Foundry. It is off by default. As **defense in depth**, it narrows who
+can attempt to authenticate; XSUAA, OIDC or API-key authentication, scopes, and the safety ceiling
+still apply.
 
 ```yaml
 # mta-overrides.mtaext, properties of the arc1-mcp-server module
@@ -507,14 +508,16 @@ ARC1_ALLOWED_CLIENT_IPS: "198.51.100.0/24,2001:db8:1234::/48"
 
 How it decides:
 
-- **Only `x-cf-true-client-ip` is trusted.** SAP BTP Cloud Foundry sets this header on every
-  request routed to the app to the single IPv4 or IPv6 address that connected to the platform
+- **Only `x-cf-true-client-ip` is trusted.** SAP BTP Cloud Foundry sets this header on requests
+  through its public router to the single IPv4 or IPv6 address that connected to the platform
   ([SAP blog](https://community.sap.com/t5/technology-blog-posts-by-sap/ip-based-allow-listing-for-applications/ba-p/14140136)).
   ARC-1 never reads `X-Forwarded-For` (any client can add entries to it) or the socket address
   (on Cloud Foundry, the router's).
-- **Cloud Foundry only.** In HTTP mode ARC-1 refuses to start with a non-empty list when
-  `VCAP_APPLICATION` is absent: on Docker, Kubernetes or a VM the header comes from the client and
-  the list would give false assurance. Restrict access with a firewall or your reverse proxy there.
+- **Cloud Foundry-routed ingress only.** In HTTP mode ARC-1 refuses to start with a non-empty list
+  when `VCAP_APPLICATION` is absent: on Docker, Kubernetes or a VM the header comes from the client
+  and the list would give false assurance. The presence of `VCAP_APPLICATION` does not prove that
+  an individual request passed through the CF router. Restrict direct access with network policies,
+  a firewall or your reverse proxy.
 - **Fails closed.** A missing header, a repeated header, or a value that is not exactly one address
   gets `403`, like an address outside the list. The body is `{"error":"Forbidden"}` and does not
   reveal the list. Each refusal writes a [`client_ip_rejected`](#what-gets-logged) audit event,
@@ -522,8 +525,9 @@ How it decides:
 - **Runs first.** The check follows the security headers and precedes CORS (preflights are refused
   too), body parsing, rate limiting, the OAuth endpoints and metadata, bearer authentication, `/ui`,
   and every MCP route (`/mcp`, pinned `/<SID>/<CLIENT>/mcp`, `/multi/mcp`).
-- **`/health` is exempt**, that exact path and no other. The Cloud Foundry `http` health check calls
-  the container directly without the header; without the exemption the app would restart in a loop.
+- **`/health` is exempt** when the parsed request path equals `/health`. The Cloud Foundry `http`
+  health check calls the container directly without the header; without the exemption the app would
+  restart in a loop.
 
 Entries:
 
@@ -532,8 +536,9 @@ Entries:
   (stray or trailing comma), hostname, port, zone id (`%eth0`) or out-of-range prefix fails startup
   with a message naming the entry.
 - A range with host bits set, such as `10.0.0.5/8`, is accepted and covers the whole network.
-- IPv4 and IPv6 are matched separately: `0.0.0.0/0` does not cover IPv6 clients, so list IPv6
-  ranges explicitly. An IPv4-mapped IPv6 value (`::ffff:10.1.2.3`) matches IPv4 rules.
+- An IPv4 literal matches only IPv4 rules; `0.0.0.0/0` does not cover IPv6 values. An IPv4-mapped
+  IPv6 value (`::ffff:10.1.2.3`) matches IPv4 rules and may also match IPv6 rules covering it.
+  Thus `::/0` covers mapped IPv6 values, but does not cover an IPv4 literal header.
 
 Who counts as the client:
 
@@ -543,8 +548,10 @@ Who counts as the client:
   Eclipse) behind known egress addresses.
 - **A proxy in front** (AppRouter, SAP API Management, a corporate reverse proxy) makes the proxy's
   egress address the client. Allow that address and restrict end users at the proxy.
-- **Container-to-container traffic** on internal routes (`apps.internal`) bypasses the router,
-  carries no header and is refused.
+- **Container-to-container traffic** on internal routes (`apps.internal`) bypasses the router.
+  It receives no platform-set header, but a direct caller can supply its own allowed value. Do not
+  expose ARC-1 through an internal route or a C2C policy to an untrusted app; this filter cannot
+  authenticate the header on that path.
 - SAP does not document that the platform replaces a header the client sent itself. A live check
   on one landscape showed that it does, but treat it as observed behavior, not a guarantee. See
   [R24 in the security model](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r24--client-ip-allowlist-rests-on-the-platform-header).
@@ -552,7 +559,7 @@ Who counts as the client:
 Operations:
 
 - A change takes effect only after a restart: `cf deploy` with the updated extension, or
-  `cf set-env` plus `cf restage` for a temporary change that the next deploy reverts. Keep the list
+  `cf set-env` plus `cf restart` for a temporary change that the next deploy reverts. Keep the list
   identical on every instance; instances of one app share its environment.
 - To find the address the platform sees for a client, let it call once and read `clientIp` from the
   `client_ip_rejected` event in `cf logs`.

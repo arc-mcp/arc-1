@@ -235,10 +235,12 @@ describe('parseArgs', () => {
       expect(() => validateConfig(handBuilt)).not.toThrow();
     });
 
-    it('is ignored in stdio mode', () => {
+    it('does not require Cloud Foundry in stdio mode but still validates the list', () => {
       delete process.env.VCAP_APPLICATION;
       process.env.ARC1_ALLOWED_CLIENT_IPS = '10.0.0.0/8';
       expect(resolveConfig([]).config.transport).toBe('stdio');
+      process.env.ARC1_ALLOWED_CLIENT_IPS = 'bad';
+      expect(() => resolveConfig([])).toThrow("ARC1_ALLOWED_CLIENT_IPS: invalid entry 'bad'");
     });
   });
 

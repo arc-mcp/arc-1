@@ -19,7 +19,7 @@
 import { parseBlockedDataSourcesCsv } from '../adt/data-source-name.js';
 import type { SafetyConfig } from '../adt/safety.js';
 import { resolveSapUserAgent } from '../adt/user-agent.js';
-import { parseAllowedClientIps } from './client-ip-allowlist.js';
+import { assertClientIpAllowlistPlatform, parseAllowedClientIps } from './client-ip-allowlist.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
 import { SAP_SYSID_PATTERN } from './multi-target-identity.js';
@@ -1239,12 +1239,7 @@ export function validateConfig(config: ServerConfig): void {
     );
   }
 
-  // Only SAP BTP CF sets x-cf-true-client-ip; anywhere else a client can forge it.
-  if (config.transport === 'http-streamable' && config.allowedClientIps.length > 0 && !process.env.VCAP_APPLICATION) {
-    throw new Error(
-      'ARC1_ALLOWED_CLIENT_IPS requires SAP BTP Cloud Foundry (VCAP_APPLICATION is not set). Outside the platform the x-cf-true-client-ip header is client-controlled, so the allowlist would give false assurance. Unset it, or restrict access at your own reverse proxy or firewall.',
-    );
-  }
+  if (config.transport === 'http-streamable') assertClientIpAllowlistPlatform(config.allowedClientIps);
 
   const hasCookieAuth = !!(config.cookieFile || config.cookieString);
   const hasBtpServiceKey = !!(config.btpServiceKey || config.btpServiceKeyFile);

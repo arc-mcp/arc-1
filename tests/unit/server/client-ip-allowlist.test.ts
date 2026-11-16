@@ -243,6 +243,30 @@ describe('client IP allowlist middleware', () => {
     expect(rejections().map((event) => event.reason)).toEqual(['not_allowed', 'not_allowed']);
   });
 
+  it('does not match IPv4 literals against IPv6 rules, including the IPv6 wildcard', async () => {
+    for (const rule of ['::/0', '::ffff:0:0/96']) {
+      expect(
+        (
+          await request(buildApp([rule]))
+            .post('/mcp')
+            .set(HEADER, ALLOWED)
+        ).status,
+        rule,
+      ).toBe(403);
+      expect(
+        (
+          await request(buildApp([rule]))
+            .post('/mcp')
+            .set(HEADER, '::ffff:c633:6407')
+        ).status,
+        rule,
+      ).toBe(200);
+    }
+    const mixed = buildApp(['10.0.0.0/8', '::/0']);
+    expect((await request(mixed).post('/mcp').set(HEADER, ALLOWED)).status).toBe(403);
+    expect((await request(mixed).post('/mcp').set(HEADER, '10.1.2.3')).status).toBe(200);
+  });
+
   it('accepts a CIDR with host bits set as the whole network', async () => {
     expect(
       (
@@ -333,6 +357,7 @@ describe('client IP allowlist in startHttpServer', () => {
   let aggregateFactory: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
+    vi.stubEnv('VCAP_APPLICATION', '{"application_uris":["arc1.example.test"]}');
     listenSpy = vi.spyOn(express.application, 'listen').mockImplementation(function (this: express.Express) {
       app = this;
       return new EventEmitter() as never;
@@ -367,6 +392,20 @@ describe('client IP allowlist in startHttpServer', () => {
 
   afterEach(() => {
     listenSpy.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  it('refuses a direct HTTP start with an allowlist outside Cloud Foundry', async () => {
+    vi.stubEnv('VCAP_APPLICATION', undefined);
+    await expect(
+      startHttpServer(undefined, {
+        ...DEFAULT_CONFIG,
+        transport: 'http-streamable',
+        httpAddr: '127.0.0.1:0',
+        allowedClientIps: [ALLOWED],
+      }),
+    ).rejects.toThrow(/ARC1_ALLOWED_CLIENT_IPS requires SAP BTP Cloud Foundry/);
+    expect(listenSpy).toHaveBeenCalledTimes(1);
   });
 
   const initialize = {

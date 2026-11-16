@@ -33,7 +33,7 @@ import type { Request, Response } from 'express';
 import express from 'express';
 import helmet from 'helmet';
 import { expandScopes, hasRequiredScope } from '../authz/policy.js';
-import { createClientIpAllowlist } from './client-ip-allowlist.js';
+import { assertClientIpAllowlistPlatform, createClientIpAllowlist } from './client-ip-allowlist.js';
 import { API_KEY_PROFILES } from './config.js';
 import { generateRequestId, requestContext } from './context.js';
 import type { DestinationRegistry, TargetDescriptor } from './destination-registry.js';
@@ -115,7 +115,7 @@ function toApiKeyEntries(config: ServerConfig): ApiKeyEntry[] {
 export function applySecurityMiddleware(
   app: express.Application,
   allowedOrigins: string[],
-  allowedClientIps: string[] = [],
+  allowedClientIps: string[],
 ): void {
   const hasCorsOrigins = allowedOrigins.length > 0;
   app.use(
@@ -369,6 +369,7 @@ export async function startHttpServer(
   uiDeps?: UiServerDeps,
   multiTargets?: MultiTargetRouting,
 ): Promise<import('node:http').Server> {
+  assertClientIpAllowlistPlatform(config.allowedClientIps);
   if (multiTargets) {
     assertRoutingAuthorizationMode(multiTargets);
     if (multiTargets.authorizationMode !== config.multiTargetAuthorization) {
