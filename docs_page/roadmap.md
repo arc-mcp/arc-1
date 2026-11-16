@@ -1180,6 +1180,9 @@ No RFC or dynamically executed ABAP fallback belongs in the reader
 **Remaining gap.** The tested 816 ADT preview handler condenses repeated spaces inside SQL
 literals. General `TABLE_QUERY` and free-SQL predicates can therefore match a different key.
 The stored-text reader preserves its own literals; the general query paths still need a fix.
+The behaviour is release-specific: on 7.58 (2026-11-16) a `TABLE_QUERY` equality on an `STXL`
+`TDNAME` containing 19 internal spaces returned 37 rows with exactly 19 spaces and none with
+1, 2, 18, 20 or 31.
 
 **Resume with.** Positive and negative live cases for leading, internal and trailing spaces in
 equality, LIKE and IN predicates. Preserve existing query semantics and safety gates; qualify the
@@ -1192,13 +1195,18 @@ backend grammar before generalizing the stored-text workaround.
 - **Category:** Data access
 
 **Remaining gap.** Exact `SAPQuery(application_log)` reads use SAP's native OData service;
-restricted-user allow/deny checks passed on 7.58. Finding logs by object/time range, message
-details, BTP ABAP, principal propagation and additional active-service releases remain unqualified. Positive `$top`
-limits output, not SAP's full-log load. Do not add `/$count`, broad text searches, or BALDAT fallback
-without separate authorization and resource-cost evidence.
+restricted-user allow/deny checks passed on 7.58. Severity filtering, the whole-log message count,
+detail level and positional context values are available. Still missing: finding logs by
+object/time range, per-severity counts and context-field labels (native `HeaderSet` provides both
+but would add a third request whose restricted-user behaviour is untested), long-text/detail bodies,
+BTP ABAP, principal propagation and additional active-service releases. The native service does not
+expose message class, number or variables; those exist only in BALDAT and stay excluded. Positive
+`$top` limits output, not SAP's full-log load. Do not add `/$count`, broad text searches, or BALDAT
+fallback without separate authorization and resource-cost evidence.
 
 **Resume with.** A concrete support workflow and an active service on the target landscape.
-Qualify native filters, time zones, DCL/BAdI restrictions and pagination before expanding the tool.
+Qualify native filters, time zones, DCL/BAdI restrictions and pagination before expanding the tool;
+for `HeaderSet`, a restricted-user test first.
 See the [native-reader investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-18-application-log-native-reader.md).
 
 <a id="feat-89"></a>

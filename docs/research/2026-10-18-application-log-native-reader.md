@@ -140,10 +140,44 @@ The test fails on native errors when fixtures are configured; without numbers it
 fixture skip. It does not discover logs, create data, enable services, or change authorizations.
 
 Unit coverage checks input/response validation, scope and safety denials, privacy, paging, native
-errors, and standard/hyperfocused tool contracts. Nine model-evaluation scenarios cover routing,
+errors, and standard/hyperfocused tool contracts. Ten model-evaluation scenarios cover routing,
 missing identity, continuation, authorization failure, SO10 distinction, empty/hidden logs,
-the offset ceiling and detail flags. Scripted replay tests validate these contracts; no actual-model
+the offset ceiling, detail flags and severity filtering. Scripted replay tests validate these contracts; no actual-model
 accuracy score is claimed.
+
+## Severity filter and native fields (2026-11-16)
+
+A follow-up exposed data the two existing GETs already return, plus a native severity filter.
+`ApplicationLogMessage` also carries `DetailLevel`, `ContextField1`–`5`, `TypeText` and
+`FilterFieldName`/`Value`; overview rows carry `MessageTotalCount`. Message class, T100 number,
+variables and problem class are not exposed: they exist only in BALDAT and stay out of scope.
+
+`severities` becomes `$filter=Type eq 'E' or Type eq 'A'` on the existing message navigation,
+built only from the validated enum. Every returned row must have a requested type. `header.messageCount`
+comes from the overview row; `detailLevel` and the five positional `context` values appear only
+when non-empty.
+
+Read-only checks on 7.58 (client 001):
+
+| Check | Result |
+| --- | --- |
+| Native filter vs `HeaderSet` per-type counts | Equal for CTS/ABAPVCS (E 2, I 29), /UI2/BE PAGE_BUILDER (E 4, I 14), ATC/CCM_PROJECT (E 4, I 15), /IWFND RUNTIM (W 1, I 19); every row had the requested type; `$skip=2&$top=2` under a filter returned rows 3–4 of the unpaged filtered list |
+| Unsupported values | `Type eq 'e'` and `Type eq 'Z'` return HTTP 200 with zero rows, not an error, so ARC-1 rejects anything outside the upper-case enum before SAP |
+| `MessageTotalCount` | Equal to the `HeaderSet` total and the sum of per-type counts for 60/60 sampled logs |
+| Field types | Message `DetailLevel`/`ContextField1`–`5` are strings; `DetailLevel` was `"1"` or empty |
+| Integration test | Passed for five fixtures (four mixed-severity families, one with context fields, one empty log): each filtered list equals client-side filtering of the complete unfiltered list, also for two-type filters and paging under a filter |
+| Built CLI, public `SAPQuery` | Same comparisons identical for the five fixtures. In a 12,920-message log (A 0, E 760, W 258, I 255, S 11,647) filtered paging returned all 760 E, 258 W and 255 I messages, matching `HeaderSet`; `S` and unfiltered reads stopped with `limitReached` at offset 5000. Each call took about 2.4 s |
+| 8.16 SP01, 7.50 SP02 | Public calls with `severities` still return the `/IWFND/MED/170` service-registration hint and no authorization hint. No positive qualification |
+
+`HeaderSet('<handle>')` would add per-type counts and context-field labels. It returned 200 for all
+60 sampled logs and for every fixture, and its totals matched. It is not used: it costs a third
+SAP request on every read, its restricted-user behaviour was not tested (the earlier restricted
+account only exercised message navigation), and a refusal there would break reads that work today.
+Its `HasMessageContextFieldN` flags were false for an ATC/CCM_PROJECT log whose messages carried
+context values, so they are not a reliable presence signal either. FEAT-88 records it.
+
+Text filters such as `substringof('error',Text)` are accepted natively and remain excluded for
+the render-the-whole-log reason above.
 
 ## Generic cluster proposal
 
