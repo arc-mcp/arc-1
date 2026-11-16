@@ -1921,6 +1921,26 @@ ENDCLASS.`;
       expect(text).toContain('Check SAP_CLIENT');
       expect(text).not.toContain('SAP cookies have expired');
     });
+
+    it('explains SAML bearer mapping failures without suggesting shared credentials', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(401, 'Logon failed'));
+      const result = await handleToolCall(
+        createClient(),
+        { ...DEFAULT_CONFIG, ppEnabled: true, samlIdpKeyFile: '/tmp/idp.key' },
+        'SAPRead',
+        { type: 'PROG', name: 'ZTEST' },
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('unique SAP NameID mapping');
+      expect(text).not.toContain('Check SAP_CLIENT');
+      expect(text).not.toContain('SAP_PASSWORD');
+    });
   });
 });
 

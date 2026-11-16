@@ -1,0 +1,78 @@
+# Experimental overlay: per-user SAP identity via OIDC (Keycloak) -> locally issued SAML 2.0 bearer assertion.
+# Start:  docker compose -f compose.yaml -f compose.saml.yaml up -d
+# Back to API-key only: docker compose up -d
+#
+# Layer A: Keycloak issues OIDC tokens to the MCP client; ARC-1 validates issuer + audience and maps scopes.
+# Layer B: ARC-1 signs a SAML 2.0 bearer assertion (NameID = the token's email claim) with saml/arc1-saml-idp.key
+#          and sends it as `Authorization: SAML2.0 ...`; the ABAP system trusts the issuer in transaction SAML2
+#          under Trusted Providers -> SAML Bearer Assertion Providers.
+# The API key keeps working beside PP because SAP_PP_STRICT=false; those calls stay on SAP_USER.
+services:
+  arc1:
+    image: arc1-saml-experimental   # docker build -t arc1-saml-experimental .
+    volumes:
+      - ./saml:/home/arc1/saml:ro
+    environment:
+      # Advertised in the OAuth protected-resource metadata; MCP clients compare it with the URL they call.
+      ARC1_PUBLIC_URL: http://localhost:8091
+      SAP_PP_ENABLED: "true"
+      SAP_PP_STRICT: "false"
+      # --- OIDC issuer. The host MUST be plain "localhost": MCP clients refuse http token endpoints unless the
+      # host is literally localhost / 127.0.0.1 / ::1. Inside this container, localhost:8180 is forwarded to
+      # Keycloak by the arc1-idp-forward sidecar, so the same issuer URL works on the host and in the container.
+      SAP_OIDC_ISSUER: http://localhost:8180/realms/arc1
+      SAP_OIDC_AUDIENCE: arc1-local
+      # --- local SAML bearer issuer ---
+      SAP_PP_SAML_IDP_KEY_FILE: /home/arc1/saml/arc1-saml-idp.key
+      SAP_PP_SAML_IDP_CERT_FILE: /home/arc1/saml/arc1-saml-idp.crt
+      SAP_PP_SAML_ISSUER: arc1-local-saml-idp               # entityID in the generated metadata
+      SAP_PP_SAML_AUDIENCE: REPLACE_ME_SAML2_LOCAL_PROVIDER  # SAML2 -> Local Provider -> Name on the ABAP system
+      SAP_PP_SAML_NAMEID_CLAIM: email
+      SAP_PP_SAML_NAMEID_FORMAT: email
+      # SAP_PP_SAML_RECIPIENT: https://sap-host.example.com:44300   # default = SAP_URL
+      # SAP_PP_SAML_TTL_SECONDS: "300"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
+  # Shares arc1's network namespace so that localhost:8180 inside arc1 reaches Keycloak (IPv4 and IPv6).
+  arc1-idp-forward:
+    image: alpine/socat:1.8.0.0
+    container_name: arc1-idp-forward
+    network_mode: "service:arc1"
+    restart: unless-stopped
+    entrypoint: ["sh", "-c"]
+    command:
+      - socat TCP6-LISTEN:8180,fork,reuseaddr,bind=[::1] TCP:keycloak:8180 & exec socat TCP4-LISTEN:8180,fork,reuseaddr,bind=127.0.0.1 TCP:keycloak:8180
+    depends_on:
+      arc1:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    container_name: arc1-keycloak
+    command: ["start-dev", "--import-realm"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8180:8180"   # loopback only
+      - "[::1]:8180:8180"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: REPLACE_ME          # openssl rand -hex 12
+      KC_HOSTNAME: http://localhost:8180
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_PORT: "8180"
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      # Dev mode without a data volume: the realm is re-imported on every (re)create. Edit the JSON, not the console.
+      - ./keycloak/arc1-realm.json:/opt/keycloak/data/import/arc1-realm.json:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - exec 3<>/dev/tcp/127.0.0.1/9000; printf 'GET /health/ready HTTP/1.0\r\n\r\n' >&3; grep -q UP <&3
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s

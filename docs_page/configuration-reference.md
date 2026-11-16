@@ -148,6 +148,22 @@ Full reference: [btp-destination-setup.md](btp-destination-setup.md) · [multi-t
 | `--pp-strict` | `SAP_PP_STRICT` | `true` when PP is enabled | JWT PP failures always return an error and never change to the shared identity. Set `true` explicitly to reject non-JWT calls; the derived default alone does not enforce that rejection. Explicit `true` gives the recommended strict topology and rejects API-key / non-JWT tool calls. Explicit `false` enables supported mixed operation, in which API keys use the shared client; it never enables JWT fallback. Separate instances are recommended, not required. |
 | `--pp-allow-shared-cookies` | `SAP_PP_ALLOW_SHARED_COOKIES` | `false` | Escape hatch. Without it, setting `SAP_COOKIE_FILE`/`SAP_COOKIE_STRING` together with `SAP_PP_ENABLED=true` fails at startup (cookies belong to one user, PP wants per-user). With `true`, cookies stay on the shared client only and PP traffic runs cookie-free. |
 
+Experimental local SAML bearer issuer for single-target OIDC callers (S/4HANA 2020+):
+
+| Flag | Env var | Default | Effect |
+|---|---|---|---|
+| `--pp-saml-idp-key-file` | `SAP_PP_SAML_IDP_KEY_FILE` | unset | PEM RSA signing key; opt-in switch. Keep outside the repository and mount read-only. |
+| `--pp-saml-idp-cert-file` | `SAP_PP_SAML_IDP_CERT_FILE` | unset | Matching, currently valid RSA X.509 certificate trusted in SAP SAML2. Startup signs and verifies a sample assertion. |
+| `--pp-saml-issuer` | `SAP_PP_SAML_ISSUER` | unset | Issuer/entity ID registered as a SAML Bearer Assertion Provider. |
+| `--pp-saml-audience` | `SAP_PP_SAML_AUDIENCE` | unset | SAP SAML2 local provider name. |
+| `--pp-saml-recipient` | `SAP_PP_SAML_RECIPIENT` | `SAP_URL` | Bearer assertion recipient. |
+| `--pp-saml-nameid-claim` | `SAP_PP_SAML_NAMEID_CLAIM` | **required, no default** | OIDC JWT claim mapped to SAP NameID. It must be administrator-controlled. `email` also requires boolean `email_verified=true`; malformed, control-bearing or over-256-character values fail closed. |
+| `--pp-saml-nameid-format` | `SAP_PP_SAML_NAMEID_FORMAT` | `email` | `email` or `unspecified`; use the latter for a SAP logon ID claim. |
+| `--pp-saml-authn-context` | `SAP_PP_SAML_AUTHN_CONTEXT` | `PreviousSession` URI | SAML `AuthnContextClassRef`. |
+| `--pp-saml-ttl-seconds` | `SAP_PP_SAML_TTL_SECONDS` | `300` | Assertion lifetime in seconds, clamped to 30–3600. |
+
+See [Local SSO](local-sso-experimental.md) for trust setup, key rotation and session limits.
+
 Full reference: [principal-propagation-setup.md](principal-propagation-setup.md).
 
 #### Layer B extras

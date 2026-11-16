@@ -158,8 +158,9 @@ function formatErrorForLLM(
   tool: string,
   args: Record<string, unknown>,
   config: ServerConfig,
+  isSamlBearer: boolean,
 ): string {
-  const base = buildBaseErrorMessage(err, message, tool, args, config);
+  const base = buildBaseErrorMessage(err, message, tool, args, config, isSamlBearer);
   // Handler-attached remediation hints (e.g., CDS delete blocker list) always
   // appear last so the message reads "what happened → diagnostics → how to fix".
   if (err instanceof AdtError && err.extraHint && !base.includes(err.extraHint)) {
@@ -174,6 +175,7 @@ function buildBaseErrorMessage(
   tool: string,
   args: Record<string, unknown>,
   config: ServerConfig,
+  isSamlBearer: boolean,
 ): string {
   if (err instanceof AdtRequestBudgetError || err instanceof AdtAnalysisDeadlineError) return message;
   if (err instanceof AdtError && err.activationOutcome === 'unknown') {
@@ -320,6 +322,9 @@ function buildBaseErrorMessage(
       return `${enriched}\n\nHint: Object "${name}" (type ${type}) was not found. Use SAPSearch with query "${name}" to verify the name exists and check the correct type.`;
     }
     if (err.isUnauthorized || err.isForbidden) {
+      if (isSamlBearer && err.isUnauthorized) {
+        return `${enriched}\n\nHint: SAP rejected the SAML bearer assertion. Check the trusted issuer, audience, recipient, certificate, and unique SAP NameID mapping in SAML2/SU01. ARC-1 did not fall back to SAP_USER.`;
+      }
       if (config.cookieFile || config.cookieString) {
         return (
           `${enriched}\n\n` +
@@ -1273,7 +1278,9 @@ export async function handleToolCall(
           }
         }
 
-        return errorResult(formatErrorForLLM(err, message, toolName, args, config));
+        return errorResult(
+          formatErrorForLLM(err, message, toolName, args, config, isPerUserClient === true && !!config.samlIdpKeyFile),
+        );
       } finally {
         if (ownsDataResultScope) dataResultScope.release();
       }
