@@ -638,9 +638,13 @@ list above: MTA's `${default-url}` does not follow the explicit routes list.
 
 ### Upgrading an existing deployment
 
+For builds that upgrade `@arc-mcp/xsuaa-auth` to **1.2.1 or later**, also follow the
+[refresh-token migration](updating.md#xsuaa-auth-121-refresh-token-migration): upgrade all
+instances before resuming OAuth traffic and have users complete one fresh sign-in.
+
 Standard MCP clients keep their server URL and registration. There is no new environment variable,
 service, rebind, or role assignment. Preserve the [stable DCR signing key](#stable-dcr-signing-key-recommended)
-as on any redeploy. The intentional compatibility change is that a client using the shared XSUAA
+as on any redeploy. The callback-policy compatibility change is that a client using the shared XSUAA
 client ID can no longer redirect to an arbitrary SAP CF/BAS host; use that client's DCR mode instead.
 
 Before deploying, check every row that applies to your installation:

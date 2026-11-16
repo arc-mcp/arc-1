@@ -620,8 +620,8 @@ to the new digest.
 
 ### Dependency audit policy
 
-The lockfile now resolves `node-forge` to **1.4.2**, which includes the
-[RSA verification fix and PEM Buffer compatibility repair](https://github.com/digitalbazaar/forge/blob/v1.4.2/CHANGELOG.md).
+The lockfile now resolves `node-forge` to **1.4.3**, which includes the
+[upstream RSA verification and PEM Buffer fixes](https://github.com/digitalbazaar/forge/blob/v1.4.3/CHANGELOG.md).
 The temporary `GHSA-86w9-cpqp-85rv` risk exception has been removed from `audit-ci.json`.
 High/critical advisories, including a reintroduction of that advisory, and audit failures fail the CI job.
 
