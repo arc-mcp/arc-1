@@ -537,9 +537,9 @@ export class AdtClient {
     return parseFunctionModuleProperties((await this.http.get(url)).body);
   }
 
-  /** Resolve by URI: some releases decorate search names with "(Function Module)". */
+  /** Resolve by URI (names can carry "(Function Module)"); uppercase: 7.50 search is case-sensitive. */
   async resolveFunctionGroup(fmName: string, request?: AdtRequestOptions): Promise<string | null> {
-    const results = await this.searchObject(fmName, 10, undefined, request);
+    const results = await this.searchObject(fmName.toUpperCase(), 10, undefined, request);
     for (const r of results) {
       const match = r.uri.match(/\/functions\/groups\/([^/]+)\/fmodules\/([^/?#]+)(?:[/?#]|$)/i);
       if (match && decodeURIComponent(match[2]!).toUpperCase() === fmName.toUpperCase()) {
@@ -566,12 +566,12 @@ export class AdtClient {
       // nodes in a flat projectexplorer shape. Note the LOWERCASE query params — objectName/
       // objectType returns 400. Verified live on npl 7.50; §8.3 of the 2026-07-29 dossier.
       if (!isNotFoundError(err)) throw err;
-      const fallback = await this.http.get(
-        `/sap/bc/adt/repository/objectstructure?objectname=${encodeURIComponent(name)}&objecttype=${encodeURIComponent('FUGR/F')}`,
-        { Accept: accept },
-      );
-      // The fallback payload does not carry the group name — pass it through.
-      return parseFunctionGroupNodes(fallback.body, name);
+      const path = `/sap/bc/adt/repository/objectstructure?objectname=${encodeURIComponent(name)}&objecttype=${encodeURIComponent('FUGR/F')}`;
+      const fg = parseFunctionGroupNodes((await this.http.get(path, { Accept: accept })).body, name);
+      // A missing group answers 200 with no nodes; a real one always lists its TOP/UXX includes
+      // (both live on npl 7.50). Not `err`: its "No suitable resource" text draws the SICF hint.
+      if (fg.functions.length + fg.includes.length > 0) return fg;
+      throw new AdtApiError(`Function group ${name} not found`, 404, path);
     }
   }
 

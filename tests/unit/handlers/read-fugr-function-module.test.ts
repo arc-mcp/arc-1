@@ -64,6 +64,30 @@ describe('FUGR read given a function module name (A25)', () => {
     expect(result.content[0]?.text).toContain('was not found');
   });
 
+  // NW 7.50: no per-group objectstructure (404), the generic fallback answers 200 with an empty
+  // tree for a name that is no group, and quick search is case-sensitive. Live-verified on npl.
+  const EMPTY_TREE =
+    '<projectexplorer:objectstructure xmlns:projectexplorer="http://www.sap.com/adt/projectexplorer"/>';
+
+  it.each([
+    [
+      'names the group for a lowercase function module name',
+      '<objectReferences><objectReference type="FUGR/FF" name="Z_MY_FUNC" uri="/sap/bc/adt/functions/groups/zgroup/fmodules/z_my_func"/></objectReferences>',
+      '"z_my_func" is a function module in function group ZGROUP',
+    ],
+    ['reports a missing group instead of an empty one', '<objectReferences/>', 'Function group z_my_func not found'],
+  ])('7.50 plain read: %s', async (_label, searchXml, expected) => {
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValueOnce(mockResponse(404, 'No suitable resource found'));
+    mockFetch.mockResolvedValueOnce(mockResponse(200, EMPTY_TREE));
+    mockFetch.mockResolvedValueOnce(mockResponse(200, searchXml));
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'FUGR', name: 'z_my_func' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain(expected);
+    expect(result.content[0]?.text).not.toContain('SICF');
+    expect(String(mockFetch.mock.calls[2]?.[0])).toContain('query=Z_MY_FUNC');
+  });
+
   const read = (client: ReturnType<typeof createClient>, extra = {}) =>
     handleSAPRead(client, { type: 'FUGR', name: 'Z_MY_FUNC', ...extra }, undefined, { isPerUserClient: false }, false);
 
