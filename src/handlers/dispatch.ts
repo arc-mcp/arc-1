@@ -826,8 +826,10 @@ export function classifyMultiTargetSapError(
       message:
         identity === 'shared'
           ? `SAP denied this operation for the shared technical user on target ${target}. Ask an SAP administrator to grant only the required read authorization before trying again.`
-          : `SAP denied this operation for the propagated user on target ${target}. Grant the required SAP authorization, then try again now.`,
-      retryable: identity !== 'shared',
+          : error.isServerError && mutation
+            ? `SAP denied this operation for the propagated user on target ${target}. Grant the required SAP authorization. ${readBack}`
+            : `SAP denied this operation for the propagated user on target ${target}. Grant the required SAP authorization, then try again now.`,
+      retryable: identity !== 'shared' && !error.isServerError,
     };
   }
   if (error.statusCode === 401 || (error.statusCode === 403 && identity === 'per-user')) {

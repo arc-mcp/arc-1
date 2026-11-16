@@ -27,7 +27,7 @@ async function call(toolName: string, args: Record<string, unknown>, readFailure
   };
   const result = await handleToolCall(
     client as never,
-    { ...DEFAULT_CONFIG, targetId: 'A4H/001' },
+    { ...DEFAULT_CONFIG, targetId: 'A4H/001', ppEnabled: true },
     toolName,
     args,
     undefined,
@@ -89,6 +89,21 @@ describe('multi-target deterministic SAP refusals and unknown mutation outcomes'
     expect(payload).toMatchObject({ error: 'SAP_REQUEST_FAILED', retryable: false });
     expect(payload.message).toContain('locked by another user or session');
     expect(payload.message).toContain('Read the object back before repeating the change');
+  });
+
+  it('does not advise replaying a write after a structured authorization 500', async () => {
+    writeFailure.error = sapError(500, 'ExceptionNotAuthorized', 'SECRETUSER cannot update ZSECRET_PROG');
+    const payload = await call('SAPWrite', update);
+    expect(payload).toMatchObject({ error: 'SAP_AUTHORIZATION_DENIED', retryable: false });
+    expect(payload.message).toContain('read the object back');
+    expect(payload.message).not.toContain('try again now');
+  });
+
+  it('retains the existing retry advice for a structured authorization 403', async () => {
+    writeFailure.error = sapError(403, 'ExceptionNotAuthorized', 'SECRETUSER cannot update ZSECRET_PROG');
+    const payload = await call('SAPWrite', update);
+    expect(payload).toMatchObject({ error: 'SAP_AUTHORIZATION_DENIED', retryable: true });
+    expect(payload.message).toContain('then try again now');
   });
 
   it('reports an unsupported operation as non-retryable', async () => {
