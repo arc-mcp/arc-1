@@ -1870,8 +1870,8 @@ the log, not a T100 message class/number.
 `header.messageCount` is SAP's total for the whole log. `severities` filters messages in SAP
 (`A` abort, `E` error, `W` warning, `I` info, `S` success); `maxRows`, `offset`, `nextOffset` and
 the 5000 offset ceiling then apply to the filtered list, and the result echoes `severities`.
-Filtering reaches errors that unfiltered paging cannot: on a tested 12,920-message log, all 760
-`E` messages were readable. `messageCount` stays the whole-log total under a filter.
+A severity filter can therefore reach messages beyond the 5000 offset ceiling of unfiltered
+paging. `messageCount` stays the whole-log total under a filter.
 
 ```json
 {"action":"application_log","applicationLog":{"logNumber":"00000000000000000042","severities":["E","A"]}}
