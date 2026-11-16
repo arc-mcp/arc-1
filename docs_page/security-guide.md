@@ -545,9 +545,9 @@ Who counts as the client:
   egress address the client. Allow that address and restrict end users at the proxy.
 - **Container-to-container traffic** on internal routes (`apps.internal`) bypasses the router,
   carries no header and is refused.
-- SAP does not document whether the platform replaces a header the client sent itself. See
-  [R24 in the security model](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r24--client-ip-allowlist-rests-on-the-platform-header)
-  for the verification status.
+- SAP does not document that the platform replaces a header the client sent itself. A live check
+  on one landscape showed that it does, but treat it as observed behavior, not a guarantee. See
+  [R24 in the security model](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r24--client-ip-allowlist-rests-on-the-platform-header).
 
 Operations:
 
