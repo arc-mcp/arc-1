@@ -181,23 +181,23 @@ the render-the-whole-log reason above.
 
 ### Independent PR #1250 review — 2026-11-16
 
-Reviewed `22445dc45`; runtime fixes are in `406e24083`. Read-only checks used the built public
-`node dist/cli.js call SAPQuery --json -`, Basic authentication, client 001, data preview enabled,
-and writes/free SQL disabled. No service activation, SAP data writes, or role/user changes.
+Read-only checks used the built public `node dist/cli.js call SAPQuery --json -`, Basic
+authentication, client 001, data preview enabled, and writes/free SQL disabled. No service
+activation, SAP data writes, or role/user changes.
 
-Two review fixes preserve the original read boundary:
+The review kept one change and proposed a second that was reverted:
 
-- Direct CLI calls previously ran ADT authentication and feature probes before dispatch, even
-  for invalid severity inputs or disabled data access. Native application-log calls now go
-  directly through the existing dispatcher and authenticate on their OData GETs. Standard and
-  hyperfocused invalid inputs and the data gates produce zero outbound HTTP audit events.
-  Native 401/403 failures are still propagated; other CLI operations retain their bootstrap.
 - The new count/detail/context fields were mandatory even on unfiltered reads. Live 7.58
   metadata supplies them, but that is evidence for this service version, not a cross-version
   guarantee. Replaying the formerly accepted response shape reproduced a compatibility break.
   Missing enrichment fields are now omitted; supplied wrong types still fail closed. Partial
   context is omitted as a whole so an unavailable position is never presented as a known empty
   value. Required log/message identity checks and filtered-type verification remain strict.
+- Reverted: skipping the direct CLI's ADT authentication and feature probe for log calls, so that
+  invalid input caused no SAP traffic at all. With `SAP_SYSTEM_TYPE=auto` that probe is what
+  detects BTP ABAP; without it, a cookie-authenticated BTP target would receive native log
+  requests. The CLI keeps the bootstrap every tool runs; validation and data gates still refuse
+  before any application-log request. A CLI unit test covers the gates and the detected-BTP case.
 
 An explicit `severities: []` remains an error. Treating it as omission would broaden a supplied
 selection to every type. Null padding is still stripped, and the normalizer never rewrites
@@ -227,9 +227,10 @@ message numbers beyond 5000. Every continuation used `nextOffset`. At offset 500
 and S-filtered reads returned `more=true`, `limitReached=true`, and no `nextOffset`; the complete
 11,647-message S selection was not claimed as readable through this bounded action.
 
-All seven requested invalid input shapes were refused in both standard and hyperfocused CLI
-mode, with zero outbound HTTP audit events. Data preview off, deny action and an unrelated
-configured blocklist also produced zero requests. Across the 92 successful CLI page calls,
+On the final build, all seven invalid input shapes, data preview off, the deny action and an
+unrelated configured blocklist were refused in standard and hyperfocused CLI mode with zero
+application-log requests; debug audit showed only the 13 ADT bootstrap requests every CLI call
+makes. A valid control call made two application-log requests. Across the 92 successful CLI page calls,
 184 native request audit events redacted keys/filters and payloads; arguments and result previews
 were redacted too. The shared admission lease, cumulative byte budget and deadline were reviewed
 and exercised by unit tests; this review did not repeat the earlier live cancellation/load probes.
@@ -247,8 +248,6 @@ negative checks only. The initial 7.50 HTTP route failed authentication; the con
 route produced the registration response. PP, BTP ABAP and other active-service releases were
 not tested. No actual-model evaluation was run; eval tests are scripted/mock coverage.
 
-Automated gates passed: 459 unit files / 12,425 tests, typecheck, lint, policy validation, build
-and size checks. The CLI runtime (48 tests) and shutdown (12 tests) files also passed alone.
 The existing read-only integration test passed for all nine fixtures above (nine tests, no skips).
 Only the four intended full on-prem tool snapshots changed. Actual full-surface wire size is
 75,297 -> 75,384 bytes (+87); the wall increases by 84 because the former 75,300-byte wall had
