@@ -152,8 +152,10 @@ Package and CTS management, service-binding publication, Git, and plugin tools r
 even if a client sends the call directly. ABAP Unit can execute newly authored code under the SAP
 user; deny `SAPDiagnose.unittest` unless that execution is intended. Use `SAP_DENY_ACTIONS` to
 narrow further (for example `SAPWrite.delete`). SAP authorization is always required in addition
-to ARC-1 policy. This surface is tested against mocks only until live qualification is recorded
-(the earlier CLAS/INTF adapter was qualified on SAP_BASIS 758 SP02 with Cloud Connector PP).
+to ARC-1 policy. This surface was qualified live on SAP_BASIS 758 (on-premise,
+Cloud Connector PP) only. Not qualified live: other releases, BTP ABAP, a write to a package outside
+the allowlists (unit tests only), and SAP adding objects to an activation (never reproduced; ARC-1
+refuses it).
 
 A hash establishes source freshness, not target identity. Verify the pinned connection before
 editing. SAP repository objects are generally cross-client: two clients of one physical system are

@@ -199,10 +199,10 @@ CLAS/INTF contract (ADR-0010). [ADR-0011](https://github.com/arc-mcp/arc-1/blob/
 [#1142](https://github.com/arc-mcp/arc-1/pull/1142) with the single-target handlers plus six
 multi-target controls. Its [plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-11-12-pinned-writes-shared-handlers.md)
 PR 1 (every `SAPWrite` action except `edit_content`, and `SAPActivate activate`, CLAS/INTF included — the ADR-0010
-adapter is removed) is implemented with per-family mock tests. A first live run on A4H 758 found
-two defects (text-pool activation after `edit_text_symbols`, a plain 403 resent), both fixed with
-mock tests; it still needs a re-run of the plan's live-qualification checklist and the security
-review before merge.
+adapter is removed) is implemented. Three live runs on A4H 758 (Cloud Connector PP) found and
+confirmed fixes for four defects; the last run passed 14 of 15 items. Still open before merge: the
+security review, a live package-ceiling refusal (checklist step 18), and preaudit expansion, which
+SAP never produced in six fixtures (unit tests only).
 Later, each with its own admission keys, tests and live evidence: package and CTS management
 (`checkTransport` made dual; body-carried requests in `refactoring.ts`/`transport.ts`), SRVB
 publication, and — only on request — quickfix, formatter settings, profiler trace and FLP. Git,

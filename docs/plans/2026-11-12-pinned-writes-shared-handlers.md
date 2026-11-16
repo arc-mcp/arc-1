@@ -286,6 +286,7 @@ of the result, and for mutations the SAP state afterwards (`SAPRead` active/inac
 | 15 | Optional — older release (7.50/7.40 target, if one is reachable by PP): a DTEL create (versioned content type) | Succeeds after one 415 renegotiation; with `ARC1_LOG_HTTP_DEBUG=true` the log shows one 415 then success | Result + log excerpt |
 | 16 | Optional — transient failure: if a 503 can be provoked safely, confirm the write is reported as an error and not resent. Also a plain authorization 403 (for example a write to a package the SAP user may not change): one send. A CSRF challenge 403 (`x-csrf-token: Required`) is refreshed and sent twice | One request in the audit/HTTP log for 503 and plain 403 | Log excerpt |
 | 17 | Optional — text-pool repair: if a program's pool is inactive (edit texts in ADT without activating), `SAPActivate type="REPT"` on it; if SAP proposes the program as well, repeat with `objects=[REPT, PROG]` | Pool active; deleting the program then works | Result, read-back |
+| 18 | Package ceiling (not yet run live): destination `arc1.allowed_packages=$TMP` only, server `$TMP,ZARC1_DEMO`. Create in `ZARC1_DEMO` and in a package on neither list; update, `edit_method`, `edit_text_symbols`, delete and `SAPActivate` (alone and in `objects[]` with a `$TMP` object) on existing `ZARC1_DEMO` objects; `batch_create` mixing both packages. Swap the lists and repeat | All refused; hash unchanged, no draft, SM12 empty, nothing from a mixed call created or activated | Results |
 
 ### Cleanup
 
