@@ -134,6 +134,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH` | Default false. Permits shared BasicAuthentication targets in multi mode; never PP fallback, credentials stay request-local, and v1 requires exactly one CF instance. |
 | `ARC1_MULTI_TARGET_AUTHORIZATION` | Default/unset `standard` = standard access. Opt-in `xsuaa-attribute` filters IAM-assigned targets, not discovered SAP accounts; multi-only, never fallback. Admin diagnostics do not grant execution. Contract/readiness: ADR-0008 + `docs/plans/xsuaa-target-authorization.md`. |
 | `SAP_PP_ENABLED` / `SAP_PP_STRICT` / `SAP_PP_ALLOW_SHARED_COOKIES` | Principal propagation + strict mode + cookie-coexistence escape hatch |
+| `SAP_PP_SAML_*` | Experimental single-target OIDC→SAP SAML bearer issuer; explicit trusted NameID claim, RSA key/cert, audience and issuer required. See docs_page/local-sso-experimental.md. |
 | `SAP_DISABLE_SAML` | Disable SAML redirect — never on BTP ABAP / S/4 Public Cloud |
 | `ARC1_MINIMAL_ERRORS` | Hide SAP diagnostic details from client-facing tool errors; keep request correlation for operators |
 | `ARC1_LOG_HTTP_DEBUG` | HTTP debug fields in audit; bodies are centrally redacted before sink writes |
@@ -303,6 +304,7 @@ and [its contract](docs/plans/xsuaa-target-authorization.md); [ADR-0011](docs/ad
 | Scope enforcement / auth scopes | `src/authz/policy.ts` (`ACTION_POLICY`), `src/handlers/dispatch.ts`, `src/server/server.ts`, `xs-security.json` |
 | Auth combination rule | `src/server/config.ts` (`validateConfig`), `src/server/types.ts`, `docs_page/enterprise-auth.md` |
 | Layer B auth mechanism | `src/adt/http.ts` (`applyAuthHeader` — Basic / `samlAuthorization`→`Authorization`+`x-sap-security-session:create`), `src/server/server.ts` (`applyPerUserAuthTokens` sets PP creds incl. SAMLAssertion for S/4HC; `buildAdtConfig` perUser flag — strips shared creds). New Layer B field must also be mapped in `src/adt/client.ts` httpConfig + set only per-user |
+| Local SAML bearer issuer | `src/adt/saml-bearer.ts`, `src/server/saml-bearer-client.ts`, `docs_page/local-sso-experimental.md` — require an explicit administrator-controlled NameID claim; `email` additionally needs boolean `email_verified=true`. |
 | Safety config option | `src/adt/safety.ts`, `src/server/config.ts`, `src/server/types.ts` |
 | AdtClient instance field / `withSafety()` clone | `src/adt/client.ts` — clone is `Object.assign(Object.create(proto), this, {safety})`; new own fields share automatically (use TS `private`, never `#private`) (#333) |
 | `allowedPackages` pattern syntax | `src/adt/safety.ts`, `src/adt/package-hierarchy.ts`, `src/handlers/write-helpers.ts` (`enforceAllowedPackageForObjectUrl`, fail-closed) — details: dev-guide |

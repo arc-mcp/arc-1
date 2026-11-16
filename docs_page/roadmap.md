@@ -89,6 +89,7 @@ sequence.
 | [SEC-21](#sec-21) | Socket policy calibration | P3 | S | Revisit on trigger | Security |
 | [SEC-22](#sec-22) | SBOMs for the Docker image, MCPB bundle and executables | P3 | S | Revisit on trigger | Security |
 | [SEC-19](#sec-19) | Registered agent identity and downstream tool scopes | P2 | L | Needs research | Auth / Security |
+| [SEC-23](#sec-23) | Local SAML bearer: wider validation | P2 | M | Experimental | Auth / Security |
 | [COMPAT-22](#compat-22) | Integration Suite remote MCP gateway validation | P2 | M | Needs research | Compatibility |
 | [COMPAT-23](#compat-23) | Shared reader for function-group object URIs | P2 | M | Ready | Compatibility |
 | [COMPAT-24](#compat-24) | Uniform not-found for reads of deleted objects | P3 | S | Needs research | Compatibility |
@@ -607,6 +608,29 @@ See the [2026-10-21 evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/re
 agent registration, delegation and scope contract. Prove user/agent attribution and fail-closed
 behavior without broadening existing PP or multi-target exceptions. Do not invent an IAS setup
 requirement or claim this resolves the separate ADT-channel permission question.
+
+<a id="sec-23"></a>
+### SEC-23 — Local SAML bearer: wider validation
+
+- **Priority / effort / status:** P2 / M / Experimental
+- **Category:** Auth / Security
+
+**Remaining gap.** The experimental, single-target OIDC issuer signs a short-lived SAML bearer
+assertion for an explicitly configured, administrator-controlled NameID claim. SAP trusts its
+certificate in SAML2. The [setup guide](local-sso-experimental.md), [ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-local-saml-bearer-issuer.md), [completed design plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/2026-11-14-local-saml-bearer-pp-experimental.md) and security risk register describe this PR's scope.
+
+On A4H 758/001, 20 sequential SAML reads created 20 `SECURITY_CONTEXT` rows, one per call.
+Same-cookie SAP logoff removed an isolated row immediately; bounded automatic cleanup then passed
+50 sequential plus 10 parallel reads and six updates with the test user's row count back at baseline
+immediately and after 10 seconds. Per-user session reuse is no longer required for this measured
+session-pressure case. IAS token scope/claim mapping and final-build 816 coverage remain unverified.
+A4H 758 accepted an unrelated Recipient; R25 records the accepted residual risk and per-target key
+requirement.
+
+**Resume when.** A supported deployment still hits SAP session pressure after logoff, IAS is
+available for an end-to-end test, or another S/4HANA release needs qualification. Any future
+session reuse must remain tied to a verified user and credential lifetime, account for expiry
+and revocation, and never cross users or fall back to `SAP_USER`.
 
 <a id="compat-22"></a>
 ### COMPAT-22 — Integration Suite remote MCP gateway validation

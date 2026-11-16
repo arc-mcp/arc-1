@@ -163,6 +163,24 @@ export interface ServerConfig {
   /** Opt-in: allow shared cookie auth to coexist with PP (shared client only) */
   ppAllowSharedCookies: boolean;
 
+  // --- Experimental local SAML 2.0 bearer-assertion issuer ---
+  /** PEM private key used to sign assertions; setting it enables the local issuer. */
+  samlIdpKeyFile?: string;
+  /** PEM certificate matching the key; uploaded to the ABAP system as trusted provider. */
+  samlIdpCertFile?: string;
+  /** SAML Issuer / entity ID trusted by the ABAP system. */
+  samlIdpIssuer?: string;
+  /** Audience expected by the ABAP system (its local SAML2 provider name). */
+  samlAudience?: string;
+  /** SubjectConfirmationData Recipient; defaults to the SAP URL. */
+  samlRecipient?: string;
+  /** Explicit JWT claim carrying the SAP-side identity. */
+  samlNameIdClaim?: string;
+  samlNameIdFormat: 'email' | 'unspecified';
+  samlAuthnContextClassRef: string;
+  /** Assertion validity in seconds (default 300, clamped 30-3600). */
+  samlAssertionTtlSeconds: number;
+
   // --- SAML Behavior ---
   /** Opt-in: disable SAML redirect for ADT requests (X-SAP-SAML2 + saml2=disabled) */
   disableSaml2: boolean;
@@ -325,6 +343,9 @@ export const DEFAULT_CONFIG: ServerConfig = {
   ppStrict: false,
   ppStrictExplicit: false,
   ppAllowSharedCookies: false,
+  samlNameIdFormat: 'email',
+  samlAuthnContextClassRef: 'urn:oasis:names:tc:SAML:2.0:ac:classes:PreviousSession',
+  samlAssertionTtlSeconds: 300,
   disableSaml2: false,
   ideLinks: 'off',
   ideSystemId: '',
