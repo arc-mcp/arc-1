@@ -146,6 +146,15 @@ Where: [`src/server/logger.ts`](../src/server/logger.ts) (`redactSensitive`),
 Fails when: redaction lives in one sink but not others (R5), or is shallow and a secret is logged
 nested under a non-sensitive key.
 
+Source and business content in tool arguments (`source`, `content`, `oldContent`, `newContent`,
+`proposalUserContent`, `fixedValues`, `messages`, `shortTexts`, `parameters`, at any depth) is never
+written to a sink: the same central redactor replaces it with its length and a 12-hex SHA-256 prefix.
+The prefix correlates events; it is not secrecy for short or guessable values. Other free-text
+arguments (descriptions, labels, commit messages, SQL text and filters) are still logged truncated.
+Multi-target routes audit authenticated `403` refusals before dispatch as `mcp_route_denied`, without
+target, path or token. Admin-scope `403`s on the optional UI routes come from the MCP SDK middleware
+and are not audited.
+
 abapGit error diagnostics are inspected before extraction or truncation. Responses with credential
 terminology, sensitive URLs, ambiguous duplicate properties, unresolved encodings, or more than
 64 KiB are replaced by an omission notice, including additional messages, T100 values, check results
@@ -334,6 +343,31 @@ sessions, so immediate disable uses server/destination policy and restart, and a
 still complete. New backends require new public IDs and grants. Operators must assess these limits
 before enabling the feature; separate single-target applications remain the stronger availability
 and deployment-isolation option.
+
+### R24 — Client-IP allowlist rests on the platform header
+
+**Medium if the platform ever passes a client-supplied header through; observed replaced on one landscape.**
+
+`ARC1_ALLOWED_CLIENT_IPS` trusts `x-cf-true-client-ip` alone. SAP documents that BTP Cloud Foundry
+sets this header on requests through its public router, but not that it replaces a value the client
+sent. If it did not, any client could name an allowed address and pass the filter. Authentication,
+scopes and the safety ceiling would still apply, so the loss is the allowlist only.
+
+Known limits:
+
+- `VCAP_APPLICATION`, which HTTP startup requires for a configured list, does not prove that a
+  request passed the CF router. A caller on an internal `apps.internal` route or a C2C policy can
+  forge the header, so operators must restrict direct ingress separately.
+- A fronting proxy becomes the client.
+- `/health` stays reachable from anywhere.
+- IPv4 literals match only IPv4 rules; mapped IPv6 values can also match IPv6 rules.
+
+**Observed (2026-11):** on SAP BTP Cloud Foundry `us10-001` (AWS), a client-supplied
+`x-cf-true-client-ip` was always replaced with the connecting IPv4 address, in any casing, repeated,
+or combined with the real address, and a forged `X-Forwarded-For` changed nothing. Not covered:
+IPv6, other regions and infrastructures, custom domains. Because the behavior is undocumented,
+recheck it after platform changes. The full run is recorded in PR #1244. See
+[Client IP allowlist](../docs_page/security-guide.md#client-ip-allowlist-sap-btp-cloud-foundry-opt-in).
 
 
 ## 6. Per-PR security review checklist

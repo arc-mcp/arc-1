@@ -217,6 +217,8 @@ modules:
       # Copilot Studio) don't need this. Comma-separated, exact match, no
       # wildcards.
       ARC1_ALLOWED_ORIGINS: ""
+      # Client IP allowlist — empty (default) is off. See security-guide.md.
+      ARC1_ALLOWED_CLIENT_IPS: ""
     provides:
       - name: arc1-mcp-api
         properties:

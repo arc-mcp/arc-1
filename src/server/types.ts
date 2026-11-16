@@ -269,6 +269,9 @@ export interface ServerConfig {
    *  use native HTTP, not the browser fetch API, and never trigger CORS. */
   allowedOrigins: string[];
 
+  /** Inbound `x-cf-true-client-ip` allowlist (addresses/CIDR). Empty = off. SAP BTP CF only. */
+  allowedClientIps: string[];
+
   // --- Misc ---
   verbose: boolean;
 }
@@ -341,6 +344,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   mcpHttpRateLimit: undefined,
   rateLimit: 0, // Layer 2 disabled by default — operators opt in (see ADR-0004)
   allowedOrigins: [],
+  allowedClientIps: [],
   logLevel: 'info',
   logFormat: 'text',
   minimalErrors: false,

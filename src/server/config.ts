@@ -19,6 +19,7 @@
 import { parseBlockedDataSourcesCsv } from '../adt/data-source-name.js';
 import type { SafetyConfig } from '../adt/safety.js';
 import { resolveSapUserAgent } from '../adt/user-agent.js';
+import { assertClientIpAllowlistPlatform, parseAllowedClientIps } from './client-ip-allowlist.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
 import { SAP_SYSID_PATTERN } from './multi-target-identity.js';
@@ -204,6 +205,11 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'auth-rate-limit', valueName: 'per-minute', description: 'OAuth requests per IP per minute' },
   { name: 'rate-limit', valueName: 'per-minute', description: 'MCP calls per user per minute' },
   { name: 'allowed-origins', valueName: 'origins', description: 'Comma-separated browser CORS origins' },
+  {
+    name: 'allowed-client-ips',
+    valueName: 'addresses',
+    description: 'Comma-separated client IPs/CIDR ranges (SAP BTP CF only)',
+  },
   { name: 'log-file', valueName: 'path', description: 'Audit/log output file' },
   { name: 'log-level', valueName: 'level', description: 'Log level: debug/info/warn/error' },
   { name: 'log-format', valueName: 'format', description: 'Log format: text or json' },
@@ -1067,6 +1073,16 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     sources.allowedOrigins = 'default';
   }
 
+  const clientIpsFlag = getFlag('allowed-client-ips');
+  const clientIpsRaw = clientIpsFlag ?? process.env.ARC1_ALLOWED_CLIENT_IPS;
+  if (clientIpsRaw !== undefined) {
+    const label = clientIpsFlag !== undefined ? '--allowed-client-ips' : 'ARC1_ALLOWED_CLIENT_IPS';
+    config.allowedClientIps = parseAllowedClientIps(clientIpsRaw, label);
+    sources.allowedClientIps = clientIpsFlag !== undefined ? { flag: label } : { env: label };
+  } else {
+    sources.allowedClientIps = 'default';
+  }
+
   // ── Logging ────────────────────────────────────────────────────────
   config.logFile = resolveOptionalStr('log-file', 'ARC1_LOG_FILE', 'logFile');
   const logLevel = resolveStr('log-level', 'ARC1_LOG_LEVEL', 'info', 'logLevel');
@@ -1222,6 +1238,8 @@ export function validateConfig(config: ServerConfig): void {
         'For local/dev-only unauthenticated HTTP, set ARC1_ALLOW_HTTP_NO_AUTH=true explicitly.',
     );
   }
+
+  if (config.transport === 'http-streamable') assertClientIpAllowlistPlatform(config.allowedClientIps);
 
   const hasCookieAuth = !!(config.cookieFile || config.cookieString);
   const hasBtpServiceKey = !!(config.btpServiceKey || config.btpServiceKeyFile);
