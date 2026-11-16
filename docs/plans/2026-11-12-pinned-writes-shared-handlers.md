@@ -1,6 +1,6 @@
 # Plan: pinned PP writes through the shared handlers
 
-**Status:** Steps 1–6 implemented and revised after review (13 November 2026). Step 7: first live run of `896320813` on A4H 758 — 12 pass, 2 fail, 3 not run; both failures and three review findings fixed in follow-up commits; a re-run of the [Live qualification checklist](#live-qualification-checklist) is outstanding. Decision record: [ADR-0011 (proposed revision)](../adr/0011-broader-pinned-pp-mutations.md).
+**Status:** Steps 1–6 implemented and revised after review (13 November 2026). Step 7: first live run of `896320813` on A4H 758 — 12 pass, 2 fail, 3 not run; both failures and three review findings fixed. Final run of `234fea534`: 14 pass, 0 fail, 1 not run (preaudit expansion). Step 18 on `78bdc14b1`: 46 pass, 0 fail. Decision record: [ADR-0011 (proposed revision)](../adr/0011-broader-pinned-pp-mutations.md).
 **Supersedes the approach of** draft [PR #1142](https://github.com/arc-mcp/arc-1/pull/1142) (not its goal).
 **Roadmap:** FEAT-93.
 
@@ -22,7 +22,7 @@ Later PRs are listed at the end.
 | 2 | Admission: an explicit list of `Tool.action` keys (`edit_content` is not on it). A new single-target action is not writable here until listed. Unknown fields and `preaudit=false` are refused. | `src/server/multi-target-write-surface.ts`; `handleToolCall` repeats the gate's decision for every tool; the `SAPActivate` handler refuses `preaudit=false` |
 | 3 | Package ceiling: server **and** destination list, against the real package. | `checkPackage` / `enforceAllowedPackageForObjectUrl` — already dual, unchanged |
 | 4 | Request ceiling: server **and** destination transport list, for every request ID ARC-1 sends or SAP returns from a lock. A save with no request is decided by SAP. | Caller-supplied: admission (2). Sent on the wire: `AdtHttpClient.request()`. Returned by the lock: `lockObject` |
-| 5 | No transient replay of POST/PUT/DELETE (503, 429, lost DB connection); definitive rejections keep their single retry, and a 403 is resent only on SAP's CSRF challenge. | `AdtHttpClient.request()` |
+| 5 | No transient replay of POST/PUT/DELETE (503, 429, lost DB connection); definitive rejections (401, 406/415) are each recovered once, and a 403 is resent only on SAP's CSRF challenge. | `AdtHttpClient.request()` |
 | 6 | Activation scope: SAP may add other inactive objects in its preaudit answer. Only the requested, package-checked objects and their own sub-resources may be confirmed. | `confirmPreaudit` in `src/adt/devtools.ts` |
 
 Everything else is the single-target behaviour. Do **not** add read-back, under-lock re-validation,
@@ -286,7 +286,7 @@ of the result, and for mutations the SAP state afterwards (`SAPRead` active/inac
 | 15 | Optional — older release (7.50/7.40 target, if one is reachable by PP): a DTEL create (versioned content type) | Succeeds after one 415 renegotiation; with `ARC1_LOG_HTTP_DEBUG=true` the log shows one 415 then success | Result + log excerpt |
 | 16 | Optional — transient failure: if a 503 can be provoked safely, confirm the write is reported as an error and not resent. Also a plain authorization 403 (for example a write to a package the SAP user may not change): one send. A CSRF challenge 403 (`x-csrf-token: Required`) is refreshed and sent twice | One request in the audit/HTTP log for 503 and plain 403 | Log excerpt |
 | 17 | Optional — text-pool repair: if a program's pool is inactive (edit texts in ADT without activating), `SAPActivate type="REPT"` on it; if SAP proposes the program as well, repeat with `objects=[REPT, PROG]` | Pool active; deleting the program then works | Result, read-back |
-| 18 | Package ceiling (not yet run live): destination `arc1.allowed_packages=$TMP` only, server `$TMP,ZARC1_DEMO`. Create in `ZARC1_DEMO` and in a package on neither list; update, `edit_method`, `edit_text_symbols`, delete and `SAPActivate` (alone and in `objects[]` with a `$TMP` object) on existing `ZARC1_DEMO` objects; `batch_create` mixing both packages. Swap the lists and repeat | All refused; hash unchanged, no draft, SM12 empty, nothing from a mixed call created or activated | Results |
+| 18 | Package ceiling: destination `arc1.allowed_packages=$TMP` only, server `$TMP,ZARC1_DEMO`. Create in `ZARC1_DEMO` and in a package on neither list; update, `edit_method`, `edit_text_symbols`, delete and `SAPActivate` (alone and in `objects[]` with a `$TMP` object) on existing `ZARC1_DEMO` objects; `batch_create` mixing both packages. Swap the lists and repeat | All refused; hash unchanged, no draft, SM12 empty, nothing from a mixed call created or activated | Results |
 
 ### Cleanup
 

@@ -342,7 +342,8 @@ async function confirmPreaudit(
     const own = (options.requested ?? []).map((uri) => uri.toLowerCase());
     const extra = refs.filter((ref) => {
       const uri = ref.uri.toLowerCase();
-      if (/[?#]|\/(?:\.|%2e){1,2}(?:\/|$)/.test(uri)) return true; // no query or dot segment
+      // No query, dot segment, backslash or encoded dot/backslash/percent (%2f stays: namespaces).
+      if (/[?#\\]|%(?:2e|5c|25)|\/\.{1,2}(?:\/|$)/.test(uri)) return true;
       return !own.some((owner) => uri === owner || uri.startsWith(`${owner}/`));
     });
     if (extra.length)
@@ -462,6 +463,7 @@ async function retryBatchActivationIndividuallyAfterEd064(
   if (retryResults.every(({ result }) => result.success)) {
     return {
       success: true,
+      ...(retryResults.some(({ result }) => result.notExecuted) && { notExecuted: true }),
       messages: [note, ...retryMessages],
       details: [
         { severity: 'warning', text: note },

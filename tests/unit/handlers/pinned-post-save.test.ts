@@ -158,6 +158,14 @@ describe('repairing a stranded program text pool on a pinned route', () => {
     expect(listed.isError, listed.content[0].text).toBeUndefined();
     expect(activations()).toHaveLength(2);
     expect(activations()[1].path).toContain('preauditRequested=false');
+
+    for (const tail of ['/%2e%2e%2fzbar', '/..%5czbar', '/%252e%252e/zbar', '/x\\..\\zbar']) {
+      requests.length = 0;
+      activation = (_body, path) => (path.includes('preauditRequested=true') ? prompt([pool + tail]) : OK);
+      const encoded = await handleToolCall(client(), config, 'SAPActivate', { type: 'REPT', name: 'ZTEST' });
+      expect(encoded.content[0].text, tail).toContain('objects that were not requested');
+      expect(activations()).toHaveLength(1);
+    }
   });
 });
 

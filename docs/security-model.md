@@ -316,8 +316,11 @@ SAP adds that were not requested. The one internal `preaudit=false` call activat
 pool `edit_text_symbols` just saved. Given up versus ADR-0010: read-back, under-lock revalidation,
 recording preflight, task-to-parent resolution (a task must itself be listed), positive
 activation-execution evidence (an explicit "not executed" is reported as a warning) and a mandatory
-source hash. Per-family mock tests cover package resolution and request placement; a first live run
-found two defects, both fixed, and a re-run is pending.
+source hash. Per-family mock tests cover package resolution and request placement; three live runs
+on 758 found and confirmed fixes for four defects, and package refusals held with asymmetric lists.
+Not reproduced live: SAP adding objects to an activation. Known gaps (follow-ups): tool arguments
+including truncated `source` reach audit sinks, as in single-target; a 403 at the HTTP edge for a
+principal without read scope emits no tool-level denial event.
 
 Residual limits: one process shares availability; route/client identity does not isolate the
 cross-client ABAP repository; package rules do not sandbox the eventual behavior of authored ABAP;

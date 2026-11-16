@@ -11,7 +11,9 @@ adapter, its request policy and the pinned mutation-context/facade layer). Unit 
 admission tests. First live run of `896320813` (A4H 758, pinned PP route, real XSUAA token): 12 pass,
 2 fail, 3 not run; every refusal held. The two failures (text-pool activation, plain-403 resend) and
 three review findings (lock request, `activationExecuted="false"`, `edit_content`) are fixed in
-follow-up commits with mock tests; a re-run is pending.
+follow-up commits. Final run of `234fea534`: 14 pass, 0 fail, 1 not run (preaudit expansion).
+Package-ceiling run of `78bdc14b1` with asymmetric lists: 46 pass, 0 fail. An independent review
+then found the ED064 retry dropping "not executed", fixed with two hardening changes.
 **Plan:** [pinned writes through the shared handlers](../plans/2026-11-12-pinned-writes-shared-handlers.md).
 
 ## Context
@@ -38,7 +40,7 @@ results. Multi-target adds six controls, each enforced at one place every handle
 | Admission: an explicit list of `Tool.action` keys (not `edit_content`); unknown fields and `preaudit=false` refused | `multi-target-write-surface.ts`; `handleToolCall` repeats the gate's decision for every tool |
 | Package ceiling: server and destination rules, each against the real package | `checkPackage` / `enforceAllowedPackageForObjectUrl` (already dual on `main`) |
 | Request ceiling: server and destination transport allowlists for every request ID ARC-1 sends or SAP returns from a lock | Caller-supplied requests at admission; every `corrNr` sent in `AdtHttpClient.request()`; the lock's `CORRNR` in `lockObject` |
-| No transient replay: POST/PUT/DELETE are not resent after 503, 429 or a lost DB connection; definitive rejections (401, a 403 carrying SAP's CSRF challenge, 406/415) keep their single retry; a plain authorization 403 is not resent | `AdtHttpClient.request()` |
+| No transient replay: POST/PUT/DELETE are not resent after 503, 429 or a lost DB connection; definitive rejections (401, a 403 carrying SAP's CSRF challenge, 406/415) are each recovered once, so one call can be sent up to four times; a plain authorization 403 is not resent | `AdtHttpClient.request()` |
 | Activation scope: objects SAP adds in its preaudit answer are refused unless requested or a sub-resource of a requested object; caller `preaudit=false` is refused | `confirmPreaudit` in `devtools.ts`; the `SAPActivate` handler |
 
 This replaces ADR-0010's "explicit action/type/input allowlists" with an explicit **action**
@@ -123,8 +125,8 @@ path with one rule is easier to reason about than two with a seam.
 2. **Live qualification** on a pinned strict-PP route — the executable
    [checklist](../plans/2026-11-12-pinned-writes-shared-handlers.md#live-qualification-checklist)
    covers every family, a transportable package, refused and lock-derived requests, a preaudit
-   expansion and a second writer. The first run is recorded above; the fixes need a re-run, and the
-   preaudit-expansion step stays open until a live fixture produces one. The per-family tests use a
+   expansion and a second writer. The runs are recorded above; the
+   preaudit-expansion step stays open: seven live fixtures on 758 produced none. The per-family tests use a
    generic SAP mock, so type-specific SAP response shapes (for example ENQU, TABL/DTT, SKTD, ENHO
    bodies) stop some flows before the save in tests.
 3. **Request cancellation.** Shared saves do not observe the caller's abort signal, as in
