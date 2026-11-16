@@ -185,7 +185,8 @@ describe('client IP allowlist middleware', () => {
   it('refuses a repeated header even when every copy is allowed', async () => {
     const res = await request(buildApp([ALLOWED]))
       .post('/mcp')
-      .set(HEADER, [ALLOWED, ALLOWED]);
+      // superagent sends an array as two header lines; its typings only declare string.
+      .set(HEADER, [ALLOWED, ALLOWED] as unknown as string);
     expect(res.status).toBe(403);
     expect(rejections()).toEqual([
       expect.objectContaining({ reason: 'invalid_header', clientIp: `${ALLOWED}, ${ALLOWED}` }),
