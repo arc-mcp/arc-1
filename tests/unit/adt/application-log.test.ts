@@ -154,7 +154,7 @@ describe('native application-log reader', () => {
     [{ ...message('000001'), MessageNumber: '1' }],
     [{ ...message('000001'), DetailLevel: 1 }],
     [{ ...message('000001'), ContextField3: null }],
-    [{ ...message('000001'), ContextField5: undefined }],
+    [{ ...message('000001'), ContextField5: false }],
   ])('refuses malformed/mixed/duplicate messages', async (...rows) => {
     const { client, get } = setup();
     get
@@ -163,15 +163,52 @@ describe('native application-log reader', () => {
       .mockResolvedValueOnce(response(rows));
     await expect(readApplicationLog(client, { logNumber })).rejects.toThrow('unexpected response');
   });
-  it.each([-1, 1.5, '2', null, undefined, Number.MAX_SAFE_INTEGER + 1])(
-    'refuses overview messageCount %j',
-    async (count) => {
+  it.each([-1, 1.5, '2', null, Number.MAX_SAFE_INTEGER + 1])('refuses overview messageCount %j', async (count) => {
+    const { client, get } = setup();
+    get.mockReset().mockResolvedValueOnce(response([{ ...overview, MessageTotalCount: count }]));
+    await expect(readApplicationLog(client, { logNumber })).rejects.toThrow('unexpected response');
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+  it.each([undefined, ['E'] as const])(
+    'preserves reads when a service omits enrichment fields (%j)',
+    async (severities) => {
       const { client, get } = setup();
-      get.mockReset().mockResolvedValueOnce(response([{ ...overview, MessageTotalCount: count }]));
-      await expect(readApplicationLog(client, { logNumber })).rejects.toThrow('unexpected response');
-      expect(get).toHaveBeenCalledTimes(1);
+      const row: Record<string, unknown> = message('000001');
+      for (const field of [
+        'DetailLevel',
+        'ContextField1',
+        'ContextField2',
+        'ContextField3',
+        'ContextField4',
+        'ContextField5',
+      ])
+        delete row[field];
+      get
+        .mockReset()
+        .mockResolvedValueOnce(response([{ ...overview, MessageTotalCount: undefined }]))
+        .mockResolvedValueOnce(response([row]));
+      const result = await readApplicationLog(client, {
+        logNumber,
+        severities: severities ? [...severities] : undefined,
+      });
+      expect(result).toMatchObject({ status: 'ok', messages: [{ type: 'E', text: row.Text }], more: false });
+      expect(result).not.toHaveProperty('header.messageCount');
+      expect(result).not.toHaveProperty('messages.0.detailLevel');
+      expect(result).not.toHaveProperty('messages.0.context');
     },
   );
+  it('omits incomplete positional context but still refuses malformed supplied fields', async () => {
+    for (const value of ['supplied', null]) {
+      const { client, get } = setup();
+      get
+        .mockReset()
+        .mockResolvedValueOnce(response([overview]))
+        .mockResolvedValueOnce(response([{ ...message('000001'), ContextField1: undefined, ContextField2: value }]));
+      if (value === null)
+        await expect(readApplicationLog(client, { logNumber })).rejects.toThrow('unexpected response');
+      else expect(await readApplicationLog(client, { logNumber })).not.toHaveProperty('messages.0.context');
+    }
+  });
   it('projects messageCount, non-empty detailLevel and positional context only when present', async () => {
     const { client, get } = setup();
     get

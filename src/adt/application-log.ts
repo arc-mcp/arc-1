@@ -23,6 +23,9 @@ function string(row: Row, field: string): string {
   if (typeof value !== 'string') return invalidResponse();
   return value;
 }
+function optionalString(row: Row, field: string): string | undefined {
+  return row[field] === undefined ? undefined : string(row, field);
+}
 function boolean(row: Row, field: string): boolean {
   const value = row[field];
   if (typeof value !== 'boolean') return invalidResponse();
@@ -111,7 +114,8 @@ export async function readApplicationLog(client: AdtClient, input: ApplicationLo
     if (string(header, 'LogNumber') !== logNumber) return invalidResponse();
     const handle = string(header, 'LogHandle');
     const messageCount = header.MessageTotalCount;
-    if (!Number.isSafeInteger(messageCount) || (messageCount as number) < 0) return invalidResponse();
+    if (messageCount !== undefined && (!Number.isSafeInteger(messageCount) || (messageCount as number) < 0))
+      return invalidResponse();
     if (handle.length !== 22 || !/^[\x21-\x7e]{22}$/u.test(handle)) return invalidResponse();
     // Use the returned key, never a server-supplied URL. Escape both OData and URL syntax.
     const key = encodeURIComponent(handle.replaceAll("'", "''")).replaceAll("'", '%27');
@@ -134,9 +138,9 @@ export async function readApplicationLog(client: AdtClient, input: ApplicationLo
       numbers.add(number);
       const type = string(row, 'Type');
       if (severities && !severities.includes(type as ApplicationLogSeverity)) return invalidResponse();
-      const detailLevel = string(row, 'DetailLevel');
+      const detailLevel = optionalString(row, 'DetailLevel');
       // Positions 1–5 carry the log's own context-structure fields; labels live in HeaderSet.
-      const context = [1, 2, 3, 4, 5].map((index) => string(row, `ContextField${index}`));
+      const context = [1, 2, 3, 4, 5].map((index) => optionalString(row, `ContextField${index}`));
       return {
         number,
         type,
@@ -145,7 +149,8 @@ export async function readApplicationLog(client: AdtClient, input: ApplicationLo
         hasLongText: boolean(row, 'HasLongText'),
         hasDetails: boolean(row, 'HasDetailText'),
         ...(detailLevel ? { detailLevel } : {}),
-        ...(context.some(Boolean) ? { context } : {}),
+        // Never label an unavailable position as an empty SAP value.
+        ...(context.every((value) => value !== undefined) && context.some(Boolean) ? { context } : {}),
       };
     });
     const more = messages.length > maxRows || page.more;
@@ -159,7 +164,7 @@ export async function readApplicationLog(client: AdtClient, input: ApplicationLo
         externalNumber: string(header, 'ExternalNumber'),
         severity: string(header, 'Severity'),
         createdAt: string(header, 'CreatedAt'),
-        messageCount: messageCount as number,
+        ...(messageCount !== undefined ? { messageCount: messageCount as number } : {}),
       },
       ...(severities ? { severities } : {}),
       offset,

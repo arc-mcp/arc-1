@@ -30,7 +30,7 @@ export const ApplicationLogInputSchema = z.preprocess((value) => {
 export const APPLICATION_LOG_PROPERTY = {
   type: 'object',
   properties: {
-    // ponytail: the pattern already fixes the length; min/maxLength only cost wire bytes.
+    // The pattern already fixes the length; min/maxLength only cost wire bytes.
     logNumber: { type: 'string', pattern: '^\\d{20}$' },
     maxRows: { type: 'integer', minimum: 1, maximum: 100 },
     offset: { type: 'integer', minimum: 0, maximum: 5000 },

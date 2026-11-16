@@ -1867,7 +1867,7 @@ A successful empty result contains no messages on that page. `hasLongText` and `
 indicate availability; their contents are not returned. Message `number` identifies a row in
 the log, not a T100 message class/number.
 
-`header.messageCount` is SAP's total for the whole log. `severities` filters messages in SAP
+`header.messageCount`, when supplied by SAP, is the total for the whole log. `severities` filters messages in SAP
 (`A` abort, `E` error, `W` warning, `I` info, `S` success); `maxRows`, `offset`, `nextOffset` and
 the 5000 offset ceiling then apply to the filtered list, and the result echoes `severities`.
 A severity filter can therefore reach messages beyond the 5000 offset ceiling of unfiltered
@@ -1881,9 +1881,12 @@ A message carries `detailLevel` when SAP sets one and `context` when the log's c
 values: five strings in SAP's field order, empty where unset. Their labels depend on the log's
 context structure and are not returned. Message class, number and variables are not available
 from this service.
+If a service version omits these enrichment fields, the read still succeeds without them.
+Context is returned only when all five positions are supplied; malformed field types are refused.
+Omit `severities` (or pass `null`) for all types; an explicit empty array is rejected.
 
-This first version does not discover logs or expand message details/long texts. It is qualified
-on the tested 7.58 system; other systems need the native service enabled and accessible. BTP ABAP
+This action does not discover logs or expand message details/long texts. It requires the native
+service to be enabled and accessible. BTP ABAP
 targets and deployments with `SAP_BLOCKED_DATA_SOURCES` configured are unsupported. SAP loads
 the selected log internally even when ARC-1 returns a small page. To disable this action alone,
 set `SAP_DENY_ACTIONS=SAPQuery.application_log`.
