@@ -116,6 +116,23 @@ describe('SPNEGO fail-fast validation', () => {
     expect(() => validateConfig(spnegoConfig())).toThrow(/SAP_BTP_DESTINATION/);
   });
 
+  it('cannot coexist with the local SAML bearer issuer, whichever way round', () => {
+    // The exclusion is transitive, not direct: the issuer REQUIRES ppEnabled and SPNEGO REJECTS it.
+    // Locked here so that decoupling the issuer from principal propagation cannot silently pair a
+    // per-user assertion path with the single shared OS identity SPNEGO provides.
+    const issuer = {
+      samlIdpKeyFile: '/tmp/idp.key',
+      samlIdpCertFile: '/tmp/idp.crt',
+      samlIdpIssuer: 'urn:arc1:test',
+      samlAudience: 'SAPDEV',
+      samlNameIdClaim: 'email',
+      oidcIssuer: 'https://idp.example.com',
+      oidcAudience: 'arc-1',
+    };
+    expect(() => validateConfig(spnegoConfig({ ...issuer, ppEnabled: true }))).toThrow(/SAP_PP_ENABLED/);
+    expect(() => validateConfig(spnegoConfig({ ...issuer, ppEnabled: false }))).toThrow(/SAP_PP_ENABLED/);
+  });
+
   it('warns instead of failing when the SPN or mode is set without enabling SPNEGO', () => {
     const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     validateConfig({ ...DEFAULT_CONFIG, url: 'https://sap.example.com', spnegoSpn: 'HTTP/x.example.com' });
