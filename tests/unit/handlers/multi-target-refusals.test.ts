@@ -10,6 +10,11 @@ vi.mock('../../../src/handlers/write.js', () => ({
     throw writeFailure.error;
   },
 }));
+// Admission is tested elsewhere; keep these error-mapping tests independent of the route gate.
+vi.mock('../../../src/server/multi-target-tools.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  multiTargetInvocationDecision: () => 'allowed',
+}));
 
 const SECRETS = ['ZSECRET_PROG', 'SECRETUSER', 'A4HK900001', 'secret-sap-text'];
 
@@ -107,6 +112,24 @@ describe('multi-target deterministic SAP refusals and unknown mutation outcomes'
     const payload = await call('SAPWrite', { action: 'update', type: 'CLAS', name: 'ZCL_X', source: 'x' });
     expect(payload).toMatchObject({ error: 'SAP_REQUEST_FAILED', retryable: false });
     expect(payload.message).toContain('include="testclasses"');
+  });
+
+  it('treats an unknown activation outcome as a mutation even on a read-scoped tool', async () => {
+    const error = new AdtApiError('secret-sap-text', 500, '/sap/bc/adt/core/discovery', 'secret-sap-text');
+    error.activationOutcome = 'unknown';
+    const payload = await call('SAPRead', { type: 'SYSTEM' }, error);
+    expect(payload).toMatchObject({ retryable: false });
+    expect(payload.message).toContain('cannot confirm whether the change was applied');
+  });
+
+  it('keeps an object-exists body on a non-create 5xx on the default path', async () => {
+    const payload = await call(
+      'SAPRead',
+      { type: 'SYSTEM' },
+      sapError(500, 'ExceptionResourceCreationFailure', 'ZSECRET_PROG already exists', '/sap/bc/adt/core/discovery'),
+    );
+    expect(payload).toMatchObject({ retryable: true });
+    expect(payload.message).toContain('Retry once');
   });
 
   it('keeps a real 503 on a read retryable', async () => {

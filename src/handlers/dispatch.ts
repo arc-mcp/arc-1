@@ -16,7 +16,6 @@ import {
   AdtResponseLimitError,
   AdtSafetyError,
   classifySapDomainError,
-  extractExceptionType,
 } from '../adt/errors.js';
 import { AdtAnalysisDeadlineError, AdtRequestBudgetError } from '../adt/request-attempt-budget.js';
 /**
@@ -785,7 +784,7 @@ export function classifyMultiTargetSapError(
     if (mutation) {
       return {
         code: 'SAP_REQUEST_FAILED',
-        message: `ARC-1 lost the connection to SAP target ${target} while running ${toolName}. ${readBack}`,
+        message: `ARC-1 could not complete the request to SAP target ${target} while running ${toolName}. Check Cloud Connector and SAP availability. ${readBack}`,
         retryable: false,
       };
     }
@@ -851,7 +850,7 @@ export function classifyMultiTargetSapError(
   }
   if (error.isServerError) {
     // Deterministic refusals; only structured SAP exception types qualify at 5xx, never free text.
-    const typeId = extractExceptionType(error.responseBody ?? '');
+    const typeId = classification?.details?.exceptionType;
     let refusal: string | undefined;
     if (
       classification?.category === 'object-exists' &&
@@ -860,7 +859,7 @@ export function classifyMultiTargetSapError(
     ) {
       refusal =
         'SAP reports that an object with this name already exists, so this create request did not create it. It may be your own from an earlier attempt. Do not retry the create; read the existing object and check its package and source before deciding the next step.';
-    } else if (classification?.category === 'lock-conflict') {
+    } else if (typeId === 'ExceptionResourceLockedByAnotherUser') {
       refusal = 'SAP reports that the object is locked by another user or session. Do not retry until it is released.';
     } else if (classification?.category === 'method-not-supported') {
       refusal = 'SAP does not support this operation on this target. Do not retry it unchanged.';
