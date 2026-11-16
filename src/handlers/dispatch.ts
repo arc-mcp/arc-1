@@ -776,8 +776,18 @@ export function classifyMultiTargetSapError(
   target: string,
   toolName: string,
   identity: 'per-user' | 'shared' = 'per-user',
+  mutation = false,
 ): MultiTargetSapFailure | undefined {
+  const readBack =
+    'ARC-1 cannot confirm whether the change was applied. Do not retry blindly; read the object back, including its inactive version, before any replay.';
   if (error instanceof AdtNetworkError) {
+    if (mutation) {
+      return {
+        code: 'SAP_REQUEST_FAILED',
+        message: `ARC-1 could not complete the request to SAP target ${target} while running ${toolName}. Check Cloud Connector and SAP availability. ${readBack}`,
+        retryable: false,
+      };
+    }
     return {
       code: 'SAP_REQUEST_FAILED',
       message: `ARC-1 could not reach SAP target ${target} while running ${toolName}. Check Cloud Connector and SAP availability, then try again now.`,
@@ -816,8 +826,10 @@ export function classifyMultiTargetSapError(
       message:
         identity === 'shared'
           ? `SAP denied this operation for the shared technical user on target ${target}. Ask an SAP administrator to grant only the required read authorization before trying again.`
-          : `SAP denied this operation for the propagated user on target ${target}. Grant the required SAP authorization, then try again now.`,
-      retryable: identity !== 'shared',
+          : error.isServerError && mutation
+            ? `SAP denied this operation for the propagated user on target ${target}. Grant the required SAP authorization. ${readBack}`
+            : `SAP denied this operation for the propagated user on target ${target}. Grant the required SAP authorization, then try again now.`,
+      retryable: identity !== 'shared' && !(error.isServerError && mutation),
     };
   }
   if (error.statusCode === 401 || (error.statusCode === 403 && identity === 'per-user')) {
@@ -839,6 +851,42 @@ export function classifyMultiTargetSapError(
     };
   }
   if (error.isServerError) {
+    // Deterministic refusals; only structured SAP exception types qualify at 5xx, never free text.
+    const typeId = classification?.details?.exceptionType;
+    let refusal: string | undefined;
+    if (
+      classification?.category === 'object-exists' &&
+      error.creationOutcome === 'unknown' &&
+      typeId === 'ExceptionResourceCreationFailure'
+    ) {
+      refusal =
+        'SAP reports that an object with this name already exists, so this create request did not create it. It may be your own from an earlier attempt. Do not retry the create; read the existing object and check its package and source before deciding the next step.';
+    } else if (typeId === 'ExceptionResourceLockedByAnotherUser') {
+      refusal = 'SAP reports that the object is locked by another user or session. Do not retry until it is released.';
+    } else if (classification?.category === 'method-not-supported') {
+      refusal = 'SAP does not support this operation on this target. Do not retry it unchanged.';
+    } else if (classification?.category === 'include-not-initialized') {
+      refusal =
+        'SAP reports that the class test include is not initialized. Write it with SAPWrite update include="testclasses" instead of retrying.';
+    }
+    if (refusal) {
+      const suffix =
+        mutation && classification?.category !== 'object-exists'
+          ? ' Read the object back before repeating the change.'
+          : '';
+      return {
+        code: 'SAP_REQUEST_FAILED',
+        message: `SAP target ${target} refused ${toolName}. ${refusal}${suffix}`,
+        retryable: false,
+      };
+    }
+    if (mutation) {
+      return {
+        code: 'SAP_REQUEST_FAILED',
+        message: `SAP target ${target} returned a server error while running ${toolName}. ${readBack}`,
+        retryable: false,
+      };
+    }
     return {
       code: 'SAP_REQUEST_FAILED',
       message: `SAP target ${target} returned a server error while running ${toolName}. Retry once; if it persists, check SAP health and short dumps.`,
@@ -1193,6 +1241,9 @@ export async function handleToolCall(
             config.targetId,
             toolName,
             config.ppEnabled ? 'per-user' : 'shared',
+            // Multi-target requires standard tools, so read-scoped hyperfocused delegators never reach here.
+            !['read', 'data', 'sql'].includes(policy?.scope ?? 'read') ||
+              Boolean(err.creationOutcome || err.activationOutcome || err.pluginPostOutcome),
           );
           if (failure) {
             if (failure.event) {
