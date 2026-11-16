@@ -37,7 +37,6 @@ import { registerIdeConfigCommand } from './cli-ide.js';
 import { getToolRegistry, handleToolCall } from './handlers/dispatch.js';
 import { EXTENSION_READ_TYPES } from './handlers/extension-read.js';
 import { setCachedDiscovery, setCachedFeatures } from './handlers/feature-cache.js';
-import { expandHyperfocusedArgs } from './handlers/hyperfocused.js';
 import { normalizeObjectType } from './handlers/object-types.js';
 import { errorResult, type ToolResult } from './handlers/shared.js';
 import type { LintResult } from './lint/lint.js';
@@ -314,14 +313,6 @@ function isLocalOnlyCall(toolName: string, args: Record<string, unknown>): boole
 
 function isDisabledWriteTool(toolName: string, config: ServerConfig): boolean {
   return !config.allowWrites && (toolName === 'SAPWrite' || toolName === 'SAPActivate');
-}
-
-function isNativeApplicationLogCall(toolName: string, args: Record<string, unknown>): boolean {
-  if (toolName === 'SAP') {
-    const expanded = expandHyperfocusedArgs(args);
-    return !('error' in expanded) && isNativeApplicationLogCall(expanded.toolName, expanded.expandedArgs);
-  }
-  return toolName === 'SAPQuery' && args.action === 'application_log';
 }
 
 function auditBlockedDirectPreflight(
@@ -901,9 +892,7 @@ export async function executeCliToolCall(
   }
 
   const direct = await runtime.getDirectContext();
-  // This native OData reader needs no ADT bootstrap/discovery. Dispatch must validate and
-  // enforce its data gates before any SAP I/O; each native GET still authenticates normally.
-  if (!localOnly && !isDisabledWriteTool(toolName, config) && !isNativeApplicationLogCall(toolName, args)) {
+  if (!localOnly && !isDisabledWriteTool(toolName, config)) {
     const preflightStartedAt = Date.now();
     const preflight = await runtime.deps.authPreflight(config, direct.client);
     if (preflight.blocking) {
