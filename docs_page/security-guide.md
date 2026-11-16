@@ -376,6 +376,7 @@ tool call. See [setup](btp-cloud-foundry-deployment.md#optional-btp-audit-log-si
 | `oauth_redirect_uri_registered` | XSUAA only: a redirect URI matched the manual-client policy at `/authorize` and was added to ARC-1's in-memory client metadata. The XSUAA service configuration is unchanged. |
 | `oauth_redirect_uri_rejected` | XSUAA only: an unapproved redirect URI was rejected at `/authorize`; useful for detecting interception attempts or bad client configuration. |
 | `cors_rejected` | A browser request was blocked because its `Origin` header is not in `ARC1_ALLOWED_ORIGINS`. Includes origin, method, path. Useful for spotting misconfigured browser clients or probing. |
+| `client_ip_rejected` | `ARC1_ALLOWED_CLIENT_IPS` refused a request with `403`. `reason` ∈ {`not_allowed`, `missing_header`, `invalid_header`}; includes the observed `x-cf-true-client-ip` value (`clientIp`, capped at 64 characters, untrusted), method and path. Not forwarded to the BTP Audit Log, because unauthenticated traffic can trigger it at will. |
 | `auth_rate_limited` | **Layer 1** rate-limit denial on OAuth or `/mcp` endpoint (per-IP). Includes endpoint, IP, `limitPerMinute`. See [Rate Limiting Guide](rate-limiting.md). |
 | `mcp_rate_limited` | **Layer 2** rate-limit denial on per-user MCP tool quota. Includes user, tool, `limitPerMinute`, `retryAfterMs`. The MCP client receives a tool error with `retryAfter` (not HTTP 429). |
 
@@ -492,6 +493,69 @@ curl -sI -X OPTIONS \
   https://<your-app-url>/mcp | \
   grep -i 'access-control'   # expect: empty
 ```
+
+### Client IP allowlist (SAP BTP Cloud Foundry, opt-in)
+
+`ARC1_ALLOWED_CLIENT_IPS` limits which client addresses can reach ARC-1 at all. It is off by
+default and is **defense in depth**: it narrows who can attempt to authenticate and never replaces
+XSUAA, OIDC or API-key authentication, scopes, or the safety ceiling.
+
+```yaml
+# mta-overrides.mtaext, properties of the arc1-mcp-server module
+ARC1_ALLOWED_CLIENT_IPS: "198.51.100.0/24,2001:db8:1234::/48"
+```
+
+How it decides:
+
+- **Only `x-cf-true-client-ip` is trusted.** SAP BTP Cloud Foundry sets this header on every
+  request routed to the app to the single IPv4 or IPv6 address that connected to the platform
+  ([SAP blog](https://community.sap.com/t5/technology-blog-posts-by-sap/ip-based-allow-listing-for-applications/ba-p/14140136)).
+  ARC-1 never reads `X-Forwarded-For` (any client can add entries to it) or the socket address
+  (on Cloud Foundry, the router's).
+- **Cloud Foundry only.** In HTTP mode ARC-1 refuses to start with a non-empty list when
+  `VCAP_APPLICATION` is absent: on Docker, Kubernetes or a VM the header comes from the client and
+  the list would give false assurance. Restrict access with a firewall or your reverse proxy there.
+- **Fails closed.** A missing header, a repeated header, or a value that is not exactly one address
+  gets `403`, like an address outside the list. The body is `{"error":"Forbidden"}` and does not
+  reveal the list. Each refusal writes a [`client_ip_rejected`](#what-gets-logged) audit event,
+  so scanning traffic is visible in `cf logs`.
+- **Runs first.** The check follows the security headers and precedes CORS (preflights are refused
+  too), body parsing, rate limiting, the OAuth endpoints and metadata, bearer authentication, `/ui`,
+  and every MCP route (`/mcp`, pinned `/<SID>/<CLIENT>/mcp`, `/multi/mcp`).
+- **`/health` is exempt**, that exact path and no other. The Cloud Foundry `http` health check calls
+  the container directly without the header; without the exemption the app would restart in a loop.
+
+Entries:
+
+- Comma-separated IPv4/IPv6 addresses and CIDR ranges. An empty value (`""`) turns the allowlist
+  off; write that value in an `.mtaext` to disable it. Any other value is strict: an empty entry
+  (stray or trailing comma), hostname, port, zone id (`%eth0`) or out-of-range prefix fails startup
+  with a message naming the entry.
+- A range with host bits set, such as `10.0.0.5/8`, is accepted and covers the whole network.
+- IPv4 and IPv6 are matched separately: `0.0.0.0/0` does not cover IPv6 clients, so list IPv6
+  ranges explicitly. An IPv4-mapped IPv6 value (`::ffff:10.1.2.3`) matches IPv4 rules.
+
+Who counts as the client:
+
+- **Hosted MCP clients** (Microsoft Copilot Studio, claude.ai connectors and similar) call ARC-1
+  from the vendor's cloud, not from your network, so allowlisting corporate egress ranges locks them
+  out. The allowlist suits locally running clients (Claude Desktop, Claude Code, VS Code, Cursor,
+  Eclipse) behind known egress addresses.
+- **A proxy in front** (AppRouter, SAP API Management, a corporate reverse proxy) makes the proxy's
+  egress address the client. Allow that address and restrict end users at the proxy.
+- **Container-to-container traffic** on internal routes (`apps.internal`) bypasses the router,
+  carries no header and is refused.
+- SAP does not document whether the platform replaces a header the client sent itself. See
+  [R24 in the security model](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r24--client-ip-allowlist-rests-on-the-platform-header)
+  for the verification status.
+
+Operations:
+
+- A change takes effect only after a restart: `cf deploy` with the updated extension, or
+  `cf set-env` plus `cf restage` for a temporary change that the next deploy reverts. Keep the list
+  identical on every instance; instances of one app share its environment.
+- To find the address the platform sees for a client, let it call once and read `clientIp` from the
+  `client_ip_rejected` event in `cf logs`.
 
 ### SAP Connection
 

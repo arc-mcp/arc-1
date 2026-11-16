@@ -111,6 +111,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `ARC1_OAUTH_DCR_TTL_SECONDS` | DCR client_id lifetime (default `0` = no expiry; positive opts into expiry, clamped 60s–90d) |
 | `ARC1_DCR_SIGNING_SECRET` | Dedicated HMAC secret so `cf deploy` doesn't invalidate cached client_ids |
 | `ARC1_ALLOWED_ORIGINS` | CORS allowlist for browser MCP clients (empty = CORS off) |
+| `ARC1_ALLOWED_CLIENT_IPS` | Default-off BTP CF-only inbound IP/CIDR allowlist on `x-cf-true-client-ip` (never XFF); `/health` exempt; refused when `VCAP_APPLICATION` is absent |
 | `ARC1_PUBLIC_URL` | Advertised OAuth-metadata URL when behind a reverse proxy |
 | `SAP_BTP_SERVICE_KEY[_FILE]` / `SAP_BTP_OAUTH_CALLBACK_PORT` | BTP ABAP service key / OAuth callback port |
 | `SAP_SYSTEM_TYPE` | `auto` (default), `btp`, `onprem` |

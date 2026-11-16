@@ -315,6 +315,23 @@ still complete. New backends require new public IDs and grants. Operators must a
 before enabling the feature; separate single-target applications remain the stronger availability
 and deployment-isolation option.
 
+### R24 — Client-IP allowlist rests on the platform header
+
+**Medium if the platform passes a client-supplied header through; verification pending.**
+
+`ARC1_ALLOWED_CLIENT_IPS` trusts `x-cf-true-client-ip` alone and refuses requests without exactly one
+address in it. SAP documents that BTP Cloud Foundry sets the header to the connecting address, but
+not that it replaces or strips a value the client sent itself. If it did not, any client could name
+an allowed address and pass the filter; authentication, scopes and the safety ceiling would still
+apply, so the loss is the allowlist only. Outside Cloud Foundry the setting is refused at startup.
+Other limits: a fronting proxy becomes the client, IPv6 ranges are separate, and the `/health`
+exemption stays reachable from anywhere.
+
+**Status: live spoofing check pending** (send a disallowed and a mixed-case, repeated header
+through the public route and confirm the audited address is the real one). Until it passes, do
+not describe the allowlist as verified. See
+[Client IP allowlist](../docs_page/security-guide.md#client-ip-allowlist-sap-btp-cloud-foundry-opt-in).
+
 
 ## 6. Per-PR security review checklist
 

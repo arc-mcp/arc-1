@@ -161,6 +161,14 @@ modules:
       # Studio). Comma-separated, exact origin match, no wildcards.
       # ARC1_ALLOWED_ORIGINS: "https://my-app.cfapps.eu10.hana.ondemand.com"
 
+      # ── Client IP allowlist ──────────────────────────────────────────
+      # Defense in depth, not a replacement for authentication. Only callers
+      # whose address (as set by BTP CF) is listed reach ARC-1; /health stays
+      # open. Hosted clients (Copilot Studio, claude.ai) call from the vendor's
+      # addresses. Comma-separated IPs/CIDR; IPv6 ranges must be listed
+      # separately. Set "" to turn it off again. See docs_page/security-guide.md.
+      # ARC1_ALLOWED_CLIENT_IPS: "198.51.100.0/24,2001:db8:1234::/48"
+
       # ── Read-only UI ─────────────────────────────────────────────────
       # Experimental and off by default. For browser access on BTP CF, deploy
       # with mta-ui-approuter.mtaext instead of uncommenting only this line:
