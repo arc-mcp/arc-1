@@ -17,6 +17,7 @@ const overview = {
   ExternalNumber: 'job-42',
   Severity: 'E',
   CreatedAt: '/Date(1792278000000)/',
+  MessageTotalCount: 2,
 };
 const message = (number: string) => ({
   LogHandle: handle,
@@ -27,7 +28,13 @@ const message = (number: string) => ({
   HasLongText: true,
   HasDetailText: false,
   __metadata: { uri: 'https://untrusted.invalid/' },
-  ContextField1: 'unrequested detail',
+  DetailLevel: '',
+  ContextField1: '',
+  ContextField2: '',
+  ContextField3: '',
+  ContextField4: '',
+  ContextField5: '',
+  FilterFieldValue: 'unrequested detail',
 });
 const response = (rows: unknown[], next?: string) => ({
   statusCode: 200,
@@ -145,6 +152,9 @@ describe('native application-log reader', () => {
     [{ ...message('000001'), Text: null }],
     [{ ...message('000001'), HasLongText: 'false' }],
     [{ ...message('000001'), MessageNumber: '1' }],
+    [{ ...message('000001'), DetailLevel: 1 }],
+    [{ ...message('000001'), ContextField3: null }],
+    [{ ...message('000001'), ContextField5: undefined }],
   ])('refuses malformed/mixed/duplicate messages', async (...rows) => {
     const { client, get } = setup();
     get
@@ -153,6 +163,79 @@ describe('native application-log reader', () => {
       .mockResolvedValueOnce(response(rows));
     await expect(readApplicationLog(client, { logNumber })).rejects.toThrow('unexpected response');
   });
+  it.each([-1, 1.5, '2', null, undefined, Number.MAX_SAFE_INTEGER + 1])(
+    'refuses overview messageCount %j',
+    async (count) => {
+      const { client, get } = setup();
+      get.mockReset().mockResolvedValueOnce(response([{ ...overview, MessageTotalCount: count }]));
+      await expect(readApplicationLog(client, { logNumber })).rejects.toThrow('unexpected response');
+      expect(get).toHaveBeenCalledTimes(1);
+    },
+  );
+  it('projects messageCount, non-empty detailLevel and positional context only when present', async () => {
+    const { client, get } = setup();
+    get
+      .mockReset()
+      .mockResolvedValueOnce(response([{ ...overview, MessageTotalCount: 0 }]))
+      .mockResolvedValueOnce(
+        response([
+          { ...message('000001'), DetailLevel: '1', ContextField2: 'GSDO', ContextField5: '/IWFND/CM_LOGGING531' },
+          message('000002'),
+        ]),
+      );
+    const result = await readApplicationLog(client, { logNumber });
+    if (result.status !== 'ok') throw new Error('expected ok');
+    expect(result.header.messageCount).toBe(0);
+    expect(result).not.toHaveProperty('severities');
+    expect(result.messages[0]).toMatchObject({
+      detailLevel: '1',
+      context: ['', 'GSDO', '', '', '/IWFND/CM_LOGGING531'],
+    });
+    expect(result.messages[1]).not.toHaveProperty('detailLevel');
+    expect(result.messages[1]).not.toHaveProperty('context');
+    expect(JSON.stringify(result)).not.toContain('unrequested detail');
+  });
+  it.each([
+    [['E'], "Type eq 'E'"],
+    [['E', 'A'], "Type eq 'E' or Type eq 'A'"],
+    [['A', 'E', 'W', 'I', 'S'], "Type eq 'A' or Type eq 'E' or Type eq 'W' or Type eq 'I' or Type eq 'S'"],
+  ] as const)('filters messages natively by severities %j and echoes them', async (severities, filter) => {
+    const { client, get } = setup();
+    get
+      .mockReset()
+      .mockResolvedValueOnce(response([overview]))
+      .mockResolvedValueOnce(response([{ ...message('000003'), Type: severities[0] }, message('000004')]));
+    const result = await readApplicationLog(client, { logNumber, severities: [...severities], maxRows: 1, offset: 2 });
+    expect(result).toMatchObject({ severities, offset: 2, more: true, nextOffset: 3 });
+    const second = new URL(get.mock.calls[1]![0], 'https://sap.invalid');
+    expect(Object.fromEntries(second.searchParams)).toEqual({
+      $filter: filter,
+      $top: '2',
+      $skip: '2',
+      $format: 'json',
+    });
+    expect(new URL(get.mock.calls[0]![0], 'https://sap.invalid').searchParams.get('$filter')).toBe(
+      `LogNumber eq '${logNumber}'`,
+    );
+  });
+  it('refuses a filtered page that contains another severity', async () => {
+    const { client, get } = setup();
+    get
+      .mockReset()
+      .mockResolvedValueOnce(response([overview]))
+      .mockResolvedValueOnce(response([message('000001'), { ...message('000002'), Type: 'I' }]));
+    await expect(readApplicationLog(client, { logNumber, severities: ['E'] })).rejects.toThrow('unexpected response');
+  });
+  it.each([[[]], [['e']], [['E', 'E']], [['X']], [['E', 'A', 'W', 'I', 'S', 'E']], ['E'], [["E' or 1 eq 1"]]])(
+    'refuses invalid severities %j before SAP',
+    async (severities) => {
+      const { client, get } = setup();
+      await expect(readApplicationLog(client, { logNumber, severities: severities as never })).rejects.toThrow(
+        'severities',
+      );
+      expect(get).not.toHaveBeenCalled();
+    },
+  );
   it('refuses a server that ignores the requested row cap', async () => {
     const { client, get } = setup();
     get
@@ -233,6 +316,7 @@ describe('application-log audit privacy', () => {
   it('redacts valid, malformed and hyperfocused arguments before validation', () => {
     for (const args of [
       { action: 'application_log', applicationLog: { logNumber } },
+      { action: 'application_log', applicationLog: { logNumber, severities: ['E'] } },
       { action: ['APPLICATION_LOG'], wrong: logNumber },
       { action: 'query', params: { action: 'application_log', wrong: logNumber } },
     ])
@@ -246,12 +330,13 @@ describe('application-log audit privacy', () => {
       method: 'GET',
       statusCode: 200,
       durationMs: 1,
-      path: `/sap/opu/odata/sap/APL_LOG_MANAGEMENT_SRV/ApplicationLogOverviewSet('${handle}')?LogNumber=${logNumber}`,
+      path: `/sap/opu/odata/sap/APL_LOG_MANAGEMENT_SRV/ApplicationLogOverviewSet('${handle}')/ApplicationLogMessageSet?%24filter=Type+eq+%27E%27&LogNumber=${logNumber}`,
       responseBody: message('000001').Text,
     });
     expect(JSON.stringify(event)).not.toContain(handle);
     expect(JSON.stringify(event)).not.toContain(logNumber);
     expect(JSON.stringify(event)).not.toContain('Änderung');
+    expect(JSON.stringify(event)).not.toContain('Type');
     expect(JSON.stringify(event)).toContain('APL_LOG_MANAGEMENT_SRV');
   });
 });

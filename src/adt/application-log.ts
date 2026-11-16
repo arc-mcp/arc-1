@@ -6,10 +6,13 @@ import { checkOperation, OperationType } from './safety.js';
 
 const SERVICE = '/sap/opu/odata/sap/APL_LOG_MANAGEMENT_SRV/';
 type Row = Record<string, unknown>;
+export const APPLICATION_LOG_SEVERITIES = ['A', 'E', 'W', 'I', 'S'] as const;
+export type ApplicationLogSeverity = (typeof APPLICATION_LOG_SEVERITIES)[number];
 export interface ApplicationLogInput {
   logNumber: string;
   maxRows?: number;
   offset?: number;
+  severities?: ApplicationLogSeverity[];
 }
 
 function invalidResponse(): never {
@@ -42,7 +45,15 @@ function collection(body: string, maximum: number): { rows: Row[]; more: boolean
 
 export async function readApplicationLog(client: AdtClient, input: ApplicationLogInput) {
   checkOperation(client.safety, OperationType.Query, 'ReadApplicationLog');
-  const { logNumber, maxRows = 50, offset = 0 } = input;
+  const { logNumber, maxRows = 50, offset = 0, severities } = input;
+  if (
+    severities !== undefined &&
+    (!Array.isArray(severities) ||
+      severities.length < 1 ||
+      new Set(severities).size !== severities.length ||
+      severities.some((value) => !APPLICATION_LOG_SEVERITIES.includes(value)))
+  )
+    throw new AdtError('Use severities as 1–5 unique values from A, E, W, I, S.');
   if (
     typeof logNumber !== 'string' ||
     logNumber.length !== 20 ||
@@ -99,12 +110,16 @@ export async function readApplicationLog(client: AdtClient, input: ApplicationLo
     const header = overview.rows[0]!;
     if (string(header, 'LogNumber') !== logNumber) return invalidResponse();
     const handle = string(header, 'LogHandle');
+    const messageCount = header.MessageTotalCount;
+    if (!Number.isSafeInteger(messageCount) || (messageCount as number) < 0) return invalidResponse();
     if (handle.length !== 22 || !/^[\x21-\x7e]{22}$/u.test(handle)) return invalidResponse();
     // Use the returned key, never a server-supplied URL. Escape both OData and URL syntax.
     const key = encodeURIComponent(handle.replaceAll("'", "''")).replaceAll("'", '%27');
     const page = await get(
       `ApplicationLogOverviewSet('${key}')/ApplicationLogMessageSet`,
       {
+        // Built only from the validated enum; never from caller text.
+        ...(severities ? { $filter: severities.map((type) => `Type eq '${type}'`).join(' or ') } : {}),
         $top: String(maxRows + 1),
         $skip: String(offset),
         $format: 'json',
@@ -117,13 +132,20 @@ export async function readApplicationLog(client: AdtClient, input: ApplicationLo
       if (string(row, 'LogHandle') !== handle || number.length !== 6 || !/^\d{6}$/u.test(number) || numbers.has(number))
         return invalidResponse();
       numbers.add(number);
+      const type = string(row, 'Type');
+      if (severities && !severities.includes(type as ApplicationLogSeverity)) return invalidResponse();
+      const detailLevel = string(row, 'DetailLevel');
+      // Positions 1–5 carry the log's own context-structure fields; labels live in HeaderSet.
+      const context = [1, 2, 3, 4, 5].map((index) => string(row, `ContextField${index}`));
       return {
         number,
-        type: string(row, 'Type'),
+        type,
         text: string(row, 'Text'),
         timestamp: string(row, 'Timestamp'),
         hasLongText: boolean(row, 'HasLongText'),
         hasDetails: boolean(row, 'HasDetailText'),
+        ...(detailLevel ? { detailLevel } : {}),
+        ...(context.some(Boolean) ? { context } : {}),
       };
     });
     const more = messages.length > maxRows || page.more;
@@ -137,7 +159,9 @@ export async function readApplicationLog(client: AdtClient, input: ApplicationLo
         externalNumber: string(header, 'ExternalNumber'),
         severity: string(header, 'Severity'),
         createdAt: string(header, 'CreatedAt'),
+        messageCount: messageCount as number,
       },
+      ...(severities ? { severities } : {}),
       offset,
       messages: messages.slice(0, maxRows),
       more,
