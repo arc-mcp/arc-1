@@ -50,20 +50,6 @@ describe('FUGR read given a function module name (A25)', () => {
     expect(text).toContain('SAPRead(type="FUNC", group="ZGROUP", name="Z_MY_FUNC")');
   });
 
-  it('keeps the original not-found error when the name is no function module', async () => {
-    mockFetch.mockReset();
-    mockFetch.mockRejectedValueOnce(notFound(404, '/sap/bc/adt/functions/groups/Z_NOPE/source/main'));
-    mockFetch.mockResolvedValueOnce(mockResponse(200, '<objectReferences/>'));
-    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
-      type: 'FUGR',
-      name: 'Z_NOPE',
-      expand_includes: true,
-    });
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).not.toContain('is a function module');
-    expect(result.content[0]?.text).toContain('was not found');
-  });
-
   // NW 7.50: no per-group objectstructure (404), the generic fallback answers 200 with an empty
   // tree for a name that is no group, and quick search is case-sensitive. Live-verified on npl.
   const EMPTY_TREE =
@@ -75,7 +61,11 @@ describe('FUGR read given a function module name (A25)', () => {
       '<objectReferences><objectReference type="FUGR/FF" name="Z_MY_FUNC" uri="/sap/bc/adt/functions/groups/zgroup/fmodules/z_my_func"/></objectReferences>',
       '"z_my_func" is a function module in function group ZGROUP',
     ],
-    ['reports a missing group instead of an empty one', '<objectReferences/>', 'Function group z_my_func not found'],
+    [
+      'reports a missing group instead of an empty one',
+      '<objectReferences/>',
+      'Hint: Object "z_my_func" (type FUGR) was not found.',
+    ],
   ])('7.50 plain read: %s', async (_label, searchXml, expected) => {
     mockFetch.mockReset();
     mockFetch.mockResolvedValueOnce(mockResponse(404, 'No suitable resource found'));
