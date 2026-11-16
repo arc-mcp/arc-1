@@ -323,25 +323,18 @@ and deployment-isolation option.
 address in it. SAP documents that BTP Cloud Foundry sets the header to the connecting address on
 requests through its public router, but not that it replaces a value the client sent itself. If it
 did not, any client could name an allowed address and pass the filter; authentication, scopes and
-the safety ceiling would still
-apply, so the loss is the allowlist only. Normal HTTP startup refuses a configured list when
-`VCAP_APPLICATION` is absent; that variable is not proof a request traversed the CF router.
-An internal `apps.internal` route or direct C2C policy bypasses the router: a reachable caller can
-forge an allowed header. Operators must restrict direct ingress separately. Other limits: a
-fronting proxy may become the client, IPv4 literals match only IPv4 rules (mapped IPv6 values can
-also match IPv6 rules), and the `/health` exemption stays reachable from anywhere.
+the safety ceiling would still apply, so the loss is the allowlist only. Normal HTTP startup refuses
+a configured list when `VCAP_APPLICATION` is absent; that variable is not proof a request traversed
+the CF router. An internal `apps.internal` route or direct C2C policy bypasses the router: a
+reachable caller can forge an allowed header. Operators must restrict direct ingress separately.
+Other limits: a fronting proxy becomes the client, IPv4 literals match only IPv4 rules (mapped IPv6
+values can also match IPv6 rules), and the `/health` exemption stays reachable from anywhere.
 
-**Live evidence (2026-11-16):** SAP BTP Cloud Foundry `us10-001` (AWS), `cf push` with
-`nodejs_buildpack` 1.9.7 on `cflinuxfs4`, build `f1d4b8f68`, API-key auth, no SAP target. The
-platform delivered one public IPv4 (the tester's egress) in the header. A client-supplied value
-(lower-, mixed- and upper-case name, sent twice, combined with the real address before or after it,
-over HTTP/1.1 and HTTP/2, with and without a forged `X-Forwarded-For`) was always replaced: every
-request got `403` and every `client_ip_rejected` event recorded only the real address, never the
-forged value or `invalid_header`. With the real address allowed, a forged value changed nothing.
-The `http` health check passed on `/health` without the header, with no crashes over several
-intervals. Not covered: IPv6 (no AAAA record on `us10-001`), other regions and infrastructures,
-custom domains, and later platform changes. Because the behavior is undocumented, recheck it after
-platform changes. See
+**Observed (2026-11):** on SAP BTP Cloud Foundry `us10-001` (AWS), a client-supplied
+`x-cf-true-client-ip` was always replaced with the connecting IPv4 address, in any casing, repeated,
+or combined with the real address, and a forged `X-Forwarded-For` changed nothing. Not covered:
+IPv6, other regions and infrastructures, custom domains. Because the behavior is undocumented,
+recheck it after platform changes. The full run is recorded in PR #1244. See
 [Client IP allowlist](../docs_page/security-guide.md#client-ip-allowlist-sap-btp-cloud-foundry-opt-in).
 
 
