@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { canonicalDestinationUrl, opaqueDestinationValue } from '../../../src/server/destination-discovery.js';
 import { DestinationRegistry } from '../../../src/server/destination-registry.js';
 import { startHttpServer } from '../../../src/server/http.js';
+import { logger } from '../../../src/server/logger.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 vi.mock('@arc-mcp/xsuaa-auth', async (importOriginal) => {
@@ -14,6 +15,7 @@ vi.mock('@arc-mcp/xsuaa-auth', async (importOriginal) => {
   return {
     ...original,
     createXsuaaTokenVerifier: vi.fn(() => async (token: string) => {
+      if (token === 'machine-token') throw new original.XsuaaUserTokenRequiredError();
       const scopes =
         token === 'admin-token'
           ? ['read', 'admin']
@@ -174,6 +176,71 @@ describe('multi-target HTTP route authentication', () => {
 
     const malformed = await request(app).post('/a4h/100/mcp');
     expect(malformed.status).toBe(404);
+  });
+
+  it.each([
+    ['/ZZZ/999/mcp', 'pinned-mcp'],
+    ['/multi/mcp', 'aggregate-mcp'],
+  ] as const)('audits an authenticated refusal at %s once, without token or target', async (path, route) => {
+    const audit = vi.spyOn(logger, 'emitAudit');
+    try {
+      const refused = await request(app).post(path).set('Authorization', 'Bearer data-token');
+      expect(refused.status).toBe(403);
+      const denials = audit.mock.calls.map(([event]) => event).filter((event) => event.event === 'mcp_route_denied');
+      expect(denials).toEqual([
+        expect.objectContaining({
+          route,
+          reason: 'missing_scope',
+          requiredScope: 'read',
+          user: 'HTTP_TEST_USER',
+          clientId: 'http-multi-target-test',
+          requestId: expect.stringMatching(/^REQ-/),
+        }),
+      ]);
+      const serialized = JSON.stringify(denials);
+      expect(serialized).not.toContain('data-token');
+      expect(serialized).not.toContain('ZZZ');
+      expect(denials[0]).not.toHaveProperty('target');
+    } finally {
+      audit.mockRestore();
+    }
+  });
+
+  it('audits a non-user XSUAA token refused by enforced target authorization', async () => {
+    await startHttpServer(
+      undefined,
+      {
+        ...DEFAULT_CONFIG,
+        transport: 'http-streamable',
+        httpAddr: '127.0.0.1:0',
+        xsuaaAuth: true,
+        multiTargetEndpoints: true,
+        multiTargetAuthorization: 'xsuaa-attribute',
+        authRateLimit: 0,
+        mcpHttpRateLimit: 0,
+      },
+      XSUAA,
+      undefined,
+      {
+        registry: registry(),
+        authorizationMode: 'xsuaa-attribute',
+        aggregateFactory: aggregateFactory as never,
+        createPinnedServer: vi.fn() as never,
+      },
+    );
+    const audit = vi.spyOn(logger, 'emitAudit');
+    try {
+      const refused = await request(app).post('/A4H/100/mcp').set('Authorization', 'Bearer machine-token');
+      expect(refused.status).toBe(403);
+      const denials = audit.mock.calls.map(([event]) => event).filter((event) => event.event === 'mcp_route_denied');
+      expect(denials).toEqual([
+        expect.objectContaining({ route: 'pinned-mcp', reason: 'user_token_required', requestId: expect.any(String) }),
+      ]);
+      expect(JSON.stringify(denials)).not.toContain('machine-token');
+      expect(JSON.stringify(denials)).not.toContain('A4H');
+    } finally {
+      audit.mockRestore();
+    }
   });
 
   it('serves registry-independent protected-resource metadata for alias routes', async () => {

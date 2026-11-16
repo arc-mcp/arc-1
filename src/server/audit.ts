@@ -8,6 +8,7 @@
  * including nested HTTP requests and auth events.
  */
 
+import { createHash } from 'node:crypto';
 import type { LogLevel } from './logger.js';
 
 /** Base shape for all audit events */
@@ -295,6 +296,16 @@ export interface ClientIpRejectedEvent extends AuditEventBase {
   path: string;
 }
 
+/** An authenticated multi-target MCP request was refused at the HTTP edge, before tool dispatch.
+ *  Carries no target, path alias, token or body: the caller may not see the target inventory. */
+export interface McpRouteDeniedEvent extends AuditEventBase {
+  event: 'mcp_route_denied';
+  route: 'pinned-mcp' | 'aggregate-mcp';
+  /** `user_token_required`: a valid XSUAA token that is not a user principal (no user/client ID available). */
+  reason: 'missing_scope' | 'user_token_required';
+  requiredScope?: 'read';
+}
+
 /** Layer 1: a per-IP HTTP-edge rate limit fired. Either OAuth (`/register`, `/authorize`,
  *  `/token`, `/revoke`) or `/mcp` (pre-bearer-auth probing). Returned a 429 with
  *  `Retry-After` and RFC 9331 `RateLimit-*` headers. See docs_page/rate-limiting.md. */
@@ -346,6 +357,7 @@ export type AuditEvent =
   | OAuthRedirectUriRejectedEvent
   | CorsRejectedEvent
   | ClientIpRejectedEvent
+  | McpRouteDeniedEvent
   | AuthRateLimitedEvent
   | McpRateLimitedEvent;
 
@@ -424,6 +436,21 @@ const KNOWN_SENSITIVE_FIELD_KEYS = new Set([
 const KNOWN_SAFE_FIELD_KEYS = new Set(['includesignature']);
 
 const PAYLOAD_BODY_KEYS = new Set(['errorbody', 'errormessage', 'requestbody', 'responsebody', 'resultpreview']);
+/** Source and business-content argument keys: audited as length + SHA-256 prefix only. */
+const CONTENT_KEYS = new Set([
+  'source',
+  'content',
+  'oldcontent',
+  'newcontent',
+  'proposalusercontent',
+  'fixedvalues',
+  'messages',
+  'shorttexts',
+  'parameters',
+]);
+/** SAPSearch tadir_lookup `source` routing enum (drives sql-scope escalation), not content. */
+const SOURCE_ROUTING_VALUES = new Set(['adt', 'db', 'both']);
+const CONTENT_SUMMARY_PATTERN = /^\[REDACTED content \d+ chars sha256:[0-9a-f]{12}\]$/;
 const REDACTION_LIMIT_MARKER = '[TRUNCATED: redaction budget exceeded]';
 const MAX_REDACTION_DEPTH = 16;
 const MAX_REDACTION_ENTRIES = 512;
@@ -606,6 +633,23 @@ function redactPayloadValue(value: unknown): string {
   return '[REDACTED]';
 }
 
+function summarizeContent(key: string, value: unknown): unknown {
+  if (value == null) return value;
+  if (typeof value === 'string') {
+    // The sink redactor runs again over sanitizeArgs output; keep an exact summary stable.
+    if (CONTENT_SUMMARY_PATTERN.test(value)) return value;
+    if (canonicalKey(key) === 'source' && SOURCE_ROUTING_VALUES.has(value)) return value;
+  }
+  let text: string;
+  try {
+    text = typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value));
+  } catch {
+    return '[REDACTED content]';
+  }
+  const digest = createHash('sha256').update(text).digest('hex').slice(0, 12);
+  return `[REDACTED content ${text.length} chars sha256:${digest}]`;
+}
+
 /** Long-text keys and phrases are business data, including on requests rejected before validation. */
 function summarizeLongTextArgs(value: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return '[REDACTED stored-text parameters]';
@@ -626,6 +670,7 @@ function redactValue(key: string, value: unknown, state: RedactionState, depth: 
   if (canonicalKey(key) === 'longtext') return summarizeLongTextArgs(value);
   if (canonicalKey(key) === 'applicationlog') return '[REDACTED application-log parameters]';
   if (isSensitiveKey(key)) return '[REDACTED]';
+  if (CONTENT_KEYS.has(canonicalKey(key))) return summarizeContent(key, value);
   if (mode === 'audit-event' && PAYLOAD_BODY_KEYS.has(canonicalKey(key))) {
     if (value == null) return value;
     return redactPayloadValue(value);

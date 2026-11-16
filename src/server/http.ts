@@ -40,7 +40,7 @@ import type { DestinationRegistry, TargetDescriptor } from './destination-regist
 import { createHttpJsonParser, handleHttpBodyParseError } from './http-request-body.js';
 import { authLibLogger, logger } from './logger.js';
 import { isTargetGranted, type MultiTargetAuthorizationMode } from './multi-target-authorization.js';
-import { auditTargetGrantDenial } from './multi-target-authorization-audit.js';
+import { auditMcpRouteDenial, auditTargetGrantDenial } from './multi-target-authorization-audit.js';
 import { requireXsuaaUserBearerAuth } from './multi-target-bearer-auth.js';
 import {
   PINNED_MCP_PATH_PATTERN,
@@ -276,6 +276,7 @@ export function createPinnedTargetMcpHandler(multi: MultiTargetRouting) {
     if (enforced) {
       protectPrivateMcpResponse(res);
       if (!projection?.read) {
+        auditMcpRouteDenial(req.auth, generateRequestId(), 'pinned-mcp');
         res.status(403).json({ error: 'forbidden' });
         return;
       }
@@ -320,6 +321,7 @@ export function createAggregateMcpHandler(multi: MultiTargetRouting) {
     if (projection) {
       protectPrivateMcpResponse(res);
       if (!projection.read) {
+        auditMcpRouteDenial(req.auth, generateRequestId(), 'aggregate-mcp');
         res.status(403).json({ error: 'forbidden' });
         return;
       }
@@ -578,9 +580,10 @@ export async function startHttpServer(
             const lowerPath = originalPath.toLowerCase();
             const resourcePath = lowerPath === '/authorize' ? '/multi/mcp' : originalPath;
             const multiResourceMetadataUrl = `${oauthFullBase}/.well-known/oauth-protected-resource${resourcePath}`;
+            const route = resourcePath.toLowerCase() === '/multi/mcp' ? 'aggregate-mcp' : 'pinned-mcp';
             if (enforcedTargets) protectPrivateMcpResponse(res);
             const authenticate = enforcedTargets
-              ? requireXsuaaUserBearerAuth(multiXsuaaVerifier, multiResourceMetadataUrl)
+              ? requireXsuaaUserBearerAuth(multiXsuaaVerifier, multiResourceMetadataUrl, route)
               : requireBearerAuth({
                   verifier: { verifyAccessToken: multiXsuaaVerifier },
                   resourceMetadataUrl: multiResourceMetadataUrl,
@@ -595,6 +598,7 @@ export async function startHttpServer(
               // request the four mutation-free scopes advertised by the route PRM;
               // XSUAA still grants only the subset assigned to the authenticated user.
               if (!req.auth || !hasRequiredScope(req.auth.scopes, 'read')) {
+                auditMcpRouteDenial(req.auth, generateRequestId(), route);
                 res
                   .set(
                     'WWW-Authenticate',
