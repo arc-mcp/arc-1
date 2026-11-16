@@ -236,6 +236,18 @@ class using the configured direct test identity; it does not exercise PP routing
    multi-target, Basic, cookies, the BTP service key and a BTP destination, and `buildAdtConfig`
    sets it only inside the `!opts?.perUser` block. A per-user client inheriting the process ticket
    would silently widen every call to a shared identity.
+
+   That refusal is **deliberately stricter than for the other shared credentials**, and the asymmetry
+   is a decision rather than an oversight. `SAP_USER`/`SAP_PASSWORD` may coexist with PP freely (PP
+   for JWT users, Basic for the shared client), and cookies may through the explicit
+   `SAP_PP_ALLOW_SHARED_COOKIES` hatch; SPNEGO has no hatch. The mechanics would work — the
+   `!perUser` guard already keeps the ticket off per-user clients — but a Kerberos fallback is more
+   opaque than a password someone put in a config: nothing in the request says which identity served
+   it, and the OS account running a service is usually broader than a technical SAP user. Because
+   the local SAML bearer issuer requires `SAP_PP_ENABLED`, this also rules out SPNEGO together with
+   that issuer; `tests/unit/server/spnego-config.test.ts` asserts it, since the exclusion is
+   transitive and would otherwise break silently. Relaxing this later is backward compatible (an
+   opt-in flag mirroring the cookie hatch); tightening it later would not be.
 2. **Two entry points, not one.** `ensureSpnegoSession` runs at the top of `requestInner` AND at
    the top of `fetchCsrfToken`, which issues its own `doFetch` and never reaches `requestInner`.
    SAP binds the CSRF token to the session cookie, so a token fetched before the session exists is
