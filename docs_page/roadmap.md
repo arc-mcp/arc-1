@@ -202,8 +202,7 @@ PR 1 (every `SAPWrite` action except `edit_content`, and `SAPActivate activate`,
 adapter is removed) is implemented. Three live runs on A4H 758 (Cloud Connector PP) found and
 confirmed fixes for four defects; the last run passed 14 of 15 items. Package refusals held live with
 asymmetric lists. Still open: preaudit expansion, which SAP never produced in
-seven fixtures (unit tests only); keeping `source` out of audit arguments; a denial audit event for
-HTTP-edge refusals; and reporting SAP's "already exists" as non-retryable on pinned routes.
+seven fixtures (unit tests only).
 Later, each with its own admission keys, tests and live evidence: package and CTS management
 (`checkTransport` made dual; body-carried requests in `refactoring.ts`/`transport.ts`), SRVB
 publication, and — only on request — quickfix, formatter settings, profiler trace and FLP. Git,
