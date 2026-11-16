@@ -313,20 +313,26 @@ cleanup, no automatic mutation replay and positive activation-execution evidence
 scoped lifecycle. [Qualification evidence](research/2026-10-22-multi-target-write-qualification.md)
 distinguishes live SAP checks from fault-injection tests and untested release shapes.
 
-ADR-0011 replaces ADR-0010's CLAS/INTF adapter: pinned writes use the single-target
-handlers for every listed `SAPWrite` action (not `edit_content`) and `SAPActivate activate`.
-Admission is an explicit `Tool.action` list (`src/server/multi-target-write-surface.ts`); fields
-outside the single-target schema and `preaudit=false` are refused (also in the `SAPActivate`
-handler). `handleToolCall` repeats the HTTP gate's decision for every tool when `config.targetId` is
-set. A write-enabled pinned `AdtHttpClient` turns off transient retries for POST/PUT/DELETE, resends a
-403 only on SAP's CSRF challenge and refuses any `corrNr` not on both transport lists; `lockObject`
-refuses (and unlocks) when the lock's request is off either list; `confirmPreaudit` refuses objects
-SAP adds that were not requested. The one internal `preaudit=false` call activates exactly the text
-pool `edit_text_symbols` just saved. Given up versus ADR-0010: read-back, under-lock revalidation,
-recording preflight, task-to-parent resolution (a task must itself be listed), positive
-activation-execution evidence (an explicit "not executed" is reported as a warning) and a mandatory
-source hash. Per-family mock tests cover package resolution and request placement; three live runs
-on 758 found and confirmed fixes for four defects, and package refusals held with asymmetric lists.
+ADR-0011 replaces ADR-0010's CLAS/INTF adapter: pinned writes use the single-target handlers for
+every listed `SAPWrite` action (not `edit_content`) and `SAPActivate activate`. Its controls:
+
+- **Admission:** an explicit `Tool.action` list (`src/server/multi-target-write-surface.ts`). Fields
+  outside the single-target schema and `preaudit=false` are refused (also in the `SAPActivate`
+  handler). `handleToolCall` repeats the HTTP gate's decision for every tool when `config.targetId`
+  is set.
+- **HTTP barrier:** a write-enabled pinned `AdtHttpClient` turns off transient retries for
+  POST/PUT/DELETE, resends a 403 only on SAP's CSRF challenge and refuses any `corrNr` not on both
+  transport lists.
+- **Lock:** `lockObject` refuses (and unlocks) when the lock's request is off either list.
+- **Activation scope:** `confirmPreaudit` refuses objects SAP adds that were not requested. The one
+  internal `preaudit=false` call activates exactly the text pool `edit_text_symbols` just saved.
+
+Given up versus ADR-0010: read-back, under-lock revalidation, recording preflight, task-to-parent
+resolution (a task must itself be listed), positive activation-execution evidence (an explicit
+"not executed" is reported as a warning) and a mandatory source hash.
+
+Evidence: per-family mock tests cover package resolution and request placement. Three live runs on
+758 found and confirmed fixes for four defects, and package refusals held with asymmetric lists.
 Not reproduced live: SAP adding objects to an activation.
 
 Residual limits: one process shares availability; route/client identity does not isolate the

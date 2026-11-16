@@ -51,28 +51,45 @@ Keep the destination's real `sap-sysid`, `sap-client`, URL, Cloud Connector loca
 `arc1.target_alias` from the existing setup. On read-only target `QAS/001`, omit all three write
 properties. A pinned URL names the public target ID, including its alias if configured.
 
-**Both package lists apply.** A package must match the global list and the destination list.
-Here, `ZTEAM_OTHER` is not writable merely because it matches the global subtree. Conversely, a
-destination cannot permit a package excluded globally. Existing-object checks use the real SAP
-package, not a package supplied by the caller. Package subtree lookup failures deny the write.
+### Package rules
 
-Destination package lists support exact names, prefix patterns (`ZTEAM*`), DEVCLASS subtrees
-(`ZTEAM/**`) and explicit `*`. Transport lists support exact request IDs, prefixes and explicit `*`.
-Lists are bounded to 128 entries, 128 characters per entry and 8192 characters total; use ASCII,
-commas and optional surrounding spaces. Empty entries and malformed values quarantine the destination.
-A package list is required whenever the destination requests writes, even while the global switch is
-off. Without a destination transport list, every request is refused; only saves that carry no
-request at all remain possible.
+A package must match **both** the global list and the destination list.
 
-**Transport policy authorizes requests.** In this example only `DEVK900123` is allowed. Every CTS
-request ARC-1 sends to SAP must be on both lists — whether the caller supplied it or SAP returned it
-from the object lock — and is checked again on the wire before the request leaves ARC-1. A request
-off either list is refused before SAP sees it; a lock already taken is released. A save with no
-request at all is decided by SAP, which refuses a transportable object without one; ARC-1 does not
-prove that an object is local (for example in `$TMP`). ARC-1 does not map a task to its parent
-request: a task ID is refused unless the task itself is on both lists. List and pass parent
-requests; on SAP_BASIS 758 a save with a task ID failed and left an empty object stub. Manage
-requests in ADT/SAP GUI or a separately authorized single-target connection.
+- `ZTEAM_OTHER` matches the global subtree in this example, but not the destination list, so it is
+  not writable.
+- A destination cannot permit a package that the global list excludes.
+- For existing objects ARC-1 checks the real SAP package, not a package supplied by the caller.
+- If a package subtree lookup fails, the write is denied.
+
+### Transport rules
+
+Every CTS request ARC-1 sends to SAP must be on **both** transport lists. In this example only
+`DEVK900123` is allowed.
+
+- This applies to a request the caller supplies and to one SAP returns from the object lock.
+- ARC-1 checks again on the wire, before the request leaves. A request off either list is refused
+  before SAP sees it, and a lock already taken is released.
+- Without a destination transport list, every request is refused. Only saves that carry no request
+  at all remain possible.
+- A save with no request is decided by SAP, which refuses a transportable object without one.
+  ARC-1 does not prove that an object is local (for example in `$TMP`).
+- List and pass parent requests, not tasks. ARC-1 does not map a task to its parent request: a task
+  ID is refused unless the task itself is on both lists. On SAP_BASIS 758 a save with a task ID
+  failed and left an empty object stub.
+- Manage requests in ADT, SAP GUI or a separately authorized single-target connection.
+
+### List syntax
+
+| Destination property | Accepted entries |
+|---|---|
+| `arc1.allowed_packages` | Exact names, prefix patterns (`ZTEAM*`), DEVCLASS subtrees (`ZTEAM/**`), explicit `*` |
+| `arc1.allowed_transports` | Exact request IDs, prefixes, explicit `*` |
+
+- Limits: 128 entries, 128 characters per entry, 8192 characters in total.
+- Use ASCII, commas and optional surrounding spaces.
+- Empty entries and malformed values quarantine the destination.
+- A package list is required whenever the destination requests writes, even while the global
+  switch is off.
 
 ## Assign the exact write grant
 
@@ -139,35 +156,61 @@ controls, each enforced once for every handler:
 | No transient retry | POST/PUT/DELETE are not resent after a 503, 429 or lost database connection; the error is reported. Definitive rejections (expired session, a 403 with SAP's CSRF challenge, content type) are retried once; a plain authorization 403 is not resent |
 | Activation scope | If SAP would also activate an object you did not list (other than a sub-resource of one you listed), nothing is activated; list it in `objects[]` to include it. `edit_text_symbols` activates exactly its own text pool after the save |
 
+### Differences from the earlier CLAS/INTF contract
+
 CLAS and INTF follow the same rules as every other type; the earlier CLAS/INTF-only contract
-(ADR-0010) is replaced. Compared with it you no longer get read-back comparison after save,
-re-validation under the lock, task-to-parent request resolution, positive activation-execution
-evidence (an explicit "not executed" answer from SAP is reported as a warning), a JSON
-`state`/`phase` result, or a mandatory source hash: `expectedSourceHash` is
-optional, as in single-target, and recommended for updates. Saves remain inactive until activation. Whole-object activation can include other
-users' inactive parts of the **same** object, as in single-target; other objects are never pulled in.
-Per-call `lintBeforeWrite=false` is accepted as in single-target; lint is not an access control.
+(ADR-0010) is replaced. Compared with it you no longer get:
+
+- read-back comparison after save;
+- re-validation under the lock;
+- task-to-parent request resolution;
+- positive activation-execution evidence (an explicit "not executed" answer from SAP is reported
+  as a warning);
+- a JSON `state`/`phase` result;
+- a mandatory source hash. `expectedSourceHash` is optional, as in single-target, and recommended
+  for updates.
+
+### Behaviour to know
+
+- Saves remain inactive until activation.
+- Whole-object activation can include other users' inactive parts of the **same** object, as in
+  single-target. Other objects are never pulled in.
+- Per-call `lintBeforeWrite=false` is accepted as in single-target; lint is not an access control.
+- One write can be sent more than once after a definitive rejection (401, CSRF challenge, 406/415),
+  never after 503, 429 or a lost DB connection.
+- A hash establishes source freshness, not target identity. Verify the pinned connection before
+  editing.
+- SAP repository objects are generally cross-client: two clients of one physical system are not
+  independent development sandboxes.
+
+### Not available
 
 Package and CTS management, service-binding publication, Git, and plugin tools remain unavailable,
-even if a client sends the call directly. ABAP Unit can execute newly authored code under the SAP
-user; deny `SAPDiagnose.unittest` unless that execution is intended. Use `SAP_DENY_ACTIONS` to
-narrow further (for example `SAPWrite.delete`). SAP authorization is always required in addition
-to ARC-1 policy. This surface was qualified live on SAP_BASIS 758 (on-premise,
-Cloud Connector PP) only. Package refusals were confirmed live with different server and
-destination lists. Not qualified live: other releases, BTP ABAP, and SAP adding objects to an
-activation (never reproduced; ARC-1 refuses it). One write can be sent more than once after a
-definitive rejection (401, CSRF challenge, 406/415), never after 503, 429 or a lost DB connection.
+even if a client sends the call directly.
 
-A hash establishes source freshness, not target identity. Verify the pinned connection before
-editing. SAP repository objects are generally cross-client: two clients of one physical system are
-not independent development sandboxes.
+- ABAP Unit can execute newly authored code under the SAP user; deny `SAPDiagnose.unittest` unless
+  that execution is intended.
+- Use `SAP_DENY_ACTIONS` to narrow further (for example `SAPWrite.delete`).
+- SAP authorization is always required in addition to ARC-1 policy.
+
+### Qualification
+
+| Scope | State |
+|---|---|
+| SAP_BASIS 758, on-premise, Cloud Connector PP | Qualified live |
+| Package refusals with different server and destination lists | Confirmed live |
+| Other releases, BTP ABAP | Not qualified live |
+| SAP adding objects to an activation | Never reproduced live; ARC-1 refuses it (unit tests only) |
 
 ## Diagnose, disable and recover
 
 `SAPTargets` is available to readers with more than one visible granted target and to admins;
-with one target use its pinned connection and tool catalog. On the aggregate connection it reports a bounded `pinnedWrite` status for configured write
-targets visible to the caller. Admin diagnostics additionally show configured/effective flags,
-rule counts and a policy digest. No raw restriction list or destination credential is exposed.
+with one target use its pinned connection and tool catalog.
+
+- On the aggregate connection it reports a bounded `pinnedWrite` status for configured write
+  targets visible to the caller.
+- Admin diagnostics additionally show configured/effective flags, rule counts and a policy digest.
+- No raw restriction list or destination credential is exposed.
 
 | Symptom | Check |
 |---|---|
@@ -182,15 +225,26 @@ rule counts and a policy digest. No raw restriction list or destination credenti
 | `TARGET_CONFIG_CHANGED` | Restart all instances after reviewing the changed destination; never silently remap an old ID to another backend |
 | Partial/unknown write result | Inspect the object, inactive source, CTS recording and locks. Do not automatically replay; creation may have left a stub or a save may have completed |
 
-For immediate administrative disable, set `SAP_ALLOW_WRITES: "false"` and restart all instances,
-or turn off the destination's write opt-in. A changed destination fingerprint refuses subsequent
-lookups immediately; restart every instance to adopt the new snapshot. Already admitted work may complete. Merely
-removing a role is not immediate revocation: old tokens and refresh sessions can retain grants.
-Require fresh authorization and verify the new effective permissions after IAM changes.
+### Disable writes
 
-Keep the prior application artifact/configuration for rollback. Old binaries quarantine destinations
-containing the new properties. On upgrade, those previously quarantined destinations may become
-readable (and writable only if all new gates agree); review them before upgrading. Restore the corresponding destination configuration when rolling
-back. Do not delete an MTA property to turn it off; explicitly set its false value. Audit delivery
-retains the existing asynchronous BTP Audit Log contract; monitor failures rather than assuming a
-write waits for a durable audit acknowledgement.
+Set `SAP_ALLOW_WRITES: "false"` and restart all instances, or turn off the destination's write
+opt-in.
+
+- A changed destination fingerprint refuses subsequent lookups immediately; restart every instance
+  to adopt the new snapshot. Already admitted work may complete.
+- Removing a role is not immediate revocation: old tokens and refresh sessions can retain grants.
+  Require fresh authorization and verify the new effective permissions after IAM changes.
+- Do not delete an MTA property to turn it off; explicitly set its false value.
+
+### Roll back or upgrade
+
+- Keep the prior application artifact and configuration for rollback, and restore the
+  corresponding destination configuration when rolling back.
+- Old binaries quarantine destinations containing the new properties.
+- On upgrade, those previously quarantined destinations may become readable (and writable only if
+  all new gates agree); review them before upgrading.
+
+### Audit
+
+Audit delivery retains the existing asynchronous BTP Audit Log contract; monitor failures rather
+than assuming a write waits for a durable audit acknowledgement.

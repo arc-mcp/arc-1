@@ -197,19 +197,20 @@ and upgrade requirements. Do not widen the mutation-free multi-target contract a
 CLAS/INTF contract (ADR-0010). [ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-broader-pinned-pp-mutations.md)
 replaces the per-resource adapter design of draft PR
 [#1142](https://github.com/arc-mcp/arc-1/pull/1142) with the single-target handlers plus six
-multi-target controls. Its [plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-11-12-pinned-writes-shared-handlers.md)
-PR 1 (every `SAPWrite` action except `edit_content`, and `SAPActivate activate`, CLAS/INTF included — the ADR-0010
-adapter is removed) is implemented. Three live runs on A4H 758 (Cloud Connector PP) found and
-confirmed fixes for four defects; the last run passed 14 of 15 items. Package refusals held live with
-asymmetric lists. Still open: preaudit expansion, which SAP never produced in
-seven fixtures (unit tests only).
-Later, each with its own admission keys, tests and live evidence: package and CTS management
-(`checkTransport` made dual; body-carried requests in `refactoring.ts`/`transport.ts`), SRVB
-publication, and — only on request — quickfix, formatter settings, profiler trace and FLP. Git,
-custom plugins and aggregate/Copilot/Basic writes stay excluded.
+multi-target controls.
 
-**Resume when.** A live pinned PP window is available for PR 1 qualification, or the owner requests
-a later PR. Do not add per-resource adapters, a duplicate write switch, or per-type allowlists; a
+- **Done (PR 1 of its [plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-11-12-pinned-writes-shared-handlers.md)):**
+  every `SAPWrite` action except `edit_content`, and `SAPActivate activate`, CLAS/INTF included;
+  the ADR-0010 adapter is removed. Three live runs on A4H 758 (Cloud Connector PP) found and
+  confirmed fixes for four defects; the last run passed 14 of 15 items. Package refusals held live
+  with asymmetric lists.
+- **Still open:** preaudit expansion, which SAP never produced in seven fixtures (unit tests only).
+- **Later, each with its own admission keys, tests and live evidence:** package and CTS management
+  (`checkTransport` made dual; body-carried requests in `refactoring.ts`/`transport.ts`), SRVB
+  publication, and — only on request — quickfix, formatter settings, profiler trace and FLP.
+- **Excluded:** Git, custom plugins and aggregate/Copilot/Basic writes.
+
+**Resume when.** The owner requests a later PR, or a fixture reproduces preaudit expansion live. Do not add per-resource adapters, a duplicate write switch, or per-type allowlists; a
 type that cannot resolve its package or carries its request outside `corrNr` is refused at admission.
 The entry stays open until the expanded scope is implemented and verified live.
 

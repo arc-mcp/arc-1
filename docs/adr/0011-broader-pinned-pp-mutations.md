@@ -1,20 +1,35 @@
 # ADR 0011 — Broader built-in mutations on pinned PP targets (shared-handler revision)
 
-**Status:** Accepted (16 November 2026). Replaces the per-resource adapter design of draft [PR #1142](https://github.com/arc-mcp/arc-1/pull/1142) and supersedes ADR-0010's CLAS/INTF adapter. Not accepted; needs security review.
+**Status:** Accepted (16 November 2026).
 **Date:** 12 November 2026 (revised 13 November 2026 after review and the first live run).
+**Replaces:** the per-resource adapter design of draft [PR #1142](https://github.com/arc-mcp/arc-1/pull/1142), and ADR-0010's CLAS/INTF adapter.
 **Builds on:** [ADR-0010](0010-pinned-pp-multi-target-writes.md) — its access gates (who may write where) stay; its dedicated adapter is removed.
-**Evidence:** implementation on `main` at `0698468a6` (uncommitted worktree, 13 November 2026):
-**+169/−905 production lines (net −736)** in 17 `src/` files, six of them deleted (the ADR-0010
-adapter, its request policy and the pinned mutation-context/facade layer). Unit tests: three new files
-(704 lines) replace four deleted ones; tracked tests +142/−1,125. 267 per-family mock tests
-(67 operations × package / request / no-replay checks), 7 HTTP-barrier tests, dispatch-recheck and
-admission tests. First live run of `896320813` (A4H 758, pinned PP route, real XSUAA token): 12 pass,
-2 fail, 3 not run; every refusal held. The two failures (text-pool activation, plain-403 resend) and
-three review findings (lock request, `activationExecuted="false"`, `edit_content`) are fixed in
-follow-up commits. Final run of `234fea534`: 14 pass, 0 fail, 1 not run (preaudit expansion).
-Package-ceiling run of `78bdc14b1` with asymmetric lists: 46 pass, 0 fail. An independent review
-then found the ED064 retry dropping "not executed", fixed with two hardening changes.
 **Plan:** [pinned writes through the shared handlers](../plans/2026-11-12-pinned-writes-shared-handlers.md).
+
+## Evidence
+
+Code size, measured against `main` at `0698468a6` (13 November 2026):
+
+- Production code: **+169/−905 lines (net −736)** in 17 `src/` files. Six files are deleted: the
+  ADR-0010 adapter, its request policy and the pinned mutation-context/facade layer.
+- Unit tests: three new files (704 lines) replace four deleted ones; tracked tests +142/−1,125.
+- Coverage: 267 per-family mock tests (67 operations × package / request / no-replay checks),
+  7 HTTP-barrier tests, plus dispatch-recheck and admission tests.
+
+Live runs on A4H 758, pinned PP route, real XSUAA token:
+
+| Commit | Scope | Result |
+|---|---|---|
+| `896320813` | First run | 12 pass, 2 fail, 3 not run; every refusal held |
+| `234fea534` | Final run | 14 pass, 0 fail, 1 not run (preaudit expansion) |
+| `78bdc14b1` | Package ceiling with asymmetric lists | 46 pass, 0 fail |
+
+Defects found and fixed in follow-up commits:
+
+- First run: text-pool activation, and a plain 403 being resent.
+- Review: lock request, `activationExecuted="false"`, `edit_content`.
+- Independent review after the package run: the ED064 retry dropped "not executed"; fixed together
+  with two hardening changes.
 
 ## Context
 
@@ -119,17 +134,18 @@ path with one rule is easier to reason about than two with a seam.
   `multi-target-pinned-write` schema budget uses the write wall with a 23,650-byte per-tool wall
   (measured 58,953 / 23,565 bytes after the `main` merge; approved by the maintainer).
 
-## Open before acceptance
+## Open after acceptance
 
-1. **Security review** of the narrowed admission rule above.
-2. **Live qualification** on a pinned strict-PP route — the executable
+The security review of the narrowed admission rule is done. Two items remain:
+
+1. **Preaudit expansion not reproduced live.** Live qualification ran on a pinned strict-PP route — the executable
    [checklist](../plans/2026-11-12-pinned-writes-shared-handlers.md#live-qualification-checklist)
    covers every family, a transportable package, refused and lock-derived requests, a preaudit
-   expansion and a second writer. The runs are recorded above; the
-   preaudit-expansion step stays open: seven live fixtures on 758 produced none. The per-family tests use a
-   generic SAP mock, so type-specific SAP response shapes (for example ENQU, TABL/DTT, SKTD, ENHO
-   bodies) stop some flows before the save in tests.
-3. **Request cancellation.** Shared saves do not observe the caller's abort signal, as in
+   expansion and a second writer. The runs are recorded above; the preaudit-expansion step stays
+   open: seven live fixtures on 758 produced none. The per-family tests use a generic SAP mock, so
+   type-specific SAP response shapes (for example ENQU, TABL/DTT, SKTD, ENHO bodies) stop some
+   flows before the save in tests.
+2. **Request cancellation.** Shared saves do not observe the caller's abort signal, as in
    single-target; ADR-0010's adapter did. Add it to the shared lifecycle if needed, for all modes.
 
 ## Rollout

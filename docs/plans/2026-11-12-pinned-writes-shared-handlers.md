@@ -1,6 +1,13 @@
 # Plan: pinned PP writes through the shared handlers
 
-**Status:** Steps 1–6 implemented and revised after review (13 November 2026). Step 7: first live run of `896320813` on A4H 758 — 12 pass, 2 fail, 3 not run; both failures and three review findings fixed. Final run of `234fea534`: 14 pass, 0 fail, 1 not run (preaudit expansion). Step 18 on `78bdc14b1`: 46 pass, 0 fail. Decision record: [ADR-0011](../adr/0011-broader-pinned-pp-mutations.md).
+**Status:** Steps 1–6 implemented and revised after review (13 November 2026). Decision record: [ADR-0011](../adr/0011-broader-pinned-pp-mutations.md) (accepted). Live runs on A4H 758:
+
+| Step | Commit | Result |
+|---|---|---|
+| 7, first run | `896320813` | 12 pass, 2 fail, 3 not run; both failures and three review findings fixed |
+| 7, final run | `234fea534` | 14 pass, 0 fail, 1 not run (preaudit expansion) |
+| 18, package ceiling | `78bdc14b1` | 46 pass, 0 fail |
+
 **Supersedes the approach of** draft [PR #1142](https://github.com/arc-mcp/arc-1/pull/1142) (not its goal).
 **Roadmap:** FEAT-93.
 
