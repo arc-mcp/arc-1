@@ -786,8 +786,8 @@ save in that session. Omitted supported fields are preserved. Supplied collectio
 (such as DOMA fixed values) still replace that collection; read first when extending
 one. MSAG `messages` are the exception: SAP merges them by number on update (live-verified
 on 7.57 and 7.58). New numbers are added, an existing number gets the new text, omitted messages
-are kept, and `messages: []` or no `messages` leaves the stored messages unchanged. SAPWrite cannot delete
-a message. SKTD `dryRun` validates without a lock and does not
+keep their text. An empty or omitted `messages` array preserves existing numbers and short texts;
+`SAPWrite action=update` cannot delete individual messages. SKTD `dryRun` validates without a lock and does not
 reserve the previewed state. Live SKTD validation uses the locked envelope, so an
 invalid node edit can briefly take a lock but never writes.
 
