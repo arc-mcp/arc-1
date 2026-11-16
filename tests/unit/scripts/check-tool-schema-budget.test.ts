@@ -50,7 +50,8 @@ describe('check-tool-schema-budget', () => {
 
   it('keeps read-only, aggregate and hyperfocused wire ceilings unchanged', () => {
     for (const scenario of TOOL_SCHEMA_SCENARIOS) {
-      if (scenario.name.includes('full-git')) continue;
+      // Write surfaces (single-target full and ADR-0011 pinned) use the write wall.
+      if (scenario.name.includes('full-git') || scenario.name === 'multi-target-pinned-write') continue;
       expect(scenario.budget.maxTotalWireBytes).toBe(scenario.name === 'hyperfocused-default' ? 4_000 : 50_000);
       expect(scenario.budget.maxPerToolWireBytes).toBe(scenario.name === 'hyperfocused-default' ? 4_000 : 23_000);
     }

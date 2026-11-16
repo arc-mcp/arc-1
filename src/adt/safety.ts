@@ -329,6 +329,21 @@ export function isTransportInWhitelist(config: Pick<SafetyConfig, 'allowedTransp
 }
 
 /**
+ * Multi-target request ceiling: the destination list must name the request (empty refuses) and the
+ * server list must allow it (empty = unrestricted, as SAP_ALLOWED_TRANSPORTS in single-target).
+ */
+export function isPinnedTransportAllowed(
+  policy: Pick<MultiTargetWritePolicy, 'allowedTransports' | 'serverAllowedTransports'>,
+  transport: string,
+): boolean {
+  return (
+    policy.allowedTransports.length > 0 &&
+    isTransportInWhitelist({ allowedTransports: [...policy.allowedTransports] }, transport) &&
+    isTransportInWhitelist({ allowedTransports: [...policy.serverAllowedTransports] }, transport)
+  );
+}
+
+/**
  * Check transport operation. Writes require `allowWrites && allowTransportWrites`.
  * Reads are always allowed at this layer (scope check enforces user gating upstream).
  */

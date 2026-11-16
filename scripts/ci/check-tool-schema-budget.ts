@@ -184,7 +184,15 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
   {
     name: 'multi-target-pinned-write', config: PINNED_WRITE_CONFIG, textSearchAvailable: true,
     definitions: multiTargetToolDefinitions(getToolDefinitions(PINNED_WRITE_CONFIG), PINNED_WRITE_CONFIG),
-    budget: { ...MULTI_TARGET_BUDGET, schemaTokenEstimate: 12_800, descriptionCount: 195, maxTotalWireBytes: READ_WIRE_WALL },
+    // ADR-0011: the pinned write surface is the single-target SAPWrite/SAPActivate definition plus one
+    // control sentence, so it uses the write wall; per-tool is SAPWrite's single-target wall + that sentence.
+    budget: {
+      schemaTokenEstimate: 14_800,
+      descriptionTokenEstimate: 9_900,
+      descriptionCount: 222,
+      maxTotalWireBytes: WRITE_WIRE_WALL,
+      maxPerToolWireBytes: 23_650,
+    },
   },
   {
     name: 'standard-default',
