@@ -19,6 +19,7 @@
 import { parseBlockedDataSourcesCsv } from '../adt/data-source-name.js';
 import type { SafetyConfig } from '../adt/safety.js';
 import { resolveSapUserAgent } from '../adt/user-agent.js';
+import { assertClientIpAllowlistPlatform, parseAllowedClientIps } from './client-ip-allowlist.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
 import { SAP_SYSID_PATTERN } from './multi-target-identity.js';
@@ -174,6 +175,23 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
     valueName: 'boolean',
     description: 'Allow shared cookies beside principal propagation (true/false)',
   },
+  {
+    name: 'pp-saml-idp-key-file',
+    valueName: 'path',
+    description: 'Experimental: PEM key signing local SAML bearer assertions',
+  },
+  {
+    name: 'pp-saml-idp-cert-file',
+    valueName: 'path',
+    description: 'Experimental: PEM certificate trusted by the SAP system',
+  },
+  { name: 'pp-saml-issuer', valueName: 'id', description: 'Experimental: SAML issuer / entity ID' },
+  { name: 'pp-saml-audience', valueName: 'id', description: 'Experimental: SAML audience (SAP local provider name)' },
+  { name: 'pp-saml-recipient', valueName: 'url', description: 'Experimental: SAML recipient (default SAP URL)' },
+  { name: 'pp-saml-nameid-claim', valueName: 'claim', description: 'Experimental: JWT claim used as SAML NameID' },
+  { name: 'pp-saml-nameid-format', valueName: 'format', description: 'Experimental: email or unspecified' },
+  { name: 'pp-saml-authn-context', valueName: 'uri', description: 'Experimental: AuthnContextClassRef URI' },
+  { name: 'pp-saml-ttl-seconds', valueName: 'seconds', description: 'Experimental: assertion validity (30-3600)' },
   { name: 'disable-saml', valueName: 'boolean', description: 'Disable SAP SAML redirects (true/false)' },
   { name: 'tool-mode', valueName: 'mode', description: 'Tool mode: standard or hyperfocused' },
   {
@@ -211,6 +229,11 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'auth-rate-limit', valueName: 'per-minute', description: 'OAuth requests per IP per minute' },
   { name: 'rate-limit', valueName: 'per-minute', description: 'MCP calls per user per minute' },
   { name: 'allowed-origins', valueName: 'origins', description: 'Comma-separated browser CORS origins' },
+  {
+    name: 'allowed-client-ips',
+    valueName: 'addresses',
+    description: 'Comma-separated client IPs/CIDR ranges (SAP BTP CF only)',
+  },
   { name: 'log-file', valueName: 'path', description: 'Audit/log output file' },
   { name: 'log-level', valueName: 'level', description: 'Log level: debug/info/warn/error' },
   { name: 'log-format', valueName: 'format', description: 'Log format: text or json' },
@@ -942,6 +965,37 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     'ppAllowSharedCookies',
   );
 
+  // ── Experimental local SAML bearer issuer ──
+  config.samlIdpKeyFile = resolveOptionalStr('pp-saml-idp-key-file', 'SAP_PP_SAML_IDP_KEY_FILE', 'samlIdpKeyFile');
+  config.samlIdpCertFile = resolveOptionalStr('pp-saml-idp-cert-file', 'SAP_PP_SAML_IDP_CERT_FILE', 'samlIdpCertFile');
+  config.samlIdpIssuer = resolveOptionalStr('pp-saml-issuer', 'SAP_PP_SAML_ISSUER', 'samlIdpIssuer');
+  config.samlAudience = resolveOptionalStr('pp-saml-audience', 'SAP_PP_SAML_AUDIENCE', 'samlAudience');
+  config.samlRecipient = resolveOptionalStr('pp-saml-recipient', 'SAP_PP_SAML_RECIPIENT', 'samlRecipient');
+  config.samlNameIdClaim = resolveOptionalStr('pp-saml-nameid-claim', 'SAP_PP_SAML_NAMEID_CLAIM', 'samlNameIdClaim');
+  const samlNameIdFormat = resolveStr(
+    'pp-saml-nameid-format',
+    'SAP_PP_SAML_NAMEID_FORMAT',
+    'email',
+    'samlNameIdFormat',
+  );
+  if (samlNameIdFormat !== 'email' && samlNameIdFormat !== 'unspecified') {
+    throw new Error('SAP_PP_SAML_NAMEID_FORMAT must be email or unspecified');
+  }
+  config.samlNameIdFormat = samlNameIdFormat;
+  config.samlAuthnContextClassRef = resolveStr(
+    'pp-saml-authn-context',
+    'SAP_PP_SAML_AUTHN_CONTEXT',
+    'urn:oasis:names:tc:SAML:2.0:ac:classes:PreviousSession',
+    'samlAuthnContextClassRef',
+  );
+  const samlTtl = resolvePositiveSafeInteger(
+    'pp-saml-ttl-seconds',
+    'SAP_PP_SAML_TTL_SECONDS',
+    300,
+    'samlAssertionTtlSeconds',
+  );
+  config.samlAssertionTtlSeconds = Math.min(3600, Math.max(30, samlTtl));
+
   // ── SAML Behavior ──────────────────────────────────────────────────
   config.disableSaml2 = resolveBool('disable-saml', 'SAP_DISABLE_SAML', false, 'disableSaml2');
 
@@ -1081,6 +1135,16 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
       getFlag('allowed-origins') !== undefined ? { flag: '--allowed-origins' } : { env: 'ARC1_ALLOWED_ORIGINS' };
   } else {
     sources.allowedOrigins = 'default';
+  }
+
+  const clientIpsFlag = getFlag('allowed-client-ips');
+  const clientIpsRaw = clientIpsFlag ?? process.env.ARC1_ALLOWED_CLIENT_IPS;
+  if (clientIpsRaw !== undefined) {
+    const label = clientIpsFlag !== undefined ? '--allowed-client-ips' : 'ARC1_ALLOWED_CLIENT_IPS';
+    config.allowedClientIps = parseAllowedClientIps(clientIpsRaw, label);
+    sources.allowedClientIps = clientIpsFlag !== undefined ? { flag: label } : { env: label };
+  } else {
+    sources.allowedClientIps = 'default';
   }
 
   // ── Logging ────────────────────────────────────────────────────────
@@ -1239,8 +1303,44 @@ export function validateConfig(config: ServerConfig): void {
     );
   }
 
+  if (config.transport === 'http-streamable') assertClientIpAllowlistPlatform(config.allowedClientIps);
+
   const hasCookieAuth = !!(config.cookieFile || config.cookieString);
   const hasBtpServiceKey = !!(config.btpServiceKey || config.btpServiceKeyFile);
+
+  // Experimental local SAML bearer issuer. Fail closed on half-configured issuers; the feature is a
+  // single-target, OIDC-only per-user path and must not combine with BTP-discovered targets.
+  const samlIssuerFields = [config.samlIdpKeyFile, config.samlIdpCertFile, config.samlIdpIssuer, config.samlAudience];
+  if (samlIssuerFields.some(Boolean)) {
+    if (!samlIssuerFields.every(Boolean)) {
+      throw new Error(
+        'Local SAML bearer issuer needs all of SAP_PP_SAML_IDP_KEY_FILE, SAP_PP_SAML_IDP_CERT_FILE, SAP_PP_SAML_ISSUER and SAP_PP_SAML_AUDIENCE.',
+      );
+    }
+    if (!config.samlNameIdClaim) {
+      throw new Error('Local SAML bearer issuer requires SAP_PP_SAML_NAMEID_CLAIM to be set explicitly.');
+    }
+    if (!config.ppEnabled) {
+      throw new Error(
+        'SAP_PP_SAML_IDP_KEY_FILE requires SAP_PP_ENABLED=true — the assertion is only issued for principal propagation.',
+      );
+    }
+    if (!config.oidcIssuer) {
+      throw new Error(
+        'SAP_PP_SAML_IDP_KEY_FILE requires SAP_OIDC_ISSUER/SAP_OIDC_AUDIENCE — the NameID is taken from a verified OIDC token.',
+      );
+    }
+    if (config.multiTargetEndpoints || config.xsuaaAuth) {
+      throw new Error(
+        'SAP_PP_SAML_IDP_KEY_FILE is a single-target OIDC path; it cannot combine with multi-target mode or XSUAA.',
+      );
+    }
+    if (!config.url) {
+      throw new Error(
+        'SAP_PP_SAML_IDP_KEY_FILE requires SAP_URL — the local issuer connects to the SAP system directly.',
+      );
+    }
+  }
 
   if (config.ppEnabled && hasCookieAuth && !config.ppAllowSharedCookies) {
     throw new Error(

@@ -17,7 +17,7 @@ import {
   normalizeAdtLanguage,
   rewriteKtdDocument,
 } from '../../adt/ddic-xml.js';
-import { activate, activateBatch } from '../../adt/devtools.js';
+import { ACTIVATION_NOT_EXECUTED, activate, activateBatch } from '../../adt/devtools.js';
 import { badiContainerXml, hasBadiImplementations } from '../../adt/enhancement-impl.js';
 import { AdtApiError, type AdtError, AdtSafetyError } from '../../adt/errors.js';
 import { type FmParameter, findFmHeader, spliceFmSignature } from '../../adt/fm-signature.js';
@@ -505,6 +505,10 @@ function isKtdCreateEndpointUnavailable(err: unknown): err is AdtApiError {
   return combined.includes('resource') && combined.includes('/sap/bc/adt/documentation/ktd/documents');
 }
 
+// SAP (seen on 758) silently truncates a longer MSAG name, leaving an empty class under the shorter name.
+const MSAG_MAX_NAME_LENGTH = 20;
+const MSAG_NAME_TOO_LONG = `MSAG names must be at most ${MSAG_MAX_NAME_LENGTH} characters. Nothing was created.`;
+
 export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResult> {
   const {
     client,
@@ -524,6 +528,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   // Discovery gate before any SAP call (the TTYP/DOMA gates live in write.ts, which is at its size budget).
   if (type === 'ENQU' && isLockObjectsEndpointAvailable() === false) return errorResult(ENQU_WRITE_UNAVAILABLE_HINT);
   if (type === 'ENHO' && isEnhoXhbEndpointAvailable() === false) return errorResult(ENHO_WRITE_UNAVAILABLE_HINT);
+  if (type === 'MSAG' && name.length > MSAG_MAX_NAME_LENGTH) return errorResult(MSAG_NAME_TOO_LONG);
   // FUNC and FUGR structural includes both INHERIT the parent group's package — SAP ignores
   // _package for them — so the allowlist must be checked against the group's real package.
   // Gating on args.package here would let a caller write into a disallowed package by claiming $TMP.
@@ -918,6 +923,9 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       transport: normalizeTransportOverride(obj.transport) ?? transport,
       description: String(obj.description ?? name),
       metadataObject: isMetadataWriteType(type),
+      // SAP creates only a shell for these types; the messages/metadata need a locked PUT.
+      needsMetadataPut:
+        type === 'DTEL' || (type === 'MSAG' && Array.isArray(metadata.messages) && metadata.messages.length > 0),
       body: '',
       contentType: '',
       sourceUrl: '',
@@ -946,6 +954,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       if (previous !== undefined)
         errors.push(`Duplicate object: entry ${plan.result.index + 1} repeats entry ${previous + 1}.`);
       else seen.set(key, plan.result.index);
+      if (plan.type === 'MSAG' && plan.name.length > MSAG_MAX_NAME_LENGTH) errors.push(MSAG_NAME_TOO_LONG);
       if (plan.type === 'FUNC' && !plan.group) {
         errors.push(`FUNC ${plan.name} in batch_create requires "group" on the object entry or top-level request.`);
       }
@@ -1003,7 +1012,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           plan.type === 'FUNC' ? `${plan.objectUrl}/source/main` : sourceUrlForType(plan.type, plan.name);
       }
       if (
-        plan.type === 'DTEL' ||
+        plan.needsMetadataPut ||
         plan.type === 'TTYP' ||
         plan.type === 'ENHO' ||
         (plan.type === 'FUNC' && plan.metadata.processingType !== undefined) ||
@@ -1149,7 +1158,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           plan.transport,
           config.minimalErrors,
         );
-      if (plan.type === 'DTEL') {
+      if (plan.needsMetadataPut) {
         await client.http.withStatefulSession(async (session) => {
           const lock = await lockObject(
             session,
@@ -1157,6 +1166,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
             plan.objectUrl,
             'MODIFY',
             getCachedFeatures()?.abapRelease,
+            systemType,
           );
           try {
             await updateObject(
@@ -1204,7 +1214,8 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           );
           break;
         }
-        entry.activation = 'confirmed';
+        entry.activation = outcome.notExecuted ? 'unknown' : 'confirmed';
+        if (outcome.notExecuted) warnings.push(`${plan.name}: ${ACTIVATION_NOT_EXECUTED}`);
       }
       entry.status = 'success';
     } catch (err) {
@@ -1240,9 +1251,10 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         if (messages.length)
           activationMessages.push(batchFailureMessage([...new Set(messages)].join('; '), config.minimalErrors));
       }
+      if (outcome.notExecuted) warnings.push(ACTIVATION_NOT_EXECUTED);
       for (const plan of writtenPlans) {
         if (outcome.success) {
-          plan.result.activation = 'confirmed';
+          plan.result.activation = outcome.notExecuted ? 'unknown' : 'confirmed';
           continue;
         }
         const errors = outcome.details.filter(

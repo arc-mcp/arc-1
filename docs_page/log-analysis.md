@@ -53,7 +53,7 @@ include:
 | Group | Events |
 |-------|--------|
 | Tool and SAP HTTP lifecycle | `tool_call_start`, `tool_call_end`, `http_request`, `http_csrf_fetch` |
-| Authorization and safety | `auth_scope_denied`, `safety_blocked`, `data_response_limited`, `auth_rate_limited`, `mcp_rate_limited` |
+| Authorization and safety | `auth_scope_denied`, `mcp_route_denied`, `safety_blocked`, `data_response_limited`, `auth_rate_limited`, `mcp_rate_limited` |
 | Selected identity | `auth_pp_created`, `auth_shared_created` |
 | Multi-target failure stage | `target_resolution_failed`, `pp_exchange_failed`, `shared_auth_failed`, `cloud_connector_access_denied`, `sap_service_unavailable`, `sap_authentication_failed`, `sap_authorization_failed`, `target_policy_denied` |
 | Server/client protocol | `server_start`, OAuth/DCR, and CORS events |
@@ -275,7 +275,7 @@ View these in the BTP cockpit under **Instances and Subscriptions > Audit Log Vi
 programmatic verification or scheduled reviews, read the same records through the Audit Log Retrieval
 API; see [Audit Log delivery evidence](btp-administration.md#audit-log-delivery-evidence). Tool-call
 records carry `object.type = "MCP Tool Call"` and, on invocation, redacted arguments in `args` (first 500 characters plus `...`
-when truncated). Completion records carry the outcome.
+when truncated; source and content arguments appear only as a length and SHA-256 prefix). Completion records carry the outcome.
 
 ## Docker Volume Mount Example
 

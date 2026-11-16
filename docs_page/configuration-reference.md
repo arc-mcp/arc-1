@@ -35,7 +35,7 @@ For the full per-deployment-mode breakdown (npx vs local vs Docker vs BTP, and t
 
 **Boolean values.** Most boolean flags accept either `"true"` or `"1"`. One exception: `ARC1_LOG_HTTP_DEBUG` accepts only `"true"` ([known inconsistency](#logging-and-observability)).
 
-**Comma-separated lists.** `SAP_ALLOWED_PACKAGES`, `SAP_ALLOWED_TRANSPORTS`, `SAP_DENY_ACTIONS`, `SAP_BLOCKED_DATA_SOURCES`, and `ARC1_ALLOWED_ORIGINS` are split on `,` and `.trim()`-ed. Quote shell-sensitive entries (`*`, `$TMP`, glob characters): `-e SAP_ALLOWED_PACKAGES='Z*,$TMP'`. In `.env` files no extra quoting is needed.
+**Comma-separated lists.** `SAP_ALLOWED_PACKAGES`, `SAP_ALLOWED_TRANSPORTS`, `SAP_DENY_ACTIONS`, `SAP_BLOCKED_DATA_SOURCES`, `ARC1_ALLOWED_ORIGINS`, and `ARC1_ALLOWED_CLIENT_IPS` are split on `,` and `.trim()`-ed. Quote shell-sensitive entries (`*`, `$TMP`, glob characters): `-e SAP_ALLOWED_PACKAGES='Z*,$TMP'`. In `.env` files no extra quoting is needed.
 
 ---
 
@@ -160,6 +160,22 @@ Full reference: [btp-destination-setup.md](btp-destination-setup.md) · [multi-t
 | `--pp-enabled` | `SAP_PP_ENABLED` | `false` | Enables ARC-1's per-user destination path. For on-premise SAP this resolves a `PrincipalPropagation` destination through Connectivity Service and Cloud Connector. For BTP ABAP Environment this resolves an `OAuth2UserTokenExchange` destination and uses the returned ABAP bearer token. Without it, every SAP call uses the shared technical client. |
 | `--pp-strict` | `SAP_PP_STRICT` | `true` when PP is enabled | JWT PP failures always return an error and never change to the shared identity. Set `true` explicitly to reject non-JWT calls; the derived default alone does not enforce that rejection. Explicit `true` gives the recommended strict topology and rejects API-key / non-JWT tool calls. Explicit `false` enables supported mixed operation, in which API keys use the shared client; it never enables JWT fallback. Separate instances are recommended, not required. |
 | `--pp-allow-shared-cookies` | `SAP_PP_ALLOW_SHARED_COOKIES` | `false` | Escape hatch. Without it, setting `SAP_COOKIE_FILE`/`SAP_COOKIE_STRING` together with `SAP_PP_ENABLED=true` fails at startup (cookies belong to one user, PP wants per-user). With `true`, cookies stay on the shared client only and PP traffic runs cookie-free. |
+
+Experimental local SAML bearer issuer for single-target OIDC callers (S/4HANA 2020+):
+
+| Flag | Env var | Default | Effect |
+|---|---|---|---|
+| `--pp-saml-idp-key-file` | `SAP_PP_SAML_IDP_KEY_FILE` | unset | PEM RSA signing key; opt-in switch. Keep outside the repository and mount read-only. |
+| `--pp-saml-idp-cert-file` | `SAP_PP_SAML_IDP_CERT_FILE` | unset | Matching, currently valid RSA X.509 certificate trusted in SAP SAML2. Startup signs and verifies a sample assertion. |
+| `--pp-saml-issuer` | `SAP_PP_SAML_ISSUER` | unset | Issuer/entity ID registered as a SAML Bearer Assertion Provider. |
+| `--pp-saml-audience` | `SAP_PP_SAML_AUDIENCE` | unset | SAP SAML2 local provider name. |
+| `--pp-saml-recipient` | `SAP_PP_SAML_RECIPIENT` | `SAP_URL` | Bearer assertion recipient. |
+| `--pp-saml-nameid-claim` | `SAP_PP_SAML_NAMEID_CLAIM` | **required, no default** | OIDC JWT claim mapped to SAP NameID. It must be administrator-controlled. `email` also requires boolean `email_verified=true`; malformed, control-bearing or over-256-character values fail closed. |
+| `--pp-saml-nameid-format` | `SAP_PP_SAML_NAMEID_FORMAT` | `email` | `email` or `unspecified`; use the latter for a SAP logon ID claim. |
+| `--pp-saml-authn-context` | `SAP_PP_SAML_AUTHN_CONTEXT` | `PreviousSession` URI | SAML `AuthnContextClassRef`. |
+| `--pp-saml-ttl-seconds` | `SAP_PP_SAML_TTL_SECONDS` | `300` | Assertion lifetime in seconds, clamped to 30–3600. |
+
+See [Local SSO](local-sso-experimental.md) for trust setup, key rotation and session limits.
 
 Full reference: [principal-propagation-setup.md](principal-propagation-setup.md).
 
@@ -295,6 +311,7 @@ How ARC-1 itself listens for MCP traffic.
 | `--ui-addr` / `--ui-port` | `ARC1_UI_ADDR` / `ARC1_UI_PORT` | `127.0.0.1:8711` | Bind address for `ARC1_UI=local`. Local mode must stay on loopback; use `ARC1_UI=web` with `SAP_TRANSPORT=http-streamable` for Docker or CF exposure. |
 | `--ui-open` | `ARC1_UI_OPEN` | `false` | Opens the local sidecar UI in the system browser after startup. Intended for developer machines only. |
 | `--allowed-origins` | `ARC1_ALLOWED_ORIGINS` | (empty) | Comma-separated CORS allowlist for **browser-based** MCP clients. Exact match only (no wildcards — the response sets `Access-Control-Allow-Credentials: true`). Preflight allows the MCP protocol headers (`mcp-session-id`, `mcp-protocol-version`, `last-event-id`). Empty disables CORS entirely. Native clients (Claude Desktop / Cursor / VS Code Copilot / Copilot Studio) don't need this. See [security-guide.md §11](security-guide.md#11-network-security). |
+| `--allowed-client-ips` | `ARC1_ALLOWED_CLIENT_IPS` | (empty) | **SAP BTP Cloud Foundry only.** Comma-separated IPv4/IPv6 addresses and CIDR ranges that may reach ARC-1; every other caller gets `403`, except on `/health`. Empty turns it off; an invalid entry, or a list outside Cloud Foundry, fails startup. An extra layer in front of authentication, not a replacement for it. Setup, rules and limits: [Client IP allowlist](security-guide.md#client-ip-allowlist-sap-btp-cloud-foundry-opt-in). |
 | — | `ARC1_PUBLIC_URL` | (auto from `VCAP_APPLICATION`, else bind host:port) | Public URL ARC-1 advertises in OAuth metadata (issuer, `authorize`/`token`/`register`/`revoke` URLs, protected-resource metadata, `WWW-Authenticate` headers). Set this when ARC-1 is reached through a reverse proxy on a different hostname or under a base-path prefix — without it, MCP clients receive metadata pointing at the underlying host and bypass the proxy. Path prefix supported (e.g. `https://gateway.example.com/arc1`); the well-known endpoints are also served at that prefix. Trailing slash stripped. With XSUAA, also register the [exact public callbacks](xsuaa-setup.md#custom-public-url). |
 | `--max-concurrent` | `ARC1_MAX_CONCURRENT` | `10` | Maximum concurrent in-flight SAP HTTP requests, **server-wide across all users** (not per-client). One shared `Semaphore` gates every `AdtClient`, including per-user PP clients. Honors `Retry-After` on `429`/`503` (clamped to 60 s, single retry). Size against `rdisp/wp_no_dia`. See [Rate Limiting Guide](rate-limiting.md). |
 | `--max-datapreview-response-bytes` | `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` | `2097152` (2 MiB) | Cumulative successful data-preview response allowance for one complete tool call, including automatic query chunks and internal table reads. Counts decompressed transfer bytes before UTF-8/string conversion. A result that crosses it fails with `DATA_RESPONSE_TOO_LARGE`; retry with lower `maxRows`, fewer columns, or a restrictive non-overlapping key-range `WHERE`. `maxRows` is separately clamped to 10,000, but wide rows can reach this byte limit much earlier. |

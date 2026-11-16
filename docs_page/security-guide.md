@@ -350,12 +350,13 @@ tool call. See [setup](btp-cloud-foundry-deployment.md#optional-btp-audit-log-si
 
 | Event | Description |
 |-------|-------------|
-| `tool_call_start` | Tool name and centrally redacted arguments. |
+| `tool_call_start` | Tool name and centrally redacted arguments. Source and content arguments (`source`, `content`, `oldContent`, `newContent`, `proposalUserContent`, `fixedValues`, `messages`, `shortTexts`, `parameters`, at any depth incl. `batch_create` objects) are replaced by `[REDACTED content <n> chars sha256:<12 hex>]` for correlation, never logged. SQL text and filters are still logged, truncated. |
 | `tool_call_end` | Tool, duration, success/error status, error class, and result size/preview after central redaction. |
 | `http_request` | SAP HTTP method, ADT path, status, and duration. Optional debug bodies/headers are centrally redacted; authentication response bodies are never logged. |
 | `data_response_limited` | A successful or retry response crossed the configured data-preview byte ceiling. Includes tool, limit/observed bytes, endpoint family, queue wait, request ID, and selected target/identity when applicable; never SQL or response bodies. |
 | `http_csrf_fetch` | Debug-level CSRF probe response: method, endpoint, HTTP status, duration, session mode and context-cookie presence. `success` means this response supplied a usable token; a failed probe may recover through a fallback. Presence includes reset markers; it does not establish a valid context. No token/cookie values or bodies. |
 | `auth_scope_denied` | Tool, required scope, and caller's available scopes when authorization rejects a call. |
+| `mcp_route_denied` | A multi-target MCP route refused an authenticated caller with `403` before tool dispatch: `route` (`pinned-mcp`/`aggregate-mcp`), `reason` (`missing_scope` or `user_token_required`), user/client ID when known and request ID. Never the target, path, token or body. |
 | `auth_pp_created` | Success or failure while creating a per-user Principal Propagation ADT client. |
 | `auth_shared_created` | Successful shared technical-user authentication after the Basic canary. Includes tool and `identity: "shared"`. |
 | `target_resolution_failed` | Multi-target ID/registry resolution failed. Includes tool and safe `errorCode`. |
@@ -376,6 +377,7 @@ tool call. See [setup](btp-cloud-foundry-deployment.md#optional-btp-audit-log-si
 | `oauth_redirect_uri_registered` | XSUAA only: a redirect URI matched the manual-client policy at `/authorize` and was added to ARC-1's in-memory client metadata. The XSUAA service configuration is unchanged. |
 | `oauth_redirect_uri_rejected` | XSUAA only: an unapproved redirect URI was rejected at `/authorize`; useful for detecting interception attempts or bad client configuration. |
 | `cors_rejected` | A browser request was blocked because its `Origin` header is not in `ARC1_ALLOWED_ORIGINS`. Includes origin, method, path. Useful for spotting misconfigured browser clients or probing. |
+| `client_ip_rejected` | The [client IP allowlist](#client-ip-allowlist-sap-btp-cloud-foundry-opt-in) refused a request with `403`. Includes the `reason` ([meanings](#when-a-request-is-refused)), the address the platform reported (`clientIp`), method and path. Not sent to the BTP Audit Log, because callers without credentials can trigger it at will. |
 | `auth_rate_limited` | **Layer 1** rate-limit denial on OAuth or `/mcp` endpoint (per-IP). Includes endpoint, IP, `limitPerMinute`. See [Rate Limiting Guide](rate-limiting.md). |
 | `mcp_rate_limited` | **Layer 2** rate-limit denial on per-user MCP tool quota. Includes user, tool, `limitPerMinute`, `retryAfterMs`. The MCP client receives a tool error with `retryAfter` (not HTTP 429). |
 
@@ -492,6 +494,100 @@ curl -sI -X OPTIONS \
   https://<your-app-url>/mcp | \
   grep -i 'access-control'   # expect: empty
 ```
+
+### Client IP allowlist (SAP BTP Cloud Foundry, opt-in)
+
+`ARC1_ALLOWED_CLIENT_IPS` lets only the network addresses you list reach ARC-1 on SAP BTP Cloud
+Foundry. Every other caller gets `403` on every path except `/health`, before ARC-1 looks at any
+credentials. It is off by default.
+
+The allowlist is an extra layer, not a replacement for authentication. An allowed caller still has
+to sign in, and scopes and the safety ceiling still apply.
+
+- **Use it** for local clients (Claude Desktop, Claude Code, VS Code, Cursor, Eclipse) that reach
+  ARC-1 from an office network or VPN with known public addresses.
+- **Do not use it** for clients hosted by a vendor (Microsoft Copilot Studio, claude.ai connectors
+  and similar). They call from the vendor's cloud, so a list of your own addresses locks them out.
+- **Outside SAP BTP Cloud Foundry** (Docker, Kubernetes, a VM), ARC-1 refuses to start with a list,
+  because a client there could set the address itself. Filter at your reverse proxy or firewall.
+
+#### Turn it on
+
+1. Add your addresses to the properties of the `arc1-mcp-server` module in `mta-overrides.mtaext`:
+
+    ```yaml
+    ARC1_ALLOWED_CLIENT_IPS: "198.51.100.0/24,2001:db8:1234::/48"
+    ```
+
+2. Build and deploy the MTA with the extension, as for any other
+   [configuration change](btp-administration.md#change-and-restart-matrix).
+3. Send this request without credentials from an allowed network and from another one, for example
+   a phone hotspot:
+
+    ```bash
+    curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<your-app-url>/mcp
+    # allowed network: 401 (passed the allowlist, now needs credentials)
+    # other network:   403
+    ```
+
+To turn the allowlist off, set the value to `""` and deploy again.
+
+#### Find the address to allow
+
+ARC-1 sees the public address your traffic leaves your network from, not the address of a laptop.
+Your network team knows it. If you cannot ask, let ARC-1 report it:
+
+1. Set the placeholder `ARC1_ALLOWED_CLIENT_IPS: "192.0.2.1"`, which matches no real client. Nobody
+   can reach ARC-1 while it is active.
+2. Send one request from the client's network.
+3. Read `clientIp` from the refusal in the log, then replace the placeholder with it:
+
+    ```bash
+    cf logs arc1-mcp-server --recent | grep client_ip_rejected
+    # ... [client_ip_rejected] {"reason":"not_allowed","clientIp":"203.0.113.9","method":"POST","path":"/mcp"}
+    ```
+
+#### When a request is refused
+
+The caller gets `403` with the body `{"error":"Forbidden"}`. The log gets one
+[`client_ip_rejected`](#what-gets-logged) event with a `reason`:
+
+| `reason` | Meaning | What to do |
+|---|---|---|
+| `not_allowed` | The address in `clientIp` is not in the list. | Add it if this caller should have access. |
+| `missing_header` | The request did not come through the platform's public router. | Expected for calls from other apps over an internal route. See [Limits](#limits-of-the-allowlist). |
+| `invalid_header` | The platform did not report exactly one address. | Not expected on SAP BTP Cloud Foundry. Check what sits between the client and ARC-1. |
+
+#### Rules for the list
+
+- Separate entries with commas. An entry is one IPv4 or IPv6 address, or a CIDR range such as
+  `198.51.100.0/24`.
+- List IPv4 and IPv6 separately: `0.0.0.0/0` covers no IPv6 address and `::/0` covers no IPv4
+  address. The exception: an IPv4 client that the platform reports in IPv6 notation
+  (`::ffff:10.1.2.3`) matches both kinds of entry.
+- A range covers its whole network: `10.0.0.5/8` means `10.0.0.0/8`.
+- A mistake stops the app from starting, and the message names the entry: a stray comma, a
+  hostname, a port or an impossible range.
+
+#### Limits of the allowlist
+
+- **`/health` stays open to everyone**, because Cloud Foundry's health check needs it. It returns
+  status and version, no SAP data.
+- **It protects the public route only.** A caller that reaches ARC-1 directly, through an internal
+  route (`apps.internal`) or a container-to-container network policy, can set the address itself.
+  Do not open ARC-1 that way to apps you do not trust.
+- **A proxy in front becomes the client.** Behind a corporate reverse proxy, SAP API Management or
+  an AppRouter (including the optional `arc1-ui-router` for `/ui`), ARC-1 sees the proxy's address,
+  not the user's. A proxy that runs on SAP BTP typically calls from an egress address that SAP lists
+  [per region](https://help.sap.com/docs/BTP/65de2977205c403bbc107264b8eccf4b/f344a57233d34199b2123b9620d0bb41.html),
+  not per app, so allowing it admits other apps in that region too. Check `clientIp` before you add
+  it.
+- **It relies on one platform header.** ARC-1 takes the address only from `x-cf-true-client-ip`,
+  which SAP BTP Cloud Foundry sets
+  ([SAP blog](https://community.sap.com/t5/technology-blog-posts-by-sap/ip-based-allow-listing-for-applications/ba-p/14140136)),
+  never from `X-Forwarded-For`, which any client can set. SAP does not document that the platform
+  overwrites a value the client sent. A live check on one landscape showed that it does
+  ([R24 in the security model](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r24--client-ip-allowlist-rests-on-the-platform-header)).
 
 ### SAP Connection
 
@@ -620,8 +716,8 @@ to the new digest.
 
 ### Dependency audit policy
 
-The lockfile now resolves `node-forge` to **1.4.2**, which includes the
-[RSA verification fix and PEM Buffer compatibility repair](https://github.com/digitalbazaar/forge/blob/v1.4.2/CHANGELOG.md).
+The lockfile now resolves `node-forge` to **1.4.3**, which includes the
+[upstream RSA verification and PEM Buffer fixes](https://github.com/digitalbazaar/forge/blob/v1.4.3/CHANGELOG.md).
 The temporary `GHSA-86w9-cpqp-85rv` risk exception has been removed from `audit-ci.json`.
 High/critical advisories, including a reintroduction of that advisory, and audit failures fail the CI job.
 

@@ -304,6 +304,7 @@ export class AdtClient {
       disableSaml: config.disableSaml,
       spnego: config.spnego,
       retryUnauthorized: config.retryUnauthorized,
+      pinnedWrite: config.safety?.multiTargetWrite,
       onUnauthorized: config.onUnauthorized,
       // Prefer the shared server-wide semaphore when provided so all per-user PP clients
       // share one cap. Fall back to a private semaphore for stdio/tests when only maxConcurrent

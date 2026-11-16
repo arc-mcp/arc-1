@@ -1,0 +1,31 @@
+# ARC-1 local Docker setup (base). Secrets live in arc1-local.env next to this file.
+# Start:  docker compose up -d        Logs: docker compose logs -f        Stop: docker compose down
+services:
+  arc1:
+    image: ghcr.io/arc-mcp/arc-1:latest    # pin a version in real use
+    container_name: arc1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8091:8080"   # loopback only; change 8091 if the port is taken
+    env_file:
+      - arc1-local.env
+    environment:
+      SAP_TRANSPORT: http-streamable
+      ARC1_SERVER_NAME: arc-1
+      NODE_OPTIONS: --max-old-space-size=384
+      # Safety ceiling: read-only by default. Enable what you need; propagated users are still
+      # limited by their own SAP authorizations.
+      SAP_ALLOW_WRITES: "false"
+      SAP_ALLOW_DATA_PREVIEW: "false"
+      SAP_ALLOW_FREE_SQL: "false"
+      SAP_ALLOWED_PACKAGES: "$$TMP"      # $$ = literal $ for compose; for example "Z*,$$TMP"
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
