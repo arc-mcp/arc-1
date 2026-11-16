@@ -319,16 +319,19 @@ and deployment-isolation option.
 
 **Medium if the platform ever passes a client-supplied header through; observed replaced on one landscape.**
 
-`ARC1_ALLOWED_CLIENT_IPS` trusts `x-cf-true-client-ip` alone and refuses requests without exactly one
-address in it. SAP documents that BTP Cloud Foundry sets the header to the connecting address on
-requests through its public router, but not that it replaces a value the client sent itself. If it
-did not, any client could name an allowed address and pass the filter; authentication, scopes and
-the safety ceiling would still apply, so the loss is the allowlist only. Normal HTTP startup refuses
-a configured list when `VCAP_APPLICATION` is absent; that variable is not proof a request traversed
-the CF router. An internal `apps.internal` route or direct C2C policy bypasses the router: a
-reachable caller can forge an allowed header. Operators must restrict direct ingress separately.
-Other limits: a fronting proxy becomes the client, IPv4 literals match only IPv4 rules (mapped IPv6
-values can also match IPv6 rules), and the `/health` exemption stays reachable from anywhere.
+`ARC1_ALLOWED_CLIENT_IPS` trusts `x-cf-true-client-ip` alone. SAP documents that BTP Cloud Foundry
+sets this header on requests through its public router, but not that it replaces a value the client
+sent. If it did not, any client could name an allowed address and pass the filter. Authentication,
+scopes and the safety ceiling would still apply, so the loss is the allowlist only.
+
+Known limits:
+
+- `VCAP_APPLICATION`, which HTTP startup requires for a configured list, does not prove that a
+  request passed the CF router. A caller on an internal `apps.internal` route or a C2C policy can
+  forge the header, so operators must restrict direct ingress separately.
+- A fronting proxy becomes the client.
+- `/health` stays reachable from anywhere.
+- IPv4 literals match only IPv4 rules; mapped IPv6 values can also match IPv6 rules.
 
 **Observed (2026-11):** on SAP BTP Cloud Foundry `us10-001` (AWS), a client-supplied
 `x-cf-true-client-ip` was always replaced with the connecting IPv4 address, in any casing, repeated,
