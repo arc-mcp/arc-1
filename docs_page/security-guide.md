@@ -689,6 +689,7 @@ credentials in the record.
 |---|---|---|
 | Dependabot — root npm + BTP AppRouter npm + GitHub Actions + Docker | `.github/dependabot.yml` | weekly version updates; security updates open separately when an advisory is published, with no guaranteed turnaround |
 | `npm audit` checks via `audit-ci` | `.github/workflows/test.yml` (root + `btp/approuter`) | fails the job on `high` / `critical` |
+| npm install hooks disabled | `.github/workflows/test.yml` + `release.yml` (`NPM_CONFIG_IGNORE_SCRIPTS`) | dependency lifecycle scripts never run in PR CI or on the publish runner; explicit build/test commands still do |
 | GitHub Dependency Review (PR diff) | `.github/workflows/dependency-review.yml` | `Dependency security` fails on newly introduced `high` / `critical` advisories in any dependency scope; `Dependency licenses` fails on denied licenses |
 | CodeQL SAST (JavaScript/TypeScript, Actions, Python) | GitHub Default Setup | findings on the Security tab and the PR |
 | Trivy container scan — dev push | `.github/workflows/docker.yml` | non-gating; SARIF uploaded to Security tab |
