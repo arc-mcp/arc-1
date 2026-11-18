@@ -150,3 +150,27 @@ it('refuses deletion when discovery cannot establish precheck availability', asy
   expect(result.content[0]?.text).toContain('availability could not be determined');
   expect(mockFetch.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
 });
+// ADT's deletion check lists a KTD as an included object of its parent; Eclipse then deletes both in
+// one request. A plain DELETE of the parent must not run while the KTD exists.
+it('refuses while SAP lists a knowledge transfer document of the object, then unlocks', async () => {
+  const included = `<del:includedObject del:mustBeDeletedWithParent="true" del:isDeletable="true" adtcore:uri="/sap/bc/adt/documentation/ktd/documents/zdelete" adtcore:type="SKTD/TYP" adtcore:name="ZDELETE"/>`;
+  const sends = backend({
+    check: allowed.replace('del:isDeletable="true"/>', `del:isDeletable="true">${included}</del:object>`),
+  });
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', args);
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('SAPWrite(action="delete", type="SKTD", name="ZDELETE")');
+  expect(result.content[0]?.text).toContain('No DELETE was sent');
+  expect(sends.some((s) => s.method === 'DELETE')).toBe(false);
+  expect(sends.some((s) => s.url.searchParams.get('_action') === 'UNLOCK')).toBe(true);
+});
+it('refuses a parent-only DELETE when SAP requires a joint deletion', async () => {
+  const included = '<del:includedObject del:mustBeDeletedWithParent="true"/>';
+  const sends = backend({
+    check: allowed.replace('del:isDeletable="true"/>', `del:isDeletable="true">${included}</del:object>`),
+  });
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', args);
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('deleted with its parent');
+  expect(sends.some((s) => s.method === 'DELETE')).toBe(false);
+});

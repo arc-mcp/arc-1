@@ -53,9 +53,11 @@
             "APLO",
             "SAJC",
             "SAJT",
+            "RONT",
+            "NONT",
             "TABL/DTI"
           ],
-          "description": "Repository or metadata type. TABL includes structures. KTD aliases SKTD; MESSAGES aliases MSAG. SYNTAX requires objectType+name. Server-driven: discovery-gated XML metadata, AFF JSON source; DTSC/DSFD/DTDC/DRTY use DDL text. ENQU: JSON. TABL/DTI: TABLE~INDEX, prefers pending JSON. DESD external schema; EVTB/EVTO event binding/object; CSNM CSN model; COTA communication target; DTSC/DTDC static/dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template."
+          "description": "Repository or metadata type. TABL includes structures. KTD aliases SKTD; MESSAGES aliases MSAG. SYNTAX requires objectType+name. Server-driven: discovery-gated XML metadata, AFF JSON source; DTSC/DSFD/DTDC/DRTY use DDL text. ENQU: JSON. TABL/DTI: TABLE~INDEX, prefers pending JSON. DESD external schema; EVTB/EVTO event binding/object; CSNM CSN model; COTA communication target; DTSC/DTDC static/dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template; RONT/NONT SAP object/node type."
         },
         "name": {
           "type": "string",
@@ -373,6 +375,8 @@
             "APLO",
             "SAJC",
             "SAJT",
+            "RONT",
+            "NONT",
             "TABL/DTI"
           ],
           "description": "Object type. Class-section surgery actions require type=CLAS. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only."
@@ -732,7 +736,7 @@
         },
         "refObjectType": {
           "type": "string",
-          "description": "SKTD/KTD create (required): parent ADT type+subtype, e.g. DDLS/DF, BDEF/BDO, SRVD/SRV, DEVC/K, SMBC/TYP (BCMO). CLAS/INTF/PROG use ABAP Doc."
+          "description": "SKTD/KTD create (required): parent ADT type+subtype, e.g. DDLS/DF, BDEF/BDO, SRVD/SRV, DEVC/K, SMBC/TYP (BCMO), RONT/ROT. CLAS/INTF/PROG use ABAP Doc."
         },
         "refObjectName": {
           "type": "string",
@@ -803,6 +807,8 @@
                   "APLO",
                   "SAJC",
                   "SAJT",
+                  "RONT",
+                  "NONT",
                   "TABL/DTI"
                 ],
                 "description": "Creatable object type; technical settings TABL/DTT are update-only"
