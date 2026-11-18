@@ -800,6 +800,7 @@ describe('SAPWrite handler — DDIC writes', () => {
     });
 
     const ktdPath = '/sap/bc/adt/documentation/ktd/documents';
+    const rontKtd = { action: 'create', type: 'KTD', name: 'ZPARENT', package: '$TMP', refObjectType: 'RONT/ROT' };
     const validationStatus = (severity: string) =>
       `<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><SEVERITY>${severity}</SEVERITY></DATA></asx:values></asx:abap>`;
 
@@ -819,13 +820,7 @@ describe('SAPWrite handler — DDIC writes', () => {
         }
         return mockResponse(201, '<sktd:docu/>', { 'x-csrf-token': 'T' });
       });
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'create',
-        type: 'KTD',
-        name: 'ZPARENT',
-        package: '$TMP',
-        refObjectType,
-      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', { ...rontKtd, refObjectType });
       expect(result.isError, result.content[0]?.text).toBeUndefined();
       expect(result.content[0]?.text).toContain('Created SKTD ZPARENT');
       const posts = mockFetch.mock.calls.filter(([, init]) => init?.method === 'POST');
@@ -841,13 +836,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       'stops before creating a KTD when SAP does not confirm RONT documentation support',
       async (response) => {
         mockFetch.mockResolvedValue(mockResponse(200, response, { 'x-csrf-token': 'T' }));
-        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-          action: 'create',
-          type: 'KTD',
-          name: 'ZPARENT',
-          package: '$TMP',
-          refObjectType: 'RONT/ROT',
-        });
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', rontKtd);
         expect(result.isError).toBe(true);
         expect(result.content[0]?.text).toContain('SAP did not approve KTD creation for RONT/ROT');
         const posts = mockFetch.mock.calls.filter(([, init]) => init?.method === 'POST');
