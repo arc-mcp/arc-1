@@ -24,7 +24,7 @@ import { type FmParameter, findFmHeader, spliceFmSignature } from '../../adt/fm-
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
 import { isServerDrivenObjectType } from '../../adt/server-driven.js';
 import { getTransport } from '../../adt/transport.js';
-import { escapeXmlAttr, parseFunctionModuleProperties } from '../../adt/xml-parser.js';
+import { escapeXmlAttr, getNestedArray, parseFunctionModuleProperties, parseXml } from '../../adt/xml-parser.js';
 import { validateAffHeader } from '../../aff/validator.js';
 import { activationDetailMatchesObject } from '../activation-results.js';
 import { guardCdsSyntax } from '../cds-hints.js';
@@ -623,6 +623,19 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
 </sktd:docu>`;
 
     const ktdCreateUrl = '/sap/bc/adt/documentation/ktd/documents';
+    if (refType === 'RONT/ROT') {
+      // Both 758 and 816 advertise KTD and RONT. SAP's wizard checks the parent's DOCUMENTATION handler.
+      checkOperation(client.safety, OperationType.Create, 'CreateObject');
+      const params = new URLSearchParams({ objname: name, package: pkg, refObjType: refType, refObjName: refName });
+      const asXml = 'application/vnd.sap.as+xml';
+      const validation = await client.http.post(`${ktdCreateUrl}/validation?${params}`, '', asXml, { Accept: asXml });
+      const abap = parseXml(validation.body).abap as Record<string, unknown> | undefined;
+      const statuses = getNestedArray(abap ?? {}, 'values', 'DATA');
+      if (statuses.length !== 1 || statuses[0]?.SEVERITY !== 'OK') {
+        const detail = config.minimalErrors ? undefined : statuses[0]?.SHORT_TEXT;
+        return errorResult(`SAP did not approve KTD creation for RONT/ROT ${refName}.${detail ? ` ${detail}` : ''}`);
+      }
+    }
     let ktdResult: string;
     try {
       ktdResult = await createObject(
