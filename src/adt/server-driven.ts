@@ -578,17 +578,20 @@ async function checkServerDrivenDeletion(
       'SAP did not confirm that this object can be deleted. Review its deletion check in ADT and resolve dependencies or other refusals. No DELETE was sent.',
     );
   }
-  // ADT deletes a documented object together with its KTD in one deletion request; a plain DELETE
-  // of the parent alone could leave the KTD behind. ARC-1 deletes the KTD first instead.
+  // This path deletes only the locked object. ADT can include children in the same deletion.
   const included = Array.isArray(object.includedObject) ? object.includedObject : [object.includedObject];
-  const ktd = (included as Array<Record<string, unknown> | undefined>).find(
-    (entry) => entry?.['@_type'] === 'SKTD/TYP',
-  );
-  if (ktd) {
-    const ktdName = String(ktd['@_name'] ?? '');
-    throw new AdtError(
-      `SAP lists the knowledge transfer document ${ktdName} as part of this deletion. Delete it first with SAPWrite(action="delete", type="SKTD", name="${ktdName}"), then retry. No DELETE was sent.`,
-    );
+  for (const child of included) {
+    if (child?.['@_type'] === 'SKTD/TYP') {
+      const name = String(child['@_name'] ?? '');
+      throw new AdtError(
+        `SAP lists the knowledge transfer document ${name} as part of this deletion. Delete it first with SAPWrite(action="delete", type="SKTD", name="${name}"), then retry. No DELETE was sent.`,
+      );
+    }
+    if (child?.['@_mustBeDeletedWithParent'] === 'true') {
+      throw new AdtError(
+        'SAP requires an included object to be deleted with its parent. Review the deletion in ADT. No DELETE was sent.',
+      );
+    }
   }
 }
 

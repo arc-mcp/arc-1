@@ -164,12 +164,13 @@ it('refuses while SAP lists a knowledge transfer document of the object, then un
   expect(sends.some((s) => s.method === 'DELETE')).toBe(false);
   expect(sends.some((s) => s.url.searchParams.get('_action') === 'UNLOCK')).toBe(true);
 });
-it('deletes when the included objects contain no knowledge transfer document', async () => {
-  const included = `<del:includedObject del:mustBeDeletedWithParent="true" del:isDeletable="true" adtcore:uri="/sap/bc/adt/x/zdelete" adtcore:type="SUSH/HT" adtcore:name="ZDELETE"/>`;
+it('refuses a parent-only DELETE when SAP requires a joint deletion', async () => {
+  const included = '<del:includedObject del:mustBeDeletedWithParent="true"/>';
   const sends = backend({
     check: allowed.replace('del:isDeletable="true"/>', `del:isDeletable="true">${included}</del:object>`),
   });
   const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', args);
-  expect(result.isError, result.content[0]?.text).toBeUndefined();
-  expect(sends.filter((s) => s.method === 'DELETE')).toHaveLength(1);
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('deleted with its parent');
+  expect(sends.some((s) => s.method === 'DELETE')).toBe(false);
 });
