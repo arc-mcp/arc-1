@@ -42,7 +42,8 @@ The `adtcore:type="SKTD/TYP"` literal appears in the create XML envelope at
   release-specific (for example 816-only entries) and some are not yet routable by
   ARC-1 because `objectBasePath` has no parent URI builder for them. `RONT/ROT` routes
   through the server-driven registry (`/sap/bc/adt/businessobjects/rontrot/<name>`, the
-  `refObject` URI of an Eclipse ADT trace on a BTP ABAP Environment).
+  `refObject` URI of an Eclipse ADT trace on a BTP ABAP Environment). The RONT documentation
+  handler was present on 816 and absent on 758. ARC-1 checks SAP’s KTD validator before create.
 - `CLAS/OC`, `INTF/OI`, and `PROG/P` are **not** in that registry on the tested systems.
   For those code objects, use ABAP Doc.
 

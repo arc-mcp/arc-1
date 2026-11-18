@@ -1,108 +1,32 @@
-# RONT and NONT — ADT wire contract
+# SAP object types and node types in ADT
 
-Source: Eclipse ADT 3.62 communication logs of a BTP ABAP Environment (release 2611), 2026-10-31.
-The logs cover creating a SAP object type (`RONT`), a knowledge transfer document on it, its root
-node type (`NONT`), source changes and activation of both, and deleting all three. The objects
-lived in a local (`ZLOCAL`) package, so no transport request was involved. The ADT discovery of an
-S/4HANA 2025 system (SAP_BASIS 816) advertises the same collections, media types and template links;
-the ARC-1 run on that system is summarized under [Live results](#live-results-sap_basis-816).
+| Type | Collection under `/sap/bc/adt/` | Subtype | AFF source fields |
+|---|---|---|---|
+| RONT | `businessobjects/rontrot` | `RONT/ROT` | `name`, `typeCategory`, `objectTypeCode`, `interfaceBehaviorDefinition`, `odmEntityName` |
+| NONT | `businessobjects/nontnot` | `NONT/NOT` | `name`, `sapObjectType`, `rootNode` |
 
-## Contract
+Both use `blue:blueSource` metadata with `application/vnd.sap.adt.blues.v2+xml`. ARC-1 creates the metadata, locks the object, writes AFF JSON to `source/main`, and unlocks. SAP handles activation. [RONT schema](https://github.com/SAP/abap-file-formats/blob/main/file-formats/ront/ront-v1.json) · [NONT schema](https://github.com/SAP/abap-file-formats/blob/main/file-formats/nont/nont-v1.json)
 
-| Type | Collection under `/sap/bc/adt/` | Metadata MIME | `adtcore:type` | Source |
-|---|---|---|---|---|
-| RONT | `businessobjects/rontrot` | `application/vnd.sap.adt.blues.v2+xml` | `RONT/ROT` | AFF JSON (`ront-v1.json`): `header`, `typeCategory`, `name`, `objectTypeCode`, `interfaceBehaviorDefinition`, `odmEntityName` |
-| NONT | `businessobjects/nontnot` | `application/vnd.sap.adt.blues.v2+xml` | `NONT/NOT` | AFF JSON (`nont-v1.json`): `header`, `name`, `sapObjectType`, `rootNode` |
+## Create and activate
 
-Both use `<blue:blueSource>` metadata, a JSON source at `…/{name}/source/main` (`application/json`
-for GET and PUT) under a lock, generic activation and the deletion framework. That is the existing
-server-driven object engine; only the creation input is type specific.
+The 2026-10-31 Eclipse ADT 3.62 trace on BTP ABAP Environment 2611 includes wizard properties in the create POST. The author's ARC-1 run on S/4HANA 2025 FPS01 (816) used those properties, BTP Cloud Foundry principal propagation, and a transportable package. It covered CRUD, activation, and a KTD attached to the RONT.
 
-## Creation input
+On 2026-11-18 a direct ADT comparison and the built CLI (`99b3b07fa`, HTTP Basic, `$TMP`) established the following on SAP_BASIS 758 and 816.
 
-The creation wizard is server driven: `$new/schema`, `$new/configuration` and `$new/content`
-describe it, a side effect fills `metadata` while the name is typed, and
-`<collection>/validation` checks the input. The create POST carries the result as additional
-creation properties after `adtcore:packageRef`:
-
-| Type | `$new/schema` properties | Required |
+| Experiment | 758 | 816 |
 |---|---|---|
-| RONT | `name` (30), `typeCategory` (`bo`, `to`, `ao`, `co`, `do`, `ho`), `metadata {name, description, package}` | `name` |
-| NONT | `name` (30), `sapObjectType` (30, a RONT), `rootNode` (boolean), `metadata {…}` | `name`, `sapObjectType` |
+| Plain metadata POST, then AFF source PUT | RONT, root and item NONT activated. Non-default category and node ownership read back. | Same |
+| Activate an empty RONT shell | Succeeded with warnings | Failed with “Missing Name for SAP Object Type” until source was supplied |
+| Root NONT named differently from its RONT | Saved, activation failed | Same |
+| NONT naming a missing RONT | Activated with a warning | Activation failed |
+| Activate RONT before and after its root | First activation warned about the missing root. Activation after a source edit and root activation succeeded without that warning. | Same |
 
-The wizard's category codes are the short forms of the AFF `typeCategory` values (`bo` =
-`businessObject`, `to` = `technicalObject`, `ao` = `analyticalObject`, `co` = `configurationObject`,
-`do` = `dependentObject`, `ho` = `hierarchyObject`).
+On both releases a source PUT with an unknown category (`zz`) succeeded and changed `technicalObject` to `businessObject` on read-back. On 816 the wizard property used a different representation. The short code `to` worked without nested `metadata`, while `zz` and `technicalObject` in that property produced `ZZ` and `TE`.
 
-Eclipse 3.62 sends the properties base64-encoded with `adtcore:type="application/vnd.sap.adt.serverdriven.content.v1+json"`.
-ARC-1 uses the escaped-JSON form with `application/vnd.sap.adt.objecttype.new.content.additional.v1+json`
-that SAP's `SADT_CONTENT` transformation already reads for SAJC/SAJT on 758 and 816
-([APLO/SAJC/SAJT contract](2026-09-28-aplo-sajc-sajt-adt-contract.md)). Discovery advertises the
-same `$new/content` media type for SAJC, SAJT, RONT and NONT.
+The BTP service-key target returned HTTP 503 (“ABAP Environment - System is stopped”) on 2026-11-18. The properties-free create sequence still needs an ARC-1 run there.
 
-ARC-1 derives the properties from the AFF source of the create call: `name` from `source.name`
-(default: the object name), `typeCategory` from `source.typeCategory` (default `businessObject`),
-`sapObjectType` and `rootNode` from the NONT source, and `metadata` from name, description and
-package. An unknown category or a NONT without `sapObjectType` is refused before the POST. The
-source PUT after creation writes the remaining fields (`objectTypeCode`,
-`interfaceBehaviorDefinition`).
+## KTD creation and deletion
 
-## Observed SAP behaviour
+The two collections and the KTD endpoint exist on both on-prem releases. Only the tested 816 system registered `CL_RONT_DOCU_STRUCTURE` for `RONT/ROT` in `WBOBJTYPES_SCOPE` under `DOCUMENTATION`. The wizard's `documentation/ktd/documents/validation` POST returned an AS-XML status of `OK` on 816 and `ERROR` with “Knowledge Transfer Document not supported for SAP Object Type” on 758. ARC-1 requires explicit approval from this endpoint before it creates a RONT-backed KTD. The parent URI is `/sap/bc/adt/businessobjects/rontrot/<lowercase-name>`.
 
-- Both objects are created inactive and need activation.
-- Activating a RONT without a root node type succeeds with warning `RAP_SOT_RONT_WB/020`
-  "Corresponding SAP Object Root Node Type missing".
-- NONT validation with `rootNode: true` refuses a node type name that differs from the object
-  type: `RAP_SONT_WB/013` "SAP Object Root Node Type '…' differs from SAP Object Type '…'".
-  The create POST itself does not check this (816 created an inactive draft), so ARC-1 refuses
-  such a create before the POST.
-- The source PUT echoes the stored JSON. SAP drops an empty `interfaceBehaviorDefinition` and
-  `rootNode: false` from the stored source.
-- The RONT value help for `interfaceBehaviorDefinition` is
-  `POST rontrot/$values?objectUri=…&path=$.interfaceBehaviorDefinition&kind=domainSpecificNamedItems`.
-  ARC-1 does not call it; SAP checks the value on save and activation.
-- Eclipse also PUTs the unchanged metadata document before the source. ARC-1 does not; the
-  metadata carries nothing the source does not.
-
-## Knowledge transfer documents
-
-`RONT/ROT` is a KTD parent type (`WBOBJTYPES_SCOPE`, `DOCUMENTATION`). Eclipse validates with
-`documentation/ktd/documents/validation?objtype=SKTD/TYP&refObjType=RONT/ROT` and creates with the
-usual `sktd:docu` body; its `sktd:refObject` points to `/sap/bc/adt/businessobjects/rontrot/<name>`
-(lowercase). The document has one node for the object type itself, with an optional long text
-and no short text. NONT is not a registered KTD parent type.
-
-## Deletion
-
-Eclipse deletes through `deletion/check` and `deletion/delete` without a lock. For a RONT with a
-KTD the check reports `isDeletable="true"`, a warning "Used by … (SKTD/TYP)" and the KTD as
-`includedObject` with `mustBeDeletedWithParent="true"`; Eclipse then deletes both in one request.
-ARC-1's server-driven delete sends a plain DELETE of one object under a lock. It therefore refuses
-when the precheck lists a KTD and asks for the KTD to be deleted first. Node types are deleted
-before their object type.
-
-## Live results (SAP_BASIS 816)
-
-2026-10-31, S/4HANA 2025 FPS01 (SAP_BASIS 8.16), ARC-1 on BTP Cloud Foundry with principal
-propagation, transportable package and transport request. All steps through MCP tool calls:
-
-| Step | Result |
-|---|---|
-| Read existing RONT/NONT found with `SAPSearch` | AFF JSON source, e.g. `typeCategory` `configurationObject`, `objectTypeCode`, root NONT with `rootNode: true` |
-| Create RONT with source, read, activate | Created with ARC-1's creation-property form; inactive until activation. Activation warned about the missing object type code and the missing root node type |
-| Update `objectTypeCode`, then `interfaceBehaviorDefinition` (`I_OUTPUTREQUESTTP`), activate | Both saved and activated; the code warning disappeared |
-| Create root NONT and an item NONT, activate, update | All active; SAP dropped `rootNode: false`; the metadata description followed `header.description` |
-| Activate RONT again | No warning once the root node type existed |
-| KTD on the RONT: create, write Markdown, activate, read | `refObject` `/sap/bc/adt/businessobjects/rontrot/<name>`; text read back |
-| Local refusals | Package allowlist, unknown `typeCategory`, NONT without `sapObjectType`, `batch_create`, `NONT/NOT` as KTD parent — nothing created |
-| Delete RONT while NONTs and the KTD existed | The 816 precheck listed the KTD; ARC-1 refused, nothing deleted |
-| Delete item NONT, root NONT, KTD, RONT | Deleted in that order; all reads 404 afterwards |
-
-Deviation: a root NONT named unlike its object type was created as an inactive draft (deleted
-again); the refusal above was added afterwards and is covered by unit tests only. The master
-language and `header.originalLanguage` came from the logon language, not from the source.
-
-## Primary references
-
-- SAP AFF schemas: [RONT](https://github.com/SAP/abap-file-formats/blob/main/file-formats/ront/ront-v1.json),
-  [NONT](https://github.com/SAP/abap-file-formats/blob/main/file-formats/nont/nont-v1.json).
+On 816 the deletion precheck marked the KTD as an `includedObject` with `mustBeDeletedWithParent="true"`. It listed the root and item NONTs as “Used by” warnings. A plain locked parent DELETE left all three objects readable. ARC-1 refused the same deletion while the KTD existed. Deleting the KTD, item, root and RONT in order removed all four. On both systems canonical reads returned 404 after cleanup and a prefix search found no test objects.
