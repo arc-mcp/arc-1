@@ -19,11 +19,14 @@ On 2026-11-18 a direct ADT comparison and the built CLI (`99b3b07fa`, HTTP Basic
 | Activate an empty RONT shell | Succeeded with warnings | Failed with “Missing Name for SAP Object Type” until source was supplied |
 | Root NONT named differently from its RONT | Saved, activation failed | Same |
 | NONT naming a missing RONT | Activated with a warning | Activation failed |
+| NONT without `sapObjectType` | Not tested | Saved, activation failed (“No SAP Object Type was referenced”) |
 | Activate RONT before and after its root | First activation warned about the missing root. Activation after a source edit and root activation succeeded without that warning. | Same |
 
 On both releases a source PUT with an unknown category (`zz`) succeeded and changed `technicalObject` to `businessObject` on read-back. On 816 the wizard property used a different representation. The short code `to` worked without nested `metadata`, while `zz` and `technicalObject` in that property produced `ZZ` and `TE`.
 
-The BTP service-key target returned HTTP 503 (“ABAP Environment - System is stopped”) on 2026-11-18. The properties-free create sequence still needs an ARC-1 run there.
+Later on 2026-11-18 the author ran ARC-1 at `cdc000f5` on BTP ABAP Environment 2611 (Cloud Foundry in the same subaccount, `OAuth2UserTokenExchange`, a `ZLOCAL` sub-package). The properties-free create sequence created, updated, activated and deleted a RONT, a root and an item NONT, and a KTD on the RONT. `interfaceBehaviorDefinition` was accepted. A lowercase `typeCategory` (`businessobject`) was saved as `businessObject`. The three invalid NONT cases behaved as on 816. A NONT without `sapObjectType`, a root NONT named differently from its RONT, and a NONT naming a missing RONT were all saved. Each failed activation: “No SAP Object Type was referenced”, “… differs from SAP Object Type …” and “Referenced SAP Object Type … does not exist”.
+
+On 816 and 2611, activation is therefore SAP's validation point for node types, and ARC-1 does not repeat these checks before the write. On 758 a NONT naming a missing RONT activates with only a warning (table above). ARC-1 leaves that to SAP as well.
 
 ## KTD creation and deletion
 
