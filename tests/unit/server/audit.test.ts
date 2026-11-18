@@ -77,12 +77,15 @@ describe('Audit Events', () => {
       expect(result.type).toBe('PROG');
     });
 
-    it('truncates long string values', () => {
-      const longString = 'A'.repeat(600);
-      const args = { source: longString };
-      const result = sanitizeArgs(args);
-      expect(result.source).toContain('[truncated 600 chars]');
-      expect((result.source as string).length).toBeLessThan(300);
+    it('truncates long non-content string values', () => {
+      const result = sanitizeArgs({ description: 'A'.repeat(600) });
+      expect(result.description).toContain('[truncated 600 chars]');
+      expect((result.description as string).length).toBeLessThan(300);
+    });
+
+    it('replaces source values with a length and hash summary instead of truncating them', () => {
+      const result = sanitizeArgs({ source: 'A'.repeat(600) });
+      expect(result.source).toMatch(/^\[REDACTED content 600 chars sha256:[0-9a-f]{12}\]$/);
     });
 
     it('bounds adversarial escape normalization work before redaction', () => {

@@ -11,23 +11,15 @@
  */
 
 import { postCreate } from './create-request.js';
-import { AdtApiError, extractExceptionType, isNotFoundError } from './errors.js';
-import type { AdtHttpClient, AdtRequestOptions } from './http.js';
-import {
-  assertMutationContext,
-  type MutationContext,
-  pinnedSessionCleanup,
-  singleTargetMutationContext,
-} from './mutation-context.js';
-import { mutationHttp, withMutationSession } from './mutation-http.js';
-import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
+import { AdtApiError, AdtSafetyError, extractExceptionType, isNotFoundError } from './errors.js';
+import type { AdtHttpClient } from './http.js';
+import { checkOperation, isPinnedTransportAllowed, OperationType, type SafetyConfig } from './safety.js';
 import { assertSourceHash } from './source-precondition.js';
 /** Lock result from SAP */
 export interface LockResult {
   lockHandle: string;
   corrNr: string;
   isLocal: boolean;
-  localityKnown?: boolean;
 }
 
 /** Lock an ABAP object for editing */
@@ -38,7 +30,6 @@ export async function lockObject(
   accessMode = 'MODIFY',
   abapRelease?: string,
   systemType?: string,
-  options?: AdtRequestOptions,
 ): Promise<LockResult> {
   if (accessMode === 'MODIFY') {
     checkOperation(safety, OperationType.Lock, 'LockObject');
@@ -46,17 +37,11 @@ export async function lockObject(
 
   let resp: Awaited<ReturnType<AdtHttpClient['post']>>;
   try {
-    resp = await http.post(
-      `${objectUrl}?_action=LOCK&accessMode=${accessMode}`,
-      undefined,
-      undefined,
-      {
-        // Dual Accept: vendor-specific type for structured lock result parsing,
-        // plus wildcard fallback for SAP versions that don't support the vendor type.
-        Accept: 'application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result, application/*;q=0.8',
-      },
-      options,
-    );
+    resp = await http.post(`${objectUrl}?_action=LOCK&accessMode=${accessMode}`, undefined, undefined, {
+      // Dual Accept: vendor-specific type for structured lock result parsing,
+      // plus wildcard fallback for SAP versions that don't support the vendor type.
+      Accept: 'application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result, application/*;q=0.8',
+    });
   } catch (err) {
     const conv = convertHtmlConflictToProperError(err, objectUrl, { abapRelease, systemType, operation: 'lock' });
     if (conv) throw conv;
@@ -79,18 +64,18 @@ export async function lockObject(
     );
   }
 
-  return {
-    lockHandle,
-    corrNr,
-    isLocal,
-    ...(options
-      ? {
-          localityKnown:
-            ['', 'X'].includes(extractXmlValue(resp.body, 'IS_LOCAL')) &&
-            /<IS_LOCAL(?:\s[^>]*)?(?:\s*\/>|>[\s\S]*?<\/IS_LOCAL>)/.test(resp.body),
-        }
-      : {}),
-  };
+  // Pinned writes: a save without corrNr is recorded in the request the object is locked in, so check it here.
+  const pinned = safety.multiTargetWrite;
+  if (pinned?.enabled && corrNr && !isPinnedTransportAllowed(pinned, corrNr)) {
+    try {
+      await unlockObject(http, objectUrl, lockHandle);
+    } catch {
+      // best effort; the refusal below is the result
+    }
+    throw new AdtSafetyError('CTS request is not allowed by both server and destination transport policies.');
+  }
+
+  return { lockHandle, corrNr, isLocal };
 }
 
 /** Unlock an ABAP object */
@@ -98,63 +83,23 @@ export async function unlockObject(http: AdtHttpClient, objectUrl: string, lockH
   await http.post(`${objectUrl}?_action=UNLOCK&lockHandle=${encodeURIComponent(lockHandle)}`);
 }
 
-/** Required hooks keep policy revalidation before the operation, inside the owning lock. */
-export interface MutationLockPolicy {
-  beforeLock: () => void;
-  validateLock: (session: AdtHttpClient, lock: LockResult) => Promise<void>;
-}
-
-const legacyLockPolicy: MutationLockPolicy = {
-  beforeLock: () => {},
-  validateLock: async () => {},
-};
-
-/** Shared session/lock mechanics; adapters retain their native recording, source and result logic. */
+/** Lock, run the operation in the same stateful session, and always unlock (unlock errors win). */
 export async function withLockedMutation<T>(
   http: AdtHttpClient,
   safety: SafetyConfig,
-  context: MutationContext,
   objectUrl: string,
-  policy: MutationLockPolicy,
   operation: (session: AdtHttpClient, lock: LockResult) => Promise<T>,
   abapRelease?: string,
 ): Promise<T> {
-  assertMutationContext(safety, context);
   checkOperation(safety, OperationType.Update, 'MutationSession');
-  const run = async (owningSession: AdtHttpClient) => {
-    const session = mutationHttp(owningSession, safety, context);
-    policy.beforeLock();
-    const lock = await lockObject(session, safety, objectUrl, 'MODIFY', abapRelease, undefined, context.requestPolicy);
+  return http.withStatefulSession(async (session) => {
+    const lock = await lockObject(session, safety, objectUrl, 'MODIFY', abapRelease);
     try {
-      await policy.validateLock(session, lock);
       return await operation(session, lock);
     } finally {
-      if (context.mode === 'single-target') {
-        // Preserve legacy finally precedence, including an unlock error replacing the primary error.
-        await unlockObject(owningSession, objectUrl, lock.lockHandle);
-      } else if (lock.lockHandle) {
-        try {
-          // Use the same owning session, but not the cancelled/expired operation's facade.
-          await owningSession.post(
-            `${objectUrl}?_action=UNLOCK&lockHandle=${encodeURIComponent(lock.lockHandle)}`,
-            undefined,
-            undefined,
-            undefined,
-            { deadline: Date.now() + 30_000, retryTransientErrors: false, noReplay: true },
-          );
-        } catch {
-          context.cleanup.unlockFailed = true;
-        }
-      }
+      await unlockObject(session, objectUrl, lock.lockHandle);
     }
-  };
-  return withMutationSession(
-    http,
-    safety,
-    context,
-    run,
-    context.mode === 'pinned-pp' ? pinnedSessionCleanup(context) : undefined,
-  );
+  });
 }
 
 /**
@@ -318,9 +263,7 @@ export async function safeUpdateSource(
   await withLockedMutation(
     http,
     safety,
-    singleTargetMutationContext(safety),
     objectUrl,
-    legacyLockPolicy,
     async (session, lock) => {
       const effectiveTransport = transport ?? (lock.corrNr || undefined);
       let replacement: string;
@@ -408,9 +351,7 @@ export async function safeUpdateClassInclude(
   return await withLockedMutation(
     http,
     safety,
-    singleTargetMutationContext(safety),
     classObjectUrl,
-    legacyLockPolicy,
     async (session, lock) => {
       const effectiveTransport = transport ?? (lock.corrNr || undefined);
       let initialized = false;

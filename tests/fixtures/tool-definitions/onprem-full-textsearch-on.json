@@ -681,7 +681,7 @@
         },
         "messages": {
           "type": "array",
-          "description": "MSAG: message entries for create/update",
+          "description": "MSAG: create; update merges by number",
           "items": {
             "type": "object",
             "properties": {
@@ -1442,8 +1442,6 @@
           "properties": {
             "logNumber": {
               "type": "string",
-              "minLength": 20,
-              "maxLength": 20,
               "pattern": "^\\d{20}$"
             },
             "maxRows": {
@@ -1455,6 +1453,21 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 5000
+            },
+            "severities": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "A",
+                  "E",
+                  "W",
+                  "I",
+                  "S"
+                ]
+              },
+              "minItems": 1,
+              "uniqueItems": true
             }
           },
           "required": [

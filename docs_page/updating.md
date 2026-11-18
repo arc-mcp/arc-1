@@ -1,5 +1,20 @@
 # Updating ARC-1
 
+## XSUAA auth 1.2.1 — refresh-token migration
+
+When upgrading ARC-1 from a build with `@arc-mcp/xsuaa-auth` below **1.2.1** to one
+with **1.2.1 or later**, plan one fresh MCP sign-in per user. The library now binds
+refresh tokens to the issuing client and rejects previously issued raw refresh tokens.
+Existing access tokens remain valid until they expire or are revoked upstream.
+
+Upgrade every instance before resuming OAuth traffic. Mixed versions cannot share the
+new refresh-token format, and old instances still accept raw refresh tokens. Preserve
+your existing `ARC1_DCR_SIGNING_SECRET`; this migration does not require rotating it or
+changing the MCP server URL or client registration. After the upgrade, verify a fresh
+sign-in and token refresh. Deployments without the XSUAA OAuth proxy are unaffected.
+
+See the [xsuaa-auth 1.2.1 upgrade notes](https://github.com/arc-mcp/xsuaa-auth/releases/tag/v1.2.1).
+
 ## v1.10.0 — HTTP request validation
 
 MCP POST requests must contain JSON with `Content-Type: application/json`.

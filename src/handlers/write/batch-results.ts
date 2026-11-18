@@ -98,7 +98,11 @@ export function batchCreateResult(
     ? `\n\nBatch activation messages: ${boundedSummary(options.activationMessages.join('; '), 2000)}`
     : '';
   if (failed === 0 && skipped === 0) {
-    const activation = options.activateAtEnd ? '; activated as a single batch' : '';
+    const activation = !options.activateAtEnd
+      ? ''
+      : results.some((entry) => entry.activation === 'unknown')
+        ? '; batch activation requested'
+        : '; activated as a single batch';
     return textResult(`Batch created ${created} objects ${packageSummary}${activation}: ${summary}${warnings}`);
   }
   const prefix = options.preflight

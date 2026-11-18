@@ -259,7 +259,7 @@ describe('CachingLayer', () => {
   // ─── Function Group Resolution ───────────────────────────────────────
 
   describe('function group resolution', () => {
-    it('caches the decoded group for the exact namespaced function, ignoring an earlier unrelated hit', async () => {
+    it.each(['/TEST/FM', '/test/fm'])('caches the decoded group for %s, ignoring an unrelated hit', async (name) => {
       vi.mocked(client.searchObject).mockResolvedValue([
         {
           objectType: 'FUGR/FF',
@@ -276,9 +276,9 @@ describe('CachingLayer', () => {
           uri: '/sap/bc/adt/functions/groups/%2ftest%2fgroup/fmodules/%2ftest%2ffm',
         },
       ]);
-      expect(await layer.resolveFuncGroup(client, '/TEST/FM')).toBe('/TEST/GROUP');
-      expect(await layer.resolveFuncGroup(client, '/TEST/FM')).toBe('/TEST/GROUP');
-      expect(client.searchObject).toHaveBeenCalledTimes(1);
+      expect(await layer.resolveFuncGroup(client, name)).toBe('/TEST/GROUP');
+      expect(await layer.resolveFuncGroup(client, name)).toBe('/TEST/GROUP');
+      expect(client.searchObject).toHaveBeenCalledExactlyOnceWith('/TEST/FM', 10, undefined, undefined);
     });
     it('resolves function group from search and caches it', async () => {
       (client.searchObject as ReturnType<typeof vi.fn>).mockResolvedValue([

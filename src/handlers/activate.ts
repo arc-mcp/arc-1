@@ -30,7 +30,6 @@ import { resolveIncludeGroupForMutation } from './include-group.js';
 import { functionGroupIncludeObjectUrl, normalizeObjectType, objectUrlForType } from './object-types.js';
 import { inspectServiceBindingPublishFailure } from './publish-failure.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
-import { handlePinnedActivation } from './write/pinned-activation.js';
 import {
   enforceAllowedPackageForObjectUrl,
   inactiveSyntaxDiagnostic,
@@ -113,7 +112,6 @@ export async function handleSAPActivate(
   cacheSecurity: CacheSecurityContext,
   ppEnabled: boolean,
 ): Promise<ToolResult> {
-  if (client.safety.multiTargetWrite) return handlePinnedActivation(client, args);
   const action = String(args.action ?? 'activate');
   const name = String(args.name ?? '');
   const version = String(args.version ?? '0001');
@@ -233,6 +231,10 @@ export async function handleSAPActivate(
   // Batch activation: multiple objects at once (for RAP stacks etc.)
   const type = normalizeObjectType(String(args.type ?? ''));
   const preaudit = args.preaudit !== undefined ? Boolean(args.preaudit) : undefined;
+  // Pinned routes keep SAP's preaudit prompt, so activation cannot widen past the requested objects.
+  // Internal exact-URI text-pool activation (text-elements.ts) uses preaudit=false and is not reachable here.
+  if (preaudit === false && client.safety.multiTargetWrite)
+    throw new AdtSafetyError('Multi-target activation requires preaudit.');
   const activateOpts = preaudit !== undefined ? { preaudit } : undefined;
   // Post-activation cache promotion + freshness guard are object-keyed (not user-keyed); disable
   // them whenever several SAP identities share the cache (PP on). See applyActivationToCache.
@@ -340,7 +342,8 @@ export async function handleSAPActivate(
       }
       invalidateInactiveList(cachingLayer, client, cacheSecurity);
       const textPools = objects.filter((o) => o.type === 'REPT');
-      const summary = textPools.length > 0 ? 'Activation request completed for' : 'Successfully activated';
+      const summary =
+        textPools.length > 0 || result.notExecuted ? 'Activation request completed for' : 'Successfully activated';
       const hints = textPools.map((o) => textPoolActivationHint(o.name)).join('');
       return textResult(`${summary} ${objects.length} objects: ${names}.${statusDetails}${globalMessages}${hints}`);
     }
@@ -439,7 +442,8 @@ export async function handleSAPActivate(
         `Text-pool activation requested for ${name}.${formatActivationMessages(result)}${textPoolActivationHint(name)}`,
       );
     }
-    return textResult(`Successfully activated ${type} ${name}.${formatActivationMessages(result)}`);
+    const summary = result.notExecuted ? 'Activation request completed for' : 'Successfully activated';
+    return textResult(`${summary} ${type} ${name}.${formatActivationMessages(result)}`);
   }
   // On failure, try to enrich with the actual compiler errors from the inactive version —
   // especially useful when SAP returned <ioc:inactiveObjects> with no <msg> detail.
@@ -521,7 +525,7 @@ export function buildBatchActivationStatuses(
           ? 'unknown'
           : details.some((detail) => detail.severity === 'warning')
             ? 'warning'
-            : obj.type === 'REPT'
+            : obj.type === 'REPT' || result.notExecuted
               ? 'requested'
               : 'active',
       messages,

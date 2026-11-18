@@ -786,7 +786,7 @@ export function getToolDefinitions(
           changeDocument: { type: 'boolean', description: 'DTEL: enable change document flag' },
           messages: {
             type: 'array',
-            description: 'MSAG: message entries for create/update',
+            description: 'MSAG: create; update merges by number',
             items: {
               type: 'object',
               properties: {

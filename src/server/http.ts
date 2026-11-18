@@ -33,13 +33,14 @@ import type { Request, Response } from 'express';
 import express from 'express';
 import helmet from 'helmet';
 import { expandScopes, hasRequiredScope } from '../authz/policy.js';
+import { assertClientIpAllowlistPlatform, createClientIpAllowlist } from './client-ip-allowlist.js';
 import { API_KEY_PROFILES } from './config.js';
 import { generateRequestId, requestContext } from './context.js';
 import type { DestinationRegistry, TargetDescriptor } from './destination-registry.js';
 import { createHttpJsonParser, handleHttpBodyParseError } from './http-request-body.js';
 import { authLibLogger, logger } from './logger.js';
 import { isTargetGranted, type MultiTargetAuthorizationMode } from './multi-target-authorization.js';
-import { auditTargetGrantDenial } from './multi-target-authorization-audit.js';
+import { auditMcpRouteDenial, auditTargetGrantDenial } from './multi-target-authorization-audit.js';
 import { requireXsuaaUserBearerAuth } from './multi-target-bearer-auth.js';
 import {
   PINNED_MCP_PATH_PATTERN,
@@ -106,9 +107,16 @@ function toApiKeyEntries(config: ServerConfig): ApiKeyEntry[] {
  * silently dropped by the browser and surfaced server-side as `cors_rejected`
  * audit events.
  *
+ * The optional client-IP allowlist runs after helmet (its 403 carries the headers) and before CORS,
+ * body parsing, rate limiting and authentication — see client-ip-allowlist.ts.
+ *
  * Exported for unit tests; also called from `startHttpServer` below.
  */
-export function applySecurityMiddleware(app: express.Application, allowedOrigins: string[]): void {
+export function applySecurityMiddleware(
+  app: express.Application,
+  allowedOrigins: string[],
+  allowedClientIps: string[],
+): void {
   const hasCorsOrigins = allowedOrigins.length > 0;
   app.use(
     helmet({
@@ -130,6 +138,11 @@ export function applySecurityMiddleware(app: express.Application, allowedOrigins
         : undefined,
     }),
   );
+
+  if (allowedClientIps.length > 0) {
+    app.use(createClientIpAllowlist(allowedClientIps));
+    logger.info('Client IP allowlist enabled', { entries: allowedClientIps.length });
+  }
 
   if (hasCorsOrigins) {
     const allowed = new Set(allowedOrigins);
@@ -263,6 +276,7 @@ export function createPinnedTargetMcpHandler(multi: MultiTargetRouting) {
     if (enforced) {
       protectPrivateMcpResponse(res);
       if (!projection?.read) {
+        auditMcpRouteDenial(req.auth, 'pinned-mcp');
         res.status(403).json({ error: 'forbidden' });
         return;
       }
@@ -307,6 +321,7 @@ export function createAggregateMcpHandler(multi: MultiTargetRouting) {
     if (projection) {
       protectPrivateMcpResponse(res);
       if (!projection.read) {
+        auditMcpRouteDenial(req.auth, 'aggregate-mcp');
         res.status(403).json({ error: 'forbidden' });
         return;
       }
@@ -356,6 +371,7 @@ export async function startHttpServer(
   uiDeps?: UiServerDeps,
   multiTargets?: MultiTargetRouting,
 ): Promise<import('node:http').Server> {
+  assertClientIpAllowlistPlatform(config.allowedClientIps);
   if (multiTargets) {
     assertRoutingAuthorizationMode(multiTargets);
     if (multiTargets.authorizationMode !== config.multiTargetAuthorization) {
@@ -375,7 +391,7 @@ export async function startHttpServer(
   // and correct client IP detection behind CF's reverse proxy.
   app.set('trust proxy', 1);
 
-  applySecurityMiddleware(app, config.allowedOrigins);
+  applySecurityMiddleware(app, config.allowedOrigins, config.allowedClientIps);
 
   // ─── Layer 1: HTTP-edge rate limiter helper ──────────────────────────
   // `ARC1_AUTH_RATE_LIMIT` (default 20/min/IP) controls OAuth endpoints uniformly.
@@ -561,16 +577,12 @@ export async function startHttpServer(
             // originalUrl preserves the public route, so the Copilot alias can
             // advertise the aggregate PRM instead of a non-existent root PRM.
             const originalPath = req.originalUrl?.split('?', 1)[0] || req.path;
-            const lowerPath = originalPath.toLowerCase();
+            const lowerPath = originalPath.replace(/\/+$/, '').toLowerCase();
             const resourcePath = lowerPath === '/authorize' ? '/multi/mcp' : originalPath;
             const multiResourceMetadataUrl = `${oauthFullBase}/.well-known/oauth-protected-resource${resourcePath}`;
+            const route = resourcePath.toLowerCase() === '/multi/mcp' ? 'aggregate-mcp' : 'pinned-mcp';
             if (enforcedTargets) protectPrivateMcpResponse(res);
-            const authenticate = enforcedTargets
-              ? requireXsuaaUserBearerAuth(multiXsuaaVerifier, multiResourceMetadataUrl)
-              : requireBearerAuth({
-                  verifier: { verifyAccessToken: multiXsuaaVerifier },
-                  resourceMetadataUrl: multiResourceMetadataUrl,
-                });
+            const authenticate = requireXsuaaUserBearerAuth(multiXsuaaVerifier, multiResourceMetadataUrl, route);
             authenticate(req, res, (error) => {
               if (error) {
                 next(error);
@@ -581,6 +593,7 @@ export async function startHttpServer(
               // request the four mutation-free scopes advertised by the route PRM;
               // XSUAA still grants only the subset assigned to the authenticated user.
               if (!req.auth || !hasRequiredScope(req.auth.scopes, 'read')) {
+                auditMcpRouteDenial(req.auth, route);
                 res
                   .set(
                     'WWW-Authenticate',
