@@ -26,6 +26,8 @@ On 758 and 816, a source PUT with `technicalobject` or the unknown value `zz` st
 
 Later on 2026-11-18 the author ran ARC-1 at `cdc000f5` on BTP ABAP Environment 2611 (Cloud Foundry in the same subaccount, `OAuth2UserTokenExchange`, a `ZLOCAL` sub-package). The properties-free create sequence created, updated, activated and deleted a RONT, a root and an item NONT, and a KTD on the RONT. `interfaceBehaviorDefinition` was accepted. The three invalid NONT cases behaved as on 816. A NONT without `sapObjectType`, a root NONT named differently from its RONT, and a NONT naming a missing RONT were all saved. Each failed activation: “No SAP Object Type was referenced”, “… differs from SAP Object Type …” and “Referenced SAP Object Type … does not exist”.
 
+On 758, 816 and BTP ABAP Environment 2611, SAP omits `rootNode` from the stored NONT source when the caller writes `rootNode: false`.
+
 On 816 and 2611, activation is therefore SAP's validation point for node types, and ARC-1 does not repeat these checks before the write. On 758 a NONT naming a missing RONT activates with only a warning (table above). ARC-1 leaves that to SAP as well.
 
 ## KTD creation and deletion
