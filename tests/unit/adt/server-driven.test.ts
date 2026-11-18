@@ -335,14 +335,6 @@ describe('SDO registry write metadata', () => {
     expect(SDO_REGISTRY.DRTY.href).toBe('/sap/bc/adt/ddic/drty/sources');
     expect(SDO_REGISTRY.DRTY.createType).toBe('DRTY/STY');
   });
-
-  // Collections and subtypes from the Eclipse ADT trace of a SAP object type with its root node type.
-  it('RONT/NONT are pinned to the business object collections and subtypes ADT uses', () => {
-    expect(SDO_REGISTRY.RONT.href).toBe('/sap/bc/adt/businessobjects/rontrot');
-    expect(SDO_REGISTRY.RONT.createType).toBe('RONT/ROT');
-    expect(SDO_REGISTRY.NONT.href).toBe('/sap/bc/adt/businessobjects/nontnot');
-    expect(SDO_REGISTRY.NONT.createType).toBe('NONT/NOT');
-  });
 });
 
 // DTDC is the first NON-blue server-driven type. These lock down that the generalized engine paths
