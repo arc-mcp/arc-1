@@ -441,17 +441,6 @@ describe('buildServerDrivenMetadataXml', () => {
         '</blue:blueSource>',
     );
   });
-  it('serializes nested creation properties of a SAP object type into the same element', () => {
-    const xml = buildServerDrivenMetadataXml('RONT', 'ZX_SOT', '$TMP', 'd', undefined, {
-      name: 'ZX_SOT',
-      typeCategory: 'bo',
-      metadata: { name: 'ZX_SOT', description: 'A & B', package: '$TMP' },
-    });
-    expect(xml).toContain('adtcore:type="RONT/ROT"');
-    expect(xml).toContain(
-      '{&quot;name&quot;:&quot;ZX_SOT&quot;,&quot;typeCategory&quot;:&quot;bo&quot;,&quot;metadata&quot;:{&quot;name&quot;:&quot;ZX_SOT&quot;,&quot;description&quot;:&quot;A &amp; B&quot;,&quot;package&quot;:&quot;$TMP&quot;}}</adtcore:content>',
-    );
-  });
   it('emits the per-type createType, packageRef, and escapes the description', () => {
     const xml = buildServerDrivenMetadataXml('EVTB', 'ZEVT', '$TMP', 'A & B "x"');
     expect(xml).toContain('adtcore:type="EVTB/EVB"');

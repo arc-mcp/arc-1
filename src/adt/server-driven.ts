@@ -264,7 +264,6 @@ export const SDO_REGISTRY = {
     sourceFormat: 'json',
   },
   // SAP object type and its node types (RAP business object modeling): blues v2, AFF JSON source.
-  // Create needs the wizard input as creation properties. Contract: docs/research/2026-10-31-ront-nont-adt-contract.md
   RONT: {
     href: '/sap/bc/adt/businessobjects/rontrot',
     label: 'SAP Object Type',
@@ -442,7 +441,7 @@ export function buildServerDrivenMetadataXml(
   pkg: string,
   description: string,
   uiadLanguageVersion?: UiadLanguageVersion,
-  creationProperties?: Record<string, unknown>,
+  creationProperties?: Record<string, string>,
 ): string {
   const entry = sdoEntry(code);
   const [prefix] = entry.metadataRootQName.split(':');
@@ -479,7 +478,7 @@ export async function createServerDrivenObject(
     description: string;
     transport?: string;
     uiadLanguageVersion?: UiadLanguageVersion;
-    creationProperties?: Record<string, unknown>;
+    creationProperties?: Record<string, string>;
   },
 ): Promise<string> {
   checkOperation(safety, OperationType.Create, 'CreateServerDrivenObject');
