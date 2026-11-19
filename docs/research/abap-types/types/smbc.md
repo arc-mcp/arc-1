@@ -65,9 +65,11 @@ SMBC schema. Contract:
 | Source | Lock, `PUT <object>/source/main` (`application/json`), unlock |
 | Activate | As for update |
 
-After create, the inactive source is a JSON skeleton with empty `serviceConfiguration` fields; BTP
-adds `header.abapLanguageVersion: "cloudDevelopment"` and a `transportObject` field. ARC-1 checks a
-create `source` against the `$new` schema before the POST, so a refused source leaves no object.
+After create, the inactive source is a JSON skeleton: `header.abapLanguageVersion:
+"cloudDevelopment"`, empty `serviceConfiguration` fields with `serviceVersion: "0000"` and
+`skipRootEntity: false`, and `appConfiguration: {"listReport":{}}`. BTP adds an empty
+`serviceConfiguration.transportObject`. ARC-1 checks a create `source` against the `$new` schema
+before the POST, so a refused source leaves no object.
 
 Evidence:
 
@@ -76,16 +78,39 @@ Evidence:
 - 816 and BTP ABAP (SAP_BASIS 921), 2026-11-19, low-level ADT helpers, disposable objects: create,
   source save, inactive read-back and locked delete worked on both. Activation succeeded on BTP; on
   816 SAP refused it because the referenced service was already used by a delivered SMBC.
+- Through `SAPWrite` on 816 (S/4HANA 2025 FPS01, single-target BTP Cloud Foundry write instance with
+  principal propagation) and BTP ABAP environment 2611 (same subaccount, `OAuth2UserTokenExchange`),
+  2026-11-19; see the live run below.
 
-Rules SAP enforces:
+Rules SAP enforces, all on activation, not on save:
 
-- One SMBC per service and version, checked on activation ("Service … already used in BC Object …").
+- One SMBC per service and version ("Service … already used in BC Object …").
 - The referenced service must be draft-enabled; a non-draft service fails activation (758).
+- `rootEntitySet` must name a root entity with a behavior definition ("Select a CDS root entity set
+  with existing behavior definition.", 2611).
+- `skipRootEntity: true` requires a singleton root ("Singleton entity could not be retrieved",
+  2611); a non-singleton root activates with `false`.
 - On BTP, `$TMP` is refused with a missing `S_ABPLNGVS` authorization; the object needs a cloud
   package under `ZLOCAL`.
 
 The generator remains the route when the service and data model do not exist yet; it creates them
 together with the SMBC.
+
+### Live run through ARC-1 (2026-11-19, 816 and BTP 2611)
+
+An MCP agent ran the create path through `SAPWrite` with disposable objects:
+
+| Step | 816 | BTP 2611 |
+|---|---|---|
+| Create with a source outside the `$new` schema | refused before the POST; object absent afterwards | same |
+| Create with source | shell and source written in one call; recorded in the given transport; package correct | n/a (created without source, then updated) |
+| Create without source | skeleton as above | skeleton as above, plus `transportObject` |
+| Activate (unused, draft-enabled service) | succeeded; active source equals the written one | succeeded after choosing a root entity with a behavior definition and `skipRootEntity: false` |
+| Second SMBC on the same service | save ok, activation refused ("Service … wird in BC-Obj. … verwendet") | save ok, activation refused ("Service … already used in BC Object …") |
+| Delete | object absent afterwards | same |
+
+On 816 the object recreated an SMBC that the generator had produced before, using its original source
+unchanged; the read-back after activation was identical to the written source.
 
 ### Live run through ARC-1 (2026-10-28, 816)
 
