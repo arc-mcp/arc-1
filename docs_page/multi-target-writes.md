@@ -143,14 +143,14 @@ only the aggregate compatibility connection cannot write through that connection
 
 ## What the writer can do
 
-`SAPWrite` (every action except `edit_content`) and `SAPActivate action="activate"` (single and batch) behave as on a
+`SAPWrite` (every action except `edit_content` and `generate`) and `SAPActivate action="activate"` (single and batch) behave as on a
 single-target connection: same types, fields and result text. The pinned connection adds only these
 controls, each enforced once for every handler:
 
 | Control | Effect |
 |---|---|
 | Who may write | Pinned PP route, strict PP, raw write scope, exact read and write grants, destination opt-in |
-| Admission | Explicit `Tool.action` list. Fields outside the single-target schema and `preaudit=false` are refused. `edit_content` and `publish_srvb`/`unpublish_srvb` are not admitted |
+| Admission | Explicit `Tool.action` list. Fields outside the single-target schema and `preaudit=false` are refused. `edit_content`, `generate` and `publish_srvb`/`unpublish_srvb` are not admitted |
 | Package ceiling | Global **and** destination package lists, against the real SAP package |
 | Request ceiling | Global **and** destination transport lists, for the caller's request, every request sent to SAP and the request an object is locked in |
 | No transient retry | POST/PUT/DELETE are not resent after a 503, 429 or lost database connection; the error is reported. Definitive rejections (expired session, a 403 with SAP's CSRF challenge, content type) are retried once; a plain authorization 403 is not resent |
