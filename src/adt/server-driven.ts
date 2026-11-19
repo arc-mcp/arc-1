@@ -355,10 +355,7 @@ export function supportsServerDrivenObject(http: AdtHttpClient, code: string): b
  * where /sap/bc/adt/discovery is 403'd. This gate only improves the error message — the real
  * controls are checkOperation and the package allowlist.
  *
- * Only a positive cached answer is trusted. The cached map comes from whichever identity probed the
- * system — under principal propagation often a technical startup user with fewer authorizations,
- * for whom SAP may not advertise a collection with its media types. A negative cached answer is
- * therefore re-checked against the caller's own discovery before the type is reported unavailable.
+ * Re-check a cached negative with the caller's identity. Keep it if the caller supplies no evidence.
  */
 export async function ensureServerDrivenSupport(
   http: AdtHttpClient,
@@ -367,12 +364,13 @@ export async function ensureServerDrivenSupport(
 ): Promise<boolean> {
   const entry = REGISTRY_BY_CODE[code];
   if (!entry) return false;
-  if (supportsServerDrivenObject(http, code) === true) return true;
+  const cached = supportsServerDrivenObject(http, code);
+  if (cached === true) return true;
   checkOperation(safety, OperationType.Read, 'FetchDiscovery');
   const { map } = await fetchDiscoveryDocument(http); // never throws
   // Empty map = discovery unreachable, NOT "collection absent" — those must not collapse together,
   // or a 403'd discovery would block every SDO read. A populated map lacking the href IS unsupported.
-  if (map.size === 0) return true;
+  if (map.size === 0) return cached ?? true;
   return (resolveAcceptType(map, entry.href) ?? '').includes(entry.discoveryMarker);
 }
 

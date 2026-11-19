@@ -215,6 +215,13 @@ describe('ensureServerDrivenSupport', () => {
     expect(http.setDiscoveryMap).not.toHaveBeenCalled();
   });
 
+  it('keeps the cached refusal when caller discovery is unavailable', async () => {
+    const { http, get } = mockHttp({ loaded: true, getThrows: true });
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DTDC')).resolves.toBe(false);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(http.setDiscoveryMap).not.toHaveBeenCalled();
+  });
+
   it("refuses when the caller's own discovery also lacks the collection", async () => {
     const { http, get } = mockHttp({ loaded: true, has: false });
     (http as unknown as { discoveryAcceptFor: () => undefined }).discoveryAcceptFor = () => undefined;
