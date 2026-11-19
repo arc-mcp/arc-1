@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-11-06
+**Last reviewed:** 2026-11-13
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -68,7 +68,7 @@ sequence.
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing | P1 | M | Ready | Architecture |
 | [ARCH-02](#arch-02) | Server-driven source-state version verification | P3 | S | Needs research | Architecture |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server API | P3 | L | Revisit on trigger | Architecture |
-| [FEAT-93](#feat-93) | Broader pinned PP mutation capabilities | P2 | XL | Design reviewed | Architecture |
+| [FEAT-93](#feat-93) | Broader pinned PP mutation capabilities | P2 | L | Implementing (ADR-0011) | Architecture |
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
@@ -89,8 +89,10 @@ sequence.
 | [SEC-21](#sec-21) | Socket policy calibration | P3 | S | Revisit on trigger | Security |
 | [SEC-22](#sec-22) | SBOMs for the Docker image, MCPB bundle and executables | P3 | S | Revisit on trigger | Security |
 | [SEC-19](#sec-19) | Registered agent identity and downstream tool scopes | P2 | L | Needs research | Auth / Security |
-| [COMPAT-22](#compat-22) | Integration Suite remote MCP gateway validation | P2 | M | Needs research | Compatibility |
+| [SEC-23](#sec-23) | Local SAML bearer: wider validation | P2 | M | Experimental | Auth / Security |
+| [COMPAT-22](#compat-22) | Integration Suite remote MCP discovery and cross-user validation | P2 | M | Needs research | Compatibility |
 | [COMPAT-23](#compat-23) | Shared reader for function-group object URIs | P2 | M | Ready | Compatibility |
+| [COMPAT-24](#compat-24) | Uniform not-found for reads of deleted objects | P3 | S | Needs research | Compatibility |
 | [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
 | [FEAT-85](#feat-85) | Set the ABAP language version of packages and objects | P1 | M | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
@@ -190,34 +192,29 @@ and upgrade requirements. Do not widen the mutation-free multi-target contract a
 <a id="feat-93"></a>
 ### FEAT-93 — Broader pinned PP mutation capabilities
 
-- **Priority / effort / status:** P2 / XL / Design reviewed
+- **Priority / effort / status:** P2 / L / Implementing (ADR-0011)
 - **Category:** Architecture
 
-**Remaining gap.** PR [#1080](https://github.com/arc-mcp/arc-1/pull/1080) implements the scoped
-CLAS/INTF create/main-update, CLAS method-edit and whole-owner activation contract for local and
-transportable packages, with exact target write grants and independent server/destination policy.
-The owner selected broader built-in development and management parity, including object types,
-includes, deletes, batches, package changes, RAP/DDIC, publication, transport management, runtime
-tracing and classic FLP. Git and custom extensions/plugins are excluded. None of this expansion
-is enabled by the shared-infrastructure extraction; aggregate and Basic writes remain excluded.
+**Remaining gap.** PR [#1080](https://github.com/arc-mcp/arc-1/pull/1080) shipped the scoped
+CLAS/INTF contract (ADR-0010). [ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-broader-pinned-pp-mutations.md)
+replaces the per-resource adapter design of draft PR
+[#1142](https://github.com/arc-mcp/arc-1/pull/1142) with the single-target handlers plus six
+multi-target controls.
 
-**Design evidence.** The [26 October research](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-26-multi-target-write-parity.md)
-separates accepted scope from proposed resource policies and live qualification gaps. It proposes
-[PR 1](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-shared-mutation-infrastructure.md)
-for behavior-preserving shared mutation infrastructure, now implemented for review with
-[separate qualification evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-29-shared-mutation-infrastructure.md), followed by
-[PR 2](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-26-broader-pinned-pp-writes.md)
-for the capability expansion. Existing opted-in writers may gain the documented capabilities;
-read-only applications/destinations must remain mutation-free.
-Author review and two Claude Code Opus 5.5 max reviews are recorded with findings and dispositions
-in the research record. The remaining implementation is PR 2's capability expansion; its live
-qualification remains outstanding.
+- **Done (PR 1 of its [plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-11-12-pinned-writes-shared-handlers.md)):**
+  every `SAPWrite` action except `edit_content`, and `SAPActivate activate`, CLAS/INTF included;
+  the ADR-0010 adapter is removed. Three live runs on A4H 758 (Cloud Connector PP) found and
+  confirmed fixes for four defects; the last run passed 14 of 15 items. Package refusals held live
+  with asymmetric lists.
+- **Still open:** preaudit expansion, which SAP never produced in seven fixtures (unit tests only).
+- **Later, each with its own admission keys, tests and live evidence:** package and CTS management
+  (`checkTransport` made dual; body-carried requests in `refactoring.ts`/`transport.ts`), SRVB
+  publication, and — only on request — quickfix, formatter settings, profiler trace and FLP.
+- **Excluded:** Git, custom plugins and aggregate/Copilot/Basic writes.
 
-**Resume when.** PR 1 is accepted and the owner requests PR 2. Preserve the shared foundation's
-existing behavior; PR 2 requires a new reviewed ADR qualifying ADR-0010, explicit per-operation
-resource policies, negative tests and real PP evidence. Do not remove the explicit action matrix
-or add a duplicate global write switch. Caching, SaaS and embedding remain separate work. The
-roadmap entry stays open until the expanded scope is implemented and verified.
+**Resume when.** The owner requests a later PR, or a fixture reproduces preaudit expansion live. Do not add per-resource adapters, a duplicate write switch, or per-type allowlists; a
+type that cannot resolve its package or carries its request outside `corrNr` is refused at admission.
+The entry stays open until the expanded scope is implemented and verified live.
 
 **Prior work.** [#906](https://github.com/arc-mcp/arc-1/pull/906), the
 [alternatives assessment](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-22-multi-target-write-strategy.md)
@@ -613,23 +610,51 @@ agent registration, delegation and scope contract. Prove user/agent attribution 
 behavior without broadening existing PP or multi-target exceptions. Do not invent an IAS setup
 requirement or claim this resolves the separate ADT-channel permission question.
 
+<a id="sec-23"></a>
+### SEC-23 — Local SAML bearer: wider validation
+
+- **Priority / effort / status:** P2 / M / Experimental
+- **Category:** Auth / Security
+
+**Remaining gap.** The experimental, single-target OIDC issuer signs a short-lived SAML bearer
+assertion for an explicitly configured, administrator-controlled NameID claim. SAP trusts its
+certificate in SAML2. The [setup guide](local-sso-experimental.md), [ADR-0011](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0011-local-saml-bearer-issuer.md), [completed design plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/2026-11-14-local-saml-bearer-pp-experimental.md) and security risk register describe this PR's scope.
+
+On A4H 758/001, 20 sequential SAML reads created 20 `SECURITY_CONTEXT` rows, one per call.
+Same-cookie SAP logoff removed an isolated row immediately; bounded automatic cleanup then passed
+50 sequential plus 10 parallel reads and six updates with the test user's row count back at baseline
+immediately and after 10 seconds. Per-user session reuse is no longer required for this measured
+session-pressure case. IAS token scope/claim mapping and final-build 816 coverage remain unverified.
+A4H 758 accepted an unrelated Recipient; R25 records the accepted residual risk and per-target key
+requirement.
+
+**Resume when.** A supported deployment still hits SAP session pressure after logoff, IAS is
+available for an end-to-end test, or another S/4HANA release needs qualification. Any future
+session reuse must remain tied to a verified user and credential lifetime, account for expiry
+and revocation, and never cross users or fall back to `SAP_USER`.
+
 <a id="compat-22"></a>
-### COMPAT-22 — Integration Suite remote MCP gateway validation
+### COMPAT-22 — Integration Suite remote MCP discovery and cross-user validation
 
 - **Priority / effort / status:** P2 / M / Needs research
 - **Category:** Compatibility
 
-**Idea.** Validate ARC-1 behind Integration Suite's documented remote-MCP proxy and, if successful,
-document a supported configuration.
+**Idea.** Qualify native tool discovery, two-user authorization and the intended VS Code assistant
+on a read-only gateway route. See the [Free pilot and repeatable tests](https://github.com/arc-mcp/arc-1/blob/main/docs/research/sap-mcp-gateway-retest.md).
 
-**Why it remains.** Current SAP Help now documents Streamable HTTP remote MCP sources, superseding
-the July inventory. ARC-1 interoperability and delegated identity through the gateway are unverified.
+**Why it remains.** The Free pilot imported one tool from a separate schema catalog. The runtime
+JWT bearer destination invoked stock ARC-1 as the signed-in developer. VS Code’s native tool API
+and a local MCP client both read the class, with the mapped user confirmed in A4H workload statistics. The pilot
+covered one user and one version of the catalog. The Basic credential belongs only to discovery.
 See the [source and validation boundary](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-21-sap-api-policy-custom-mcp.md#remote-mcp-gateway-validation-boundary).
 
-**Resume with.** A suitable Integration Suite plan, Integration Cell, documented discovery/runtime
-authentication and two users with different SAP permissions. Verify identity, scopes, tool filtering,
-audit/traces, quotas, errors and reconnect behavior. Do not silently substitute a shared credential
+**Resume with.** One operator can qualify the assistant, refresh, tool filtering, errors and quotas
+while the Free pilot is available. Use a second developer with different SAP permissions for
+cross-user identity and denial. Repeat native discovery and synchronization when SAP documents
+a supported credential or the tenant's selector changes. Check roadmap delivery and Free availability
+against the runbook before testing new features. Do not silently substitute a shared credential
 for PP or present transport success as ADT permission. The gateway is optional for custom MCP.
+Registered agent identity remains [SEC-19](#sec-19).
 
 <a id="compat-23"></a>
 ### COMPAT-23 — Shared reader for function-group object URIs
@@ -655,6 +680,25 @@ handling in `xml-parser.ts` and the create-XML types alone. Open question: `reso
 still refuses U01-style function-module routes. Live 7.58/8.16 search returns an `FUGR/I` hit with
 a `/fmodules/` URI; 7.50 returned no hit. Decide the intended function-module editing scope
 before broadening that resolver; the structural-include change does not require it.
+
+<a id="compat-24"></a>
+### COMPAT-24 — Uniform not-found for reads of deleted objects
+
+- **Priority / effort / status:** P3 / S / Needs research
+- **Category:** Compatibility
+
+**Idea.** Report a deleted or missing object the same way for every `SAPRead` type, so a caller can
+verify a delete from the read alone.
+
+**Why it remains.** In the first live run of the pinned-write checklist (A4H SAP_BASIS 758,
+13 November 2026) the reads after delete differed: FUGR returned 422, FUNC a server error, DDLX and
+SKTD an informational absence, and ENHO reported no discoverable subtype. These are single-target
+read paths (`src/handlers/read.ts`, `src/adt/client.ts`) that the pinned-write change did not touch.
+The checklist therefore accepts any absence response corroborated by an exact `SAPSearch`.
+
+**Resume with.** Capture each type's native missing-object response on 7.50/7.58/8.16, then map
+only proven shapes to one not-found result. Keep authorization and server errors distinct from
+absence; never infer absence from an unclassified failure.
 
 ## Developer workflows
 
@@ -1154,6 +1198,9 @@ No RFC or dynamically executed ABAP fallback belongs in the reader
 **Remaining gap.** The tested 816 ADT preview handler condenses repeated spaces inside SQL
 literals. General `TABLE_QUERY` and free-SQL predicates can therefore match a different key.
 The stored-text reader preserves its own literals; the general query paths still need a fix.
+The behaviour is release-specific: on 7.58 (2026-11-16) a `TABLE_QUERY` equality on an `STXL`
+`TDNAME` containing 19 internal spaces returned 37 rows with exactly 19 spaces and none with
+1, 2, 18, 20 or 31.
 
 **Resume with.** Positive and negative live cases for leading, internal and trailing spaces in
 equality, LIKE and IN predicates. Preserve existing query semantics and safety gates; qualify the
@@ -1166,13 +1213,20 @@ backend grammar before generalizing the stored-text workaround.
 - **Category:** Data access
 
 **Remaining gap.** Exact `SAPQuery(application_log)` reads use SAP's native OData service;
-restricted-user allow/deny checks passed on 7.58. Finding logs by object/time range, message
-details, BTP ABAP, principal propagation and additional active-service releases remain unqualified. Positive `$top`
-limits output, not SAP's full-log load. Do not add `/$count`, broad text searches, or BALDAT fallback
-without separate authorization and resource-cost evidence.
+restricted-user allow/deny checks passed on 7.58. Severity filtering, the whole-log message count,
+detail level and positional context values are available. Still missing: finding logs by
+object/time range, per-severity counts and context-field labels (native `HeaderSet` provides both
+but would add a third request whose restricted-user behaviour is untested), long-text/detail bodies,
+BTP ABAP, principal propagation and additional active-service releases. The native service does not
+expose message class, number or variables; those exist only in BALDAT and stay excluded. Positive
+`$top` limits output, not SAP's full-log load. Do not add `/$count`, broad text searches, or BALDAT
+fallback without separate authorization and resource-cost evidence.
+The earlier restricted-user checks covered unfiltered reads; severity filtering still needs its
+own restricted-user allow/deny qualification.
 
 **Resume with.** A concrete support workflow and an active service on the target landscape.
-Qualify native filters, time zones, DCL/BAdI restrictions and pagination before expanding the tool.
+Qualify native filters, time zones, DCL/BAdI restrictions and pagination before expanding the tool;
+for `HeaderSet`, a restricted-user test first.
 See the [native-reader investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-18-application-log-native-reader.md).
 
 <a id="feat-89"></a>

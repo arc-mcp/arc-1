@@ -11,6 +11,11 @@ on:
   # this trigger; the tag, GitHub Release, Docker images and .mcpb already shipped.
   workflow_dispatch:
 
+env:
+  # Dependencies never run install hooks here, and `npm publish` skips prepublishOnly:
+  # the explicit Build step before it is mandatory.
+  NPM_CONFIG_IGNORE_SCRIPTS: 'true'
+
 jobs:
   release-please:
     runs-on: ubuntu-latest

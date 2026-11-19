@@ -17,14 +17,14 @@ import {
   normalizeAdtLanguage,
   rewriteKtdDocument,
 } from '../../adt/ddic-xml.js';
-import { activate, activateBatch } from '../../adt/devtools.js';
+import { ACTIVATION_NOT_EXECUTED, activate, activateBatch } from '../../adt/devtools.js';
 import { badiContainerXml, hasBadiImplementations } from '../../adt/enhancement-impl.js';
 import { AdtApiError, type AdtError, AdtSafetyError } from '../../adt/errors.js';
 import { type FmParameter, findFmHeader, spliceFmSignature } from '../../adt/fm-signature.js';
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
 import { isServerDrivenObjectType } from '../../adt/server-driven.js';
 import { getTransport } from '../../adt/transport.js';
-import { escapeXmlAttr, parseFunctionModuleProperties } from '../../adt/xml-parser.js';
+import { escapeXmlAttr, getNestedArray, parseFunctionModuleProperties, parseXml } from '../../adt/xml-parser.js';
 import { validateAffHeader } from '../../aff/validator.js';
 import { activationDetailMatchesObject } from '../activation-results.js';
 import { guardCdsSyntax } from '../cds-hints.js';
@@ -341,6 +341,7 @@ const KTD_REF_OBJECT_TYPES_ROUTABLE_BY_ARC = new Set([
   'BDEF/BVA',
   'DDLS/DF',
   'DEVC/K',
+  'RONT/ROT',
   'SMBC/TYP',
   // API package / API package assignment: plain type, lowercase URI (Eclipse ADT 3.60 on 8.16).
   'SOD1',
@@ -365,10 +366,9 @@ const KTD_REF_OBJECT_TYPES_SAP_DOCUMENTATION_SCOPE = new Set([
   'EEEC/EVC',
   'EVTB/EVB',
   'PARA/R',
-  'RONT/ROT',
 ]);
 
-const KTD_REF_OBJECT_TYPES_HINT = 'DDLS/DF, BDEF/BDO, SRVD/SRV, SRVB/SVB, DEVC/K, SMBC/TYP, SOD1, SOD2';
+const KTD_REF_OBJECT_TYPES_HINT = 'DDLS/DF, BDEF/BDO, SRVD/SRV, SRVB/SVB, DEVC/K, SMBC/TYP, RONT/ROT, SOD1, SOD2';
 const KTD_SAP_DOCUMENTATION_SCOPE_HINT =
   'APIC/TYP, BDEF/*, CFDB/CFB, CFDG/CFG, CFDS/CFS, CHKO/TYP, DDLA/ADF, DDLS/DF, DEVC/K, ' +
   'DRTY/STY, DSFD/SCF, EEEC/EVC, EVTB/EVB, PARA/R, RONT/ROT, SMBC/TYP, SOD1, SOD2, ' +
@@ -624,6 +624,19 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
 </sktd:docu>`;
 
     const ktdCreateUrl = '/sap/bc/adt/documentation/ktd/documents';
+    if (refType === 'RONT/ROT') {
+      // Both 758 and 816 advertise KTD and RONT. SAP's wizard checks the parent's DOCUMENTATION handler.
+      checkOperation(client.safety, OperationType.Create, 'CreateObject');
+      const params = new URLSearchParams({ objname: name, package: pkg, refObjType: refType, refObjName: refName });
+      const asXml = 'application/vnd.sap.as+xml';
+      const validation = await client.http.post(`${ktdCreateUrl}/validation?${params}`, '', asXml, { Accept: asXml });
+      const abap = parseXml(validation.body).abap as Record<string, unknown> | undefined;
+      const statuses = getNestedArray(abap ?? {}, 'values', 'DATA');
+      if (statuses.length !== 1 || statuses[0]?.SEVERITY !== 'OK') {
+        const detail = config.minimalErrors ? undefined : statuses[0]?.SHORT_TEXT;
+        return errorResult(`SAP did not approve KTD creation for RONT/ROT ${refName}.${detail ? ` ${detail}` : ''}`);
+      }
+    }
     let ktdResult: string;
     try {
       ktdResult = await createObject(
@@ -1215,7 +1228,8 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           );
           break;
         }
-        entry.activation = 'confirmed';
+        entry.activation = outcome.notExecuted ? 'unknown' : 'confirmed';
+        if (outcome.notExecuted) warnings.push(`${plan.name}: ${ACTIVATION_NOT_EXECUTED}`);
       }
       entry.status = 'success';
     } catch (err) {
@@ -1251,9 +1265,10 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         if (messages.length)
           activationMessages.push(batchFailureMessage([...new Set(messages)].join('; '), config.minimalErrors));
       }
+      if (outcome.notExecuted) warnings.push(ACTIVATION_NOT_EXECUTED);
       for (const plan of writtenPlans) {
         if (outcome.success) {
-          plan.result.activation = 'confirmed';
+          plan.result.activation = outcome.notExecuted ? 'unknown' : 'confirmed';
           continue;
         }
         const errors = outcome.details.filter(

@@ -17,6 +17,9 @@ permissions:
 
 env:
   SAP_CI_TARGET_LABEL: A4H 2025
+  # Dependencies never run install hooks here; explicit `npm run`/`npm test` still do.
+  # better-sqlite3 and esbuild ship prebuilt binaries, and the unit tests load both.
+  NPM_CONFIG_IGNORE_SCRIPTS: 'true'
 
 jobs:
   # Smoke check that mta.yaml + the .mtaext.example template are valid MTA

@@ -47,7 +47,7 @@ export async function writeMetadataUpdate(ctx: SapWriteContext, existingPackage?
     const body = buildCreateXml(
       type,
       name,
-      String(args.package ?? existingPackage ?? merged._package ?? '$TMP'),
+      String(existingPackage ?? args.package ?? merged._package ?? '$TMP'), // the verified package wins
       String(args.description ?? merged._description ?? name),
       merged,
       config.language,

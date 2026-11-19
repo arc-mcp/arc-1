@@ -189,4 +189,12 @@ describe('test workflow gate behavior', () => {
     expect(WORKFLOW).not.toContain('Run on push (main)');
     expect(WORKFLOW).toContain('Run on internal PRs and manual dispatch');
   });
+
+  it.each(['test', 'release'])('%s.yml never runs dependency install hooks', (name) => {
+    const text = readFileSync(join(import.meta.dirname, `../../../.github/workflows/${name}.yml`), 'utf8');
+    const workflow = parse(text) as { env?: Record<string, unknown> };
+    expect(workflow.env?.NPM_CONFIG_IGNORE_SCRIPTS).toBe('true');
+    // npm publish skips prepublishOnly under this setting, so the build must stay explicit.
+    if (name === 'release') expect(text.indexOf('run: npm run build')).toBeLessThan(text.indexOf('run: npm publish'));
+  });
 });

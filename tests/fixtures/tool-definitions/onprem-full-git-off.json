@@ -68,9 +68,11 @@
             "APLO",
             "SAJC",
             "SAJT",
+            "RONT",
+            "NONT",
             "TABL/DTI"
           ],
-          "description": "Repository or metadata type. TABL includes structures. KTD aliases SKTD; MESSAGES aliases MSAG. FTG2 aliases FEATURE_TOGGLE. SYNTAX requires objectType+name. Server-driven: discovery-gated XML metadata, AFF JSON source; DTSC/DSFD/DTDC/DRTY use DDL text. ENQU: JSON. TABL/DTI: TABLE~INDEX, prefers pending JSON. DESD external schema; EVTB/EVTO event binding/object; CSNM CSN model; COTA communication target; DTSC/DTDC static/dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template."
+          "description": "Repository or metadata type. TABL includes structures. KTD aliases SKTD; MESSAGES aliases MSAG. FTG2 aliases FEATURE_TOGGLE. SYNTAX requires objectType+name. Server-driven: discovery-gated XML metadata, AFF JSON source; DTSC/DSFD/DTDC/DRTY use DDL text. ENQU: JSON. TABL/DTI: TABLE~INDEX, prefers pending JSON. DESD external schema; EVTB/EVTO event binding/object; CSNM CSN model; COTA communication target; DTSC/DTDC static/dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template; RONT/NONT SAP object/node type."
         },
         "name": {
           "type": "string",
@@ -401,6 +403,8 @@
             "APLO",
             "SAJC",
             "SAJT",
+            "RONT",
+            "NONT",
             "TABL/DTI"
           ],
           "description": "Object type (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). KTD aliases SKTD. Class-section surgery actions require CLAS. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only. SOD1/SOD2: source is the SAPRead JSON or the fields to change; saved active."
@@ -681,7 +685,7 @@
         },
         "messages": {
           "type": "array",
-          "description": "MSAG: message entries for create/update",
+          "description": "MSAG: create; update merges by number",
           "items": {
             "type": "object",
             "properties": {
@@ -793,7 +797,7 @@
         },
         "refObjectType": {
           "type": "string",
-          "description": "SKTD/KTD create (required): parent ADT type+subtype, e.g. DDLS/DF, BDEF/BDO, SRVD/SRV, DEVC/K, SMBC/TYP (BCMO). CLAS/INTF/PROG use ABAP Doc."
+          "description": "SKTD/KTD create (required): parent ADT type+subtype, e.g. DDLS/DF, BDEF/BDO, SRVD/SRV, DEVC/K, SMBC/TYP (BCMO), RONT/ROT. CLAS/INTF/PROG use ABAP Doc."
         },
         "refObjectName": {
           "type": "string",
@@ -868,6 +872,8 @@
                   "APLO",
                   "SAJC",
                   "SAJT",
+                  "RONT",
+                  "NONT",
                   "TABL/DTI"
                 ],
                 "description": "Creatable object type; technical settings TABL/DTT are update-only"
@@ -1440,8 +1446,6 @@
           "properties": {
             "logNumber": {
               "type": "string",
-              "minLength": 20,
-              "maxLength": 20,
               "pattern": "^\\d{20}$"
             },
             "maxRows": {
@@ -1453,6 +1457,21 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 5000
+            },
+            "severities": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "A",
+                  "E",
+                  "W",
+                  "I",
+                  "S"
+                ]
+              },
+              "minItems": 1,
+              "uniqueItems": true
             }
           },
           "required": [

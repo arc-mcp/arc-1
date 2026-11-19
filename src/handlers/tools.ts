@@ -402,7 +402,7 @@ export function getToolDefinitions(
               'Repository or metadata type. TABL includes structures. KTD aliases SKTD; MESSAGES aliases MSAG. ' +
               (btp ? '' : 'FTG2 aliases FEATURE_TOGGLE. ') +
               'SYNTAX requires objectType+name. Server-driven: discovery-gated XML metadata, AFF JSON source; DTSC/DSFD/DTDC/DRTY use DDL text. ENQU: JSON. TABL/DTI: TABLE~INDEX, prefers pending JSON. ' +
-              'DESD external schema; EVTB/EVTO event binding/object; CSNM CSN model; COTA communication target; DTSC/DTDC static/dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template.',
+              'DESD external schema; EVTB/EVTO event binding/object; CSNM CSN model; COTA communication target; DTSC/DTDC static/dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template; RONT/NONT SAP object/node type.',
           },
           name: { type: 'string', description: 'Object name (e.g., ZTEST_PROGRAM, ZCL_ORDER, MARA)' },
           action: {
@@ -787,7 +787,7 @@ export function getToolDefinitions(
           changeDocument: { type: 'boolean', description: 'DTEL: enable change document flag' },
           messages: {
             type: 'array',
-            description: 'MSAG: message entries for create/update',
+            description: 'MSAG: create; update merges by number',
             items: {
               type: 'object',
               properties: {
@@ -871,7 +871,7 @@ export function getToolDefinitions(
           refObjectType: {
             type: 'string',
             description:
-              'SKTD/KTD create (required): parent ADT type+subtype, e.g. DDLS/DF, BDEF/BDO, SRVD/SRV, DEVC/K, SMBC/TYP (BCMO). CLAS/INTF/PROG use ABAP Doc.',
+              'SKTD/KTD create (required): parent ADT type+subtype, e.g. DDLS/DF, BDEF/BDO, SRVD/SRV, DEVC/K, SMBC/TYP (BCMO), RONT/ROT. CLAS/INTF/PROG use ABAP Doc.',
           },
           refObjectName: {
             type: 'string',

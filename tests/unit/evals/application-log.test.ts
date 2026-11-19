@@ -15,6 +15,7 @@ const answers = [
   'Validation still running. This read is incomplete because the offset limit was reached.',
   'Invoice validation failed. Long text and details are flagged as available but not loaded. 000001 is a row sequence number, not a T100 identity.',
   'Payment within 30 days.',
+  'Two errors: Object could not be imported; Import step ended with errors. The whole log has 31 messages.',
 ];
 // Scripted providers check deterministic contracts only; these are not actual model scores.
 describe('application-log eval contracts', () => {
@@ -48,6 +49,7 @@ describe('application-log eval contracts', () => {
   );
   it.each([
     ['application-log-empty-visible', 'The log does not exist.'],
+    ['application-log-severity-filter', 'Object could not be imported; Import step ended with errors. 31 errors.'],
     ['application-log-not-visible', 'The log is empty and contains no messages.'],
     ['application-log-offset-ceiling', 'Validation still running. The log is complete.'],
     [

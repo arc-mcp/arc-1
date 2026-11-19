@@ -8,7 +8,8 @@ import { parseDestinationAllowlist } from '../../../src/server/multi-target-dest
 import { projectMultiTargetRequest } from '../../../src/server/multi-target-request-projection.js';
 import { buildMultiTargetConfig } from '../../../src/server/multi-target-runtime.js';
 import { buildMultiTargetServerInstructions, prepareMultiTargetCall } from '../../../src/server/multi-target-server.js';
-import { multiTargetToolDefinitions } from '../../../src/server/multi-target-tools.js';
+import { multiTargetInvocationDecision, multiTargetToolDefinitions } from '../../../src/server/multi-target-tools.js';
+import { SHARED_PINNED_ACTIONS } from '../../../src/server/multi-target-write-surface.js';
 import { NATIVE_NAVIGATION_INSTRUCTIONS } from '../../../src/server/server-instructions.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
@@ -84,8 +85,8 @@ describe('pinned write policy composition', () => {
       expect(instructions.length).toBeLessThan(2048);
       if (kind === 'writer') {
         expect(instructions).toContain('scoped read/write');
-        expect(instructions).toContain('CLAS/INTF main-source writes require both package policies');
-        expect(instructions).toContain('Activation affects the whole owner');
+        expect(instructions).toContain('under both package and transport policies');
+        expect(instructions).toContain('SAP would add objects you did not list');
         expect(instructions).not.toContain('Writes, activation, transport/Git mutations');
       } else {
         expect(instructions).toContain('read-only interface');
@@ -94,6 +95,43 @@ describe('pinned write policy composition', () => {
       }
     },
   );
+
+  it('allows admitted shared writes only on a write-enabled pinned PP route', () => {
+    const write = { action: 'create', type: 'PROG', name: 'ZTEST', package: '$TMP', source: 'REPORT ztest.' };
+    const pinned = runtime();
+    expect(multiTargetInvocationDecision('SAPWrite', write, pinned)).toBe('allowed');
+    expect(multiTargetInvocationDecision('SAPActivate', { objects: [{ type: 'PROG', name: 'ZTEST' }] }, pinned)).toBe(
+      'allowed',
+    );
+    const readOnly = registry({ 'arc1.allow_writes': 'false' });
+    const basic = registry(
+      { 'arc1.allow_writes': 'false' },
+      { ...base, multiTargetAllowBasicAuth: true } as typeof base,
+      'BasicAuthentication',
+    );
+    const forbidden = [
+      runtime(auth(), 'aggregate'),
+      buildMultiTargetConfig(base, readOnly.targets[0], {
+        mode: 'pinned',
+        authorization: projectMultiTargetRequest(readOnly, auth()),
+      }),
+      buildMultiTargetConfig(base, basic.targets[0], {
+        mode: 'pinned',
+        authorization: projectMultiTargetRequest(basic, auth()),
+      }),
+      runtime(auth([], ['read'])),
+    ];
+    for (const config of forbidden) expect(multiTargetInvocationDecision('SAPWrite', write, config)).toBe('forbidden');
+    for (const [tool, args] of [
+      ['SAPGit', { action: 'pull' }],
+      ['Custom_tool', {}],
+      ['SAPTransport', { action: 'create' }],
+      ['SAPTransport', { action: 'release' }],
+      ['SAPManage', { action: 'create_package' }],
+      ['SAPActivate', { action: 'publish_srvb', name: 'ZSB' }],
+    ] as const)
+      expect(multiTargetInvocationDecision(tool, args, pinned), tool).toBe('forbidden');
+  });
 
   it('requires both raw write scope and exact capability grant, including for admin', () => {
     expect(runtime().allowWrites).toBe(true);
@@ -191,22 +229,59 @@ describe('pinned write policy composition', () => {
     const write = definitions.find((t) => t.name === 'SAPWrite')!;
     expect(write).toBeDefined();
     expect(write.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: false });
-    expect(write.inputSchema.properties).not.toHaveProperty('include');
-    expect(write.inputSchema.properties).not.toHaveProperty('lintBeforeWrite');
+    const single = getToolDefinitions(config);
+    const singleWrite = single.find((t) => t.name === 'SAPWrite')!;
+    const excludedFields = new Set(['oldContent', 'newContent']);
+    expect(Object.keys(write.inputSchema.properties as object)).toEqual(
+      Object.keys(singleWrite.inputSchema.properties as object).filter((key) => !excludedFields.has(key)),
+    );
+    expect((write.inputSchema.properties as any).action.enum).toEqual(
+      (singleWrite.inputSchema.properties as any).action.enum.filter((a: string) =>
+        SHARED_PINNED_ACTIONS.has(`SAPWrite.${a}`),
+      ),
+    );
+    expect((singleWrite.inputSchema.properties as any).action.enum).toContain('edit_content');
+    expect(JSON.stringify(write)).not.toMatch(/edit_content|oldContent|newContent/);
+    const activate = definitions.find((t) => t.name === 'SAPActivate')!;
+    expect(activate.inputSchema.properties).not.toHaveProperty('preaudit');
+    expect((activate.inputSchema.properties as any).action.enum).toEqual(['activate']);
     const aggregate = runtime(auth(), 'aggregate');
     expect(
       multiTargetToolDefinitions(getToolDefinitions(aggregate), aggregate).some((t) => t.name === 'SAPWrite'),
     ).toBe(false);
   });
+  it.each([{ target: 'A4H/001' }, { type: 'PROG', unknownField: 'x' }, { type: 'PROG', transport: 'A4HK999999' }])(
+    'rejects hidden write inputs before destination preparation: %j',
+    async (extra) => {
+      const r = registry();
+      const identity = auth();
+      const result = await prepareMultiTargetCall({
+        options: {
+          mode: 'pinned',
+          registry: r,
+          target: r.targets[0],
+          instanceConfig: base,
+          authorization: projectMultiTargetRequest(r, identity),
+        },
+        toolName: 'SAPWrite',
+        rawArgs: { action: 'edit_method', type: 'CLAS', name: 'ZCL_TEST', source: 'body', ...extra },
+        requestId: 'test',
+        authInfo: identity,
+      });
+      expect(result.handled).toBe(true);
+      if (!result.handled) throw new Error('Hidden input reached preparation');
+      expect(result.result.isError).toBe(true);
+      expect(JSON.stringify(result.result)).toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
+    },
+  );
   it.each([
     { action: 'delete' },
     { type: 'PROG' },
-    { include: 'main' },
     { method: 'lcl_helper~run' },
-    { target: 'A4H/001' },
+    { include: 'main' },
     { lintBeforeWrite: false },
     { objects: [] },
-  ])('rejects hidden write inputs before destination preparation: %j', async (extra) => {
+  ])('admits shared-handler write inputs past the operation gate: %j', async (extra) => {
     const r = registry();
     const identity = auth();
     const result = await prepareMultiTargetCall({
@@ -222,10 +297,7 @@ describe('pinned write policy composition', () => {
       requestId: 'test',
       authInfo: identity,
     });
-    expect(result.handled).toBe(true);
-    if (!result.handled) throw new Error('Hidden input reached preparation');
-    expect(result.result.isError).toBe(true);
-    expect(JSON.stringify(result.result)).toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
+    expect(JSON.stringify(result)).not.toContain('MULTI_TARGET_OPERATION_FORBIDDEN');
   });
   it.each([
     [undefined, 'WRITE_TARGET_GRANT_MISSING'],

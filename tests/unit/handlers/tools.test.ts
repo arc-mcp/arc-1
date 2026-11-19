@@ -424,9 +424,8 @@ describe('Tool Definitions', () => {
     const onPremTypeEnum: string[] = onPremSchema.properties.type.enum;
     const onPremTypeDescription: string = onPremSchema.properties.type.description;
 
-    // As on BTP below: the enum is the complete type list. The on-prem help used to repeat a partial
-    // copy that had already drifted (no TTYP, ENQU, ENHO or server-driven types).
-    for (const type of ['DCLS', 'SRVB', 'SKTD', 'TABL/DT', 'TABL/DS', 'MSAG', 'SOD1', 'SOD2']) {
+    // As on BTP, the enum is the complete type list; property help no longer repeats it.
+    for (const type of ['DCLS', 'SRVB', 'SKTD', 'TABL/DT', 'TABL/DS', 'MSAG', 'RONT', 'NONT', 'SOD1', 'SOD2']) {
       expect(onPremTypeEnum).toContain(type);
     }
     expect(onPremTypeDescription).toContain('KTD aliases SKTD');
