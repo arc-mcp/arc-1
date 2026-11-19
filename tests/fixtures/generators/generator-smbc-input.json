@@ -1,0 +1,64 @@
+{
+  "metadata": {
+    "package": "ZARC1_DEMO",
+    "masterLanguage": "DE"
+  },
+  "options": {
+    "overwriteExistingObjects": false,
+    "addCopyAction": true,
+    "addDeprecateAction": false,
+    "addInputCheck": true,
+    "addIbnToExportApp": false,
+    "description": "Demo codes maintenance",
+    "copyAbstractEntityName": "ZD_X_DmoPatternDemoCodesP",
+    "transportSelectionType": "manualWithPreselection",
+    "showTransportSelectionStrip": true,
+    "createProjectionLayer": true
+  },
+  "businessConfManagement": {
+    "maintenanceObjectId": "ZARC1_CODES",
+    "transportObject": "ZARC1_CODES"
+  },
+  "businessService": {
+    "serviceDefinitionName": "ZUI_DMO_ARC1DEMO",
+    "serviceBindingName": "ZUI_DMO_ARC1DEMO_O4"
+  },
+  "businessObject": {
+    "dataModel": {
+      "basisTableName": "ZTX_DMO_DCODE",
+      "singleton": {
+        "draftTableName": "ZTX_DMO_ARCS_D",
+        "entityName": "Singleton",
+        "entityLabel": "Demo-Codes Singleton",
+        "cdsInterfaceViewName": "ZR_X_DMOArc1STP",
+        "cdsProjectionViewName": "ZC_X_DMOArc1STP",
+        "keyFieldAlias": "SingletonID"
+      },
+      "tables": [
+        {
+          "name": "ZTX_DMO_DCODE",
+          "draftTableName": "ZTX_DMO_ARC1_D",
+          "entityName": "DmoPatternDemoCodes",
+          "entityLabel": "Demo-Codes",
+          "cdsInterfaceViewName": "ZR_X_DMOArc1TP",
+          "cdsProjectionViewName": "ZC_X_DMOArc1TP"
+        }
+      ],
+      "text_tables": [
+        {
+          "name": "ZTX_DMO_DCODET",
+          "draftTableName": "ZTX_DMO_ARC1T_D",
+          "entityName": "DmoPatternDemoCText",
+          "entityLabel": "Demo-Codes Text",
+          "cdsInterfaceViewName": "ZR_X_DMOArc1TextTP",
+          "cdsProjectionViewName": "ZC_X_DMOArc1TextTP",
+          "textFieldName": "DESCRIPTION"
+        }
+      ]
+    },
+    "behaviorImplementation": {
+      "implementationClassName": "ZBP_I_DMOPATTERNDEMOCODES_S",
+      "projImplementationClassName": "ZBP_C_DMOPATTERNDEMOCODES_S"
+    }
+  }
+}

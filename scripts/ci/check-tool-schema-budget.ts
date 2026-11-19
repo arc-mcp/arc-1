@@ -233,7 +233,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       descriptionTokenEstimate: 12_800,
       // Includes expectedSourceHash (#853) and SAPRead.source (#855).
       // LONG_TEXT adds eight field descriptions; shorter existing guidance preserves byte/token ceilings.
-      descriptionCount: 298, // Includes the two exact-text edit fields.
+      descriptionCount: 299, // Includes the two exact-text edit fields. +1: SAPWrite generator (#1121); wire bytes offset by shortening the duplicated RAP sentence and the action list in the name text.
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: 23_850,
     },
@@ -248,9 +248,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Raised 16_800 -> 16_900 and descriptions 260 -> 265 for structured KTD shortTexts while
       // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
       // Combined relations + bounded ATC objects[]; retain a tighter BTP token ratchet.
-      schemaTokenEstimate: 17_650,
+      // +25 for the SAPWrite generate action and generator field (#1121).
+      schemaTokenEstimate: 17_675,
       descriptionTokenEstimate: 12_200,
-      descriptionCount: 282, // Combined DDIC extension controls and own-method signature selector.
+      descriptionCount: 283, // Combined DDIC extension controls and own-method signature selector. // +1: SAPWrite generator (#1121); wire bytes offset by shortening the duplicated RAP sentence and the action list in the name text.
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -291,7 +292,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       schemaTokenEstimate: 18_846,
       descriptionTokenEstimate: 12_800,
-      descriptionCount: 298, // Includes the two exact-text edit fields.
+      descriptionCount: 299, // Includes the two exact-text edit fields. +1: SAPWrite generator (#1121); wire bytes offset by shortening the duplicated RAP sentence and the action list in the name text.
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: 23_850,
     },
@@ -302,9 +303,9 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: { ...LIVE_RELATIONS_FEATURES, systemType: 'btp' },
     budget: {
-      schemaTokenEstimate: 17_650,
+      schemaTokenEstimate: 17_675, // +25: SAPWrite generate (#1121), as btp-full-git.
       descriptionTokenEstimate: 12_200,
-      descriptionCount: 282, // Combined DDIC extension controls and own-method signature selector.
+      descriptionCount: 283, // Combined DDIC extension controls and own-method signature selector. // +1: SAPWrite generator (#1121); wire bytes offset by shortening the duplicated RAP sentence and the action list in the name text.
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },

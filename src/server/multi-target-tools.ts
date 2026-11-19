@@ -124,6 +124,7 @@ export function multiTargetInvocationDecision(
 const EXCLUDED_GUIDANCE: ReadonlyArray<readonly [string, string]> = [
   ['; edit_content replaces one exact match and requires expectedSourceHash.', '.'],
   ['Required for edit_content; otherwise optional', 'Optional'],
+  [' generate: SAP object generator (SAPRead GENERATORS) on type/name; source=JSON overrides; dryRun first.', ''],
 ];
 
 function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefinition | undefined {
@@ -134,6 +135,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
       preaudit: _preaudit,
       oldContent: _oldContent,
       newContent: _newContent,
+      generator: _generator,
       ...properties
     } = tool.inputSchema.properties as Record<string, Record<string, unknown>>;
     const pruned = Object.fromEntries(
