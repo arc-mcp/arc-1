@@ -90,7 +90,7 @@ sequence.
 | [SEC-22](#sec-22) | SBOMs for the Docker image, MCPB bundle and executables | P3 | S | Revisit on trigger | Security |
 | [SEC-19](#sec-19) | Registered agent identity and downstream tool scopes | P2 | L | Needs research | Auth / Security |
 | [SEC-23](#sec-23) | Local SAML bearer: wider validation | P2 | M | Experimental | Auth / Security |
-| [COMPAT-22](#compat-22) | Integration Suite remote MCP gateway validation | P2 | M | Needs research | Compatibility |
+| [COMPAT-22](#compat-22) | Integration Suite remote MCP discovery and cross-user validation | P2 | M | Needs research | Compatibility |
 | [COMPAT-23](#compat-23) | Shared reader for function-group object URIs | P2 | M | Ready | Compatibility |
 | [COMPAT-24](#compat-24) | Uniform not-found for reads of deleted objects | P3 | S | Needs research | Compatibility |
 | [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
@@ -633,22 +633,27 @@ session reuse must remain tied to a verified user and credential lifetime, accou
 and revocation, and never cross users or fall back to `SAP_USER`.
 
 <a id="compat-22"></a>
-### COMPAT-22 — Integration Suite remote MCP gateway validation
+### COMPAT-22 — Integration Suite remote MCP discovery and cross-user validation
 
 - **Priority / effort / status:** P2 / M / Needs research
 - **Category:** Compatibility
 
-**Idea.** Validate ARC-1 behind Integration Suite's documented remote-MCP proxy and, if successful,
-document a supported configuration.
+**Idea.** Qualify native tool discovery, two-user authorization and the intended VS Code assistant
+on a read-only gateway route. See the [Free pilot and repeatable tests](https://github.com/arc-mcp/arc-1/blob/main/docs/research/sap-mcp-gateway-retest.md).
 
-**Why it remains.** Current SAP Help now documents Streamable HTTP remote MCP sources, superseding
-the July inventory. ARC-1 interoperability and delegated identity through the gateway are unverified.
+**Why it remains.** The Free pilot imported one tool from a separate schema catalog. The runtime
+JWT bearer destination invoked stock ARC-1 as the signed-in developer. VS Code’s native tool API
+and a local MCP client both read the class, with the mapped user confirmed in A4H workload statistics. The pilot
+covered one user and one version of the catalog. The Basic credential belongs only to discovery.
 See the [source and validation boundary](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-21-sap-api-policy-custom-mcp.md#remote-mcp-gateway-validation-boundary).
 
-**Resume with.** A suitable Integration Suite plan, Integration Cell, documented discovery/runtime
-authentication and two users with different SAP permissions. Verify identity, scopes, tool filtering,
-audit/traces, quotas, errors and reconnect behavior. Do not silently substitute a shared credential
+**Resume with.** One operator can qualify the assistant, refresh, tool filtering, errors and quotas
+while the Free pilot is available. Use a second developer with different SAP permissions for
+cross-user identity and denial. Repeat native discovery and synchronization when SAP documents
+a supported credential or the tenant's selector changes. Check roadmap delivery and Free availability
+against the runbook before testing new features. Do not silently substitute a shared credential
 for PP or present transport success as ADT permission. The gateway is optional for custom MCP.
+Registered agent identity remains [SEC-19](#sec-19).
 
 <a id="compat-23"></a>
 ### COMPAT-23 — Shared reader for function-group object URIs
