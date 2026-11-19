@@ -15,11 +15,12 @@
  * not on the size of the allowed subtrees (a broad rule such as `ZTIER1/**`
  * over hundreds of packages would otherwise cost one request per package).
  *
- * Fallback: when the checked package itself is not found (404), the resolver
- * cannot tell an unknown package from a system without the packages resource
- * (absent before 7.52, where every package read 404s). It then expands the
- * rule's subtree top-down, as before the chain walk existed, so subtree rules
- * keep working on those releases.
+ * Fallback: when the checked package itself is not found (404), it is either
+ * unknown or the system has no packages resource (absent before 7.52, where
+ * every package read 404s). One read of the rule's root tells them apart: when
+ * the resource finds the root, the package is unknown and matches no rule;
+ * otherwise the resolver expands the rule's subtree top-down, as before the
+ * chain walk existed, so subtree rules keep working on those releases.
  *
  * Security invariants:
  *   - Resolution failure (network, permission, unexpected response) is
@@ -130,6 +131,10 @@ export class AdtPackageHierarchyResolver implements PackageHierarchyResolver {
   private readonly chains = new Map<string, CacheEntry<string[] | undefined>>();
   /** Top-down subtree per root, filled only by the fallback. */
   private readonly subtrees = new Map<string, CacheEntry<Set<string>>>();
+  /** Whether the packages resource finds a root, read only for a checked package it does not find. */
+  private readonly rootProbes = new Map<string, CacheEntry<boolean>>();
+  /** Set once the packages resource has found any package: a property of the system. */
+  private packagesResourceFound = false;
 
   constructor(fetchSuperPackage: SuperPackageFetcher, opts: AdtPackageHierarchyResolverOptions = {}) {
     this.fetchSuperPackage = fetchSuperPackage;
@@ -145,7 +150,7 @@ export class AdtPackageHierarchyResolver implements PackageHierarchyResolver {
     if (upperRoot === upperPkg) return true;
     const chain = await this.cached(this.chains, upperPkg, () => this.computeChain(upperPkg), 'super-packages of');
     if (chain) return chain.includes(upperRoot);
-    if (!this.fetchSubpackages) return false;
+    if (!this.fetchSubpackages || (await this.packagesResourceFinds(upperRoot))) return false;
     const subtree = await this.cached(this.subtrees, upperRoot, () => this.computeSubtree(upperRoot), 'subtree under');
     return subtree.has(upperPkg);
   }
@@ -153,6 +158,15 @@ export class AdtPackageHierarchyResolver implements PackageHierarchyResolver {
   invalidate(_root?: string): void {
     this.chains.clear();
     this.subtrees.clear();
+    this.rootProbes.clear();
+  }
+
+  /** True when the packages resource exists, proven by an earlier find or by finding `upperRoot`. */
+  private async packagesResourceFinds(upperRoot: string): Promise<boolean> {
+    if (this.packagesResourceFound) return true;
+    const probe = async () => (await this.fetchSuperPackage(upperRoot)).found;
+    this.packagesResourceFound = await this.cached(this.rootProbes, upperRoot, probe, 'packages resource read of');
+    return this.packagesResourceFound;
   }
 
   private cached<T>(cache: Map<string, CacheEntry<T>>, key: string, compute: () => Promise<T>, what: string) {
@@ -177,6 +191,7 @@ export class AdtPackageHierarchyResolver implements PackageHierarchyResolver {
     const chain = [upperPkg];
     let lookup = await this.fetchSuperPackage(upperPkg);
     if (!lookup.found) return undefined;
+    this.packagesResourceFound = true;
     for (;;) {
       if (!lookup.found || !lookup.superPackage?.trim()) return chain;
       const parent = normalizePackageName(lookup.superPackage);

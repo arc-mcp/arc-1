@@ -94,6 +94,17 @@ describe('AdtPackageHierarchyResolver', () => {
       expect(fetchSubpackages.mock.calls.map(([root]) => root)).toEqual(['ZROOT', 'ZA', 'ZB', 'ZA1', 'ZA2']);
     });
 
+    it('is not used when the packages resource finds the root: the package is unknown', async () => {
+      const fetcher = buildFetcher(TREE);
+      const fetchSubpackages = subpackages();
+      const resolver = new AdtPackageHierarchyResolver(fetcher, { fetchSubpackages });
+      expect(await resolver.isDescendantOrSelf('ZROOT', 'ZNO_SUCH')).toBe(false);
+      expect(await resolver.isDescendantOrSelf('ZOTHER', 'ZNO_SUCH')).toBe(false);
+      expect(fetchSubpackages).not.toHaveBeenCalled();
+      // ZNO_SUCH once (cached), ZROOT once; the found root proves the resource for ZOTHER too.
+      expect(fetcher.mock.calls.map(([pkg]) => pkg)).toEqual(['ZNO_SUCH', 'ZROOT']);
+    });
+
     it('is not used once the packages resource finds the checked package', async () => {
       const fetchSubpackages = subpackages();
       const resolver = new AdtPackageHierarchyResolver(buildFetcher(TREE), { fetchSubpackages });
