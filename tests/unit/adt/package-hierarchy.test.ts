@@ -262,7 +262,11 @@ describe('normalizePackageName', () => {
     expect(normalizePackageName('Z'.repeat(30))).toBe('Z'.repeat(30));
   });
 
-  it.each(['..', '.', '', 'ZA/ZB', '/COMPANY/', 'Z-A', 'Z%2FA', 'Z'.repeat(31)])('refuses %j', (bad) => {
+  it.each(['ID-CSC', '$ABAPGIT-CI', 'IPRO/BASIS', '/IPRO/UI/BASIS/', '/BUILD/'])('accepts TDEVC name %j', (name) => {
+    expect(normalizePackageName(name)).toBe(name);
+  });
+
+  it.each(['..', '.', '', 'ZA/../ZB', 'Z%2FA', 'Z'.repeat(31)])('refuses %j', (bad) => {
     expect(() => normalizePackageName(bad)).toThrow(AdtSafetyError);
   });
 });

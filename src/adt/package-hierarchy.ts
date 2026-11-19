@@ -104,12 +104,8 @@ const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_DEPTH = 50;
 const DEFAULT_MAX_PACKAGES = 10_000;
 
-/**
- * Syntax of a package name (TDEVC-DEVCLASS, CHAR 30): optional `/NAMESPACE/` prefix, then letters,
- * digits, `_` and `$` (local packages). Checked before a name is put into a request path, so a name
- * such as `..` cannot address another ADT resource.
- */
-const PACKAGE_NAME = /^(?:\/[A-Z0-9_]+\/)?[A-Z0-9_$]+$/;
+// TDEVC includes hyphens, embedded slashes and namespace-only names. Encode the whole path segment.
+const PACKAGE_NAME = /^[A-Z0-9_$/-]+$/;
 const PACKAGE_NAME_MAX_LENGTH = 30;
 
 /** Uppercased, trimmed package name; throws when it is not a valid package name. */
