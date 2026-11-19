@@ -30,7 +30,7 @@ import type { AdtRequestOptions } from './http-deadline.js';
 import { filterIncludeHits, requiresUnfilteredIncludeSearch } from './include-search.js';
 import { getDirectPackageContents } from './package-browser.js';
 import { requirePackageFilteredSearch } from './package-contents.js';
-import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
+import { AdtPackageHierarchyResolver, fetchSuperPackage, type PackageHierarchyResolver } from './package-hierarchy.js';
 import { canonicalRevisionSourcePath } from './path-safety.js';
 import { clampUrlLimit } from './result-limits.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
@@ -338,8 +338,8 @@ export class AdtClient {
    */
   getPackageHierarchyResolver(): PackageHierarchyResolver {
     if (!this.packageHierarchyResolverHolder.resolver) {
-      this.packageHierarchyResolverHolder.resolver = new AdtPackageHierarchyResolver((root) =>
-        this.getSubpackages(root),
+      this.packageHierarchyResolverHolder.resolver = new AdtPackageHierarchyResolver((pkg) =>
+        fetchSuperPackage(this.http, this.safety, pkg),
       );
     }
     return this.packageHierarchyResolverHolder.resolver;

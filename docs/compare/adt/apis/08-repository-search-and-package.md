@@ -98,8 +98,9 @@ Use `application/vnd.sap.as+xml` for Accept and the ABAP XML body; include
 `parent_tech_name` and `TV_NODEKEY=000000` for the root, then returned type-node IDs
 for expansion. An empty request body is not the maintained contract.
 
-- `getSubpackages` uses this native tree for direct child packages and keeps the existing
-  bounded hierarchy resolver. CSRF is required because the read uses POST.
+- `getSubpackages` uses this native tree for direct child packages. CSRF is required because
+  the read uses POST. The `allowedPackages` subtree check does not use it: it walks the
+  super-package chain from `GET /sap/bc/adt/packages/{name}` instead.
 - `getPackageContents` uses discovery-gated indexed search; it does **not** currently
   fall back to this endpoint. Classic search may ignore package filters.
 - `getDirectPackageContents` explicitly uses this endpoint for `SAPRead` with

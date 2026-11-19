@@ -1532,37 +1532,38 @@ describe('AdtClient', () => {
       expect(cloned.getPackageHierarchyResolver()).toBe(original.getPackageHierarchyResolver());
     });
 
-    it('resolver is wired to client.getSubpackages — descends real subtree from the nodestructure endpoint', async () => {
-      // Mock the BFS via nodestructure: ZROOT -> [ZA], ZA -> [].
-      // All mocked responses carry x-csrf-token so the POST's CSRF preflight succeeds.
-      const CSRF = { 'x-csrf-token': 'T' };
+    /** `GET /sap/bc/adt/packages/{name}` body with the given super-package (empty = top-level). */
+    const packageXml = (name: string, superPackage: string) =>
+      `<?xml version="1.0" encoding="utf-8"?><pak:package xmlns:pak="http://www.sap.com/adt/packages" ` +
+      `xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${name}" adtcore:type="DEVC/K">` +
+      `<pak:superPackage adtcore:name="${superPackage}"/></pak:package>`;
+
+    it('resolver walks the chain from GET /sap/bc/adt/packages/{name}; an unknown package (404) ends it', async () => {
+      const parents: Record<string, string> = { ZA2: 'ZA', ZA: 'ZROOT', ZROOT: '' };
       mockFetch.mockReset();
       mockFetch.mockImplementation(async (url: unknown) => {
-        const s = String(url);
-        if (s.includes('/sap/bc/adt/repository/nodestructure') && s.includes('parent_name=ZROOT')) {
-          return mockResponse(
-            200,
-            `<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TREE_CONTENT>
-<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>ZA</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>
-</TREE_CONTENT></DATA></asx:values></asx:abap>`,
-            CSRF,
-          );
-        }
-        if (s.includes('/sap/bc/adt/repository/nodestructure') && s.includes('parent_name=ZA')) {
-          return mockResponse(200, '', CSRF);
-        }
-        // CSRF preflight target — return empty body + token so the POST proceeds.
-        return mockResponse(200, '', CSRF);
+        const path = new URL(String(url)).pathname;
+        const name = decodeURIComponent(path.replace('/sap/bc/adt/packages/', '')).toUpperCase();
+        if (path.startsWith('/sap/bc/adt/packages/') && name in parents)
+          return mockResponse(200, packageXml(name, parents[name]!));
+        return mockResponse(404, 'not found');
       });
       const client = createClient();
       const resolver = client.getPackageHierarchyResolver();
-      expect(await resolver.isDescendantOrSelf('ZROOT', 'ZA')).toBe(true);
+      expect(await resolver.isDescendantOrSelf('ZROOT', 'ZA2')).toBe(true);
       expect(await resolver.isDescendantOrSelf('ZROOT', 'ZNOTHERE')).toBe(false);
+      const paths = mockFetch.mock.calls.map(([url]) => new URL(String(url)).pathname);
+      expect(paths).toEqual([
+        '/sap/bc/adt/packages/ZA2',
+        '/sap/bc/adt/packages/ZA',
+        '/sap/bc/adt/packages/ZROOT',
+        '/sap/bc/adt/packages/ZNOTHERE',
+      ]);
     });
 
-    it('invalidatePackageHierarchy() drops cached subtrees', async () => {
+    it('invalidatePackageHierarchy() drops cached chains', async () => {
       mockFetch.mockReset();
-      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValue(mockResponse(200, packageXml('ZA', '')));
       const client = createClient();
       const resolver = client.getPackageHierarchyResolver();
       await resolver.isDescendantOrSelf('ZROOT', 'ZA');

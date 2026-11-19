@@ -4,15 +4,24 @@
  * Pattern semantics:
  *   - `ZFOO/**` means "package `ZFOO` and every transitive sub-package whose
  *     DEVCLASS chain leads back to `ZFOO`".
- *   - SAP stores the relationship in `TDEVC.PARENTCL`. ADT exposes direct
- *     children via `POST /sap/bc/adt/repository/nodestructure`
- *     (`AdtClient.getSubpackages`).
+ *   - SAP stores the relationship in `TDEVC.PARENTCL`. ADT exposes it as the
+ *     `pak:superPackage` of `GET /sap/bc/adt/packages/{name}`
+ *     (`fetchSuperPackage`).
+ *
+ * Resolution walks the super-package chain of the package being checked, one
+ * request per level, instead of expanding the rule's subtree top-down. One
+ * chain answers every subtree rule, so the cost depends on the package's depth,
+ * not on the size of the allowed subtrees (a broad rule such as `ZTIER1/**`
+ * over hundreds of packages would otherwise cost one request per package).
  *
  * Security invariants:
- *   - Resolution failure (network, permission, missing root) is fail-closed:
- *     the resolver throws and the caller (checkPackage) MUST treat the throw as
- *     "package denied". Never silently allow.
- *   - The cache is keyed by uppercased root; lookups are case-insensitive.
+ *   - Resolution failure (network, permission) is fail-closed: the resolver
+ *     throws and the caller (checkPackage) MUST treat the throw as "package
+ *     denied". Never silently allow.
+ *   - A package SAP does not know (404) or a top-level package ends the chain.
+ *     Ending early can only lose membership, never grant it.
+ *   - A cycle or a chain deeper than `maxDepth` throws (fail-closed).
+ *   - The cache is keyed by uppercased package; lookups are case-insensitive.
  *   - A rejected resolution purges its cache entry so a retry can succeed,
  *     but the current request still fails. This avoids cementing a transient
  *     failure for the full TTL.
@@ -20,11 +29,14 @@
  * Cache lifetime:
  *   - Default 10 minutes (see `DEFAULT_TTL_MS`); overridable per-instance via
  *     `AdtPackageHierarchyResolverOptions.ttlMs`. The cache can be invalidated
- *     manually via `invalidate(root?)` after admin actions that change the
- *     hierarchy (create_package / change_package / delete_package).
+ *     via `invalidate()` after admin actions that change the hierarchy
+ *     (create_package / change_package / delete_package).
  */
 
-import { AdtSafetyError } from './errors.js';
+import { AdtApiError, AdtSafetyError } from './errors.js';
+import type { AdtHttpClient } from './http.js';
+import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
+import { findDeepNodes, parseXml } from './xml-parser.js';
 
 export interface PackageHierarchyResolver {
   /**
@@ -36,49 +48,48 @@ export interface PackageHierarchyResolver {
    */
   isDescendantOrSelf(root: string, pkg: string): Promise<boolean>;
 
-  /** Drop cached subtrees. With no arg, clears everything. */
+  /**
+   * Drop cached chains. A chain depends on every package above the checked
+   * one, so a change anywhere clears all of them; `root` is accepted for
+   * callers that name the changed package.
+   */
   invalidate(root?: string): void;
 }
 
-/** Returns the direct sub-packages of `root` (uppercase names, no duplicates). */
-export type DirectSubpackageFetcher = (root: string) => Promise<string[]>;
+/**
+ * Returns the direct super-package of `pkg`, or undefined when `pkg` is
+ * top-level or unknown to SAP. Throws on any other failure.
+ */
+export type SuperPackageFetcher = (pkg: string) => Promise<string | undefined>;
 
 interface CacheEntry {
   expires: number;
-  subtree: Promise<Set<string>>;
+  /** The package itself followed by its super-packages, uppercased, nearest first. */
+  chain: Promise<string[]>;
 }
 
 export interface AdtPackageHierarchyResolverOptions {
   /** Cache lifetime in milliseconds. Default 10 minutes. */
   ttlMs?: number;
   /**
-   * Safety cap on subtree size. If the BFS exceeds this many packages, the
-   * resolution fails-closed rather than producing an unbounded result.
-   * Default 10000.
-   */
-  maxPackages?: number;
-  /**
-   * Safety cap on BFS depth. Prevents infinite recursion in the presence of
-   * a corrupted hierarchy (e.g. a TDEVC cycle). Default 50.
+   * Safety cap on the chain length. Prevents an endless walk in the presence
+   * of a corrupted hierarchy. Default 50.
    */
   maxDepth?: number;
 }
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
-const DEFAULT_MAX_PACKAGES = 10_000;
 const DEFAULT_MAX_DEPTH = 50;
 
 export class AdtPackageHierarchyResolver implements PackageHierarchyResolver {
-  private readonly fetcher: DirectSubpackageFetcher;
+  private readonly fetchSuperPackage: SuperPackageFetcher;
   private readonly ttlMs: number;
-  private readonly maxPackages: number;
   private readonly maxDepth: number;
   private readonly cache = new Map<string, CacheEntry>();
 
-  constructor(fetcher: DirectSubpackageFetcher, opts: AdtPackageHierarchyResolverOptions = {}) {
-    this.fetcher = fetcher;
+  constructor(fetchSuperPackage: SuperPackageFetcher, opts: AdtPackageHierarchyResolverOptions = {}) {
+    this.fetchSuperPackage = fetchSuperPackage;
     this.ttlMs = opts.ttlMs ?? DEFAULT_TTL_MS;
-    this.maxPackages = opts.maxPackages ?? DEFAULT_MAX_PACKAGES;
     this.maxDepth = opts.maxDepth ?? DEFAULT_MAX_DEPTH;
   }
 
@@ -86,64 +97,77 @@ export class AdtPackageHierarchyResolver implements PackageHierarchyResolver {
     const upperRoot = root.toUpperCase();
     const upperPkg = pkg.toUpperCase();
     if (upperRoot === upperPkg) return true;
-    const subtree = await this.getSubtree(upperRoot);
-    return subtree.has(upperPkg);
+    const chain = await this.getChain(upperPkg);
+    return chain.includes(upperRoot);
   }
 
-  invalidate(root?: string): void {
-    if (root === undefined) {
-      this.cache.clear();
-      return;
-    }
-    this.cache.delete(root.toUpperCase());
+  invalidate(_root?: string): void {
+    this.cache.clear();
   }
 
-  private getSubtree(upperRoot: string): Promise<Set<string>> {
+  private getChain(upperPkg: string): Promise<string[]> {
     const now = Date.now();
-    const cached = this.cache.get(upperRoot);
-    if (cached && cached.expires > now) return cached.subtree;
+    const cached = this.cache.get(upperPkg);
+    if (cached && cached.expires > now) return cached.chain;
 
-    const subtree = this.computeSubtree(upperRoot).catch((err: unknown) => {
+    const chain = this.computeChain(upperPkg).catch((err: unknown) => {
       // Fail-closed: purge so a retry can succeed; rethrow as AdtSafetyError
       // so callers see a stable error type at the safety boundary.
-      this.cache.delete(upperRoot);
+      this.cache.delete(upperPkg);
       const msg = err instanceof Error ? err.message : String(err);
       throw new AdtSafetyError(
-        `Failed to resolve DEVCLASS subtree under '${upperRoot}' for allowedPackages rule (denying for safety): ${msg}`,
+        `Failed to resolve the DEVCLASS super-packages of '${upperPkg}' for an allowedPackages subtree rule (denying for safety): ${msg}`,
       );
     });
-    this.cache.set(upperRoot, { expires: now + this.ttlMs, subtree });
-    return subtree;
+    this.cache.set(upperPkg, { expires: now + this.ttlMs, chain });
+    return chain;
   }
 
-  private async computeSubtree(upperRoot: string): Promise<Set<string>> {
-    const result = new Set<string>([upperRoot]);
-    let frontier: string[] = [upperRoot];
-    let depth = 0;
-    while (frontier.length > 0) {
-      if (depth >= this.maxDepth) {
-        throw new Error(
-          `DEVCLASS hierarchy under '${upperRoot}' exceeds maxDepth=${this.maxDepth} (possible cycle in TDEVC.PARENTCL)`,
-        );
+  private async computeChain(upperPkg: string): Promise<string[]> {
+    const chain = [upperPkg];
+    let current = upperPkg;
+    for (;;) {
+      const parent = (await this.fetchSuperPackage(current))?.trim().toUpperCase();
+      if (!parent) return chain;
+      if (chain.includes(parent)) {
+        throw new Error(`DEVCLASS hierarchy above '${upperPkg}' contains a cycle at '${parent}' (TDEVC.PARENTCL)`);
       }
-      const nextFrontier: string[] = [];
-      for (const cur of frontier) {
-        const children = await this.fetcher(cur);
-        for (const child of children) {
-          const upper = child.toUpperCase();
-          if (result.has(upper)) continue;
-          result.add(upper);
-          if (result.size > this.maxPackages) {
-            throw new Error(
-              `DEVCLASS subtree under '${upperRoot}' exceeds maxPackages=${this.maxPackages}; refusing for safety`,
-            );
-          }
-          nextFrontier.push(upper);
-        }
+      chain.push(parent);
+      if (chain.length > this.maxDepth) {
+        throw new Error(`DEVCLASS hierarchy above '${upperPkg}' exceeds maxDepth=${this.maxDepth}`);
       }
-      frontier = nextFrontier;
-      depth++;
+      current = parent;
     }
-    return result;
+  }
+}
+
+/**
+ * Super-package name from `GET /sap/bc/adt/packages/{name}` (`<pak:superPackage adtcore:name="…"/>`),
+ * uppercased; undefined for a top-level package (absent or empty element).
+ */
+export function parseSuperPackage(xml: string): string | undefined {
+  const [node] = findDeepNodes(parseXml(xml), 'superPackage');
+  const name = String(node?.['@_name'] ?? '').trim();
+  return name ? name.toUpperCase() : undefined;
+}
+
+/**
+ * Direct super-package of a package. Undefined when the package is top-level or SAP does not know
+ * it (404); every other failure throws, so the allowedPackages subtree check stays fail-closed.
+ */
+export async function fetchSuperPackage(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  packageName: string,
+): Promise<string | undefined> {
+  checkOperation(safety, OperationType.Read, 'GetSuperPackage');
+  try {
+    const resp = await http.get(`/sap/bc/adt/packages/${encodeURIComponent(packageName)}`, undefined, {
+      suppressNotFoundLog: true,
+    });
+    return parseSuperPackage(resp.body);
+  } catch (err) {
+    if (err instanceof AdtApiError && err.statusCode === 404) return undefined;
+    throw err;
   }
 }
