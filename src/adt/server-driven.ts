@@ -154,6 +154,8 @@ export const SDO_TYPES = [
   'APLO',
   'SAJC',
   'SAJT',
+  'RONT',
+  'NONT',
   'TABL/DTI',
   'SMBC',
 ] as const;
@@ -274,6 +276,23 @@ export const SDO_REGISTRY = {
     href: '/sap/bc/adt/applicationjob/templates',
     label: 'Application Job Template',
     createType: 'SAJT',
+    metadataContentType: BLUES_V2,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+  },
+  // SAP object type and its node types (RAP business object modeling): blues v2, AFF JSON source.
+  RONT: {
+    href: '/sap/bc/adt/businessobjects/rontrot',
+    label: 'SAP Object Type',
+    createType: 'RONT/ROT',
+    metadataContentType: BLUES_V2,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+  },
+  NONT: {
+    href: '/sap/bc/adt/businessobjects/nontnot',
+    label: 'SAP Object Node Type',
+    createType: 'NONT/NOT',
     metadataContentType: BLUES_V2,
     ...BLUE_METADATA,
     sourceFormat: 'json',
@@ -593,6 +612,21 @@ async function checkServerDrivenDeletion(
     throw new AdtError(
       'SAP did not confirm that this object can be deleted. Review its deletion check in ADT and resolve dependencies or other refusals. No DELETE was sent.',
     );
+  }
+  // This path deletes only the locked object. ADT can include children in the same deletion.
+  const included = Array.isArray(object.includedObject) ? object.includedObject : [object.includedObject];
+  for (const child of included) {
+    if (child?.['@_type'] === 'SKTD/TYP') {
+      const name = String(child['@_name'] ?? '');
+      throw new AdtError(
+        `SAP lists the knowledge transfer document ${name} as part of this deletion. Delete it first with SAPWrite(action="delete", type="SKTD", name="${name}"), then retry. No DELETE was sent.`,
+      );
+    }
+    if (child?.['@_mustBeDeletedWithParent'] === 'true') {
+      throw new AdtError(
+        'SAP requires an included object to be deleted with its parent. Review the deletion in ADT. No DELETE was sent.',
+      );
+    }
   }
 }
 

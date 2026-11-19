@@ -7,7 +7,7 @@ import { logger } from '../../../src/server/logger.js';
 function buildApp(allowedOrigins: string[]): express.Express {
   const app = express();
   app.set('trust proxy', 1);
-  applySecurityMiddleware(app, allowedOrigins);
+  applySecurityMiddleware(app, allowedOrigins, []);
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
   });

@@ -24,7 +24,14 @@ interface NativeMessage {
   Timestamp: string;
   HasLongText: boolean;
   HasDetailText: boolean;
+  DetailLevel: string;
+  ContextField1: string;
+  ContextField2: string;
+  ContextField3: string;
+  ContextField4: string;
+  ContextField5: string;
 }
+type Severity = 'A' | 'E' | 'W' | 'I' | 'S';
 
 describe('saved application logs on live SAP', () => {
   let client: AdtClient;
@@ -46,12 +53,12 @@ describe('saved application logs on live SAP', () => {
     return JSON.parse(response.body).d as { results: T[]; __next?: string };
   }
 
-  async function read(logNumber: string, maxRows?: number, offset?: number) {
+  async function read(logNumber: string, maxRows?: number, offset?: number, severities?: Severity[]) {
     const response = await handleToolCall(
       client,
       config,
       'SAPQuery',
-      { action: 'application_log', applicationLog: { logNumber, maxRows, offset } },
+      { action: 'application_log', applicationLog: { logNumber, maxRows, offset, severities } },
       auth,
     );
     // Keep SAP payloads and log identities out of assertion output, including on failure.
@@ -81,15 +88,21 @@ describe('saved application logs on live SAP', () => {
       });
       expect(reference.results.length, 'Choose a stable fixture with at most 200 messages').toBeLessThanOrEqual(200);
       expect(Boolean(reference.__next), 'Reference must contain the complete fixture').toBe(false);
-      const expected: Message[] = reference.results.map((row) => ({
-        number: row.MessageNumber,
-        type: row.Type,
-        text: row.Text,
-        timestamp: row.Timestamp,
-        hasLongText: row.HasLongText,
-        hasDetails: row.HasDetailText,
-      }));
+      const expected: Message[] = reference.results.map((row) => {
+        const context = [row.ContextField1, row.ContextField2, row.ContextField3, row.ContextField4, row.ContextField5];
+        return {
+          number: row.MessageNumber,
+          type: row.Type,
+          text: row.Text,
+          timestamp: row.Timestamp,
+          hasLongText: row.HasLongText,
+          hasDetails: row.HasDetailText,
+          ...(row.DetailLevel ? { detailLevel: row.DetailLevel } : {}),
+          ...(context.some(Boolean) ? { context } : {}),
+        };
+      });
 
+      expect((await read(logNumber, 1)).header.messageCount).toBe(expected.length);
       for (const size of [1, 2, 100]) {
         const page = await read(logNumber, size);
         expect(isDeepStrictEqual(page.messages, expected.slice(0, size)), `Page size ${size} must match SAP`).toBe(
@@ -116,6 +129,37 @@ describe('saved application logs on live SAP', () => {
         expect(page.more).toBe(false);
         expect(page).not.toHaveProperty('nextOffset');
       }
-    }, 60_000);
+
+      // Native severity filter must equal client-side filtering of the complete unfiltered list.
+      const present = [...new Set(expected.map((message) => message.type))] as Severity[];
+      const selections: Severity[][] = [
+        ...present.map((type) => [type]),
+        ...(present.length > 1 ? [present.slice(0, 2)] : []),
+      ];
+      if (present.length === 0) selections.push(['E']);
+      for (const severities of selections) {
+        const wanted = expected.filter((message) => severities.includes(message.type as Severity));
+        const filtered: Message[] = [];
+        for (let offset = 0, pageIndex = 0; pageIndex < 5; pageIndex++) {
+          const page = await read(logNumber, undefined, offset, severities);
+          expect(page.severities).toEqual(severities);
+          expect(page.header.messageCount).toBe(expected.length);
+          filtered.push(...page.messages);
+          expect(page.more).toBe(offset + 50 < wanted.length);
+          if (!page.more) break;
+          offset = page.nextOffset!;
+        }
+        expect(
+          isDeepStrictEqual(filtered, wanted),
+          `Filter ${severities.join('/')} must match client-side filtering`,
+        ).toBe(true);
+        if (wanted.length >= 4) {
+          const second = await read(logNumber, 2, 2, severities);
+          expect(isDeepStrictEqual(second.messages, wanted.slice(2, 4)), 'Paging under a filter must be stable').toBe(
+            true,
+          );
+        }
+      }
+    }, 120_000);
   }
 });

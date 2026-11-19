@@ -2,8 +2,14 @@
 import { type Verifier, XsuaaUserTokenRequiredError } from '@arc-mcp/xsuaa-auth';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import type { RequestHandler } from 'express';
+import type { McpRouteDeniedEvent } from './audit.js';
+import { auditMcpRouteDenial } from './multi-target-authorization-audit.js';
 
-export function requireXsuaaUserBearerAuth(verifier: Verifier, resourceMetadataUrl: string): RequestHandler {
+export function requireXsuaaUserBearerAuth(
+  verifier: Verifier,
+  resourceMetadataUrl: string,
+  route: McpRouteDeniedEvent['route'],
+): RequestHandler {
   return async (req, res, next) => {
     // Keep the SDK's header parsing and token-expiry checks authoritative. Only valid-looking
     // headers need preverification to distinguish principal rejection from missing scope.
@@ -22,6 +28,7 @@ export function requireXsuaaUserBearerAuth(verifier: Verifier, resourceMetadataU
       })(req, res, next);
     } catch (error) {
       if (error instanceof XsuaaUserTokenRequiredError) {
+        auditMcpRouteDenial(undefined, route, 'user_token_required');
         res.status(403).json({ error: 'forbidden', error_description: 'A supported XSUAA user token is required.' });
         return;
       }

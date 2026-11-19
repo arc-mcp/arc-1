@@ -299,8 +299,8 @@ describe('SDO registry write metadata', () => {
     }
   });
 
-  it('the blue family uses blues content types (EVTO/UIAD/SAJC/SAJT v2, rest v1); DTDC uses its own (verified live)', () => {
-    for (const code of ['EVTO', 'UIAD', 'SAJC', 'SAJT'] as const) {
+  it('the blue family uses blues content types (EVTO/UIAD/SAJC/SAJT/RONT/NONT v2, rest v1); DTDC uses its own (verified live)', () => {
+    for (const code of ['EVTO', 'UIAD', 'SAJC', 'SAJT', 'RONT', 'NONT'] as const) {
       expect(SDO_REGISTRY[code].metadataContentType).toContain('blues.v2');
     }
     for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'COTA', 'DSFD', 'DRTY', 'APLO'] as const) {
@@ -321,7 +321,7 @@ describe('SDO registry write metadata', () => {
   // hardcoded 'application/json' for every type, which SAP answers with 415 for the DDL-text
   // ones — DTSC write was dead on arrival. Content types live-verified per type on 816.
   it('maps each type to the source content type SAP actually accepts (live-verified 816)', () => {
-    for (const code of ['DESD', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'APLO', 'SAJC', 'SAJT'] as const) {
+    for (const code of ['DESD', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'APLO', 'SAJC', 'SAJT', 'RONT', 'NONT'] as const) {
       expect(serverDrivenSourceContentType(code)).toBe('application/json');
     }
     for (const code of ['DTSC', 'DSFD', 'DTDC', 'DRTY'] as const) {
