@@ -22,9 +22,11 @@
  * keep working on those releases.
  *
  * Security invariants:
- *   - Resolution failure (network, permission) is
+ *   - Resolution failure (network, permission, unexpected response) is
  *     fail-closed: the resolver throws and the caller (checkPackage) MUST treat
  *     the throw as "package denied". Never silently allow.
+ *   - A package read must return the document of the requested package;
+ *     anything else throws.
  *   - A super-package SAP does not know (404) or a top-level package ends the
  *     chain. Ending early can only lose membership, never grant it.
  *   - A cycle or a chain deeper than `maxDepth` throws (fail-closed); the
@@ -44,7 +46,7 @@
 import { AdtApiError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
-import { findDeepNodes, parseXml } from './xml-parser.js';
+import { parseXml } from './xml-parser.js';
 
 export interface PackageHierarchyResolver {
   /**
@@ -201,19 +203,35 @@ export class AdtPackageHierarchyResolver implements PackageHierarchyResolver {
 }
 
 /**
- * Super-package name from `GET /sap/bc/adt/packages/{name}` (`<pak:superPackage adtcore:name="…"/>`),
- * uppercased; undefined for a top-level package (absent or empty element).
+ * Package name and super-package from `GET /sap/bc/adt/packages/{name}`: the root `pak:package`
+ * element's `adtcore:name` and its direct `pak:superPackage` child (`adtcore:name`), uppercased.
+ * `superPackage` is undefined for a top-level package (absent or empty element). Throws when the
+ * document is not a package document or carries more than one super-package.
  */
-export function parseSuperPackage(xml: string): string | undefined {
-  const [node] = findDeepNodes(parseXml(xml), 'superPackage');
-  const name = String(node?.['@_name'] ?? '').trim();
-  return name ? name.toUpperCase() : undefined;
+export function parsePackageDocument(xml: string): { name: string; superPackage?: string } {
+  const root = parseXml(xml).package;
+  if (!root || typeof root !== 'object' || Array.isArray(root)) {
+    throw new Error('response is not an ADT package document');
+  }
+  const record = root as Record<string, unknown>;
+  const name = String(record['@_name'] ?? '')
+    .trim()
+    .toUpperCase();
+  const sup = record.superPackage;
+  if (sup === undefined || sup === '') return { name };
+  if (typeof sup !== 'object' || Array.isArray(sup)) {
+    throw new Error(`package document of '${name}' has an unexpected pak:superPackage`);
+  }
+  const superPackage = String((sup as Record<string, unknown>)['@_name'] ?? '')
+    .trim()
+    .toUpperCase();
+  return superPackage ? { name, superPackage } : { name };
 }
 
 /**
  * Direct super-package of a package. `found: false` when SAP answers 404 (unknown package, or no
- * packages resource before 7.52); every other failure throws, so the allowedPackages subtree check
- * stays fail-closed.
+ * packages resource before 7.52); every other failure throws, and so does a document of another
+ * package, so the allowedPackages subtree check stays fail-closed.
  */
 export async function fetchSuperPackage(
   http: AdtHttpClient,
@@ -221,13 +239,21 @@ export async function fetchSuperPackage(
   packageName: string,
 ): Promise<SuperPackageLookup> {
   checkOperation(safety, OperationType.Read, 'GetSuperPackage');
+  const requested = packageName.trim().toUpperCase();
+  let body: string;
   try {
-    const resp = await http.get(`/sap/bc/adt/packages/${encodeURIComponent(packageName)}`, undefined, {
-      suppressNotFoundLog: true,
-    });
-    return { found: true, superPackage: parseSuperPackage(resp.body) };
+    body = (
+      await http.get(`/sap/bc/adt/packages/${encodeURIComponent(requested)}`, undefined, {
+        suppressNotFoundLog: true,
+      })
+    ).body;
   } catch (err) {
     if (err instanceof AdtApiError && err.statusCode === 404) return { found: false };
     throw err;
   }
+  const doc = parsePackageDocument(body);
+  if (doc.name !== requested) {
+    throw new Error(`package read of '${requested}' returned the document of '${doc.name || '(none)'}'`);
+  }
+  return { found: true, superPackage: doc.superPackage };
 }

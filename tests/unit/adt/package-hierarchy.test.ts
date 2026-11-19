@@ -4,7 +4,7 @@ import type { AdtHttpClient } from '../../../src/adt/http.js';
 import {
   AdtPackageHierarchyResolver,
   fetchSuperPackage,
-  parseSuperPackage,
+  parsePackageDocument,
   type SuperPackageLookup,
 } from '../../../src/adt/package-hierarchy.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
@@ -228,30 +228,44 @@ describe('AdtPackageHierarchyResolver', () => {
   });
 });
 
-describe('parseSuperPackage', () => {
-  const pkg = (superPackage: string) =>
+describe('parsePackageDocument', () => {
+  const pkg = (superPackage: string, name = 'zchild') =>
     '<?xml version="1.0" encoding="utf-8"?><pak:package xmlns:pak="http://www.sap.com/adt/packages" ' +
-    'xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZCHILD" adtcore:type="DEVC/K">' +
+    `xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${name}" adtcore:type="DEVC/K">` +
     `<pak:attributes pak:packageType="development"/>${superPackage}<pak:transport/></pak:package>`;
 
-  it('returns the uppercased super-package name', () => {
+  it('returns the uppercased package and super-package names', () => {
     expect(
-      parseSuperPackage(
+      parsePackageDocument(
         pkg(
           '<pak:superPackage adtcore:uri="/sap/bc/adt/packages/zparent" adtcore:type="DEVC/K" adtcore:name="zparent"/>',
         ),
       ),
-    ).toBe('ZPARENT');
+    ).toEqual({ name: 'ZCHILD', superPackage: 'ZPARENT' });
   });
 
   it('keeps namespaced names', () => {
-    expect(parseSuperPackage(pkg('<pak:superPackage adtcore:name="/COMPANY/PARENT"/>'))).toBe('/COMPANY/PARENT');
+    expect(parsePackageDocument(pkg('<pak:superPackage adtcore:name="/COMPANY/PARENT"/>')).superPackage).toBe(
+      '/COMPANY/PARENT',
+    );
   });
 
-  it('returns undefined for a top-level package (empty or missing element)', () => {
-    expect(parseSuperPackage(pkg('<pak:superPackage adtcore:name=""/>'))).toBeUndefined();
-    expect(parseSuperPackage(pkg('<pak:superPackage/>'))).toBeUndefined();
-    expect(parseSuperPackage(pkg(''))).toBeUndefined();
+  it('a top-level package has no super-package (empty or missing element)', () => {
+    expect(parsePackageDocument(pkg('<pak:superPackage adtcore:name=""/>'))).toEqual({ name: 'ZCHILD' });
+    expect(parsePackageDocument(pkg('<pak:superPackage/>'))).toEqual({ name: 'ZCHILD' });
+    expect(parsePackageDocument(pkg(''))).toEqual({ name: 'ZCHILD' });
+  });
+
+  it('reads only the direct child, never a nested superPackage', () => {
+    const nested = '<pak:superPackage/><pak:subPackages><x:superPackage adtcore:name="ZROOT"/></pak:subPackages>';
+    expect(parsePackageDocument(pkg(nested))).toEqual({ name: 'ZCHILD' });
+  });
+
+  it('throws on a document that is not a package or has several super-packages', () => {
+    expect(() => parsePackageDocument('<html><body>login</body></html>')).toThrow(/not an ADT package document/);
+    expect(() =>
+      parsePackageDocument(pkg('<pak:superPackage adtcore:name="ZA"/><pak:superPackage adtcore:name="ZB"/>')),
+    ).toThrow(/unexpected pak:superPackage/);
   });
 });
 
@@ -284,10 +298,17 @@ describe('fetchSuperPackage', () => {
 
   it('reads the namespaced package path encoded', async () => {
     const { get, http } = httpReturning(doc('/COMPANY/PKG', '/COMPANY/PARENT'));
-    await expect(fetchSuperPackage(http, unrestrictedSafetyConfig(), '/COMPANY/PKG')).resolves.toEqual({
+    await expect(fetchSuperPackage(http, unrestrictedSafetyConfig(), '/company/pkg')).resolves.toEqual({
       found: true,
       superPackage: '/COMPANY/PARENT',
     });
     expect(get.mock.calls[0]?.[0]).toBe('/sap/bc/adt/packages/%2FCOMPANY%2FPKG');
+  });
+
+  it('throws when SAP returns the document of another package', async () => {
+    const { http } = httpReturning(doc('ZOTHER', 'ZROOT'));
+    await expect(fetchSuperPackage(http, unrestrictedSafetyConfig(), 'ZA')).rejects.toThrow(
+      /returned the document of 'ZOTHER'/,
+    );
   });
 });
