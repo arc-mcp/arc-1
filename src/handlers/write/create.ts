@@ -270,6 +270,18 @@ function ttypPostCreateFailureHint(name: string): string {
   );
 }
 
+// SAP rejects invalid messages only in the follow-up PUT; the POST has already created the class and,
+// in a transportable package, recorded it in the request (#1254).
+function msagPostCreateFailureHint(name: string): string {
+  return (
+    `MSAG ${name} was created, but writing its messages failed after SAP accepted the create POST. ` +
+    'The message class exists without messages and, in a transportable package, is recorded in the request. ' +
+    `To recover, run SAPWrite(action="update", type="MSAG", name="${name}", messages=[…]) with the messages ` +
+    'from the create request, or delete the class. Verify with SAPRead first; do not repeat create. ' +
+    'If an edit lock remains, release it in ADT/SM12 before retrying.'
+  );
+}
+
 async function putTtypMetadataAfterCreate(
   ctx: SapWriteContext,
   objectUrl: string,
@@ -816,22 +828,26 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     // MSAG: POST creates empty container — follow-up PUT to write messages
     if (type === 'MSAG' && Array.isArray(metadataProperties.messages) && metadataProperties.messages.length > 0) {
       const ct = vendorContentTypeForType(type);
-      await client.http.withStatefulSession(async (session) => {
-        const lock = await lockObject(
-          session,
-          client.safety,
-          objectUrl,
-          'MODIFY',
-          getCachedFeatures()?.abapRelease,
-          systemType,
-        );
-        const lockTransport = effectiveTransport ?? (lock.corrNr || undefined);
-        try {
-          await updateObject(session, client.safety, objectUrl, body, lock.lockHandle, ct, lockTransport);
-        } finally {
-          await unlockObject(session, objectUrl, lock.lockHandle);
-        }
-      });
+      try {
+        await client.http.withStatefulSession(async (session) => {
+          const lock = await lockObject(
+            session,
+            client.safety,
+            objectUrl,
+            'MODIFY',
+            getCachedFeatures()?.abapRelease,
+            systemType,
+          );
+          const lockTransport = effectiveTransport ?? (lock.corrNr || undefined);
+          try {
+            await updateObject(session, client.safety, objectUrl, body, lock.lockHandle, ct, lockTransport);
+          } finally {
+            await unlockObject(session, objectUrl, lock.lockHandle);
+          }
+        });
+      } catch (err) {
+        throw postCreateError(ctx, err, 'MSAG', name, msagPostCreateFailureHint(name));
+      }
     }
     if (type === 'ENHO') {
       try {
