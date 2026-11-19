@@ -68,7 +68,7 @@ describe('MSAG message number validation', () => {
     const result = await write('create', '001');
     expect(result.isError).toBe(true);
     const text = result.content[0].text;
-    expect(text).toContain('MSAG ZMESSAGES was created, but writing its messages failed');
+    expect(text).toContain('MSAG ZMESSAGES was created');
     expect(text).toContain('SAPWrite(action="update", type="MSAG", name="ZMESSAGES"');
     expect(text).toContain('do not repeat create');
     expect(text).not.toContain('seconds and retry');
@@ -79,5 +79,18 @@ describe('MSAG message number validation', () => {
     expect(
       sequence.filter((c) => c.url.pathname === objectPath && c.url.searchParams.get('_action') === 'UNLOCK'),
     ).toHaveLength(1);
+  });
+
+  it('asks for read-back when the PUT succeeds and unlock fails', async () => {
+    mockFetch.mockImplementation((url) =>
+      Promise.resolve(
+        new URL(String(url)).searchParams.get('_action') === 'UNLOCK' ? mockResponse(500, 'Unlock failed') : ok(),
+      ),
+    );
+    const result = await write('create', '001');
+    expect(result.isError).toBe(true);
+    expect(calls().some((call) => call.method === 'PUT')).toBe(true);
+    expect(result.content[0].text).toContain('Check its messages with SAPRead');
+    expect(result.content[0].text).not.toContain('without messages');
   });
 });

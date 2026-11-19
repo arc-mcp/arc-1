@@ -270,14 +270,12 @@ function ttypPostCreateFailureHint(name: string): string {
   );
 }
 
-// SAP rejects invalid messages only in the follow-up PUT; the POST has already created the class and,
-// in a transportable package, recorded it in the request (#1254).
 function msagPostCreateFailureHint(name: string): string {
   return (
-    `MSAG ${name} was created, but writing its messages failed after SAP accepted the create POST. ` +
-    'The message class exists without messages and, in a transportable package, is recorded in the request. ' +
-    `To recover, run SAPWrite(action="update", type="MSAG", name="${name}", messages=[…]) with the messages ` +
-    'from the create request, or delete the class. Verify with SAPRead first; do not repeat create. ' +
+    `MSAG ${name} was created. In a transportable package it is recorded in the request. ` +
+    'Check its messages with SAPRead first; do not repeat create. ' +
+    `If messages are missing, run SAPWrite(action="update", type="MSAG", name="${name}", messages=[…]) ` +
+    'with the messages from the create request, or delete the class. ' +
     'If an edit lock remains, release it in ADT/SM12 before retrying.'
   );
 }
