@@ -337,11 +337,10 @@ export class AdtClient {
    * per-safety-scope. Cache invalidation is exposed via `invalidatePackageHierarchy()`.
    */
   getPackageHierarchyResolver(): PackageHierarchyResolver {
-    if (!this.packageHierarchyResolverHolder.resolver) {
-      this.packageHierarchyResolverHolder.resolver = new AdtPackageHierarchyResolver((pkg) =>
-        fetchSuperPackage(this.http, this.safety, pkg),
-      );
-    }
+    this.packageHierarchyResolverHolder.resolver ??= new AdtPackageHierarchyResolver(
+      (pkg) => fetchSuperPackage(this.http, this.safety, pkg),
+      { fetchSubpackages: (root) => this.getSubpackages(root) },
+    );
     return this.packageHierarchyResolverHolder.resolver;
   }
 

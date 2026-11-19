@@ -1538,27 +1538,34 @@ describe('AdtClient', () => {
       `xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${name}" adtcore:type="DEVC/K">` +
       `<pak:superPackage adtcore:name="${superPackage}"/></pak:package>`;
 
-    it('resolver walks the chain from GET /sap/bc/adt/packages/{name}; an unknown package (404) ends it', async () => {
+    it('resolver walks the chain from GET /sap/bc/adt/packages/{name}', async () => {
       const parents: Record<string, string> = { ZA2: 'ZA', ZA: 'ZROOT', ZROOT: '' };
-      mockFetch.mockReset();
-      mockFetch.mockImplementation(async (url: unknown) => {
+      mockFetch.mockReset().mockImplementation(async (url: unknown) => {
         const path = new URL(String(url)).pathname;
         const name = decodeURIComponent(path.replace('/sap/bc/adt/packages/', '')).toUpperCase();
         if (path.startsWith('/sap/bc/adt/packages/') && name in parents)
           return mockResponse(200, packageXml(name, parents[name]!));
         return mockResponse(404, 'not found');
       });
-      const client = createClient();
-      const resolver = client.getPackageHierarchyResolver();
-      expect(await resolver.isDescendantOrSelf('ZROOT', 'ZA2')).toBe(true);
-      expect(await resolver.isDescendantOrSelf('ZROOT', 'ZNOTHERE')).toBe(false);
+      expect(await createClient().getPackageHierarchyResolver().isDescendantOrSelf('ZROOT', 'ZA2')).toBe(true);
       const paths = mockFetch.mock.calls.map(([url]) => new URL(String(url)).pathname);
-      expect(paths).toEqual([
-        '/sap/bc/adt/packages/ZA2',
-        '/sap/bc/adt/packages/ZA',
-        '/sap/bc/adt/packages/ZROOT',
-        '/sap/bc/adt/packages/ZNOTHERE',
-      ]);
+      expect(paths).toEqual(['/sap/bc/adt/packages/ZA2', '/sap/bc/adt/packages/ZA', '/sap/bc/adt/packages/ZROOT']);
+    });
+
+    it('resolver falls back to repository/nodestructure when the checked package is not found (before 7.52)', async () => {
+      const xml = (f: string) => readFileSync(new URL(`../../fixtures/xml/${f}.xml`, import.meta.url), 'utf8');
+      mockFetch.mockReset().mockImplementation(async (url: unknown) => {
+        const u = new URL(String(url));
+        if (u.pathname === '/sap/bc/adt/discovery') return mockResponse(200, '<service/>', { 'x-csrf-token': 'T' });
+        if (!u.pathname.endsWith('/nodestructure')) return mockResponse(404, 'not found');
+        const sub = u.searchParams.get('parent_name') === 'SABP_UNIT' ? 'sabp_unit-devc' : 'empty';
+        return mockResponse(200, xml(`nodestructure-${sub}`));
+      });
+      const resolver = createClient().getPackageHierarchyResolver();
+      expect(await resolver.isDescendantOrSelf('SABP_UNIT', 'SABP_UNIT_CORE')).toBe(true);
+      expect(await resolver.isDescendantOrSelf('SABP_UNIT', 'ZNOTHERE')).toBe(false);
+      const rootPosts = mockFetch.mock.calls.filter(([url]) => String(url).includes('parent_name=SABP_UNIT&'));
+      expect(rootPosts).toHaveLength(1); // subtree expanded once, then cached
     });
 
     it('invalidatePackageHierarchy() drops cached chains', async () => {

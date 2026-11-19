@@ -5,6 +5,7 @@ import {
   AdtPackageHierarchyResolver,
   fetchSuperPackage,
   parseSuperPackage,
+  type SuperPackageLookup,
 } from '../../../src/adt/package-hierarchy.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 
@@ -16,15 +17,18 @@ describe('AdtPackageHierarchyResolver', () => {
     vi.useRealTimers();
   });
 
-  /** `parents` maps a package to its super-package; absent = top-level. */
+  /** `parents` maps a package to its super-package ('' = top-level); a package absent from it is not found (404). */
   function buildFetcher(parents: Record<string, string>) {
-    return vi.fn(async (pkg: string) => parents[pkg.toUpperCase()]);
+    return vi.fn(async (pkg: string): Promise<SuperPackageLookup> => {
+      const parent = parents[pkg.toUpperCase()];
+      return parent === undefined ? { found: false } : { found: true, superPackage: parent || undefined };
+    });
   }
 
   // ZROOT ── ZA ── ZA1 ── ZA2
   //      └─ ZB
   // ZOTHER (top-level)
-  const TREE = { ZA: 'ZROOT', ZA1: 'ZA', ZA2: 'ZA1', ZB: 'ZROOT' };
+  const TREE = { ZROOT: '', ZOTHER: '', ZA: 'ZROOT', ZA1: 'ZA', ZA2: 'ZA1', ZB: 'ZROOT' };
 
   it('returns true for the root itself without calling the fetcher', async () => {
     const fetcher = buildFetcher({});
@@ -64,9 +68,66 @@ describe('AdtPackageHierarchyResolver', () => {
     expect(fetcher).toHaveBeenCalledTimes(4);
   });
 
-  it('an unknown package (fetcher returns undefined) matches no root', async () => {
+  it('an unknown package (not found) matches no root without a top-down fallback', async () => {
     const resolver = new AdtPackageHierarchyResolver(buildFetcher(TREE));
     expect(await resolver.isDescendantOrSelf('ZROOT', 'ZNEW_PACKAGE')).toBe(false);
+  });
+
+  it('an unknown super-package (not found) ends the chain without the fallback', async () => {
+    const fetchSubpackages = vi.fn(async () => ['ZC']);
+    const resolver = new AdtPackageHierarchyResolver(buildFetcher({ ZC: 'ZGONE' }), { fetchSubpackages });
+    expect(await resolver.isDescendantOrSelf('ZROOT', 'ZC')).toBe(false);
+    expect(fetchSubpackages).not.toHaveBeenCalled();
+  });
+
+  describe('top-down fallback when the checked package is not found (packages resource absent before 7.52)', () => {
+    const CHILDREN: Record<string, string[]> = { ZROOT: ['ZA', 'ZB'], ZA: ['ZA1'], ZA1: ['ZA2'] };
+    const allNotFound = () => vi.fn(async (): Promise<SuperPackageLookup> => ({ found: false }));
+    const subpackages = () => vi.fn(async (root: string) => CHILDREN[root] ?? []);
+
+    it('expands the rule subtree and matches a descendant', async () => {
+      const fetchSubpackages = subpackages();
+      const resolver = new AdtPackageHierarchyResolver(allNotFound(), { fetchSubpackages });
+      expect(await resolver.isDescendantOrSelf('ZROOT', 'za2')).toBe(true);
+      expect(await resolver.isDescendantOrSelf('ZROOT', 'ZOTHER')).toBe(false);
+      expect(fetchSubpackages.mock.calls.map(([root]) => root)).toEqual(['ZROOT', 'ZA', 'ZB', 'ZA1', 'ZA2']);
+    });
+
+    it('is not used once the packages resource finds the checked package', async () => {
+      const fetchSubpackages = subpackages();
+      const resolver = new AdtPackageHierarchyResolver(buildFetcher(TREE), { fetchSubpackages });
+      expect(await resolver.isDescendantOrSelf('ZROOT', 'ZA2')).toBe(true);
+      expect(fetchSubpackages).not.toHaveBeenCalled();
+    });
+
+    it('a subtree fetch error denies (fail-closed) and is purged for a retry', async () => {
+      let fail = true;
+      const fetchSubpackages = vi.fn(async (root: string) => {
+        if (fail) throw new Error('403 Forbidden');
+        return CHILDREN[root] ?? [];
+      });
+      const resolver = new AdtPackageHierarchyResolver(allNotFound(), { fetchSubpackages });
+      await expect(resolver.isDescendantOrSelf('ZROOT', 'ZA')).rejects.toThrow(/subtree under 'ZROOT'.*403/);
+      fail = false;
+      expect(await resolver.isDescendantOrSelf('ZROOT', 'ZA')).toBe(true);
+    });
+
+    it('caps the subtree size and depth', async () => {
+      const wide = vi.fn(async (root: string) => (root === 'ZROOT' ? ['Z1', 'Z2', 'Z3'] : []));
+      await expect(
+        new AdtPackageHierarchyResolver(allNotFound(), { fetchSubpackages: wide, maxPackages: 2 }).isDescendantOrSelf(
+          'ZROOT',
+          'ZX',
+        ),
+      ).rejects.toThrow(/maxPackages=2/);
+      const deep = vi.fn(async (root: string) => [`${root}X`]);
+      await expect(
+        new AdtPackageHierarchyResolver(allNotFound(), { fetchSubpackages: deep, maxDepth: 3 }).isDescendantOrSelf(
+          'ZROOT',
+          'ZY',
+        ),
+      ).rejects.toThrow(/maxDepth=3/);
+    });
   });
 
   it('caches the resolved chain for the TTL window', async () => {
@@ -111,8 +172,8 @@ describe('AdtPackageHierarchyResolver', () => {
   });
 
   it('an error above a match still denies (no partial chain is used)', async () => {
-    const fetcher = vi.fn(async (pkg: string) => {
-      if (pkg === 'ZA') return 'ZROOT';
+    const fetcher = vi.fn(async (pkg: string): Promise<SuperPackageLookup> => {
+      if (pkg === 'ZA') return { found: true, superPackage: 'ZROOT' };
       throw new Error('500 Internal Server Error');
     });
     const resolver = new AdtPackageHierarchyResolver(fetcher);
@@ -121,9 +182,9 @@ describe('AdtPackageHierarchyResolver', () => {
 
   it('a failed resolution is purged from the cache so a retry can succeed', async () => {
     let fail = true;
-    const fetcher = vi.fn(async (pkg: string) => {
+    const fetcher = vi.fn(async (pkg: string): Promise<SuperPackageLookup> => {
       if (fail) throw new Error('network');
-      return pkg === 'ZA' ? 'ZROOT' : undefined;
+      return { found: true, superPackage: pkg === 'ZA' ? 'ZROOT' : undefined };
     });
     const resolver = new AdtPackageHierarchyResolver(fetcher);
     await expect(resolver.isDescendantOrSelf('ZROOT', 'ZA')).rejects.toBeInstanceOf(AdtSafetyError);
@@ -132,7 +193,9 @@ describe('AdtPackageHierarchyResolver', () => {
   });
 
   it('the depth cap aborts a pathological chain', async () => {
-    const fetcher = vi.fn(async (pkg: string) => `${pkg}X`);
+    const fetcher = vi.fn(
+      async (pkg: string): Promise<SuperPackageLookup> => ({ found: true, superPackage: `${pkg}X` }),
+    );
     const resolver = new AdtPackageHierarchyResolver(fetcher, { maxDepth: 3 });
     await expect(resolver.isDescendantOrSelf('ZROOT', 'Z')).rejects.toThrow(/maxDepth=3/);
     expect(fetcher).toHaveBeenCalledTimes(3);
@@ -144,10 +207,10 @@ describe('AdtPackageHierarchyResolver', () => {
   });
 
   it('concurrent calls share the same in-flight chain resolution', async () => {
-    let resolveFetcher: (value: string | undefined) => void;
+    let resolveFetcher: (value: SuperPackageLookup) => void;
     const fetcher = vi.fn(
       () =>
-        new Promise<string | undefined>((resolve) => {
+        new Promise<SuperPackageLookup>((resolve) => {
           resolveFetcher = resolve;
         }),
     );
@@ -157,7 +220,7 @@ describe('AdtPackageHierarchyResolver', () => {
     const p2 = resolver.isDescendantOrSelf('ZOTHER', 'ZBAR');
     expect(fetcher).toHaveBeenCalledTimes(1);
 
-    resolveFetcher!(undefined);
+    resolveFetcher!({ found: true });
 
     const [r1, r2] = await Promise.all([p1, p2]);
     expect(r1).toBe(false);
@@ -199,9 +262,18 @@ describe('fetchSuperPackage', () => {
         throw new AdtApiError(`HTTP ${status}`, status, path);
       }),
     }) as unknown as AdtHttpClient;
+  const httpReturning = (body: string) => {
+    const get = vi.fn(async (_path: string) => ({ statusCode: 200, headers: {}, body }));
+    return { get, http: { get } as unknown as AdtHttpClient };
+  };
+  const doc = (name: string, superPackage = '') =>
+    '<pak:package xmlns:pak="http://www.sap.com/adt/packages" xmlns:adtcore="http://www.sap.com/adt/core" ' +
+    `adtcore:name="${name}"><pak:superPackage adtcore:name="${superPackage}"/></pak:package>`;
 
-  it('treats an unknown package (404) as the end of the chain', async () => {
-    await expect(fetchSuperPackage(httpFailingWith(404), unrestrictedSafetyConfig(), 'ZNEW')).resolves.toBeUndefined();
+  it('reports an unknown package (404) as not found', async () => {
+    await expect(fetchSuperPackage(httpFailingWith(404), unrestrictedSafetyConfig(), 'ZNEW')).resolves.toEqual({
+      found: false,
+    });
   });
 
   it.each([401, 403, 500])('rethrows HTTP %s so the subtree check denies', async (status) => {
@@ -211,9 +283,11 @@ describe('fetchSuperPackage', () => {
   });
 
   it('reads the namespaced package path encoded', async () => {
-    const get = vi.fn(async (_path: string) => ({ statusCode: 200, headers: {}, body: '<pak:package/>' }));
-    const http = { get } as unknown as AdtHttpClient;
-    await expect(fetchSuperPackage(http, unrestrictedSafetyConfig(), '/COMPANY/PKG')).resolves.toBeUndefined();
+    const { get, http } = httpReturning(doc('/COMPANY/PKG', '/COMPANY/PARENT'));
+    await expect(fetchSuperPackage(http, unrestrictedSafetyConfig(), '/COMPANY/PKG')).resolves.toEqual({
+      found: true,
+      superPackage: '/COMPANY/PARENT',
+    });
     expect(get.mock.calls[0]?.[0]).toBe('/sap/bc/adt/packages/%2FCOMPANY%2FPKG');
   });
 });
