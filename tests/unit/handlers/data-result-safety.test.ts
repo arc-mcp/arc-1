@@ -96,6 +96,8 @@ describe('request-scoped data-result safety', () => {
         ...DEFAULT_CONFIG,
         maxDataPreviewResponseBytes: 8,
         minimalErrors: true,
+        allowDataPreview: true,
+        allowFreeSQL: true,
         targetId: 'A4H-001',
       },
       'SAPQuery',

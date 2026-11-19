@@ -173,6 +173,40 @@ describe('AdtHttpClient', () => {
       expect(headers['x-sap-security-session']).toBe('create');
     });
 
+    it('redacts the SAML assertion from HTTP debug audit fields', async () => {
+      const { logger } = await import('../../../src/server/logger.js');
+      const audit = vi.spyOn(logger, 'emitAudit').mockImplementation(() => undefined);
+      const previousDebug = process.env.ARC1_LOG_HTTP_DEBUG;
+      process.env.ARC1_LOG_HTTP_DEBUG = 'true';
+      try {
+        mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+        const client = new AdtHttpClient(samlConfig());
+        await client.get('/sap/bc/adt/core/discovery');
+        const event = audit.mock.calls.map(([entry]) => entry).find((entry) => entry.event === 'http_request');
+        expect(event?.requestHeaders?.Authorization).toBe('[REDACTED]');
+        expect(JSON.stringify(event)).not.toContain('base64assertion');
+      } finally {
+        if (previousDebug === undefined) delete process.env.ARC1_LOG_HTTP_DEBUG;
+        else process.env.ARC1_LOG_HTTP_DEBUG = previousDebug;
+        audit.mockRestore();
+      }
+    });
+
+    it('logs off with the same security cookie and without replaying the assertion', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(200, 'ok', {}, ['SAP_SESSIONID_A4H_001=test-session; Path=/; HttpOnly']))
+        .mockResolvedValueOnce(mockResponse(200, 'logged off'));
+      const client = new AdtHttpClient(samlConfig());
+      await client.get('/sap/bc/adt/core/discovery');
+      await client.logoffSamlSecuritySessions();
+
+      expect(fetchUrl(1)).toContain('/sap/public/bc/icf/logoff');
+      expect(fetchHeaders(1).Cookie).toContain('SAP_SESSIONID_A4H_001=test-session');
+      expect(fetchHeaders(1).Authorization).toBeUndefined();
+      expect(fetchHeaders(1)['x-sap-security-session']).toBeUndefined();
+      expect(fetchOptions(1).method).toBe('GET');
+    });
+
     it('does NOT send Basic auth when a SAML assertion is configured', async () => {
       mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
 

@@ -85,6 +85,7 @@ function buildReadOnlyRuntimeConfig(
     mcpHttpRateLimit: base.mcpHttpRateLimit,
     rateLimit: base.rateLimit,
     allowedOrigins: [...base.allowedOrigins],
+    allowedClientIps: [...base.allowedClientIps],
     logLevel: base.logLevel,
     logFormat: base.logFormat,
     minimalErrors: base.minimalErrors,

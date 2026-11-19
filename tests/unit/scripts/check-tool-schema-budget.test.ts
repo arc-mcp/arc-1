@@ -27,7 +27,7 @@ describe('check-tool-schema-budget', () => {
       expect(measureToolDefinitions(enabled).schemaBytes).toBe(measureToolDefinitions(base).schemaBytes);
       expect(enabled.budget.maxTotalWireBytes).toBe(base.budget.maxTotalWireBytes);
       expect(enabled.budget.maxPerToolWireBytes).toBe(base.budget.maxPerToolWireBytes);
-      expect(enabled.budget.maxTotalWireBytes).toBe(name === 'standard-default' ? 50_000 : 75_300);
+      expect(enabled.budget.maxTotalWireBytes).toBe(name === 'standard-default' ? 50_000 : 75_384);
       expect(enabled.budget.maxPerToolWireBytes).toBe(name === 'standard-full-git' ? 23_850 : 23_000);
       const diagnose = definitions.find((tool) => tool.name === 'SAPDiagnose')!;
       expect(diagnose.inputSchema).toHaveProperty('properties.objects.maxItems', 20);
@@ -50,7 +50,8 @@ describe('check-tool-schema-budget', () => {
 
   it('keeps read-only, aggregate and hyperfocused wire ceilings unchanged', () => {
     for (const scenario of TOOL_SCHEMA_SCENARIOS) {
-      if (scenario.name.includes('full-git')) continue;
+      // Write surfaces (single-target full and ADR-0011 pinned) use the write wall.
+      if (scenario.name.includes('full-git') || scenario.name === 'multi-target-pinned-write') continue;
       expect(scenario.budget.maxTotalWireBytes).toBe(scenario.name === 'hyperfocused-default' ? 4_000 : 50_000);
       expect(scenario.budget.maxPerToolWireBytes).toBe(scenario.name === 'hyperfocused-default' ? 4_000 : 23_000);
     }

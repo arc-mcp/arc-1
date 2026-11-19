@@ -424,9 +424,9 @@ describe('Tool Definitions', () => {
     const onPremTypeEnum: string[] = onPremSchema.properties.type.enum;
     const onPremTypeDescription: string = onPremSchema.properties.type.description;
 
-    for (const type of ['DCLS', 'SRVB', 'SKTD', 'TABL/DT', 'TABL/DS', 'MSAG']) {
+    // As on BTP, the enum is the complete type list; property help no longer repeats it.
+    for (const type of ['DCLS', 'SRVB', 'SKTD', 'TABL/DT', 'TABL/DS', 'MSAG', 'RONT', 'NONT']) {
       expect(onPremTypeEnum).toContain(type);
-      expect(onPremTypeDescription).toContain(type);
     }
     expect(onPremDescription).toContain('DCLS');
     expect(onPremTypeDescription).toContain('change_method_visibility');

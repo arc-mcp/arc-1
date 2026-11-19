@@ -687,43 +687,54 @@ async function handleSAPReadBase(
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'FUGR': {
-      // grep searches the include sources, so it implies the expansion; without the
-      // sources there is nothing to search and the metadata would ignore the pattern.
-      const expand = Boolean(args.expand_includes) || Boolean(args.grep);
-      if (expand) {
-        // Apply the same include-read ceiling as PROG/INCL expansion, including implicit grep expansion.
-        if (isActionDenied('SAPRead', 'INCL', client.safety.denyActions ?? [])) {
-          return errorResult(
-            'FUGR include expansion (including grep) reads includes like SAPRead(type="INCL"), which SAP_DENY_ACTIONS denies on this server.',
-          );
+      try {
+        // grep searches the include sources, so it implies the expansion; without the
+        // sources there is nothing to search and the metadata would ignore the pattern.
+        const expand = Boolean(args.expand_includes) || Boolean(args.grep);
+        if (expand) {
+          // Apply the same include-read ceiling as PROG/INCL expansion, including implicit grep expansion.
+          if (isActionDenied('SAPRead', 'INCL', client.safety.denyActions ?? [])) {
+            return errorResult(
+              'FUGR include expansion (including grep) reads includes like SAPRead(type="INCL"), which SAP_DENY_ACTIONS denies on this server.',
+            );
+          }
+          // Recursive expansion: the function module bodies (FUNCTION…ENDFUNCTION) and
+          // PBO/PAI modules live in nested includes (LZ<grp>U01, …O…, …I…) pulled in from
+          // the UXX include — a one-level walk misses them. getFunctionGroupExpanded BFS-es
+          // the include graph (depth/count-capped, cycle-guarded). Dynpros + GUI status are
+          // not included: ADT doesn't expose them over REST (SAPGUI-only).
+          const { blocks, truncated } = await client.getFunctionGroupExpanded(name, { version: effectiveVersion });
+          if (args.grep) {
+            // Each include on its own, so a line number counts within the include it names.
+            const g = grepSourceBlocks(blocks, String(args.grep));
+            const note = truncated
+              ? '\n\n=== [truncated] ===\nInclude expansion limit reached (80 source blocks or 5 levels); some nested includes were not searched. ' +
+                'Search a known include with SAPRead(type="INCL", name="...", grep="...") or a function module with type="FUNC", group="...", name="...", grep="...".'
+              : '';
+            const output = `${g.output}${note}`;
+            return g.invalidPattern ? errorResult(output) : textResult(output);
+          }
+          const parts = blocks.map((b) => `=== ${b.name} ===\n${b.source}`);
+          if (truncated) {
+            parts.push(
+              '=== [truncated] ===\nInclude expansion limit reached (80 source blocks or 5 levels); some nested includes were not expanded. ' +
+                'Read remaining includes individually with SAPRead(type="INCL", name="...").',
+            );
+          }
+          return textResult(parts.join('\n\n'));
         }
-        // Recursive expansion: the function module bodies (FUNCTION…ENDFUNCTION) and
-        // PBO/PAI modules live in nested includes (LZ<grp>U01, …O…, …I…) pulled in from
-        // the UXX include — a one-level walk misses them. getFunctionGroupExpanded BFS-es
-        // the include graph (depth/count-capped, cycle-guarded). Dynpros + GUI status are
-        // not included: ADT doesn't expose them over REST (SAPGUI-only).
-        const { blocks, truncated } = await client.getFunctionGroupExpanded(name, { version: effectiveVersion });
-        if (args.grep) {
-          // Each include on its own, so a line number counts within the include it names.
-          const g = grepSourceBlocks(blocks, String(args.grep));
-          const note = truncated
-            ? '\n\n=== [truncated] ===\nInclude expansion limit reached (80 source blocks or 5 levels); some nested includes were not searched. ' +
-              'Search a known include with SAPRead(type="INCL", name="...", grep="...") or a function module with type="FUNC", group="...", name="...", grep="...".'
-            : '';
-          const output = `${g.output}${note}`;
-          return g.invalidPattern ? errorResult(output) : textResult(output);
-        }
-        const parts = blocks.map((b) => `=== ${b.name} ===\n${b.source}`);
-        if (truncated) {
-          parts.push(
-            '=== [truncated] ===\nInclude expansion limit reached (80 source blocks or 5 levels); some nested includes were not expanded. ' +
-              'Read remaining includes individually with SAPRead(type="INCL", name="...").',
-          );
-        }
-        return textResult(parts.join('\n\n'));
+        const fg = await client.getFunctionGroup(name);
+        return textResult(toolJson(fg));
+      } catch (error) {
+        // A function module name passed as a group: SAP answers 404/422 and SAPSearch(FUGR) lists nothing.
+        if (!(error instanceof AdtApiError) || (error.statusCode !== 404 && error.statusCode !== 422)) throw error;
+        const group = await client.resolveFunctionGroup(name).catch(() => null);
+        if (!group || group.toUpperCase() === name.toUpperCase()) throw error;
+        return errorResult(
+          `"${name}" is a function module in function group ${group}, not a function group. ` +
+            `Use SAPRead(type="FUNC", group="${group}", name="${name}") or SAPRead(type="FUGR", name="${group}").`,
+        );
       }
-      const fg = await client.getFunctionGroup(name);
-      return textResult(toolJson(fg));
     }
     case 'INCL': {
       if (args.expand_includes === true) {

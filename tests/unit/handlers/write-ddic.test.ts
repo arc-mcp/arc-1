@@ -799,42 +799,50 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(result.content[0]?.text).toContain('name="ZTR_C_PAYMENT_VALUE_DATE"');
     });
 
-    it('KTD create alias routes through the SKTD collection endpoint', async () => {
-      const calls: Array<{ method: string; url: string; body?: string; contentType?: string }> = [];
-      mockFetch.mockReset();
-      mockFetch.mockImplementation((url: string | URL, init?: RequestInit) => {
-        calls.push({
-          method: init?.method ?? 'GET',
-          url: String(url),
-          body: init?.body?.toString(),
-          contentType: init?.headers ? String((init.headers as Record<string, string>)['Content-Type'] ?? '') : '',
-        });
-        return Promise.resolve(
-          mockResponse(201, '<sktd:docu/>', {
-            location: '/sap/bc/adt/documentation/ktd/documents/ztr_c_payment_value_date',
-            'x-csrf-token': 'T',
-          }),
-        );
-      });
+    const ktdPath = '/sap/bc/adt/documentation/ktd/documents';
+    const rontKtd = { action: 'create', type: 'KTD', name: 'ZPARENT', package: '$TMP', refObjectType: 'RONT/ROT' };
+    const validationStatus = (severity: string) =>
+      `<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><SEVERITY>${severity}</SEVERITY></DATA></asx:values></asx:abap>`;
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'create',
-        type: 'KTD',
-        name: 'ZTR_C_PAYMENT_VALUE_DATE',
-        package: '$TMP',
-        refObjectType: 'DDLS/DF',
+    it.each([
+      ['DDLS/DF', 'ddic/ddl/sources'],
+      ['RONT/ROT', 'businessobjects/rontrot'],
+    ])('KTD create alias routes a %s parent through the SKTD collection', async (refObjectType, parentPath) => {
+      mockFetch.mockImplementation(async (url) => {
+        if (new URL(String(url)).pathname === `${ktdPath}/validation`) {
+          expect(Object.fromEntries(new URL(String(url)).searchParams)).toMatchObject({
+            objname: 'ZPARENT',
+            package: '$TMP',
+            refObjType: refObjectType,
+            refObjName: 'ZPARENT',
+          });
+          return mockResponse(200, validationStatus('OK'));
+        }
+        return mockResponse(201, '<sktd:docu/>', { 'x-csrf-token': 'T' });
       });
-
-      expect(result.isError).toBeUndefined();
-      expect(result.content[0]?.text).toContain('Created SKTD ZTR_C_PAYMENT_VALUE_DATE');
-      const postCall = calls.find(
-        (c) => c.method === 'POST' && c.url.includes('/sap/bc/adt/documentation/ktd/documents'),
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', { ...rontKtd, refObjectType });
+      expect(result.isError, result.content[0]?.text).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Created SKTD ZPARENT');
+      const posts = mockFetch.mock.calls.filter(([, init]) => init?.method === 'POST');
+      expect(posts.map(([url]) => new URL(String(url)).pathname)).toEqual(
+        refObjectType === 'RONT/ROT' ? [`${ktdPath}/validation`, ktdPath] : [ktdPath],
       );
-      expect(postCall).toBeDefined();
-      expect(postCall!.url).not.toContain('/programs/programs');
-      expect(postCall!.body).toContain('adtcore:type="SKTD/TYP"');
-      expect(postCall!.body).toContain('adtcore:type="DDLS/DF"');
+      const body = String(posts.at(-1)?.[1].body);
+      expect(body).toContain('adtcore:type="SKTD/TYP"');
+      expect(body).toContain(`adtcore:type="${refObjectType}" adtcore:uri="/sap/bc/adt/${parentPath}/zparent"`);
     });
+
+    it.each([validationStatus('ERROR'), '<empty/>'])(
+      'stops before creating a KTD when SAP does not confirm RONT documentation support',
+      async (response) => {
+        mockFetch.mockResolvedValue(mockResponse(200, response, { 'x-csrf-token': 'T' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', rontKtd);
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('SAP did not approve KTD creation for RONT/ROT');
+        const posts = mockFetch.mock.calls.filter(([, init]) => init?.method === 'POST');
+        expect(posts.map(([url]) => new URL(String(url)).pathname)).toEqual([`${ktdPath}/validation`]);
+      },
+    );
 
     it('SKTD create returns a capability error when the KTD collection endpoint is unavailable', async () => {
       mockFetch.mockReset();

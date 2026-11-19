@@ -7,7 +7,10 @@ import { createQueryDefinition, pruneQueryDefinition } from '../../../src/handle
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
-vi.mock('../../../src/adt/application-log.js', () => ({ readApplicationLog: vi.fn() }));
+vi.mock('../../../src/adt/application-log.js', async (original) => ({
+  ...(await original<object>()),
+  readApplicationLog: vi.fn(),
+}));
 const { readApplicationLog } = await import('../../../src/adt/application-log.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
@@ -46,6 +49,32 @@ describe('application_log exact nested input', () => {
     expect(ApplicationLogInputSchema.parse({ logNumber, maxRows: null, offset: null })).toEqual({ logNumber });
     expect(ApplicationLogInputSchema.safeParse({ logNumber: null }).success).toBe(false);
     expect(SAPQuerySchemaBtp.safeParse(args).success).toBe(false);
+    expect(APPLICATION_LOG_PROPERTY.properties.severities.items.enum).toEqual(['A', 'E', 'W', 'I', 'S']);
+    expect(ApplicationLogInputSchema.parse({ logNumber, severities: ['E', 'A'] })).toEqual({
+      logNumber,
+      severities: ['E', 'A'],
+    });
+    expect(ApplicationLogInputSchema.parse({ logNumber, severities: null })).toEqual({ logNumber });
+  });
+  it('passes validated severities through dispatch, including GPT-style null padding', async () => {
+    vi.mocked(readApplicationLog).mockResolvedValue({ status: 'ok' } as Awaited<ReturnType<typeof readApplicationLog>>);
+    for (const applicationLog of [
+      { logNumber, severities: ['W'] },
+      { logNumber, severities: null, maxRows: null, offset: null },
+    ])
+      expect(
+        (await handleToolCall(client(), config, 'SAPQuery', { action: 'application_log', applicationLog })).isError,
+      ).not.toBe(true);
+    expect(vi.mocked(readApplicationLog).mock.calls.map((call) => call[1])).toEqual([
+      { logNumber, severities: ['W'] },
+      { logNumber },
+    ]);
+    const bad = await handleToolCall(client(), config, 'SAPQuery', {
+      action: 'application_log',
+      applicationLog: { logNumber, severities: ['e'] },
+    });
+    expect(bad.isError).toBe(true);
+    expect(readApplicationLog).toHaveBeenCalledTimes(2);
   });
   it.each([
     { logNumber: 1 },
@@ -58,6 +87,17 @@ describe('application_log exact nested input', () => {
     { logNumber, offset: 5001 },
     { logNumber, offset: 0.5 },
     { logNumber, search: 'secret' },
+    { logNumber, severities: [] },
+    { logNumber, severities: ['e'] },
+    { logNumber, severities: ['E', 'E'] },
+    { logNumber, severities: ['X'] },
+    { logNumber, severities: ['A', 'E', 'W', 'I', 'S', 'X'] },
+    { logNumber, severities: 'E' },
+    { logNumber, severities: '' },
+    { logNumber, severities: [''] },
+    { logNumber, severities: [null] },
+    { logNumber, severities: {} },
+    { logNumber, severities: ["E' or Type ne 'E"] },
   ])('rejects malformed or unbounded controls %j', (applicationLog) => {
     expect(SAPQuerySchema.safeParse({ action: 'application_log', applicationLog }).success).toBe(false);
   });

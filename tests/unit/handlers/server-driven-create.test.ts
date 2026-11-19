@@ -90,3 +90,25 @@ it('keeps the created-object guidance on a network failure even when cache inval
   expect(result.content[0]?.text).toContain('do not repeat create');
   expect(result.content[0]?.text).not.toContain('SQLITE_BUSY');
 });
+
+it('creates a RONT without wizard properties and writes the AFF source under lock', async () => {
+  const ront =
+    '{"formatVersion":"1","header":{"description":"Test","originalLanguage":"en"},"typeCategory":"technicalObject","name":"ZX_SOT","objectTypeCode":"90100"}';
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'create',
+    type: 'RONT',
+    name: 'ZX_SOT',
+    package: '$TMP',
+    description: 'Test',
+    source: ront,
+  });
+  expect(result.isError, result.content[0]?.text).toBeUndefined();
+  const create = posts().find(([url]) => new URL(String(url)).pathname === '/sap/bc/adt/businessobjects/rontrot');
+  const init = create?.[1];
+  expect(String(init?.body)).toContain('adtcore:type="RONT/ROT"');
+  expect(init?.headers?.['Content-Type']).toBe('application/vnd.sap.adt.blues.v2+xml');
+  expect(String(init?.body)).not.toContain('additionalCreationProperties');
+  const put = mockFetch.mock.calls.find(([, i]) => i?.method === 'PUT');
+  expect(String(put?.[0])).toContain('/sap/bc/adt/businessobjects/rontrot/ZX_SOT/source/main?lockHandle=L1');
+  expect(String(put?.[1]?.body)).toBe(ront);
+});

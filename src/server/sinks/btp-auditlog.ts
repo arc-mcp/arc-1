@@ -69,6 +69,7 @@ function categorize(event: AuditEvent): AuditCategory | null {
     case 'sap_authorization_failed':
     case 'target_policy_denied':
     case 'mcp_rate_limited':
+    case 'mcp_route_denied':
     case 'data_response_limited':
       return 'security-events';
 

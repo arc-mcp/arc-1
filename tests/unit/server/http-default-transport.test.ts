@@ -15,6 +15,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { Semaphore } from '../../../src/adt/semaphore.js';
 import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
+import { makeSamlMaterial } from '../../helpers/saml-material.js';
 import { featuresOff } from '../handlers/handler-test-config.js';
 import { mockFetch } from '../handlers/setup-undici-mock.js';
 
@@ -64,6 +65,59 @@ afterEach(() => {
   vi.mocked(lookupDestinationWithUserToken).mockReset();
   mockFetch.mockReset();
   resetCachedFeatures();
+});
+
+it('loads the local SAML issuer once at startup for multiple HTTP request servers', async () => {
+  const material = makeSamlMaterial();
+  try {
+    vi.spyOn(adtFeatures, 'probeFeatures').mockResolvedValue(featuresOff());
+    mockFetch.mockResolvedValue(mockResponse(200, ''));
+    const config = {
+      ...DEFAULT_CONFIG,
+      url: 'http://sap:8000',
+      transport: 'http-streamable' as const,
+      cacheMode: 'none' as const,
+      insecure: true,
+      ppEnabled: true,
+      samlIdpKeyFile: material.keyFile,
+      samlIdpCertFile: material.certFile,
+      samlIdpIssuer: 'arc1-unit-test-saml-idp',
+      samlAudience: 'A4H_001',
+      samlNameIdClaim: 'email',
+    };
+    const startup = await createAndStartServer(config);
+    await startup.close();
+    rmSync(material.keyFile);
+    rmSync(material.certFile);
+    const first = runtime.factory!();
+    const second = runtime.factory!();
+    await first.close();
+    await second.close();
+  } finally {
+    material.cleanup();
+  }
+});
+
+it('refuses startup when local SAML key material is invalid', async () => {
+  const material = makeSamlMaterial();
+  try {
+    writeFileSync(material.keyFile, 'invalid key');
+    await expect(
+      createAndStartServer({
+        ...DEFAULT_CONFIG,
+        url: 'http://sap:8000',
+        transport: 'http-streamable',
+        cacheMode: 'none',
+        samlIdpKeyFile: material.keyFile,
+        samlIdpCertFile: material.certFile,
+        samlIdpIssuer: 'arc1-unit-test-saml-idp',
+        samlAudience: 'A4H_001',
+        samlNameIdClaim: 'email',
+      }),
+    ).rejects.toThrow(/SAP_PP_SAML_IDP_KEY_FILE does not contain a PEM private key/);
+  } finally {
+    material.cleanup();
+  }
 });
 
 /** Start the real HTTP factory against a mocked 7.50-like SAP; ZSWAP lives in `pkg` (a child of ZROOT). */
