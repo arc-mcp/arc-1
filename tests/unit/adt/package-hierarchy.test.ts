@@ -113,6 +113,22 @@ describe('AdtPackageHierarchyResolver', () => {
       expect(fetchSubpackages).not.toHaveBeenCalled();
     });
 
+    it('keeps positive resource evidence when a concurrent root probe finishes with 404', async () => {
+      let finishProbe!: (value: SuperPackageLookup) => void;
+      const absentRoot = new Promise<SuperPackageLookup>((resolve) => {
+        finishProbe = resolve;
+      });
+      const fetcher = vi.fn((pkg: string) => (pkg === 'ZABSENT' ? absentRoot : buildFetcher(TREE)(pkg)));
+      const fetchSubpackages = subpackages();
+      const resolver = new AdtPackageHierarchyResolver(fetcher, { fetchSubpackages });
+      const pending = resolver.isDescendantOrSelf('ZABSENT', 'ZUNKNOWN');
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledWith('ZABSENT'));
+      expect(await resolver.isDescendantOrSelf('ZROOT', 'ZA')).toBe(true);
+      finishProbe({ found: false });
+      expect(await pending).toBe(false);
+      expect(fetchSubpackages).not.toHaveBeenCalled();
+    });
+
     it('a subtree fetch error denies (fail-closed) and is purged for a retry', async () => {
       let fail = true;
       const fetchSubpackages = vi.fn(async (root: string) => {

@@ -161,7 +161,9 @@ export class AdtPackageHierarchyResolver implements PackageHierarchyResolver {
   private async packagesResourceFinds(upperRoot: string): Promise<boolean> {
     if (this.packagesResourceFound) return true;
     const probe = async () => (await this.fetchSuperPackage(upperRoot)).found;
-    this.packagesResourceFound = await this.cached(this.rootProbes, upperRoot, probe, 'packages resource read of');
+    if (await this.cached(this.rootProbes, upperRoot, probe, 'packages resource read of')) {
+      this.packagesResourceFound = true;
+    }
     return this.packagesResourceFound;
   }
 
