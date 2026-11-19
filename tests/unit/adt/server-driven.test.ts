@@ -12,6 +12,7 @@ import {
   isServerDrivenObjectType,
   SDO_REGISTRY,
   SDO_TYPES,
+  serverDrivenNewObjectUrl,
   serverDrivenObjectUrl,
   serverDrivenSourceContentType,
   supportsServerDrivenObject,
@@ -593,15 +594,24 @@ describe('SMBC as a server-driven type', () => {
     expect(serverDrivenObjectUrl('DESD', 'ZSCHEMA')).toBe('/sap/bc/adt/ddic/desd/ZSCHEMA');
   });
 
-  it('refuses SMBC create in the engine before any request', async () => {
-    const post = vi.fn();
-    const http = { post } as unknown as AdtHttpClient;
-    await expect(
-      createServerDrivenObject(http, unrestrictedSafetyConfig(), 'SMBC', 'ZCONFIG', {
-        package: '$TMP',
-        description: 'd',
-      }),
-    ).rejects.toThrow(/object generator/);
-    expect(post).not.toHaveBeenCalled();
+  it('POSTs an SMBC shell to the smbctyp collection with blues v1', async () => {
+    const { http, calls } = mockWriteHttp();
+    await createServerDrivenObject(http, unrestrictedSafetyConfig(), 'SMBC', 'ZCONFIG', {
+      package: 'ZLOCAL_CFG',
+      description: 'Config',
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      path: '/sap/bc/adt/bct/smbctyp',
+      contentType: 'application/vnd.sap.adt.blues.v1+xml',
+    });
+    expect(calls[0].body).toContain('<blue:blueSource');
+    expect(calls[0].body).toContain('adtcore:type="SMBC/TYP"');
+    expect(calls[0].body).toContain('<adtcore:packageRef adtcore:name="ZLOCAL_CFG"/>');
+  });
+
+  it('serves create-time resources under $new', () => {
+    expect(serverDrivenNewObjectUrl('SMBC')).toBe('/sap/bc/adt/bct/smbctyp/$new');
   });
 });

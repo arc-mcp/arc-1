@@ -47,8 +47,8 @@ import {
   createServerDrivenObject,
   deleteServerDrivenObject,
   ensureServerDrivenSupport,
-  serverDrivenCreateUnsupported,
   serverDrivenMetadataContentType,
+  serverDrivenNewObjectUrl,
   serverDrivenObjectUrl,
   serverDrivenSchemaCheck,
   serverDrivenSourceFormat,
@@ -1018,11 +1018,32 @@ export async function handleServerDrivenObjectWrite(
 
   const hasSourceArg = typeof args.source === 'string' && args.source.trim() !== '';
 
+  // SAP drops values outside its schema without an error, so schema-checked types are compared
+  // against the schema SAP serves before anything is written. A create reads it from `$new`.
+  const checkSchema = async (
+    schemaBaseUrl: string,
+    source: string,
+  ): Promise<{ ok: true; note: string } | { ok: false; result: ToolResult }> => {
+    if (!serverDrivenSchemaCheck(type)) return { ok: true, note: '' };
+    const schema = await getObjectSchema(client.http, client.safety, schemaBaseUrl);
+    if (schema === undefined) {
+      return {
+        ok: true,
+        note: `\nSAP's schema for ${type} could not be read; values SAP does not accept may have been dropped. Read the source back to compare.`,
+      };
+    }
+    const problems = checkAgainstObjectSchema(schema, JSON.parse(source));
+    if (problems.length === 0) return { ok: true, note: '' };
+    return {
+      ok: false,
+      result: errorResult(
+        `SAPWrite ${action} for ${type} ${name}: the source does not match SAP's schema for this object, and SAP would drop these values silently. Nothing was written.\n- ${problems.join('\n- ')}`,
+      ),
+    };
+  };
+
   switch (action) {
     case 'create': {
-      const createUnsupported = serverDrivenCreateUnsupported(type);
-      if (createUnsupported)
-        return errorResult(`SAPWrite create for ${type} ${name} is not available: ${createUnsupported}`);
       let pkg = String(args.package ?? '$TMP');
       if (type === 'TABL/DTI') {
         const parentPackage = await client.resolveObjectPackage(tableIndexParentUrl(name));
@@ -1042,6 +1063,10 @@ export async function handleServerDrivenObjectWrite(
       // that the caller never asked for and has to clean up by hand.
       const validated = hasSourceArg ? validateSource() : undefined;
       if (validated && !validated.ok) return validated.result;
+      const schemaCheck = validated?.ok
+        ? await checkSchema(serverDrivenNewObjectUrl(type), validated.source)
+        : undefined;
+      if (schemaCheck && !schemaCheck.ok) return schemaCheck.result;
       // The job creation wizard requires this reference before the source PUT (notably on 758).
       let creationProperties: Record<string, string> | undefined;
       if (type === 'SAJC' || type === 'SAJT') {
@@ -1076,7 +1101,7 @@ export async function handleServerDrivenObjectWrite(
         }
       }
       return textResult(
-        `Created ${type} ${name} in package ${pkg}${validated?.ok ? ' and wrote source' : ''}.\n${activationHint}`,
+        `Created ${type} ${name} in package ${pkg}${validated?.ok ? ' and wrote source' : ''}.${schemaCheck?.ok ? schemaCheck.note : ''}\n${activationHint}`,
       );
     }
     case 'update': {
@@ -1088,18 +1113,9 @@ export async function handleServerDrivenObjectWrite(
       const v = validateSource();
       if (!v.ok) return v.result;
       await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, metadataAccept);
-      let schemaNote = '';
-      if (serverDrivenSchemaCheck(type)) {
-        const schema = await getObjectSchema(client.http, client.safety, objUrl);
-        const problems = schema === undefined ? [] : checkAgainstObjectSchema(schema, JSON.parse(v.source));
-        if (problems.length > 0) {
-          return errorResult(
-            `SAPWrite update for ${type} ${name}: the source does not match SAP's schema for this object, and SAP would drop these values silently. Nothing was written.\n- ${problems.join('\n- ')}`,
-          );
-        }
-        if (schema === undefined)
-          schemaNote = `\nSAP's schema for ${type} could not be read; values SAP does not accept may have been dropped. Read the source back to compare.`;
-      }
+      const schemaCheck = await checkSchema(objUrl, v.source);
+      if (!schemaCheck.ok) return schemaCheck.result;
+      const schemaNote = schemaCheck.note;
       await updateServerDrivenObjectSource(client.http, client.safety, type, name, v.source, { transport });
       invalidate();
       return textResult(

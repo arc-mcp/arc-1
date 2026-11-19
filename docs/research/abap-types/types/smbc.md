@@ -49,11 +49,43 @@ SAP reported content errors there, for example an unknown configuration group or
 "Transportauswahlleiste wird nur für Wurzelentität Singleton unterstützt" for a non-root object
 page; activation runs the same checks (`checkExecuted="true"`).
 
-Create stays unsupported: discovery offers no `$new` schema/content templates for `smbctyp`
-(unlike other `bct` types), and ADT creates SMBC only through the `smbc` object generator,
-together with the service and data model it configures. ARC-1 refuses `create` with a pointer to
-the generator. Delete follows the shared engine (deletion check when advertised, locked DELETE,
-absence read) and still lacks a captured ADT trace for SMBC.
+Delete follows the shared engine (deletion check when advertised, locked DELETE, absence read)
+and still lacks a captured ADT trace for SMBC.
+
+## Create
+
+ADT accepts a direct create without the `smbc` object generator. Discovery advertises no `$new`
+templates for `smbctyp` (unlike other `bct` types), but `GET <collection>/$new/schema` returns the
+SMBC schema. Contract:
+
+| Step | Request |
+|---|---|
+| Schema | `GET /sap/bc/adt/bct/smbctyp/$new/schema` (same Accept as the object schema) |
+| Create | `POST /sap/bc/adt/bct/smbctyp`, `application/vnd.sap.adt.blues.v1+xml`, `blue:blueSource` with `adtcore:type="SMBC/TYP"` and `packageRef` |
+| Source | Lock, `PUT <object>/source/main` (`application/json`), unlock |
+| Activate | As for update |
+
+After create, the inactive source is a JSON skeleton with empty `serviceConfiguration` fields; BTP
+adds `header.abapLanguageVersion: "cloudDevelopment"` and a `transportObject` field. ARC-1 checks a
+create `source` against the `$new` schema before the POST, so a refused source leaves no object.
+
+Evidence:
+
+- 758: direct create and activation against a draft-enabled service during the
+  [KTD parent lifecycle](../../2026-10-07-ktd-smbc-parent.md).
+- 816 and BTP ABAP (SAP_BASIS 921), 2026-11-19, low-level ADT helpers, disposable objects: create,
+  source save, inactive read-back and locked delete worked on both. Activation succeeded on BTP; on
+  816 SAP refused it because the referenced service was already used by a delivered SMBC.
+
+Rules SAP enforces:
+
+- One SMBC per service and version, checked on activation ("Service … already used in BC Object …").
+- The referenced service must be draft-enabled; a non-draft service fails activation (758).
+- On BTP, `$TMP` is refused with a missing `S_ABPLNGVS` authorization; the object needs a cloud
+  package under `ZLOCAL`.
+
+The generator remains the route when the service and data model do not exist yet; it creates them
+together with the SMBC.
 
 ### Live run through ARC-1 (2026-10-28, 816)
 

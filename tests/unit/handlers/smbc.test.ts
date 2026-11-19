@@ -7,7 +7,8 @@ import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const readOnlyClient = () => createClient().withSafety(defaultSafetyConfig());
-const uri = '/sap/bc/adt/bct/smbctyp/%2Fns%2Fconfig';
+const collection = '/sap/bc/adt/bct/smbctyp';
+const uri = `${collection}/%2Fns%2Fconfig`;
 const source = '{"formatVersion":"1","header":{"description":"Native configuration"}}';
 beforeEach(() => vi.resetAllMocks());
 
@@ -108,7 +109,7 @@ function writeBackend(opts: { corrNr?: string; schema?: string } = {}) {
       sends.push({ method, path, body: String(init?.body ?? ''), contentType: headers['Content-Type'] });
     }
     if (path.includes('_action=LOCK')) return mockResponse(200, LOCK(opts.corrNr), { 'x-csrf-token': 'T' });
-    if (parsed.pathname === `${uri}/schema`)
+    if (parsed.pathname === `${uri}/schema` || parsed.pathname === `${collection}/$new/schema`)
       return opts.schema ? mockResponse(200, opts.schema) : mockResponse(404, 'Not Found');
     if (method === 'DELETE') deleted = true;
     if (method === 'GET' && deleted && parsed.pathname === uri) return mockResponse(404, 'Not Found');
@@ -191,8 +192,48 @@ it('refuses an update with invalid JSON before contacting SAP', async () => {
   expect(sends).toEqual([]);
 });
 
-it('refuses SMBC create and points to the generator', async () => {
-  const sends = writeBackend();
+it('creates an SMBC shell, then writes its source under a lock', async () => {
+  const sends = writeBackend({ schema: SMBC_SCHEMA });
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'create',
+    type: 'SMBC',
+    name: 'ZCONFIG',
+    package: '$TMP',
+    description: 'Config',
+    source,
+  });
+  expect(result.isError, result.content[0]?.text).toBeUndefined();
+  expect(result.content[0]?.text).toContain('Created SMBC ZCONFIG in package $TMP and wrote source');
+  expect(result.content[0]?.text).toContain('SAPActivate(type="SMBC"');
+  const schema = sends.findIndex((r) => r.method === 'GET' && r.path.startsWith(`${collection}/$new/schema?`));
+  const post = sends.findIndex((r) => r.method === 'POST' && r.path.startsWith(`${collection}?`));
+  const put = sends.findIndex((r) => r.method === 'PUT');
+  expect(schema).toBeGreaterThanOrEqual(0);
+  expect(schema).toBeLessThan(post);
+  expect(post).toBeLessThan(put);
+  expect(sends[post]?.contentType).toMatch(/^application\/vnd\.sap\.adt\.blues\.v1\+xml/);
+  expect(sends[post]?.body).toContain('adtcore:type="SMBC/TYP"');
+  expect(sends[put]?.path).toMatch(new RegExp(`^${collection}/zconfig/source/main\\?lockHandle=LH1`));
+  expect(sends[put]?.body).toBe(source);
+});
+
+it("refuses an SMBC create outside SAP's schema before anything is created", async () => {
+  const sends = writeBackend({ schema: SMBC_SCHEMA });
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'create',
+    type: 'SMBC',
+    name: 'ZCONFIG',
+    package: '$TMP',
+    source: '{"formatVersion":"1","appConfiguration":{"listReport":{"variantManagement":"control"}}}',
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('listReport/variantManagement: "control" is not allowed');
+  expect(result.content[0]?.text).toContain('Nothing was written');
+  expect(sends.some((r) => r.method === 'POST' || r.method === 'PUT')).toBe(false);
+});
+
+it('creates an SMBC and says so when the create schema cannot be read', async () => {
+  writeBackend();
   const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
     action: 'create',
     type: 'SMBC',
@@ -200,9 +241,8 @@ it('refuses SMBC create and points to the generator', async () => {
     package: '$TMP',
     source,
   });
-  expect(result.isError).toBe(true);
-  expect(result.content[0]?.text).toContain('generator');
-  expect(sends).toEqual([]);
+  expect(result.isError, result.content[0]?.text).toBeUndefined();
+  expect(result.content[0]?.text).toContain("SAP's schema for SMBC could not be read");
 });
 
 it('deletes the SMBC under a lock', async () => {
