@@ -78,6 +78,7 @@ describe('AdtPackageHierarchyResolver', () => {
     const fetchSubpackages = vi.fn(async () => ['ZC']);
     const resolver = new AdtPackageHierarchyResolver(buildFetcher({ ZC: 'ZGONE' }), { fetchSubpackages });
     expect(await resolver.isDescendantOrSelf('ZROOT', 'ZC')).toBe(false);
+    expect(await resolver.isDescendantOrSelf('ZGONE', 'ZC')).toBe(false);
     expect(fetchSubpackages).not.toHaveBeenCalled();
   });
 

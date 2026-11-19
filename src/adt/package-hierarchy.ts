@@ -189,16 +189,17 @@ export class AdtPackageHierarchyResolver implements PackageHierarchyResolver {
     if (!lookup.found) return undefined;
     this.packagesResourceFound = true;
     for (;;) {
-      if (!lookup.found || !lookup.superPackage?.trim()) return chain;
+      if (!lookup.superPackage?.trim()) return chain;
       const parent = normalizePackageName(lookup.superPackage);
       if (chain.includes(parent)) {
         throw new Error(`DEVCLASS hierarchy above '${upperPkg}' contains a cycle at '${parent}' (TDEVC.PARENTCL)`);
       }
-      chain.push(parent);
-      if (chain.length > this.maxDepth) {
+      if (chain.length >= this.maxDepth) {
         throw new Error(`DEVCLASS hierarchy above '${upperPkg}' exceeds maxDepth=${this.maxDepth}`);
       }
       lookup = await this.fetchSuperPackage(parent);
+      if (!lookup.found) return chain;
+      chain.push(parent);
     }
   }
 
