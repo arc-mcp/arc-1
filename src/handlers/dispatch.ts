@@ -395,8 +395,8 @@ function buildBaseErrorMessage(
         'Common fixes: add missing @AbapCatalog annotations, fix field type names, check key field definitions.'
       );
     }
-    // Server errors (500, 502, 503, etc.)
     if (err.isServerError) {
+      if (argType === 'MSAG' && err.creationOutcome === 'confirmed') return enriched;
       const syntaxHint = withDependentSyntaxHint(err, enriched);
       if (syntaxHint !== enriched) return syntaxHint;
       return `${enriched}\n\nHint: SAP application server error (${err.statusCode}). This is often transient — wait 10-30 seconds and retry. If the error persists, check SAPDiagnose(action="dumps") for short dumps, or verify the SAP system is responding via SAPRead(type="SYSTEM").`;

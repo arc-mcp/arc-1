@@ -57,11 +57,11 @@ describe('MSAG message number validation', () => {
     expect(put?.body).toContain(`mc:msgno="${number}"`);
   });
 
-  it('create reports the created empty class when the message PUT fails', async () => {
+  it.each([400, 500])('create reports recovery when the message PUT returns %i', async (status) => {
     mockFetch.mockImplementation((url, options) =>
       Promise.resolve(
         new URL(String(url)).pathname === objectPath && options?.method === 'PUT'
-          ? mockResponse(400, 'Message number is missing', { 'x-csrf-token': 'T' })
+          ? mockResponse(status, 'Message save failed', { 'x-csrf-token': 'T' })
           : ok(),
       ),
     );
@@ -71,6 +71,7 @@ describe('MSAG message number validation', () => {
     expect(text).toContain('MSAG ZMESSAGES was created, but writing its messages failed');
     expect(text).toContain('SAPWrite(action="update", type="MSAG", name="ZMESSAGES"');
     expect(text).toContain('do not repeat create');
+    expect(text).not.toContain('seconds and retry');
     const sequence = calls();
     expect(sequence.filter((c) => c.method === 'POST' && c.url.pathname === '/sap/bc/adt/messageclass')).toHaveLength(
       1,
