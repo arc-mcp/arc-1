@@ -205,6 +205,23 @@ describe('ensureServerDrivenSupport', () => {
     expect(get).not.toHaveBeenCalled();
   });
 
+  it("re-checks a negative cached answer against the caller's own discovery before refusing", async () => {
+    // The cached map came from another identity (e.g. a technical startup probe user) that SAP did not
+    // show the collection to; the caller's own discovery advertises it.
+    const { http, get } = mockHttp({ loaded: true, has: true });
+    (http as unknown as { discoveryAcceptFor: () => undefined }).discoveryAcceptFor = () => undefined;
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(http.setDiscoveryMap).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the caller's own discovery also lacks the collection", async () => {
+    const { http, get } = mockHttp({ loaded: true, has: false });
+    (http as unknown as { discoveryAcceptFor: () => undefined }).discoveryAcceptFor = () => undefined;
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(false);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
   it('fetches discovery when cold, then reports the type as unavailable on that release', async () => {
     const { http, get } = mockHttp({ loaded: false, has: false });
     await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(false);

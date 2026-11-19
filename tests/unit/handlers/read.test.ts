@@ -11,7 +11,7 @@ import { CachingLayer } from '../../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
 import { logger } from '../../../src/server/logger.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
-import { mockResponse } from '../../helpers/mock-fetch.js';
+import { DISCOVERY_WITHOUT_SERVER_DRIVEN, isDiscoveryRequest, mockResponse } from '../../helpers/mock-fetch.js';
 import { featuresOff } from './handler-test-config.js';
 import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
@@ -2002,7 +2002,11 @@ describe('SAPRead handler', () => {
 
     it('returns a "needs 8.16+" error when discovery shows the type absent (758)', async () => {
       mockFetch.mockReset();
-      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 't' }));
+      mockFetch.mockImplementation(async (url: unknown) =>
+        isDiscoveryRequest(url)
+          ? mockResponse(200, DISCOVERY_WITHOUT_SERVER_DRIVEN)
+          : mockResponse(200, '', { 'x-csrf-token': 't' }),
+      );
       const client = createClient();
       vi.spyOn(client.http, 'hasDiscoveryData').mockReturnValue(true);
       vi.spyOn(client.http, 'discoveryAcceptFor').mockReturnValue(undefined);

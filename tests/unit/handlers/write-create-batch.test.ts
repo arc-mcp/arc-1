@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
-import { mockResponse } from '../../helpers/mock-fetch.js';
+import { DISCOVERY_WITHOUT_SERVER_DRIVEN, isDiscoveryRequest, mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
@@ -258,6 +258,11 @@ describe('SAPWrite handler — create / batch_create', () => {
       (client.http as unknown as { hasDiscoveryData(): boolean }).hasDiscoveryData = () => true;
       (client.http as unknown as { discoveryAcceptFor(p: string): string | undefined }).discoveryAcceptFor = () =>
         undefined;
+      mockFetch.mockImplementation(async (url: unknown) =>
+        isDiscoveryRequest(url)
+          ? mockResponse(200, DISCOVERY_WITHOUT_SERVER_DRIVEN)
+          : mockResponse(200, '', { 'x-csrf-token': 'T' }),
+      );
       const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
         action: 'create',
         type: 'DESD',
