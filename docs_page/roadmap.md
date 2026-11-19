@@ -647,9 +647,9 @@ and a local MCP client both read the class, with the mapped user confirmed in A4
 covered one user and one version of the catalog. The Basic credential belongs only to discovery.
 See the [source and validation boundary](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-21-sap-api-policy-custom-mcp.md#remote-mcp-gateway-validation-boundary).
 
-**Resume with.** A second developer with different SAP permissions can exercise the assistant,
-denial, refresh, tool filtering and errors while the Free pilot is available. Repeat native
-discovery and synchronization when SAP documents
+**Resume with.** One operator can qualify the assistant, refresh, tool filtering, errors and quotas
+while the Free pilot is available. Use a second developer with different SAP permissions for
+cross-user identity and denial. Repeat native discovery and synchronization when SAP documents
 a supported credential or the tenant's selector changes. Check roadmap delivery and Free availability
 against the runbook before testing new features. Do not silently substitute a shared credential
 for PP or present transport success as ADT permission. The gateway is optional for custom MCP.
