@@ -154,6 +154,15 @@ async function startFactory(allowedPackages: string[], pkg: string) {
         login,
       );
     }
+    const parent = sap.inAllowedTree ? 'ZROOT' : 'ZELSEWHERE';
+    if (new URL(String(url)).pathname === `/sap/bc/adt/packages/${parent}`) {
+      return mockResponse(
+        200,
+        `<pak:package xmlns:pak="http://www.sap.com/adt/packages" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${parent}"/>`,
+        {},
+        login,
+      );
+    }
     if (String(url).includes('/sap/bc/adt/packages/')) return mockResponse(404, 'not found');
     if (String(url).includes('_action=LOCK')) {
       return mockResponse(200, '<asx:values><LOCK_HANDLE>LH7</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {}, login);
