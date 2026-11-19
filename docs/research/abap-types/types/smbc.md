@@ -65,11 +65,18 @@ SMBC schema. Contract:
 | Source | Lock, `PUT <object>/source/main` (`application/json`), unlock |
 | Activate | As for update |
 
-After create, the inactive source is a JSON skeleton: `header.abapLanguageVersion:
-"cloudDevelopment"`, empty `serviceConfiguration` fields with `serviceVersion: "0000"` and
+After create, the inactive source is a JSON skeleton: a header with `description` and
+`originalLanguage`, empty `serviceConfiguration` fields with `serviceVersion: "0000"` and
 `skipRootEntity: false`, and `appConfiguration: {"listReport":{}}`. BTP adds an empty
 `serviceConfiguration.transportObject`. ARC-1 checks a create `source` against the `$new` schema
 before the POST, so a refused source leaves no object.
+
+`header.abapLanguageVersion` follows the ABAP language version of the package, not the release: the
+skeleton carries `"cloudDevelopment"` in an ABAP for Cloud Development package (816 and BTP) and no
+such field in a Standard ABAP package or in `$TMP` (816). SAP ignores the field in a source PUT: a
+save with `"cloudDevelopment"` in a Standard ABAP package succeeds without a message, and the
+read-back omits it. When `serviceConfiguration.name` is empty, SAP fills it with the object name on
+save.
 
 Evidence:
 
