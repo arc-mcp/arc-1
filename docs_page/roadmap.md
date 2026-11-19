@@ -642,14 +642,18 @@ and revocation, and never cross users or fall back to `SAP_USER`.
 on a read-only gateway route. See the [Free pilot and repeatable tests](https://github.com/arc-mcp/arc-1/blob/main/docs/research/sap-mcp-gateway-retest.md).
 
 **Why it remains.** The Free pilot imported one tool from a separate schema catalog. The runtime
-JWT bearer destination invoked stock ARC-1 as the signed-in developer. VS Code and a local MCP
-client both read the class, with the mapped user confirmed in A4H workload statistics. The pilot
-covered one user and one version of the catalog.
+JWT bearer destination invoked stock ARC-1 as the signed-in developer. VS Code’s native tool API
+and a local MCP client both read the class, with the mapped user confirmed in A4H workload statistics. The pilot
+covered one user and one version of the catalog. The Basic credential belongs only to discovery.
+See the [source and validation boundary](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-21-sap-api-policy-custom-mcp.md#remote-mcp-gateway-validation-boundary).
 
 **Resume with.** A second developer with different SAP permissions can exercise the assistant,
-denial, refresh and reconnect now. Repeat native discovery and synchronization when SAP documents
+denial, refresh, tool filtering and errors while the Free pilot is available. Repeat native
+discovery and synchronization when SAP documents
 a supported credential or the tenant's selector changes. Check roadmap delivery and Free availability
-against the runbook before testing new features. Registered agent identity remains [SEC-19](#sec-19).
+against the runbook before testing new features. Do not silently substitute a shared credential
+for PP or present transport success as ADT permission. The gateway is optional for custom MCP.
+Registered agent identity remains [SEC-19](#sec-19).
 
 <a id="compat-23"></a>
 ### COMPAT-23 — Shared reader for function-group object URIs
