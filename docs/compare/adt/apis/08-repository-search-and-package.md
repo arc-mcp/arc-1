@@ -101,7 +101,7 @@ for expansion. An empty request body is not the maintained contract.
 - `getSubpackages` uses this native tree for direct child packages. CSRF is required because
   the read uses POST. The `allowedPackages` subtree check walks the super-package chain from
   `GET /sap/bc/adt/packages/{name}` instead and uses this tree only as a fallback when the
-  checked package is not found there (the packages resource is absent before 7.52).
+  checked package and the rule's root are both not found there (the packages resource is absent before 7.52).
 - `getPackageContents` uses discovery-gated indexed search; it does **not** currently
   fall back to this endpoint. Classic search may ignore package filters.
 - `getDirectPackageContents` explicitly uses this endpoint for `SAPRead` with
