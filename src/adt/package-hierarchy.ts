@@ -27,6 +27,8 @@
  *     the throw as "package denied". Never silently allow.
  *   - A package read must return the document of the requested package;
  *     anything else throws.
+ *   - The checked package name and every super-package name SAP returns must
+ *     be a syntactically valid package name before it is sent to SAP.
  *   - A super-package SAP does not know (404) or a top-level package ends the
  *     chain. Ending early can only lose membership, never grant it.
  *   - A cycle or a chain deeper than `maxDepth` throws (fail-closed); the
@@ -101,6 +103,23 @@ const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_DEPTH = 50;
 const DEFAULT_MAX_PACKAGES = 10_000;
 
+/**
+ * Syntax of a package name (TDEVC-DEVCLASS, CHAR 30): optional `/NAMESPACE/` prefix, then letters,
+ * digits, `_` and `$` (local packages). Checked before a name is put into a request path, so a name
+ * such as `..` cannot address another ADT resource.
+ */
+const PACKAGE_NAME = /^(?:\/[A-Z0-9_]+\/)?[A-Z0-9_$]+$/;
+const PACKAGE_NAME_MAX_LENGTH = 30;
+
+/** Uppercased, trimmed package name; throws when it is not a valid package name. */
+export function normalizePackageName(name: string): string {
+  const upper = name.trim().toUpperCase();
+  if (upper.length > PACKAGE_NAME_MAX_LENGTH || !PACKAGE_NAME.test(upper)) {
+    throw new AdtSafetyError(`'${name}' is not a valid package name (denying for safety)`);
+  }
+  return upper;
+}
+
 export class AdtPackageHierarchyResolver implements PackageHierarchyResolver {
   private readonly fetchSuperPackage: SuperPackageFetcher;
   private readonly fetchSubpackages?: DirectSubpackageFetcher;
@@ -122,7 +141,7 @@ export class AdtPackageHierarchyResolver implements PackageHierarchyResolver {
 
   async isDescendantOrSelf(root: string, pkg: string): Promise<boolean> {
     const upperRoot = root.trim().toUpperCase();
-    const upperPkg = pkg.trim().toUpperCase();
+    const upperPkg = normalizePackageName(pkg);
     if (upperRoot === upperPkg) return true;
     const chain = await this.cached(this.chains, upperPkg, () => this.computeChain(upperPkg), 'super-packages of');
     if (chain) return chain.includes(upperRoot);
@@ -160,7 +179,7 @@ export class AdtPackageHierarchyResolver implements PackageHierarchyResolver {
     if (!lookup.found) return undefined;
     for (;;) {
       if (!lookup.found || !lookup.superPackage?.trim()) return chain;
-      const parent = lookup.superPackage.trim().toUpperCase();
+      const parent = normalizePackageName(lookup.superPackage);
       if (chain.includes(parent)) {
         throw new Error(`DEVCLASS hierarchy above '${upperPkg}' contains a cycle at '${parent}' (TDEVC.PARENTCL)`);
       }
@@ -239,7 +258,7 @@ export async function fetchSuperPackage(
   packageName: string,
 ): Promise<SuperPackageLookup> {
   checkOperation(safety, OperationType.Read, 'GetSuperPackage');
-  const requested = packageName.trim().toUpperCase();
+  const requested = normalizePackageName(packageName);
   let body: string;
   try {
     body = (

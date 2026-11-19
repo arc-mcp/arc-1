@@ -4,6 +4,7 @@ import type { AdtHttpClient } from '../../../src/adt/http.js';
 import {
   AdtPackageHierarchyResolver,
   fetchSuperPackage,
+  normalizePackageName,
   parsePackageDocument,
   type SuperPackageLookup,
 } from '../../../src/adt/package-hierarchy.js';
@@ -130,6 +131,20 @@ describe('AdtPackageHierarchyResolver', () => {
     });
   });
 
+  it('refuses an invalid checked package name before any request', async () => {
+    const fetcher = buildFetcher(TREE);
+    const resolver = new AdtPackageHierarchyResolver(fetcher);
+    for (const bad of ['..', '.', 'ZA/../ZB', 'Z A', 'ZA?x=1', '', 'Z'.repeat(31)]) {
+      await expect(resolver.isDescendantOrSelf('ZROOT', bad)).rejects.toBeInstanceOf(AdtSafetyError);
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('refuses an invalid super-package name returned by SAP (fail-closed)', async () => {
+    const resolver = new AdtPackageHierarchyResolver(buildFetcher({ ZA: '../ZROOT' }));
+    await expect(resolver.isDescendantOrSelf('ZROOT', 'ZA')).rejects.toThrow(/not a valid package name/);
+  });
+
   it('caches the resolved chain for the TTL window', async () => {
     const fetcher = buildFetcher(TREE);
     const resolver = new AdtPackageHierarchyResolver(fetcher, { ttlMs: 60_000 });
@@ -228,6 +243,19 @@ describe('AdtPackageHierarchyResolver', () => {
   });
 });
 
+describe('normalizePackageName', () => {
+  it('accepts customer, local and namespaced names, uppercased', () => {
+    expect(normalizePackageName(' zfoo_1 ')).toBe('ZFOO_1');
+    expect(normalizePackageName('$tmp')).toBe('$TMP');
+    expect(normalizePackageName('/company/pkg')).toBe('/COMPANY/PKG');
+    expect(normalizePackageName('Z'.repeat(30))).toBe('Z'.repeat(30));
+  });
+
+  it.each(['..', '.', '', 'ZA/ZB', '/COMPANY/', 'Z-A', 'Z%2FA', 'Z'.repeat(31)])('refuses %j', (bad) => {
+    expect(() => normalizePackageName(bad)).toThrow(AdtSafetyError);
+  });
+});
+
 describe('parsePackageDocument', () => {
   const pkg = (superPackage: string, name = 'zchild') =>
     '<?xml version="1.0" encoding="utf-8"?><pak:package xmlns:pak="http://www.sap.com/adt/packages" ' +
@@ -310,5 +338,11 @@ describe('fetchSuperPackage', () => {
     await expect(fetchSuperPackage(http, unrestrictedSafetyConfig(), 'ZA')).rejects.toThrow(
       /returned the document of 'ZOTHER'/,
     );
+  });
+
+  it('refuses an invalid name without a request', async () => {
+    const { get, http } = httpReturning(doc('..'));
+    await expect(fetchSuperPackage(http, unrestrictedSafetyConfig(), '..')).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(get).not.toHaveBeenCalled();
   });
 });
