@@ -49,13 +49,19 @@ export const tableSettingsParentUrl = (name: string): string =>
 export async function assertTableSettingsService(http: AdtHttpClient, safety: SafetyConfig): Promise<void> {
   checkOperation(safety, OperationType.Read, 'ReadTableSettings');
   let accept: string | undefined;
-  if (http.hasDiscoveryData()) accept = http.discoveryAcceptFor(TABLE_SETTINGS_COLLECTION);
-  else {
+  let listed: boolean | undefined;
+  if (http.hasDiscoveryData()) {
+    accept = http.discoveryAcceptFor(TABLE_SETTINGS_COLLECTION);
+    listed = http.hasDiscoveryCollection(TABLE_SETTINGS_COLLECTION);
+  } else {
     // Keep the discovery result request-local, as the shared client can serve different identities.
     const { map } = await fetchDiscoveryDocument(http);
     if (map.size === 0) return; // Unknown availability: let the native request establish support.
     accept = resolveAcceptType(map, TABLE_SETTINGS_COLLECTION);
+    listed = map.has(TABLE_SETTINGS_COLLECTION);
   }
+  // SAP lists a collection without media types for a user who may not create the object type.
+  if (listed && !accept) return;
   if (!accept?.includes('table.settings')) {
     throw new AdtApiError(
       'TABL/DTT requires the ADT technical table settings service, unavailable on this system.',
