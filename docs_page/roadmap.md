@@ -641,10 +641,13 @@ and revocation, and never cross users or fall back to `SAP_USER`.
 **Idea.** Qualify native tool discovery, two-user authorization and the intended VS Code assistant
 on a read-only gateway route. See the [Free pilot and repeatable tests](https://github.com/arc-mcp/arc-1/blob/main/docs/research/sap-mcp-gateway-retest.md).
 
-**Why it remains.** The Free pilot imported one tool from a separate schema catalog. The runtime
-JWT bearer destination invoked stock ARC-1 as the signed-in developer. VS Code’s native tool API
-and a local MCP client both read the class, with the mapped user confirmed in A4H workload statistics. The pilot
-covered one user and one version of the catalog. The Basic credential belongs only to discovery.
+**Why it remains.** The v0.9.27 Free pilot imported one tool from a separate schema catalog.
+The v1.10.1 retest published all twelve standard tools from a release-specific snapshot. VS Code
+invoked all twelve with the same developer’s read scope. Nine succeeded, including Git after
+a feature probe, and ARC-1 denied three for insufficient scope. A4H workload statistics confirmed
+the developer’s mapped ABAP user on the class read. Both runs used Basic authentication for
+catalog discovery and JWT bearer exchange at runtime. Native protected discovery, synchronization
+and a second user’s ABAP authorization decision still need live evidence.
 See the [source and validation boundary](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-21-sap-api-policy-custom-mcp.md#remote-mcp-gateway-validation-boundary).
 
 **Resume with.** One operator can qualify the assistant, refresh, tool filtering, errors and quotas
