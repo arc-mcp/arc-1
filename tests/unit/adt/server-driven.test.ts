@@ -162,7 +162,11 @@ describe('SDO registry + gate', () => {
   });
 
   it('supportsServerDrivenObject: false when the collection is absent (758) or the code is unknown', () => {
-    const http = { hasDiscoveryData: () => true, discoveryAcceptFor: () => undefined } as unknown as AdtHttpClient;
+    const http = {
+      hasDiscoveryData: () => true,
+      discoveryAcceptFor: () => undefined,
+      hasDiscoveryCollection: () => false,
+    } as unknown as AdtHttpClient;
     expect(supportsServerDrivenObject(http, 'DESD')).toBe(false);
     expect(supportsServerDrivenObject(http, 'NOPE')).toBe(false);
   });
@@ -174,10 +178,13 @@ describe('SDO registry + gate', () => {
  */
 describe('ensureServerDrivenSupport', () => {
   /** `has` controls whether the served discovery doc advertises ddic/desd with the blues accept. */
-  function mockHttp(opts: { loaded: boolean; has?: boolean; getThrows?: boolean }) {
+  function mockHttp(opts: { loaded: boolean; has?: boolean; getThrows?: boolean; blank?: boolean }) {
     const doc =
       '<?xml version="1.0"?><app:service xmlns:app="http://www.w3.org/2007/app" ' +
       'xmlns:atom="http://www.w3.org/2005/Atom"><app:workspace><atom:title>W</atom:title>' +
+      (opts.blank
+        ? '<app:collection href="/sap/bc/adt/ddic/desd"><atom:title>D</atom:title><app:accept/></app:collection>'
+        : '') +
       (opts.has
         ? '<app:collection href="/sap/bc/adt/ddic/desd"><atom:title>D</atom:title>' +
           '<app:accept>application/vnd.sap.adt.blues.v1+xml</app:accept></app:collection>'
@@ -193,7 +200,10 @@ describe('ensureServerDrivenSupport', () => {
         get,
         hasDiscoveryData: () => opts.loaded,
         discoveryAcceptFor: (path: string) =>
-          opts.loaded && path === '/sap/bc/adt/ddic/desd' ? 'application/vnd.sap.adt.blues.v1+xml' : undefined,
+          opts.loaded && !opts.blank && path === '/sap/bc/adt/ddic/desd'
+            ? 'application/vnd.sap.adt.blues.v1+xml'
+            : undefined,
+        hasDiscoveryCollection: () => opts.loaded && !!opts.blank,
         setDiscoveryMap: vi.fn(),
       } as unknown as AdtHttpClient,
       get,
@@ -228,6 +238,12 @@ describe('ensureServerDrivenSupport', () => {
     (http as unknown as { discoveryAcceptFor: () => undefined }).discoveryAcceptFor = () => undefined;
     await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(false);
     expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  // SAP 758/816 answer a user without create authorization with `<app:accept/>` (live: /sap/bc/adt/atc/items).
+  it.each([true, false])('proceeds when SAP lists the collection without media types (loaded=%s)', async (loaded) => {
+    const { http } = mockHttp({ loaded, blank: true });
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
   });
 
   it('fetches discovery when cold, then reports the type as unavailable on that release', async () => {

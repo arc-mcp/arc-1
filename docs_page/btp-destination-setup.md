@@ -162,6 +162,10 @@ for endpoint-presence checks without inventing media types. The report did not
 establish whether `/ddic/tables` or `/packages` were listed for that user; a path
 omitted from discovery still fails its presence gate. Inspect the original
 startup discovery before interpreting a missing path as a release limitation.
+SAP 758 and 816 withhold the media types of a Workbench collection from a user
+who may not create that object type. The checks for server-driven types and table
+technical settings therefore treat a listed collection without media types as
+unknown and send the request, so SAP decides.
 MIME negotiation uses usable advertisements or its existing fallback; SAP checks
 each propagated user's authorization. Do not grant startup write permissions
 merely to populate discovery media types.

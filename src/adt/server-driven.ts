@@ -366,7 +366,10 @@ export function supportsServerDrivenObject(http: AdtHttpClient, code: string): b
   const entry = REGISTRY_BY_CODE[code];
   if (!entry) return false;
   if (!http.hasDiscoveryData()) return undefined;
-  return (http.discoveryAcceptFor(entry.href) ?? '').includes(entry.discoveryMarker);
+  const accept = http.discoveryAcceptFor(entry.href);
+  // SAP lists a collection without media types for a user who may not create the object type.
+  if (!accept && http.hasDiscoveryCollection(entry.href)) return undefined;
+  return (accept ?? '').includes(entry.discoveryMarker);
 }
 
 /**
@@ -405,7 +408,9 @@ export async function ensureServerDrivenSupport(
   // Empty map = discovery unreachable, NOT "collection absent" — those must not collapse together,
   // or a 403'd discovery would block every SDO read. A populated map lacking the href IS unsupported.
   if (map.size === 0) return cached ?? true;
-  return (resolveAcceptType(map, entry.href) ?? '').includes(entry.discoveryMarker);
+  const accept = resolveAcceptType(map, entry.href);
+  if (!accept && map.has(entry.href)) return true; // listed without media types, see above
+  return (accept ?? '').includes(entry.discoveryMarker);
 }
 
 /** Shared "this release does not have this type" message for the three SDO entry points. */
