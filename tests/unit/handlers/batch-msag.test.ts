@@ -80,6 +80,7 @@ describe('MSAG batch message persistence', () => {
     expect(activations).toHaveLength(1);
     expect(activations[0].body).toContain('ZLAST');
     expect(activations[0].body).not.toContain('ZMESSAGES');
+    if (activateAtEnd) expect(result.content[0].text).toContain('1 of 2 activated as a single batch');
     expect(result.content[0].text).toContain('activation not required');
   });
 

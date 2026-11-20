@@ -99,12 +99,13 @@ export function batchCreateResult(
     ? `\n\nBatch activation messages: ${boundedSummary(options.activationMessages.join('; '), 2000)}`
     : '';
   if (failed === 0 && skipped === 0) {
+    const required = results.filter((entry) => entry.activation !== 'not_required').length;
     const activation =
-      !options.activateAtEnd || results.every((entry) => entry.activation === 'not_required')
+      !options.activateAtEnd || required === 0
         ? ''
         : results.some((entry) => entry.activation === 'unknown')
           ? '; batch activation requested'
-          : '; activated as a single batch';
+          : `; ${required < results.length ? `${required} of ${results.length} ` : ''}activated as a single batch`;
     return textResult(`Batch created ${created} objects ${packageSummary}${activation}: ${summary}${warnings}`);
   }
   const prefix = options.preflight
