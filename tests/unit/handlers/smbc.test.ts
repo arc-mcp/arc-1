@@ -166,15 +166,16 @@ it("refuses values outside SAP's schema before locking, because SAP would drop t
 
 it('saves a schema-conform source and says so when the schema cannot be read', async () => {
   const conform = writeBackend({ schema: SMBC_SCHEMA });
+  const formattedSource = JSON.stringify(JSON.parse(source), null, 2);
   const ok = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
     action: 'update',
     type: 'SMBC',
     name: '/NS/CONFIG',
-    source,
+    source: formattedSource,
   });
   expect(ok.isError, ok.content[0]?.text).toBeUndefined();
   expect(ok.content[0]?.text).not.toContain('could not be read');
-  expect(conform.some((r) => r.method === 'PUT')).toBe(true);
+  expect(conform.find((r) => r.method === 'PUT')?.body).toBe(formattedSource);
 
   writeBackend();
   const noSchema = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {

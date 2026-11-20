@@ -996,50 +996,34 @@ export async function handleServerDrivenObjectWrite(
     invalidateInactiveList(cachingLayer, client, cacheSecurity);
   };
 
-  // Only parse-validate entries whose sourceFormat is 'json'. Validating DDL text as JSON
-  // would reject every valid source.
-  const validateSource = (): { ok: true; source: string } | { ok: false; result: ToolResult } => {
-    const src = String(args.source ?? '');
-    if (serverDrivenSourceFormat(type) === 'json') {
-      try {
-        JSON.parse(src);
-      } catch {
-        return {
-          ok: false,
-          result: errorResult(
-            `SAPWrite ${action} for ${type} ${name}: "source" must be valid AFF JSON ` +
-              '(e.g. {"formatVersion":"1","header":{"description":"…","originalLanguage":"en"}}).',
-          ),
-        };
-      }
-    }
-    return { ok: true, source: src };
-  };
-
-  const hasSourceArg = typeof args.source === 'string' && args.source.trim() !== '';
-
-  // SAP drops values outside its schema without an error, so schema-checked types are compared
-  // against the schema SAP serves before anything is written. A create reads it from `$new`.
-  const checkSchema = async (
-    schemaBaseUrl: string,
-    source: string,
-  ): Promise<{ ok: true; note: string } | { ok: false; result: ToolResult }> => {
-    if (!serverDrivenSchemaCheck(type)) return { ok: true, note: '' };
-    const schema = await getObjectSchema(client.http, client.safety, schemaBaseUrl);
-    if (schema === undefined) {
+  const source = String(args.source ?? '');
+  const hasSourceArg = typeof args.source === 'string' && source.trim() !== '';
+  const parseSource = (): { json: unknown } | { error: ToolResult } => {
+    if (serverDrivenSourceFormat(type) !== 'json') return { json: undefined };
+    try {
+      return { json: JSON.parse(source) };
+    } catch {
       return {
-        ok: true,
-        note: `\nSAP's schema for ${type} could not be read; values SAP does not accept may have been dropped. Read the source back to compare.`,
+        error: errorResult(
+          `SAPWrite ${action} for ${type} ${name}: "source" must be valid AFF JSON ` +
+            '(e.g. {"formatVersion":"1","header":{"description":"…","originalLanguage":"en"}}).',
+        ),
       };
     }
-    const problems = checkAgainstObjectSchema(schema, JSON.parse(source));
-    if (problems.length === 0) return { ok: true, note: '' };
-    return {
-      ok: false,
-      result: errorResult(
-        `SAPWrite ${action} for ${type} ${name}: the source does not match SAP's schema for this object. Nothing was written.\n- ${problems.join('\n- ')}`,
-      ),
-    };
+  };
+
+  // A string is a note to include after a successful write. A tool error stops the write.
+  const checkSchema = async (schemaBaseUrl: string, json: unknown): Promise<string | ToolResult> => {
+    if (!serverDrivenSchemaCheck(type)) return '';
+    const schema = await getObjectSchema(client.http, client.safety, schemaBaseUrl);
+    if (schema === undefined) {
+      return `\nSAP's schema for ${type} could not be read; values SAP does not accept may have been dropped. Read the source back to compare.`;
+    }
+    const problems = checkAgainstObjectSchema(schema, json);
+    if (!problems.length) return '';
+    return errorResult(
+      `SAPWrite ${action} for ${type} ${name}: the source does not match SAP's schema for this object. Nothing was written.\n- ${problems.join('\n- ')}`,
+    );
   };
 
   switch (action) {
@@ -1061,17 +1045,16 @@ export async function handleServerDrivenObjectWrite(
       const description = String(args.description ?? name);
       // Validate BEFORE the create POST — validating after would leave an inactive orphan on SAP
       // that the caller never asked for and has to clean up by hand.
-      const validated = hasSourceArg ? validateSource() : undefined;
-      if (validated && !validated.ok) return validated.result;
-      const schemaCheck = validated?.ok
-        ? await checkSchema(serverDrivenNewObjectUrl(type), validated.source)
-        : undefined;
-      if (schemaCheck && !schemaCheck.ok) return schemaCheck.result;
+      const parsed = hasSourceArg ? parseSource() : undefined;
+      if (parsed && 'error' in parsed) return parsed.error;
+      const schemaNote = parsed ? await checkSchema(serverDrivenNewObjectUrl(type), parsed.json) : '';
+      if (typeof schemaNote !== 'string') return schemaNote;
       // The job creation wizard requires this reference before the source PUT (notably on 758).
       let creationProperties: Record<string, string> | undefined;
       if (type === 'SAJC' || type === 'SAJT') {
         const field = type === 'SAJC' ? 'className' : 'catalogName';
-        const reference = validated?.ok ? JSON.parse(validated.source)?.generalInformation?.[field] : undefined;
+        const job = parsed?.json as { generalInformation?: Record<string, unknown> } | null | undefined;
+        const reference = job?.generalInformation?.[field];
         if (typeof reference !== 'string' || !reference.trim()) {
           return errorResult(`Creating ${type} requires source.generalInformation.${field} in the AFF JSON source.`);
         }
@@ -1084,8 +1067,8 @@ export async function handleServerDrivenObjectWrite(
         creationProperties,
       });
       try {
-        if (validated?.ok) {
-          await updateServerDrivenObjectSource(client.http, client.safety, type, name, validated.source, { transport });
+        if (hasSourceArg) {
+          await updateServerDrivenObjectSource(client.http, client.safety, type, name, source, { transport });
         }
       } catch (cause) {
         // The POST succeeded; both HTTP and network failures can leave the object with a partial source.
@@ -1101,7 +1084,7 @@ export async function handleServerDrivenObjectWrite(
         }
       }
       return textResult(
-        `Created ${type} ${name} in package ${pkg}${validated?.ok ? ' and wrote source' : ''}.${schemaCheck?.ok ? schemaCheck.note : ''}\n${activationHint}`,
+        `Created ${type} ${name} in package ${pkg}${hasSourceArg ? ' and wrote source' : ''}.${schemaNote}\n${activationHint}`,
       );
     }
     case 'update': {
@@ -1110,13 +1093,12 @@ export async function handleServerDrivenObjectWrite(
           `SAPWrite update for ${type} ${name} requires "source" (AFF JSON or DDL text, per the object type).`,
         );
       }
-      const v = validateSource();
-      if (!v.ok) return v.result;
+      const parsed = parseSource();
+      if ('error' in parsed) return parsed.error;
       await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, metadataAccept);
-      const schemaCheck = await checkSchema(objUrl, v.source);
-      if (!schemaCheck.ok) return schemaCheck.result;
-      const schemaNote = schemaCheck.note;
-      await updateServerDrivenObjectSource(client.http, client.safety, type, name, v.source, { transport });
+      const schemaNote = await checkSchema(objUrl, parsed.json);
+      if (typeof schemaNote !== 'string') return schemaNote;
+      await updateServerDrivenObjectSource(client.http, client.safety, type, name, source, { transport });
       invalidate();
       return textResult(
         `Updated source of ${type} ${name}.${schemaNote}\n${activationHint}` +
