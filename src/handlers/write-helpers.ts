@@ -1074,6 +1074,7 @@ export async function handleServerDrivenObjectWrite(
         // The POST succeeded; both HTTP and network failures can leave the object with a partial source.
         const err =
           cause instanceof AdtError ? cause : new AdtError(cause instanceof Error ? cause.message : String(cause));
+        err.creationOutcome = 'confirmed';
         err.extraHint = `${type} ${name} was created in package ${pkg}${type === 'APLO' ? ' and is active' : ''}, but the follow-up source step failed. Check it with SAPRead before using SAPWrite(action="update") — do not repeat create.`;
         throw err;
       } finally {

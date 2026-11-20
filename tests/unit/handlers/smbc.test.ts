@@ -96,7 +96,9 @@ const DISCOVERY = `<app:service xmlns:app="http://www.w3.org/2007/app" xmlns:ato
 </app:workspace></app:service>`;
 
 /** Records every SAP send except discovery; answers lock, unlock, source PUT and DELETE. */
-function writeBackend(opts: { corrNr?: string; schema?: string; schemaStatus?: number; schemaError?: Error } = {}) {
+function writeBackend(
+  opts: { corrNr?: string; schema?: string; schemaStatus?: number; schemaError?: Error; sourceStatus?: number } = {},
+) {
   const sends: Array<{ method: string; path: string; body: string; contentType?: string; accept?: string }> = [];
   let deleted = false;
   mockFetch.mockImplementation(async (url, init) => {
@@ -119,6 +121,7 @@ function writeBackend(opts: { corrNr?: string; schema?: string; schemaStatus?: n
       if (opts.schemaError) throw opts.schemaError;
       return mockResponse(opts.schemaStatus ?? (opts.schema === undefined ? 404 : 200), opts.schema ?? '');
     }
+    if (method === 'PUT' && opts.sourceStatus) return mockResponse(opts.sourceStatus, 'Source step failed');
     if (method === 'DELETE') deleted = true;
     if (method === 'GET' && deleted && parsed.pathname === uri) return mockResponse(404, 'Not Found');
     return mockResponse(200, '', { 'x-csrf-token': 'T' });
@@ -278,6 +281,23 @@ it("refuses an SMBC create outside SAP's schema before anything is created", asy
   expect(result.content[0]?.text).toContain('listReport/variantManagement: "control" is not allowed');
   expect(result.content[0]?.text).toContain('Nothing was written');
   expect(sends.some((r) => r.method === 'POST' || r.method === 'PUT')).toBe(false);
+});
+
+it.each([404, 500])('reports the confirmed SMBC shell when the source PUT returns %i', async (sourceStatus) => {
+  const sends = writeBackend({ schema: SMBC_SCHEMA, sourceStatus });
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'create',
+    type: 'SMBC',
+    name: 'ZCONFIG',
+    package: '$TMP',
+    source,
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain(`status ${sourceStatus}`);
+  expect(result.content[0]?.text).toContain('was created in package $TMP');
+  expect(result.content[0]?.text).toContain('do not repeat create');
+  expect(result.content[0]?.text).not.toMatch(/wait 10-30 seconds and retry|Use SAPSearch with query/);
+  expect(sends.some((r) => r.method === 'PUT')).toBe(true);
 });
 
 it('creates an SMBC and says so when the create schema cannot be read', async () => {
