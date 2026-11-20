@@ -323,6 +323,15 @@ const catalogParser = new XMLParser({
 });
 
 const OPENING_TAG = /^<(?:[^>"']|"[^"]*"|'[^']*')+>/;
+
+/** Opening tag at the parser's offsets. fast-xml-parser before 5.12 shifts them for CRLF input, so check both ends. */
+function openingTagAt(xml: string, at: { name: string; start: number; end: number }): string {
+  const element = xml.slice(at.start, at.end);
+  const opening = element.match(OPENING_TAG)?.[0];
+  if (!opening?.startsWith(`<${at.name}`) || !(opening.endsWith('/>') || /<\/[^<>]+>$/.test(element)))
+    throw new AdtError(`Could not locate <${at.name}> in SAP's metadata document; nothing was saved.`);
+  return opening;
+}
 function catalogChild(
   local: string,
   namespace: string,
@@ -403,7 +412,7 @@ export function applyApiCatalogDefinition(type: ApiCatalogType, xml: string, def
 
   const edits: Array<{ start: number; end: number; value: string }> = [];
   if (definition.description !== undefined) {
-    const opening = xml.slice(root.start, root.end).match(OPENING_TAG)![0];
+    const opening = openingTagAt(xml, root);
     const descriptions = [...opening.matchAll(/([^\s=]+)\s*=\s*("[^"]*"|'[^']*')/g)].filter(([, name]) => {
       const [prefix, local] = name!.split(':');
       return local === 'description' && root.node[`@_xmlns:${prefix}`] === 'http://www.sap.com/adt/core';
@@ -419,7 +428,7 @@ export function applyApiCatalogDefinition(type: ApiCatalogType, xml: string, def
     if (!field)
       throw new AdtError(`SAP's metadata document has no <${type.toLowerCase()}:${local}> element; nothing was saved.`);
     const inner = render(field.prefix);
-    const opening = xml.slice(field.start, field.end).match(OPENING_TAG)![0];
+    const opening = openingTagAt(xml, field);
     const afterOpening = field.start + opening.length;
     if (opening.endsWith('/>')) {
       edits.push({ start: afterOpening - 2, end: afterOpening, value: `>${inner}</${field.name}>` });

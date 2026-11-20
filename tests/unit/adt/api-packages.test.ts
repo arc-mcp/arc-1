@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseApiPackageAssignment } from '../../../src/adt/api-package-assignment.js';
 import {
   apiCatalogAvailable,
@@ -201,6 +201,33 @@ describe('applyApiCatalogDefinition', () => {
       .replace(/core:description="[^"]*"/, `other='core:description="keep"' core:description='old > value'`);
     const out = applyApiCatalogDefinition('SOD1', xml, { description: "it's <new>" });
     expect(out).toBe(xml.replace("core:description='old > value'", "core:description='it&apos;s &lt;new&gt;'"));
+  });
+
+  it('refuses to edit when the parser offsets do not point at the field', async () => {
+    // fast-xml-parser before 5.12 reported shifted offsets for CRLF input; a wrong splice must never be saved.
+    const { XMLParser } = await import('fast-xml-parser');
+    const symbol = XMLParser.getMetaDataSymbol() as symbol;
+    const parse = XMLParser.prototype.parse;
+    const shift = (node: unknown): void => {
+      if (!node || typeof node !== 'object') return;
+      const meta = (node as Record<symbol, { startIndex: number; endIndex: number } | undefined>)[symbol];
+      if (meta) {
+        meta.startIndex += 3;
+        meta.endIndex += 3;
+      }
+      for (const child of Object.values(node)) for (const item of Array.isArray(child) ? child : [child]) shift(item);
+    };
+    const spy = vi.spyOn(XMLParser.prototype, 'parse').mockImplementation(function (this: unknown, ...args) {
+      const document = parse.apply(this as never, args as never);
+      shift(document);
+      return document;
+    });
+    try {
+      expect(() => applyApiCatalogDefinition('SOD1', SOD1, { alias: 'X' })).toThrow(/Could not locate/);
+      expect(() => applyApiCatalogDefinition('SOD1', SOD1, { description: 'X' })).toThrow(/Could not locate/);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('preserves CRLF, self-closing field attributes, and the field’s own namespace prefix', () => {
