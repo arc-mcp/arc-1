@@ -4,7 +4,6 @@ import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js
 import {
   createServerDrivenObject,
   ensureServerDrivenSupport,
-  serverDrivenMetadataContentType,
   serverDrivenObjectUrl,
   serverDrivenUnavailableMessage,
   updateServerDrivenObjectSource,
@@ -28,18 +27,13 @@ export async function writeUiad(
 ): Promise<ToolResult> {
   const create = action === 'create';
   checkOperation(client.safety, create ? OperationType.Create : OperationType.Update, 'WriteUIAD');
-  if (!(await ensureServerDrivenSupport(client.http, client.safety, 'UIAD')))
-    return errorResult(serverDrivenUnavailableMessage('SAPWrite', 'UIAD'));
+  const support = await ensureServerDrivenSupport(client.http, client.safety, 'UIAD');
+  if (!support) return errorResult(serverDrivenUnavailableMessage('SAPWrite', 'UIAD'));
   const uri = serverDrivenObjectUrl('UIAD', name);
   const pkg = String(args.package ?? '$TMP');
   if (create) await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
   else
-    await enforceAllowedPackageForObjectUrl(
-      client,
-      uri,
-      `Operations on UIAD '${name}'`,
-      serverDrivenMetadataContentType('UIAD'),
-    );
+    await enforceAllowedPackageForObjectUrl(client, uri, `Operations on UIAD '${name}'`, support.metadataContentType);
 
   const source = typeof args.source === 'string' ? args.source : '';
   if (!create && !source.trim()) return errorResult('SAPWrite update for UIAD requires source (complete AFF JSON).');

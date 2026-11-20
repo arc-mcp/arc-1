@@ -47,7 +47,6 @@ import {
   createServerDrivenObject,
   deleteServerDrivenObject,
   ensureServerDrivenSupport,
-  serverDrivenMetadataContentType,
   serverDrivenNewObjectUrl,
   serverDrivenObjectUrl,
   serverDrivenSchemaCheck,
@@ -994,13 +993,14 @@ export async function handleServerDrivenObjectWrite(
   cacheSecurity: CacheSecurityContext,
 ): Promise<ToolResult> {
   // Discovery gate — mirror handleSAPRead's server-driven branch.
-  if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
+  const support = await ensureServerDrivenSupport(client.http, client.safety, type);
+  if (!support) {
     return errorResult(serverDrivenUnavailableMessage('SAPWrite', type));
   }
 
   const transport = args.transport as string | undefined;
   const objUrl = serverDrivenObjectUrl(type, name);
-  const metadataAccept = serverDrivenMetadataContentType(type);
+  const { metadataContentType } = support;
   const activationHint =
     type === 'APLO'
       ? 'APLO changes are active immediately; no activation is required.'
@@ -1079,6 +1079,7 @@ export async function handleServerDrivenObjectWrite(
         package: pkg,
         description,
         transport,
+        metadataContentType,
         creationProperties,
       });
       try {
@@ -1111,7 +1112,7 @@ export async function handleServerDrivenObjectWrite(
       }
       const parsed = parseSource();
       if ('error' in parsed) return parsed.error;
-      await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, metadataAccept);
+      await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, metadataContentType);
       const schemaNote = await checkSchema(objUrl, parsed.json);
       if (typeof schemaNote !== 'string') return schemaNote;
       await updateServerDrivenObjectSource(client.http, client.safety, type, name, source, { transport });
@@ -1122,9 +1123,9 @@ export async function handleServerDrivenObjectWrite(
       );
     }
     case 'delete': {
-      await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, metadataAccept);
+      await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, metadataContentType);
       try {
-        await deleteServerDrivenObject(client.http, client.safety, type, name, { transport });
+        await deleteServerDrivenObject(client.http, client.safety, type, name, { transport, ...support });
       } finally {
         try {
           invalidate();

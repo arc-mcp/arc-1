@@ -32,7 +32,7 @@ import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { parseTableIndexName, TABLE_INDEX_COLLECTION, tableIndexParentUrl } from './table-index.js';
-import type { ServerDrivenObjectResult } from './types.js';
+import type { DiscoveryMap, ServerDrivenObjectResult } from './types.js';
 import { escapeXmlAttr, parseServerDrivenMetadata, parseXml } from './xml-parser.js';
 
 /** Registry entry for a curated server-driven object type. */
@@ -351,8 +351,13 @@ export function serverDrivenNewObjectUrl(code: string): string {
  * where the metadata root's packageRef only renders under this Accept) and the create POST
  * Content-Type. Per type (EVTO → blues v2, DTDC → its own dtdc type). Throws for an unknown code.
  */
-export function serverDrivenMetadataContentType(code: string): string {
-  return sdoEntry(code).metadataContentType;
+export async function serverDrivenMetadataContentType(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  code: string,
+): Promise<string> {
+  const support = code === 'COTA' && (await ensureServerDrivenSupport(http, safety, code));
+  return support ? support.metadataContentType : sdoEntry(code).metadataContentType;
 }
 
 /**
@@ -373,7 +378,7 @@ export function supportsServerDrivenObject(http: AdtHttpClient, code: string): b
 }
 
 /**
- * Resolve SDO availability, fetching ADT discovery when it has not been loaded yet.
+ * Return the supported metadata media type, or false when the collection is unavailable.
  *
  * The sync check returns `undefined` on a cold discovery map — which the CLI always is
  * (`handleToolCall` runs without the startup probe). Callers that treated only an explicit `false`
@@ -387,7 +392,7 @@ export function supportsServerDrivenObject(http: AdtHttpClient, code: string): b
  * before every tool call, and writing to the shared client would leak one user's capability view
  * under the non-strict principal-propagation fallback.
  *
- * Still-unknown resolves to `true` (proceed): `hasDiscoveryData()` cannot tell "discovery
+ * Still-unknown uses the registry media type (proceed): `hasDiscoveryData()` cannot tell "discovery
  * unreachable" from "discovery empty", and failing closed would break every SDO read on a system
  * where /sap/bc/adt/discovery is 403'd. This gate only improves the error message — the real
  * controls are checkOperation and the package allowlist.
@@ -398,19 +403,25 @@ export async function ensureServerDrivenSupport(
   http: AdtHttpClient,
   safety: SafetyConfig,
   code: string,
-): Promise<boolean> {
+): Promise<{ metadataContentType: string; discovery?: DiscoveryMap } | false> {
   const entry = REGISTRY_BY_CODE[code];
   if (!entry) return false;
   const cached = supportsServerDrivenObject(http, code);
-  if (cached === true) return true;
-  checkOperation(safety, OperationType.Read, 'FetchDiscovery');
-  const { map } = await fetchDiscoveryDocument(http); // never throws
-  // Empty map = discovery unreachable, NOT "collection absent" — those must not collapse together,
-  // or a 403'd discovery would block every SDO read. A populated map lacking the href IS unsupported.
-  if (map.size === 0) return cached ?? true;
-  const accept = resolveAcceptType(map, entry.href);
-  if (!accept && map.has(entry.href)) return true; // listed without media types, see above
-  return (accept ?? '').includes(entry.discoveryMarker);
+  let accept = http.discoveryAcceptFor(entry.href);
+  let discovery: DiscoveryMap | undefined;
+  if (cached !== true) {
+    checkOperation(safety, OperationType.Read, 'FetchDiscovery');
+    const { map } = await fetchDiscoveryDocument(http);
+    if (map.size === 0)
+      return cached === false ? false : { metadataContentType: entry.metadataContentType, discovery: map };
+    discovery = map;
+    accept = resolveAcceptType(map, entry.href);
+    if (accept ? !accept.includes(entry.discoveryMarker) : !map.has(entry.href)) return false;
+  }
+  return {
+    metadataContentType: code === 'COTA' && accept === BLUES_V2 ? BLUES_V2 : entry.metadataContentType,
+    discovery,
+  };
 }
 
 /** Shared "this release does not have this type" message for the three SDO entry points. */
@@ -434,6 +445,7 @@ export async function getServerDrivenObject(
   code: string,
   name: string,
   version?: 'active' | 'inactive',
+  metadataContentType?: string,
 ): Promise<ServerDrivenObjectResult> {
   checkOperation(safety, OperationType.Read, 'GetServerDrivenObject');
   const entry = sdoEntry(code);
@@ -441,7 +453,9 @@ export async function getServerDrivenObject(
 
   const selectedVersion = version ?? (code === 'TABL/DTI' ? 'inactive' : undefined);
   const query = selectedVersion ? `?version=${selectedVersion}` : '';
-  const metaResp = await http.get(`${objUrl}${query}`, { Accept: entry.metadataContentType });
+  const metaResp = await http.get(`${objUrl}${query}`, {
+    Accept: metadataContentType ?? (await serverDrivenMetadataContentType(http, safety, code)),
+  });
   const metadata = parseServerDrivenMetadata(metaResp.body, entry.metadataRootLocalName);
 
   // SAP can substitute the other version when the requested one does not exist.
@@ -520,6 +534,7 @@ export async function createServerDrivenObject(
     transport?: string;
     uiadLanguageVersion?: UiadLanguageVersion;
     creationProperties?: Record<string, string>;
+    metadataContentType?: string;
   },
 ): Promise<string> {
   checkOperation(safety, OperationType.Create, 'CreateServerDrivenObject');
@@ -533,7 +548,12 @@ export async function createServerDrivenObject(
     opts.creationProperties,
   );
   const url = opts.transport ? `${entry.href}?corrNr=${encodeURIComponent(opts.transport)}` : entry.href;
-  const resp = await postCreate(http, url, body, entry.metadataContentType);
+  const resp = await postCreate(
+    http,
+    url,
+    body,
+    opts.metadataContentType ?? (await serverDrivenMetadataContentType(http, safety, code)),
+  );
   return resp.body;
 }
 
@@ -594,13 +614,14 @@ async function checkServerDrivenDeletion(
   safety: SafetyConfig,
   objUrl: string,
   lockHandle: string,
+  discovery?: DiscoveryMap,
 ): Promise<void> {
   const path = '/sap/bc/adt/deletion/check';
   const contentType = 'application/vnd.sap.adt.deletion.check.request.v1+xml';
   checkOperation(safety, OperationType.Read, 'CheckDeletion');
   let advertised = http.discoveryAcceptFor(path);
-  if (!http.hasDiscoveryData()) {
-    const { map } = await fetchDiscoveryDocument(http);
+  if (discovery || !http.hasDiscoveryData()) {
+    const map = discovery ?? (await fetchDiscoveryDocument(http)).map;
     if (map.size === 0) throw new AdtError('Deletion check availability could not be determined. No DELETE was sent.');
     advertised = resolveAcceptType(map, path);
   }
@@ -642,15 +663,20 @@ export async function deleteServerDrivenObject(
   safety: SafetyConfig,
   code: string,
   name: string,
-  opts: ServerDrivenWriteOptions = {},
+  opts: ServerDrivenWriteOptions & { metadataContentType?: string; discovery?: DiscoveryMap } = {},
 ): Promise<void> {
   checkOperation(safety, OperationType.Delete, 'DeleteServerDrivenObject');
+  let { metadataContentType, discovery } = opts;
+  if (code === 'COTA' && !metadataContentType) {
+    const support = await ensureServerDrivenSupport(http, safety, code);
+    if (support) ({ metadataContentType, discovery } = support);
+  }
   const objUrl = serverDrivenObjectUrl(code, name);
   await http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, safety, objUrl, 'MODIFY');
     const transport = opts.transport ?? (lock.corrNr || undefined);
     try {
-      await checkServerDrivenDeletion(session, safety, objUrl, lock.lockHandle);
+      await checkServerDrivenDeletion(session, safety, objUrl, lock.lockHandle, discovery);
       let url = `${objUrl}?lockHandle=${encodeURIComponent(lock.lockHandle)}`;
       if (transport) url += `&corrNr=${encodeURIComponent(transport)}`;
       await session.delete(url);
@@ -666,7 +692,10 @@ export async function deleteServerDrivenObject(
   try {
     await http.get(
       objUrl,
-      { Accept: serverDrivenMetadataContentType(code), 'Cache-Control': 'no-cache' },
+      {
+        Accept: metadataContentType ?? sdoEntry(code).metadataContentType,
+        'Cache-Control': 'no-cache',
+      },
       { suppressNotFoundLog: true },
     );
   } catch (error) {
