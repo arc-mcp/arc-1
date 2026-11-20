@@ -163,6 +163,9 @@ const SAPWRITE_TYPE_TABLE = [
   ...SDO_TYPES.map((t) => ({ type: t, btp: true }) as const),
 ] as const;
 const sapWriteTypes = deriveTypeArrays(SAPWRITE_TYPE_TABLE);
+export const SAPWRITE_BATCH_TYPES = deriveTypeArrays(
+  SAPWRITE_TYPE_TABLE.filter(({ type }) => type !== 'TABL/DTT' && type !== 'SMBC'),
+);
 /** All SAPWrite object types available on on-premise (the superset). */
 export const SAPWRITE_TYPES_ONPREM = sapWriteTypes.onprem;
 /** SAPWrite types available on BTP ABAP Environment (the `btp: true` rows). */

@@ -46,13 +46,13 @@ import {
   SAPCONTEXT_TYPES_ONPREM,
   SAPREAD_TYPES_BTP,
   SAPREAD_TYPES_ONPREM,
+  SAPWRITE_BATCH_TYPES,
   SAPWRITE_TYPES_BTP,
   SAPWRITE_TYPES_ONPREM,
 } from './tool-registry.js';
 import { BATCH_CREATE_MAX_OBJECTS } from './write/batch-results.js';
 
-// Re-exported so tests/unit/handlers/schemas.test.ts can assert the write-type matrix against
-// the single source of truth. The lists themselves live in tool-registry.ts.
+// Keep the write-type matrix available to existing schema consumers.
 export { SAPWRITE_TYPES_BTP, SAPWRITE_TYPES_ONPREM };
 
 /**
@@ -665,7 +665,7 @@ const tableTypeDimensionSchema = z
 
 const batchObjectSchemaOnprem = z
   .object({
-    type: z.enum(SAPWRITE_TYPES_ONPREM).exclude(['TABL/DTT', 'SMBC']),
+    type: z.enum(SAPWRITE_BATCH_TYPES.onprem),
     name: z.string(),
     source: z.string().optional(),
     description: z.string().optional(),
@@ -722,7 +722,7 @@ const batchObjectSchemaOnprem = z
 
 const batchObjectSchemaBtp = z
   .object({
-    type: z.enum(SAPWRITE_TYPES_BTP).exclude(['TABL/DTT', 'SMBC']),
+    type: z.enum(SAPWRITE_BATCH_TYPES.btp),
     name: z.string(),
     source: z.string().optional(),
     description: z.string().optional(),

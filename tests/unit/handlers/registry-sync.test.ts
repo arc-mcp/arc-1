@@ -121,6 +121,16 @@ describe('registry sync — Zod enums accept every registry type and reject bogu
     expect(getToolSchema('SAPRead', false)!.safeParse({ type: 'NOPE', name: 'x' }).success).toBe(false);
   });
 
+  it.each([false, true])('keeps the batch write type matrix target-specific (BTP=%s)', (isBtp) => {
+    const schema = getToolSchema('SAPWrite', isBtp)!;
+    const accepts = (type: string) =>
+      schema.safeParse({ action: 'batch_create', objects: [{ type, name: 'ZTEST' }] }).success;
+    expect(accepts('SMBC')).toBe(false);
+    expect(accepts('TABL/DTT')).toBe(false);
+    expect(accepts('CLAS')).toBe(true);
+    expect(accepts('FUNC')).toBe(!isBtp);
+  });
+
   it('SAPWrite onprem + btp', () => {
     const wargs = (type: string) => ({
       action: type === 'TABL/DTT' ? 'update' : 'create',
