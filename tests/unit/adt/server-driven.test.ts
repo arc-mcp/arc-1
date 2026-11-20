@@ -12,6 +12,7 @@ import {
   isServerDrivenObjectType,
   SDO_REGISTRY,
   SDO_TYPES,
+  serverDrivenNewObjectUrl,
   serverDrivenObjectUrl,
   serverDrivenSourceContentType,
   supportsServerDrivenObject,
@@ -608,5 +609,33 @@ describe('deleteServerDrivenObject', () => {
     const { http, calls } = mockWriteHttp();
     await expect(deleteServerDrivenObject(http, readOnlySafety(), 'CSNM', 'ZC')).rejects.toBeInstanceOf(AdtSafetyError);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('SMBC as a server-driven type', () => {
+  it('addresses SMBC in lower case like the other SAP clients', () => {
+    expect(serverDrivenObjectUrl('SMBC', '/NS/CONFIG')).toBe('/sap/bc/adt/bct/smbctyp/%2Fns%2Fconfig');
+    expect(serverDrivenObjectUrl('DESD', 'ZSCHEMA')).toBe('/sap/bc/adt/ddic/desd/ZSCHEMA');
+  });
+
+  it('POSTs an SMBC shell to the smbctyp collection with blues v1', async () => {
+    const { http, calls } = mockWriteHttp();
+    await createServerDrivenObject(http, unrestrictedSafetyConfig(), 'SMBC', 'ZCONFIG', {
+      package: 'ZLOCAL_CFG',
+      description: 'Config',
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      path: '/sap/bc/adt/bct/smbctyp',
+      contentType: 'application/vnd.sap.adt.blues.v1+xml',
+    });
+    expect(calls[0].body).toContain('<blue:blueSource');
+    expect(calls[0].body).toContain('adtcore:type="SMBC/TYP"');
+    expect(calls[0].body).toContain('<adtcore:packageRef adtcore:name="ZLOCAL_CFG"/>');
+  });
+
+  it('serves create-time resources under $new', () => {
+    expect(serverDrivenNewObjectUrl('SMBC')).toBe('/sap/bc/adt/bct/smbctyp/$new');
   });
 });

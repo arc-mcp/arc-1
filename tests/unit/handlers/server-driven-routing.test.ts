@@ -38,7 +38,7 @@ describe('shared server-driven routing', () => {
       expect(objectBasePath(type)).toBe(`${entry.href}/`);
       const name = type === 'TABL/DTI' ? '/TEST/NAME~001' : '/TEST/NAME';
       expect(objectUrlForType(type, name)).toBe(serverDrivenObjectUrl(type, name));
-      const encodedName = encodeURIComponent(type === 'TABL/DTI' ? name.toLowerCase() : name);
+      const encodedName = encodeURIComponent('lowercaseName' in entry ? name.toLowerCase() : name);
       expect(sourceUrlForType(type, name)).toBe(`${entry.href}/${encodedName}/source/main`);
     }
   });
