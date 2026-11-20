@@ -10,7 +10,6 @@ import {
   updateApiCatalogObject,
 } from '../../adt/api-packages.js';
 import type { AdtClient } from '../../adt/client.js';
-import { AdtError } from '../../adt/errors.js';
 import { checkPackage } from '../../adt/safety.js';
 import type { CachingLayer } from '../../cache/caching-layer.js';
 import type { ServerConfig } from '../../server/types.js';
@@ -18,6 +17,7 @@ import { type CacheSecurityContext, invalidateInactiveList } from '../cache-secu
 import { errorResult, type ToolResult, textResult } from '../shared.js';
 import { enforceAllowedPackageForObjectUrl } from '../write-helpers.js';
 import { resolveCreateTransport } from './create-transport.js';
+import { postCreateError } from './post-create-error.js';
 
 const METADATA_ACCEPT = 'application/vnd.sap.adt.blues.v1+xml';
 
@@ -96,20 +96,23 @@ export async function writeApiCatalogObject(
       definition,
       transport,
     });
-    if (needsFollowUpSave(type, definition)) {
-      try {
-        await updateApiCatalogObject(client.http, client.safety, type, name, definition, transport);
-      } catch (cause) {
-        const err =
-          cause instanceof AdtError ? cause : new AdtError(cause instanceof Error ? cause.message : String(cause));
-        const created = `${type} ${name} was created in package ${pkg}, but saving the remaining fields failed. Check it with SAPRead(type="${type}", name="${name}") and use SAPWrite(action="update") — do not repeat create.`;
-        err.extraHint = err.extraHint ? `${err.extraHint}\n${created}` : created;
-        throw err;
-      }
-    }
-  } finally {
+  } catch (error) {
     invalidate();
+    throw error;
   }
+  try {
+    if (needsFollowUpSave(type, definition))
+      await updateApiCatalogObject(client.http, client.safety, type, name, definition, transport);
+  } catch (cause) {
+    throw postCreateError(
+      { config, invalidateWrittenObject: invalidate },
+      cause,
+      type,
+      name,
+      `${type} ${name} was created in package ${pkg}, but saving the remaining fields failed. Check it with SAPRead and use SAPWrite(action="update"). Do not repeat create.`,
+    );
+  }
+  invalidate();
   return textResult(
     `Created ${type} ${name} in package ${pkg}${transport ? ` (transport ${transport})` : ''}. ` +
       `It is active; no activation is needed.${ignoredNote}`,

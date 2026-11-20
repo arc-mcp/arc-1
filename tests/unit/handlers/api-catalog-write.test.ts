@@ -28,7 +28,9 @@ interface Call {
   contentType?: string;
 }
 
-function mockSap(routes: { check?: string; deleted?: string; putError?: string; checkRun?: string } = {}): Call[] {
+function mockSap(
+  routes: { check?: string; deleted?: string; putError?: string; putStatus?: number; checkRun?: string } = {},
+): Call[] {
   const calls: Call[] = [];
   mockFetch.mockImplementation(
     async (url: string | URL, opts: { method?: string; body?: unknown; headers?: Record<string, string> }) => {
@@ -56,7 +58,7 @@ function mockSap(routes: { check?: string; deleted?: string; putError?: string; 
         return mockResponse(200, routes.check ?? deletionCheck(SOD2_URL), csrf);
       if (u.pathname === '/sap/bc/adt/deletion/delete')
         return mockResponse(200, routes.deleted ?? deletionResult(SOD2_URL, true), csrf);
-      if (method === 'PUT' && routes.putError) return mockResponse(400, routes.putError, csrf);
+      if (method === 'PUT' && routes.putError) return mockResponse(routes.putStatus ?? 400, routes.putError, csrf);
       if (u.pathname === '/sap/bc/adt/checkruns' && routes.checkRun) return mockResponse(200, routes.checkRun, csrf);
       if (method === 'GET' && u.pathname === SOD1_URL) return mockResponse(200, fixture('sod1-metadata.xml'), csrf);
       if (method === 'GET' && u.pathname === SOD2_URL)
@@ -136,6 +138,23 @@ describe('SAPWrite type=SOD1/SOD2', () => {
     expect(writes[1]!.body).toContain('<sod1:namespace>demo.ns</sod1:namespace>');
     expect(writes[1]!.body).toContain('<sod1:value>Demo/New</sod1:value>');
     expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+  });
+
+  it.each([400, 404, 500])('preserves confirmed creation after a %i follow-up save', async (putStatus) => {
+    const calls = mockSap({ putStatus, putError: 'Follow-up save failed' });
+    const result = await write({
+      action: 'create',
+      type: 'SOD1',
+      name: 'Z_DEMO_API_PACKAGE',
+      package: '$TMP',
+      source: '{"abbreviation":"ZX","alias":"demo"}',
+    });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain('was created in package $TMP');
+    expect(text(result)).toContain('Do not repeat create');
+    expect(text(result)).toContain(`status ${putStatus}`);
+    expect(text(result)).not.toMatch(/often transient|SAPSearch.*verify|then retry|check the object name/i);
+    expect(calls.filter((c) => c.method === 'POST' && c.url === '/sap/bc/adt/aps/com/sod1')).toHaveLength(1);
   });
 
   it('updates an assignment by patching the fresh SAP document under a lock', async () => {
