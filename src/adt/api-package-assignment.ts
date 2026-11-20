@@ -14,6 +14,7 @@
  * the API type and not from the ORD resourceDefinitions (which advertise formats ADT does not deliver).
  */
 import { apiCatalogObjectUrl } from './api-packages.js';
+import { DataResponseBudget } from './data-result-context.js';
 import { AdtError, looksLikeIcfServiceInactivePage } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
@@ -155,6 +156,9 @@ function htmlError(content: string, label: string): string | undefined {
   return undefined;
 }
 
+// ADT sends the complete escaped wrapper, including both tabs, even for a one-line read.
+const documentBudget = () => new DataResponseBudget(8 * 1024 * 1024, 'api-catalog-document');
+
 function documentUrl(file: '$ordfile' | '$swaggerfile', name: string): string {
   return `${SOD2_COLLECTION}/${file}?packageAssignmentId=${encodeURIComponent(name.toUpperCase())}`;
 }
@@ -162,9 +166,13 @@ function documentUrl(file: '$ordfile' | '$swaggerfile', name: string): string {
 /** The ORD document of one assignment ("ORD Document" button); '' when SAP returns none. */
 export async function getOrdDocument(http: AdtHttpClient, safety: SafetyConfig, name: string): Promise<string> {
   checkOperation(safety, OperationType.Read, 'GetSOD2OrdDocument');
-  const resp = await http.get(documentUrl('$ordfile', name), {
-    Accept: 'application/vnd.sap.adt.oda.ordfile+xml',
-  });
+  const resp = await http.get(
+    documentUrl('$ordfile', name),
+    {
+      Accept: 'application/vnd.sap.adt.oda.ordfile+xml',
+    },
+    { responseBudget: documentBudget() },
+  );
   const ord = slot(documentSlots(resp.body, 'ordFile'), 'ordDocumentFile');
   if (isEmptyDocument(ord)) return '';
   const page = htmlError(ord, 'ORD');
@@ -187,9 +195,13 @@ export async function getResourceDefinitions(
   requestedKind?: string,
 ): Promise<ResourceDefinition[]> {
   checkOperation(safety, OperationType.Read, 'GetSOD2ResourceDefinition');
-  const resp = await http.get(documentUrl('$swaggerfile', name), {
-    Accept: 'application/vnd.sap.adt.oda.swaggerfile+xml',
-  });
+  const resp = await http.get(
+    documentUrl('$swaggerfile', name),
+    {
+      Accept: 'application/vnd.sap.adt.oda.swaggerfile+xml',
+    },
+    { responseBudget: documentBudget() },
+  );
   const slots = documentSlots(resp.body, 'swaggerFile');
   const json = slot(slots, 'jsonFile'),
     edmx = slot(slots, 'edmxFile');

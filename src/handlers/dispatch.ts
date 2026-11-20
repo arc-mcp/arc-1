@@ -226,6 +226,8 @@ function buildBaseErrorMessage(
   if (err instanceof AdtResponseLimitError && err.endpointFamily === 'package-browser') {
     return `${message} Narrow with an advertised objectType or a smaller package. maxResults only caps returned entries, not SAP's response size. No listing was returned.`;
   }
+  if (err instanceof AdtResponseLimitError && err.endpointFamily === 'api-catalog-document')
+    return `${message} SAP supplies the complete document to ADT even for a grep or line range. Inspect it in SAP.`;
   if (err instanceof AdtResponseLimitError && err.endpointFamily === 'search-help-metadata') {
     return `${message} SHLP metadata cannot be narrowed or paged here. Inspect the search help in SAP. No partial metadata was returned.`;
   }

@@ -53,10 +53,14 @@ function documentResult(
   const document = withLineBreaks(content, mediaType);
   if (args.grep !== undefined) {
     const g = grepSource(document, String(args.grep));
+    if (g.output.length > SOD2_MAX_DOCUMENT_CHARS)
+      return errorResult(
+        'The grep result exceeds the document output limit. Narrow the pattern or request a line range.',
+      );
     return g.invalidPattern ? errorResult(g.output) : textResult(g.output);
   }
   if (args.lineStart !== undefined) {
-    const range = readLineRange(document, Number(args.lineStart), Number(args.lineEnd));
+    const range = readLineRange(document, Number(args.lineStart), Number(args.lineEnd), SOD2_MAX_DOCUMENT_CHARS);
     return range.invalidRange ? errorResult(range.output) : textResult(range.output);
   }
   if (document.length > SOD2_MAX_DOCUMENT_CHARS) {

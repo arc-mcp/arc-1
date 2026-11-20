@@ -169,6 +169,32 @@ describe('SAPRead type=SOD2', () => {
     expect(text(openapi)).toContain('has no openapi resource definition. Available: edmx.');
   });
 
+  it('bounds a requested range including a single oversized JSON literal', async () => {
+    backend(swaggerFile(JSON.stringify({ openapi: '3.0.0', description: 'x'.repeat(110000) }), ''));
+    const result = await read({ include: 'openapi', lineStart: 1, lineEnd: 90 });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain('Request fewer lines or use grep');
+  });
+  it('bounds a broad grep across long lines', async () => {
+    backend(
+      swaggerFile(
+        JSON.stringify({ openapi: '3.0.0', rows: Array.from({ length: 200 }, () => 'MATCH' + 'x'.repeat(1100)) }),
+        '',
+      ),
+    );
+    const result = await read({ include: 'openapi', grep: 'MATCH' });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain('Narrow the pattern');
+  });
+  it.each(['ord', 'specs'])('stops an oversized %s wrapper before parsing', async (include) => {
+    const body = 'x'.repeat(8 * 1024 * 1024 + 1);
+    backend(body, body);
+    const result = await read({ include });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain('8388608-byte limit');
+    expect(text(result)).not.toContain('maxRows');
+  });
+
   it('reports an assignment without resource definitions', async () => {
     backend('');
     const result = await read({ include: 'specs' });
