@@ -203,6 +203,34 @@ describe('applyApiCatalogDefinition', () => {
     expect(out).toBe(xml.replace("core:description='old > value'", "core:description='it&apos;s &lt;new&gt;'"));
   });
 
+  it('preserves CRLF, self-closing field attributes, and the field’s own namespace prefix', () => {
+    const xml = SOD1.replaceAll('><', '>\r\n<').replace(
+      /<sod1:alias>[^<]*<\/sod1:alias>/,
+      '<alt:alias xmlns:alt="http://www.sap.com/oda/sod1" label=">" />',
+    );
+    const tag = '<alt:alias xmlns:alt="http://www.sap.com/oda/sod1" label=">" ';
+    expect(applyApiCatalogDefinition('SOD1', xml, { alias: '&<"$1' })).toBe(
+      xml.replace(tag + '/>', () => tag + '>&amp;&lt;&quot;$1</alt:alias>'),
+    );
+  });
+
+  it('refuses incorrect namespace bindings and duplicate content before changing a description', () => {
+    for (const xml of [
+      SOD1.replace('http://www.sap.com/oda/sod1', 'urn:other'),
+      SOD1.replace('<sod1:content>', '<sod1:content xmlns:sod1="urn:other">'),
+      SOD1.replace('<sod1:content>', '<sod1:content/><sod1:content>'),
+      SOD1.replace(/adtcore:description="[^"]*"/, ''),
+      SOD1 + '<secondRoot/>',
+    ]) {
+      expect(() => applyApiCatalogDefinition('SOD1', xml, { description: 'changed' })).toThrow();
+    }
+  });
+
+  it('refuses an addressed field when its prefix binds a foreign namespace', () => {
+    const xml = SOD1.replace('<sod1:alias>', '<sod1:alias xmlns:sod1="urn:other">');
+    expect(() => applyApiCatalogDefinition('SOD1', xml, { alias: 'changed' })).toThrow('has no <sod1:alias>');
+  });
+
   it('omits scope dependency from the read-back when this release lacks the field', () => {
     const xml = SOD1.replace(/<sod1:isScopeDependent>.*?<\/sod1:isScopeDependent>/, '');
     const info = parseApiPackage(xml);

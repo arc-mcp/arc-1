@@ -70,6 +70,10 @@ read-edit-save round trip succeed. Neither system reproduced the 8.16 author's s
 field configuration. Both accepted an arbitrary category-`2` value under `customer.arc1`.
 Category `ZZ_INVALID` produced a transformation/deserialization error on both object types.
 
+Raw metadata from a tagged SOD1 with a URL and a tagged SOD2 on each release had one
+`content` and one occurrence of each exposed writable field. The 7.58 SOD1 had no
+`isScopeDependent`. Edits use the qualified field's source positions in SAP's original XML.
+
 On both releases a manual documentation link on a type-`2` assignment and a nonexistent
 leading business object type produced `SWB_TOOL/036`. The check run identified the internal-package
 requirement and the unknown business object respectively. ARC-1 runs this diagnostic for that

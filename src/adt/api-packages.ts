@@ -11,7 +11,7 @@
  * Updates patch the fresh SAP document element by element, so everything a caller did not address
  * (tag ids, plugin configuration, atom links, unknown elements) goes back unchanged.
  */
-import { SaxesParser } from 'saxes';
+import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { postCreate } from './create-request.js';
 import { updateObject, withLockedMutation } from './crud.js';
 import { syntaxCheck } from './devtools.js';
@@ -255,8 +255,6 @@ export function parseApiCatalogSource(
 
 // ─── XML ────────────────────────────────────────────────────────────
 
-const xmlText = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
 /** Minimal create document, as Eclipse posts it. */
 export function buildApiCatalogCreateXml(
   type: ApiCatalogType,
@@ -269,7 +267,7 @@ export function buildApiCatalogCreateXml(
   let content: string;
   if (type === 'SOD1') {
     if (!definition.abbreviation?.trim()) throw new AdtError('Creating an API package (SOD1) requires "abbreviation".');
-    content = `<sod1:abbreviation>${xmlText(definition.abbreviation)}</sod1:abbreviation>`;
+    content = `<sod1:abbreviation>${escapeXmlAttr(definition.abbreviation)}</sod1:abbreviation>`;
   } else {
     const object = definition.apiObject;
     if (!definition.apiPackage?.trim() || !object?.type.trim() || !object.name.trim())
@@ -277,12 +275,12 @@ export function buildApiCatalogCreateXml(
         'Creating an API package assignment (SOD2) requires "apiPackage" and "apiObject" {type, name, subType?, subName?}.',
       );
     content =
-      `<sod2:packageID>${xmlText(definition.apiPackage)}</sod2:packageID>` +
-      `<sod2:apiWbObjectType>${xmlText(object.type)}</sod2:apiWbObjectType>` +
-      `<sod2:apiWbObjectName>${xmlText(object.name)}</sod2:apiWbObjectName>` +
-      `<sod2:apiSubWbObjectType>${xmlText(object.subType ?? '')}</sod2:apiSubWbObjectType>` +
+      `<sod2:packageID>${escapeXmlAttr(definition.apiPackage)}</sod2:packageID>` +
+      `<sod2:apiWbObjectType>${escapeXmlAttr(object.type)}</sod2:apiWbObjectType>` +
+      `<sod2:apiWbObjectName>${escapeXmlAttr(object.name)}</sod2:apiWbObjectName>` +
+      `<sod2:apiSubWbObjectType>${escapeXmlAttr(object.subType ?? '')}</sod2:apiSubWbObjectType>` +
       // The sub-object name is fixed-width (service name padded, then version): passed through verbatim.
-      `<sod2:apiSubWbObjectName>${xmlText(object.subName ?? '')}</sod2:apiSubWbObjectName>`;
+      `<sod2:apiSubWbObjectName>${escapeXmlAttr(object.subName ?? '')}</sod2:apiSubWbObjectName>`;
   }
   return `<?xml version="1.0" encoding="UTF-8"?>
 <${prefix}:${prefix} xmlns:${prefix}="${NAMESPACES[type]}" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:type="${type}" adtcore:name="${escapeXmlAttr(name)}" adtcore:description="${escapeXmlAttr(description)}">
@@ -316,6 +314,37 @@ function assertFieldsEnabled(type: ApiCatalogType, xml: string, definition: ApiC
     );
 }
 
+// Keep qualified names and source offsets for edits to the original SAP document.
+const catalogParser = new XMLParser({
+  ignoreAttributes: false,
+  processEntities: false,
+  alwaysCreateTextNode: true,
+  captureMetaData: true,
+});
+
+const OPENING_TAG = /^<(?:[^>"']|"[^"]*"|'[^']*')+>/;
+function catalogChild(
+  local: string,
+  namespace: string,
+  parent: Record<string, unknown>,
+  ...ancestors: Record<string, unknown>[]
+) {
+  const matches = [];
+  for (const [name, children] of Object.entries(parent)) {
+    if (name.startsWith('@_') || (name !== local && !name.endsWith(`:${local}`))) continue;
+    const prefix = name.slice(0, -local.length);
+    const binding = prefix ? `@_xmlns:${prefix.slice(0, -1)}` : '@_xmlns';
+    for (const node of Array.isArray(children) ? children : [children]) {
+      const scope = [node, parent, ...ancestors].find((ancestor) => Object.hasOwn(ancestor, binding));
+      if (scope?.[binding] !== namespace) continue;
+      const { startIndex, endIndex } = node[XMLParser.getMetaDataSymbol() as symbol];
+      matches.push({ name, prefix, node: record(node), start: Number(startIndex), end: Number(endIndex) });
+    }
+  }
+  if (matches.length > 1) throw new AdtError(`Ambiguous metadata: duplicate ${local} element.`);
+  return matches[0];
+}
+
 /** Apply a definition to the current SAP document; untouched parts are returned byte for byte. */
 export function applyApiCatalogDefinition(type: ApiCatalogType, xml: string, definition: ApiCatalogDefinition): string {
   const ns = NAMESPACES[type];
@@ -328,10 +357,11 @@ export function applyApiCatalogDefinition(type: ApiCatalogType, xml: string, def
     'leadingBusinessObjectType',
     'isScopeDependent',
   ] as const) {
-    if (definition[key] !== undefined) fields.set(key, () => xmlText(String(definition[key])));
+    if (definition[key] !== undefined) fields.set(key, () => escapeXmlAttr(String(definition[key])));
   }
   const { documentationLink, tags, urls } = definition;
-  if (documentationLink !== undefined) fields.set('documentationLinkReplacement', () => xmlText(documentationLink));
+  if (documentationLink !== undefined)
+    fields.set('documentationLinkReplacement', () => escapeXmlAttr(documentationLink));
   const element = (name: string, inner: string) => `<${name}>${inner}</${name}>`;
   if (tags)
     fields.set('tags', (prefix) =>
@@ -339,7 +369,8 @@ export function applyApiCatalogDefinition(type: ApiCatalogType, xml: string, def
         .map((tag) =>
           element(
             `${prefix}tag`,
-            element(`${prefix}value`, xmlText(tag.value)) + element(`${prefix}category`, xmlText(tag.category)),
+            element(`${prefix}value`, escapeXmlAttr(tag.value)) +
+              element(`${prefix}category`, escapeXmlAttr(tag.category)),
           ),
         )
         .join(''),
@@ -351,73 +382,51 @@ export function applyApiCatalogDefinition(type: ApiCatalogType, xml: string, def
           element(
             `${prefix}url`,
             (['technicalName', 'displayName', 'value', 'version', 'text'] as const)
-              .map((key) => element(prefix + key, xmlText(url[key])))
+              .map((key) => element(prefix + key, escapeXmlAttr(url[key])))
               .join(''),
           ),
         )
         .join(''),
     );
 
-  // Use namespace-aware parser offsets to splice only the requested attribute and child contents.
-  const parser = new SaxesParser({ xmlns: true });
-  const seen = new Set<string>();
+  if (XMLValidator.validate(xml) !== true) throw new AdtError('Invalid SAP catalog XML; nothing was saved.');
+  const document = catalogParser.parse(xml) as Record<string, unknown>;
+  const root = catalogChild(type.toLowerCase(), ns, document);
+  if (!root || Object.keys(document).filter((key) => !key.startsWith('?')).length !== 1)
+    throw new AdtError(`SAP returned no ${type} metadata document; nothing was saved.`);
+  const content = catalogChild('content', ns, root.node);
+  if (!content) throw new AdtError(`SAP returned no ${type} content element; nothing was saved.`);
+
   const edits: Array<{ start: number; end: number; value: string }> = [];
-  let depth = 0;
-  let content = false;
-  let foundContent = false;
-  let fieldStart = 0;
-  const rootAttributeEnds = new Map<string, number>();
-  parser.on('attribute', (attr) => {
-    if (!depth && attr.local === 'description') rootAttributeEnds.set(attr.name, parser.position);
-  });
-  parser.on('opentag', (tag) => {
-    depth++;
-    if (depth === 1) {
-      if (tag.uri !== ns || tag.local !== type.toLowerCase())
-        throw new AdtError(`SAP returned no ${type} metadata document; nothing was saved.`);
-      if (definition.description === undefined) return;
-      const core = 'http://www.sap.com/adt/core';
-      const attr = Object.values(tag.attributes).find((a) => a.uri === core && a.local === 'description');
-      const value = escapeXmlAttr(definition.description);
-      if (attr) {
-        const end = rootAttributeEnds.get(attr.name)! - 1;
-        edits.push({ start: xml.lastIndexOf(xml[end]!, end - 1) + 1, end, value });
-      } else {
-        const prefix = Object.values(tag.attributes).find((a) => a.uri === core)?.prefix;
-        if (!prefix) throw new AdtError('Missing ADT core namespace on the metadata root.');
-        const end = parser.position - 1;
-        edits.push({ start: end, end, value: ` ${prefix}:description="${value}"` });
-      }
-    } else if (depth === 2) {
-      content = tag.uri === ns && tag.local === 'content';
-      if (content && foundContent) throw new AdtError('Ambiguous metadata: duplicate content element.');
-      foundContent ||= content;
-    } else if (depth === 3 && content && tag.uri === ns && fields.has(tag.local)) {
-      if (seen.has(tag.local)) throw new AdtError(`Ambiguous metadata: duplicate ${tag.name} field.`);
-      seen.add(tag.local);
-      fieldStart = parser.position - (tag.isSelfClosing ? 2 : 1);
+  if (definition.description !== undefined) {
+    const opening = xml.slice(root.start, root.end).match(OPENING_TAG)![0];
+    const descriptions = [...opening.matchAll(/([^\s=]+)\s*=\s*("[^"]*"|'[^']*')/g)].filter(([, name]) => {
+      const [prefix, local] = name!.split(':');
+      return local === 'description' && root.node[`@_xmlns:${prefix}`] === 'http://www.sap.com/adt/core';
+    });
+    if (descriptions.length !== 1)
+      throw new AdtError('Expected one ADT core description on the metadata root; nothing was saved.');
+    const attr = descriptions[0]!;
+    const end = root.start + attr.index + attr[0].length - 1;
+    edits.push({ start: end - (attr[2]!.length - 2), end, value: escapeXmlAttr(definition.description) });
+  }
+  for (const [local, render] of fields) {
+    const field = catalogChild(local, ns, content.node, root.node);
+    if (!field)
+      throw new AdtError(`SAP's metadata document has no <${type.toLowerCase()}:${local}> element; nothing was saved.`);
+    const inner = render(field.prefix);
+    const opening = xml.slice(field.start, field.end).match(OPENING_TAG)![0];
+    const afterOpening = field.start + opening.length;
+    if (opening.endsWith('/>')) {
+      edits.push({ start: afterOpening - 2, end: afterOpening, value: `>${inner}</${field.name}>` });
+    } else {
+      edits.push({ start: afterOpening, end: xml.lastIndexOf('</', field.end - 1), value: inner });
     }
-  });
-  parser.on('closetag', (tag) => {
-    if (depth === 3 && content && tag.uri === ns) {
-      const render = fields.get(tag.local);
-      if (render) {
-        const inner = render(tag.prefix ? `${tag.prefix}:` : '');
-        const end = tag.isSelfClosing ? parser.position : xml.lastIndexOf('</', parser.position - 1);
-        edits.push({ start: fieldStart, end, value: tag.isSelfClosing ? `>${inner}</${tag.name}>` : `>${inner}` });
-      }
-    }
-    depth--;
-  });
-  parser.write(xml).close();
-  if (!foundContent) throw new AdtError(`SAP returned no ${type} content element; nothing was saved.`);
-  for (const field of fields.keys()) {
-    if (!seen.has(field))
-      throw new AdtError(`SAP's metadata document has no <${type.toLowerCase()}:${field}> element; nothing was saved.`);
   }
   assertFieldsEnabled(type, xml, definition);
   let out = xml;
-  for (const { start, end, value } of edits.reverse()) out = out.slice(0, start) + value + out.slice(end);
+  for (const { start, end, value } of edits.sort((a, b) => b.start - a.start))
+    out = out.slice(0, start) + value + out.slice(end);
   return out;
 }
 
@@ -549,7 +558,7 @@ export async function deleteApiCatalogObject(
   const locking = record(record(checked.lockingTransport).lockingTransport);
   const effectiveTransport = transport ?? (text(locking.trkorr) || undefined);
   const transportXml = effectiveTransport
-    ? `<del:transportNumber>${xmlText(effectiveTransport)}</del:transportNumber>`
+    ? `<del:transportNumber>${escapeXmlAttr(effectiveTransport)}</del:transportNumber>`
     : '';
   const result = await http.post(
     '/sap/bc/adt/deletion/delete',
