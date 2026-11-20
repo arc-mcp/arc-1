@@ -40,7 +40,7 @@ so it is not used to decide availability. Button visibility in Eclipse is client
 ## Size and line structure
 
 EDMX, WSDL, RFC signatures, ORD documents and several JSON specifications arrive on one line (a SEGW
-OData V2 EDMX was 527 KB). ARC-1 adds ignorable whitespace before grep or line-range reads: XML breaks inside tag delimiters, which preserves mixed content and whitespace-sensitive text.
+OData V2 EDMX was 527 KB). Before grep or line-range reads, ARC-1 separates adjacent XML tags in element-only content and keeps mixed-content subtrees intact.
 Documents with a DOCTYPE retain their original layout. JSON indentation is capped at eight levels
 and preserves string and number literals and duplicate keys. Each result is limited to 100,000
 characters. Use grep or a smaller line range for larger documents. SAP returns the complete
@@ -67,7 +67,9 @@ Resource definitions take a different path. On 8.16 `CL_APS_ODA_WBI_SOD2_SWAGGER
 `get_swagger_file` once per format and copies each provider's bytes into the corresponding slot.
 Neither release returned an HTML page in these slots. Both returned OpenAPI 2.0 and WSDL 1.1 for
 `OP_CO_KEY_MAP_RPLCTCO` and `OP_CO_KEY_MAP_RPLCTRQ`; the remaining assignments had empty
-definitions. The test client read a single document, searched OpenAPI and read a WSDL line range.
+definitions. The test client read a single document, searched OpenAPI, and read and searched the 28,005-byte
+WSDL for `OP_CO_KEY_MAP_RPLCTCO`. Breaking between whole tags gave 834 lines with a longest
+line of 622 characters. The previous display had 834 lines with a longest line of 621.
 
 Both releases registered a SOD2 pointing to `CL_ABAP_CHAR_UTILITIES`, then returned a 500 on
 metadata construction because the constructor is private. The create result now distinguishes

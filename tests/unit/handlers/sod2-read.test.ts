@@ -136,8 +136,8 @@ describe('SAPRead type=SOD2', () => {
       .replace(/&quot;/g, '"')
       .replace(/&apos;/g, "'")
       .replace(/&amp;/g, '&');
-    expect(doc.replace(/\n(?=\/?>)|(?<=\?>)\n/g, '')).toBe(original);
-    expect(doc).toContain('<FUNCTIONNAME>/US4G/BUPA_SEARCH_2</FUNCTIONNAME');
+    expect(doc.replace(/(?<=>)\n(?=<)/g, '')).toBe(original);
+    expect(doc).toContain('\n<FUNCTIONNAME>/US4G/BUPA_SEARCH_2</FUNCTIONNAME>\n');
   });
 
   it('separates the tabs of an OData V4 assignment and refuses a missing kind', async () => {

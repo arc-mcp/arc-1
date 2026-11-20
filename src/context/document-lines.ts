@@ -3,9 +3,8 @@
  * can address them. SAP delivers EDMX, WSDL, ORD and many API specifications as one line (a SEGW
  * OData V2 EDMX is ~500 KB on one line).
  *
- * Only whitespace that the format ignores is added: JSON gets indentation between tokens (strings,
- * numbers and literals are copied verbatim — no JSON.parse round trip that would round large
- * integers or drop duplicate keys); XML breaks inside markup, preserving every text node. Pure functions, no I/O.
+ * JSON indentation preserves string and number literals and duplicate keys.
+ * XML separates adjacent tags in element-only content.
  */
 import { MAX_GREP_LINE_LENGTH } from './grep.js';
 
@@ -88,26 +87,36 @@ function markupEnd(xml: string, start: number): number {
   return xml.length;
 }
 
-/** Split adjacent markup inside tag delimiters. Whitespace between tags can be mixed content. */
+/** Break between whole tags. Direct text, including CDATA, keeps the enclosing subtree verbatim. */
 export function breakXmlLines(xml: string): string {
-  // Internal DTD subsets have their own markup grammar. Keep them and their references verbatim.
   if (xml.includes('<!DOCTYPE')) return xml;
+  const breaks: number[] = [];
+  const stack: Array<{ firstBreak: number; preserve: boolean }> = [];
+  let previousEnd = 0;
+  for (let start = xml.indexOf('<'); start >= 0; start = xml.indexOf('<', previousEnd)) {
+    const end = markupEnd(xml, start);
+    const parent = stack.at(-1);
+    if (parent && (start > previousEnd || xml.startsWith('<![CDATA[', start))) parent.preserve = true;
+    if (start > 0 && start === previousEnd) breaks.push(start);
+    if (xml.startsWith('</', start)) {
+      // Text can follow the last child. Discard any provisional breaks inside this element.
+      if (parent?.preserve) breaks.length = parent.firstBreak;
+      stack.pop();
+    } else if (xml[start + 1] !== '!' && xml[start + 1] !== '?' && xml[end - 2] !== '/') {
+      const tag = xml.slice(start, end);
+      const preserve =
+        tag.includes('xml:space') &&
+        /^<(?:[^"'<>]|"[^"]*"|'[^']*')*?\sxml:space\s*=\s*(?:"preserve"|'preserve')/.test(tag);
+      stack.push({ firstBreak: breaks.length, preserve });
+    }
+    previousEnd = end;
+  }
   const parts: string[] = [];
   let copied = 0;
-  for (let start = xml.indexOf('<'); start >= 0; ) {
-    const end = markupEnd(xml, start);
-    if (xml[end] === '<' && xml[end - 1] === '>') {
-      if (xml.startsWith('<?xml ', start)) {
-        parts.push(xml.slice(copied, end), '\n');
-        copied = end;
-      } else if (xml[start + 1] !== '!' && xml[start + 1] !== '?') {
-        const split = xml[end - 2] === '/' ? end - 2 : end - 1;
-        parts.push(xml.slice(copied, split), '\n');
-        copied = split;
-      }
-    }
-    start = xml.indexOf('<', end);
+  for (const at of breaks) {
+    parts.push(xml.slice(copied, at));
+    copied = at;
   }
   parts.push(xml.slice(copied));
-  return parts.join('');
+  return parts.join('\n');
 }
