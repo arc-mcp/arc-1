@@ -55,6 +55,15 @@ function infoRequests(): URL[] {
 beforeEach(() => vi.resetAllMocks());
 
 describe('SAPRead SRVB include=service_info', () => {
+  it('refuses an unknown include before contacting SAP', async () => {
+    const result = await read({ include: 'entity_sets' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain(
+      'Invalid include value "entity_sets" for type SRVB. Valid values: service_info',
+    );
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('returns URL, entity sets and navigations of a published V4 service', async () => {
     respond(binding('V4', content()), { '0001': V4_PUBLISHED });
 
