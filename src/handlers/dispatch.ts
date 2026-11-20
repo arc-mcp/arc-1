@@ -792,7 +792,9 @@ export function classifyMultiTargetSapError(
   mutation = false,
 ): MultiTargetSapFailure | undefined {
   const readBack =
-    'ARC-1 cannot confirm whether the change was applied. Do not retry blindly; read the object back, including its inactive version, before any replay.';
+    error.creationOutcome === 'confirmed'
+      ? 'SAP confirmed creation before this follow-up failed. Inspect the object in SAP. Do not repeat create.'
+      : 'ARC-1 cannot confirm whether the change was applied. Do not retry blindly; read the object back, including its inactive version, before any replay.';
   if (error instanceof AdtNetworkError) {
     if (mutation) {
       return {
@@ -893,6 +895,12 @@ export function classifyMultiTargetSapError(
         retryable: false,
       };
     }
+    if (toolName === 'SAPRead' && /^\/sap\/bc\/adt\/aps\/com\/sod2\/[^$/?#]+(?:\?|$)/i.test(error.path))
+      return {
+        code: 'SAP_REQUEST_FAILED',
+        message: `SAP could not read the assignment metadata on target ${target}. Inspect its referenced API object in SAP.`,
+        retryable: false,
+      };
     if (mutation) {
       return {
         code: 'SAP_REQUEST_FAILED',
