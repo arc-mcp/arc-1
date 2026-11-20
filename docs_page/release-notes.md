@@ -41,7 +41,8 @@ and refresh your MCP client's tool list.
 | Audit logs ([#1246](https://github.com/arc-mcp/arc-1/pull/1246)) | Source text and similar content arguments appear in every audit sink as length and hash only. Refusals at the multi-target HTTP edge write an `mcp_route_denied` event. | Adjust log queries that relied on argument excerpts. |
 | Package allowlist ([#1259](https://github.com/arc-mcp/arc-1/pull/1259), [#1257](https://github.com/arc-mcp/arc-1/issues/1257)) | Subtree rules such as `ZFOO/**` are checked along the object's super-package chain. Writes that took a minute or more under broad rules take under a second. | none |
 | Discovery ([#1258](https://github.com/arc-mcp/arc-1/pull/1258), [#1256](https://github.com/arc-mcp/arc-1/issues/1256), [#1265](https://github.com/arc-mcp/arc-1/pull/1265), [#1260](https://github.com/arc-mcp/arc-1/issues/1260)) | Server-driven types and table settings are no longer refused because the startup user's discovery differs from the caller's, or because SAP lists a collection without media types. | none |
-| Message classes ([#1229](https://github.com/arc-mcp/arc-1/pull/1229), [#1233](https://github.com/arc-mcp/arc-1/pull/1233), [#1255](https://github.com/arc-mcp/arc-1/pull/1255), [#1254](https://github.com/arc-mcp/arc-1/issues/1254)) | `batch_create` stores the supplied messages. Names over 20 characters and message numbers outside `000`–`999` are refused before SAP is called. | none |
+| Message classes ([#1229](https://github.com/arc-mcp/arc-1/pull/1229), [#1233](https://github.com/arc-mcp/arc-1/pull/1233), [#1255](https://github.com/arc-mcp/arc-1/pull/1255), [#1254](https://github.com/arc-mcp/arc-1/issues/1254), [#1267](https://github.com/arc-mcp/arc-1/pull/1267), [#1248](https://github.com/arc-mcp/arc-1/issues/1248)) | `batch_create` stores the supplied messages. Names over 20 characters and message numbers outside `000`–`999` are refused before SAP is called. `SAPWrite update` deletes single messages with `deleteMessages`. | none |
+| Customizing requests ([#1268](https://github.com/arc-mcp/arc-1/pull/1268), [#1047](https://github.com/arc-mcp/arc-1/issues/1047)) | `SAPTransport create` accepts `requestType="W"` for a Customizing request on systems whose ADT supports it (not SAP_BASIS 7.50). The default stays Workbench. | Use `target` for the destination; `package` and `transportLayer` apply to Workbench requests only. |
 | Clearer errors ([#1249](https://github.com/arc-mcp/arc-1/pull/1249), [#1264](https://github.com/arc-mcp/arc-1/pull/1264), [#1262](https://github.com/arc-mcp/arc-1/issues/1262), [#1266](https://github.com/arc-mcp/arc-1/pull/1266), [#1261](https://github.com/arc-mcp/arc-1/issues/1261)) | A function module name read as `FUGR` names its real group. `batch_create` lists only the types it supports and points to single `create` for the others. A not-found answer on SAP_BASIS 7.50 explains that SAP repeats it for about a minute. | On 7.50, wait 60 seconds before re-reading a just-created object. |
 | AMDP probe ([#1222](https://github.com/arc-mcp/arc-1/pull/1222)) | `SAPManage` feature output no longer contains `amdp`. AMDP class reads and writes are unchanged. | Remove `SAP_FEATURE_AMDP` and `--feature-amdp`; they are ignored with a warning. |
 | Dependencies ([#1228](https://github.com/arc-mcp/arc-1/pull/1228), [#1243](https://github.com/arc-mcp/arc-1/pull/1243)) | The HTTP adapter rejects raw-backslash request paths. The XSUAA OAuth proxy binds refresh tokens to the issuing client. | See the upgrade note below. |
@@ -52,6 +53,7 @@ and refresh your MCP client's tool list.
   resuming OAuth traffic and expect one fresh sign-in per user. See
   [the migration](updating.md#xsuaa-auth-121-refresh-token-migration).
 - `SAPQuery`: `totalRows` is renamed to `sapReportedTotalRows`. It is not a result total.
+- Audit logs and the ignored AMDP setting: see [v1.11.0 upgrade notes](updating.md#v1110-renamed-result-field-and-audit-content).
 
 **New configuration**
 
@@ -64,7 +66,8 @@ and refresh your MCP client's tool list.
 - `SAPRead` and `SAPWrite`: types `SOD1`, `SOD2`, `RONT`, `NONT`; `SAPWrite` also `SMBC`.
 - `SAPActivate`: types `RONT`, `NONT`.
 - `SAPRead type="SRVB"`: `include="service_info"`.
-- `SAPWrite`: action `edit_content`; `batch_create` accepts only its supported types.
+- `SAPWrite`: action `edit_content`; `deleteMessages` on MSAG update; `batch_create` accepts only its supported types.
+- `SAPTransport`: `requestType` (`K`, `W`) on `create`.
 - `SAPQuery`: `applicationLog.severities`, `sapReportedTotalRows`, `rowLimitReached`.
 
 ## 1.10.1 — more reliable SAP reads and edits (2026-11-07)
