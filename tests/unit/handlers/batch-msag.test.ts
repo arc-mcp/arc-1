@@ -45,8 +45,8 @@ describe('MSAG batch message persistence', () => {
     mockFetch.mockImplementation(() => Promise.resolve(ok()));
   });
 
-  it.each([false, true])('writes messages before activation (activateAtEnd=%s)', async (activateAtEnd) => {
-    const result = await run([messageClass], activateAtEnd);
+  it.each([false, true])('writes messages without activation (activateAtEnd=%s)', async (activateAtEnd) => {
+    const result = await run([messageClass, { ...messageClass, name: 'ZSECOND' }], activateAtEnd);
     expect(result.isError).toBeFalsy();
     const sequence = calls();
     const create = sequence.findIndex((c) => c.method === 'POST' && c.url.pathname === '/sap/bc/adt/messageclass');
@@ -62,13 +62,26 @@ describe('MSAG batch message persistence', () => {
     expect(lock).toBeGreaterThan(create);
     expect(put).toBeGreaterThan(lock);
     expect(unlock).toBeGreaterThan(put);
-    expect(activate).toBeGreaterThan(unlock);
+    expect(activate).toBe(-1);
+    expect(result.content[0].text).toContain('activation not required');
+    expect(result.content[0].text).not.toContain('activated as a single batch');
     expect(sequence[put].body).toContain('First &amp;1 &lt;check&gt;');
     expect(sequence[put].body).toContain('Second message');
     expect(sequence[put].headers['Content-Type']).toBe('application/vnd.sap.adt.mc.messageclass+xml');
     expect(sequence[put].url.searchParams.get('lockHandle')).toBe('LH');
     expect(sequence[put].url.searchParams.get('corrNr')).toBe('A4HK900002');
     expect(sequence[unlock].url.searchParams.get('lockHandle')).toBe('LH');
+  });
+
+  it.each([false, true])('activates only the program in a mixed batch (activateAtEnd=%s)', async (activateAtEnd) => {
+    const result = await run([messageClass, program('ZLAST')], activateAtEnd);
+    expect(result.isError).toBeFalsy();
+    const activations = calls().filter((c) => c.url.pathname === '/sap/bc/adt/activation');
+    expect(activations).toHaveLength(1);
+    expect(activations[0].body).toContain('ZLAST');
+    expect(activations[0].body).not.toContain('ZMESSAGES');
+    if (activateAtEnd) expect(result.content[0].text).toContain('1 of 2 activated as a single batch');
+    expect(result.content[0].text).toContain('activation not required');
   });
 
   it.each([undefined, []])('does not lock or PUT an empty message class (%s)', async (value) => {
