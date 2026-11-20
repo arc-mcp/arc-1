@@ -5,6 +5,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CachingLayer } from '../../../src/cache/caching-layer.js';
+import { MemoryCache } from '../../../src/cache/memory.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
@@ -172,6 +174,34 @@ describe('SAPWrite type=SOD1/SOD2', () => {
     expect(text(result)).not.toMatch(/often transient|SAPSearch.*verify|then retry|check the object name/i);
     expect(calls.filter((c) => c.method === 'POST' && c.url === '/sap/bc/adt/aps/com/sod1')).toHaveLength(1);
   });
+
+  it.each([400, 404, 500])(
+    'marks a %i follow-up as confirmed and invalidates the caller’s cache',
+    async (putStatus) => {
+      mockSap({ putStatus, putError: 'Save failed' });
+      const { handleSAPWrite } = await import('../../../src/handlers/write.js');
+      const cache = new CachingLayer(new MemoryCache());
+      const object = vi.spyOn(cache, 'invalidate');
+      const inactive = vi.spyOn(cache.inactiveLists, 'invalidate');
+      await expect(
+        handleSAPWrite(
+          createClient(),
+          {
+            type: 'SOD1',
+            name: 'Z_DEMO_API_PACKAGE',
+            action: 'create',
+            package: '$TMP',
+            source: '{"abbreviation":"CX","alias":"Demo"}',
+          },
+          DEFAULT_CONFIG,
+          cache,
+          { isPerUserClient: true, userKey: 'caller' },
+        ),
+      ).rejects.toMatchObject({ statusCode: putStatus, creationOutcome: 'confirmed' });
+      expect(object).toHaveBeenCalledWith('SOD1', 'Z_DEMO_API_PACKAGE', 'all');
+      expect(inactive).toHaveBeenCalledWith('caller');
+    },
+  );
 
   it('updates an assignment by patching the fresh SAP document under a lock', async () => {
     const calls = mockSap();
