@@ -1,17 +1,5 @@
-/**
- * Checks a server-driven object's JSON source against the JSON Schema SAP serves for it
- * (`<object>/schema`, framework=objectTypes.v1).
- *
- * SAP drops values it does not accept instead of rejecting them: an SMBC saved with
- * `listReport.variantManagement: "control"` (allowed: page, none) was stored and activated without
- * the field and without any message (816). Checking before the PUT turns that silent loss into an
- * error the caller can fix.
- *
- * The schema comes from the backend, so it is interpreted, never compiled: no Ajv (which generates
- * code from schemas and treats them as trusted) and no `pattern` (ReDoS). Only the keywords SAP's
- * schemas use for loss checks are interpreted: type, enum, string const, properties, additionalProperties: false, items, maxLength;
- * everything else is ignored, so an unfamiliar schema can only make the check more lenient.
- */
+/** Interpret the backend schema before SAP can silently discard SMBC settings. Only check
+ * the keywords below. Never compile a target's schema or execute its patterns. */
 import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';

@@ -119,6 +119,20 @@ An MCP agent ran the create path through `SAPWrite` with disposable objects:
 On 816 the object recreated an SMBC that the generator had produced before, using its original source
 unchanged; the read-back after activation was identical to the written source.
 
+### SAP_BASIS 758 SP02 and 816 SP01 (2026-11-20)
+
+Both systems accepted shell creation, source creation, update and delete in `$TMP`. The 758 schema
+link advertises `application/vnd.sap.adt.objecttypeschema.v1+json`. The 816 link advertises
+`application/vnd.sap.adt.serverdriven.schema.v1+json; framework=objectTypes.v1`. Offering both
+in one Accept header returned the schema on the first GET for both create and update.
+
+A direct source PUT with `formatVersion: "2"` succeeded on 758 and read back as `"1"`. The same PUT
+returned 400 on 816. Both systems dropped invalid table and list-report enum values and unknown
+properties. On 758, a disposable V4 UI binding for the existing draft Book service activated
+without publication. Its SMBC then activated with `rowCount: 5000` (schema maximum 1000).
+The active source retained 5000, added an empty `configurationGroup`, and omitted the schema
+defaults `variantManagement: "page"` and `rowCountMode: "fixed"`.
+
 ### Live run through ARC-1 (2026-10-28, 816)
 
 An MCP agent ran update, read-back, activation, KTD update and delete through a single-target
