@@ -96,7 +96,7 @@ const DISCOVERY = `<app:service xmlns:app="http://www.w3.org/2007/app" xmlns:ato
 </app:workspace></app:service>`;
 
 /** Records every SAP send except discovery; answers lock, unlock, source PUT and DELETE. */
-function writeBackend(opts: { corrNr?: string; schema?: string } = {}) {
+function writeBackend(opts: { corrNr?: string; schema?: string; schemaStatus?: number; schemaError?: Error } = {}) {
   const sends: Array<{ method: string; path: string; body: string; contentType?: string; accept?: string }> = [];
   let deleted = false;
   mockFetch.mockImplementation(async (url, init) => {
@@ -115,8 +115,10 @@ function writeBackend(opts: { corrNr?: string; schema?: string } = {}) {
       });
     }
     if (path.includes('_action=LOCK')) return mockResponse(200, LOCK(opts.corrNr), { 'x-csrf-token': 'T' });
-    if (parsed.pathname === `${uri}/schema` || parsed.pathname === `${collection}/$new/schema`)
-      return opts.schema ? mockResponse(200, opts.schema) : mockResponse(404, 'Not Found');
+    if (parsed.pathname === `${uri}/schema` || parsed.pathname === `${collection}/$new/schema`) {
+      if (opts.schemaError) throw opts.schemaError;
+      return mockResponse(opts.schemaStatus ?? (opts.schema === undefined ? 404 : 200), opts.schema ?? '');
+    }
     if (method === 'DELETE') deleted = true;
     if (method === 'GET' && deleted && parsed.pathname === uri) return mockResponse(404, 'Not Found');
     return mockResponse(200, '', { 'x-csrf-token': 'T' });
@@ -183,6 +185,40 @@ it('saves a schema-conform source and says so when the schema cannot be read', a
   });
   expect(noSchema.isError, noSchema.content[0]?.text).toBeUndefined();
   expect(noSchema.content[0]?.text).toContain("SAP's schema for SMBC could not be read");
+});
+
+it.each([
+  { action: 'create', opts: { schemaStatus: 401 } },
+  { action: 'update', opts: { schemaStatus: 403 } },
+  { action: 'create', opts: { schemaStatus: 500 } },
+  { action: 'update', opts: { schemaError: new Error('schema request timed out') } },
+  { action: 'update', opts: { schema: '<html>gateway</html>' } },
+  { action: 'create', opts: { schema: '{"error":"temporarily unavailable"}' } },
+])('stops $action before mutation on schema failure $opts', async ({ action, opts }) => {
+  const sends = writeBackend(opts);
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action,
+    type: 'SMBC',
+    name: action === 'update' ? '/NS/CONFIG' : 'ZCONFIG',
+    package: '$TMP',
+    source,
+  });
+  expect(result.isError).toBe(true);
+  expect(sends.some((r) => r.path.includes('/schema'))).toBe(true);
+  expect(sends.every((r) => r.method === 'GET')).toBe(true);
+});
+
+it('allows a write with a note when SAP serves neither schema representation', async () => {
+  const sends = writeBackend({ schemaStatus: 406 });
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'update',
+    type: 'SMBC',
+    name: '/NS/CONFIG',
+    source,
+  });
+  expect(result.isError, result.content[0]?.text).toBeUndefined();
+  expect(result.content[0]?.text).toContain('could not be read');
+  expect(sends.some((r) => r.method === 'PUT')).toBe(true);
 });
 
 it('refuses an update with invalid JSON before contacting SAP', async () => {

@@ -12,6 +12,7 @@
  * schemas use for loss checks are interpreted: type, enum, string const, properties, additionalProperties: false, items, maxLength;
  * everything else is ignored, so an unfamiliar schema can only make the check more lenient.
  */
+import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 
@@ -89,10 +90,23 @@ export async function getObjectSchema(
   objectUrl: string,
 ): Promise<unknown | undefined> {
   checkOperation(safety, OperationType.Read, 'GetObjectSchema');
+  let body: string;
   try {
-    const resp = await http.get(`${objectUrl}/schema`, { Accept: SCHEMA_ACCEPT }, { suppressNotFoundLog: true });
-    return JSON.parse(resp.body) as unknown;
-  } catch {
-    return undefined;
+    const response = await http.get(`${objectUrl}/schema`, { Accept: SCHEMA_ACCEPT }, { suppressNotFoundLog: true });
+    body = response.body;
+  } catch (error) {
+    if (error instanceof AdtApiError && (error.isNotFound || error.statusCode === 406)) return undefined;
+    throw error;
   }
+
+  let schema: unknown;
+  try {
+    schema = JSON.parse(body);
+  } catch {
+    throw new AdtError('SAP returned invalid JSON for the object schema. Nothing was written.');
+  }
+  if (!isPlainObject(schema) || schema.type !== 'object' || !isPlainObject(schema.properties)) {
+    throw new AdtError('SAP did not return the expected object schema. Nothing was written.');
+  }
+  return schema;
 }
