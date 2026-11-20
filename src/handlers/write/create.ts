@@ -2,6 +2,7 @@
  * SAPWrite actions — create + batch_create.
  */
 
+import { apiCatalogAvailable, apiCatalogUnavailableMessage } from '../../adt/api-packages.js';
 import {
   createObject,
   lockObject,
@@ -353,6 +354,9 @@ const KTD_REF_OBJECT_TYPES_ROUTABLE_BY_ARC = new Set([
   'DEVC/K',
   'RONT/ROT',
   'SMBC/TYP',
+  // API package / API package assignment: plain type, lowercase URI (Eclipse ADT 3.60 on 8.16).
+  'SOD1',
+  'SOD2',
   'SRVB/SVB',
   'SRVD/SRV',
 ]);
@@ -373,11 +377,9 @@ const KTD_REF_OBJECT_TYPES_SAP_DOCUMENTATION_SCOPE = new Set([
   'EEEC/EVC',
   'EVTB/EVB',
   'PARA/R',
-  'SOD1',
-  'SOD2',
 ]);
 
-const KTD_REF_OBJECT_TYPES_HINT = 'DDLS/DF, BDEF/BDO, SRVD/SRV, SRVB/SVB, DEVC/K, SMBC/TYP, RONT/ROT';
+const KTD_REF_OBJECT_TYPES_HINT = 'DDLS/DF, BDEF/BDO, SRVD/SRV, SRVB/SVB, DEVC/K, SMBC/TYP, RONT/ROT, SOD1, SOD2';
 const KTD_SAP_DOCUMENTATION_SCOPE_HINT =
   'APIC/TYP, BDEF/*, CFDB/CFB, CFDG/CFG, CFDS/CFS, CHKO/TYP, DDLA/ADF, DDLS/DF, DEVC/K, ' +
   'DRTY/STY, DSFD/SCF, EEEC/EVC, EVTB/EVB, PARA/R, RONT/ROT, SMBC/TYP, SOD1, SOD2, ' +
@@ -605,6 +607,11 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       return errorResult(
         `"refObjectType" is required for SKTD/KTD create — the ADT type+subtype of the parent object being documented (for example: ${KTD_REF_OBJECT_TYPES_HINT}).`,
       );
+    }
+    if (refType === 'SOD1' || refType === 'SOD2') {
+      if (resolveWriteSystemType(config, client) === 'btp')
+        return errorResult(`KTD creation on ${refType} is supported only on-premise.`);
+      if (!apiCatalogAvailable(client.http, refType)) return errorResult(apiCatalogUnavailableMessage(refType));
     }
     const refTypeError = validateKtdRefObjectType(refType);
     if (refTypeError) return errorResult(refTypeError);

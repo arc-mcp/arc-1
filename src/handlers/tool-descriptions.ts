@@ -25,7 +25,7 @@ const SAPWRITE_BODY_ONPREM =
   'TABL/DTT: update technical settings with partial JSON source {dataClass,sizeCategory,loggingEnabled:boolean,buffering:{allowed:N/A/X,type:P/G/X/empty,areaKeyFields}}. Omitted fields and existing drafts are preserved. Activate separately; a new table needs TABL activation first. ' +
   'TABL/DTI: secondary index name=TABLE~INDEX. Create inherits the parent table package; source is the complete source object from SAPRead. Update replaces the pending definition; activate separately. No automatic database conversion. ' +
   'Metadata-XML writes (not /source/main): DOMA/DTEL (dataType, length, fixedValues, typeKind, labels, searchHelp; deactivateInputHistory=true disables input history); MSAG (messages array of {number, shortText}); SRVB (serviceDefinition, odataVersion V2/V4, optional category 0=UI/1=Web API; bindingType like "ODataV4-UI" auto-normalized). ' +
-  'SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (parent type+subtype, e.g. "DDLS/DF"); "name" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type="SKTD"). ' +
+  'SKTD/KTD (Markdown docs on a KTD-capable object): create needs refObjectType; "name" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type="SKTD"). ' +
   // "group"/FUGR-must-exist and processingType live on their own property descriptions — not repeated here.
   'FUNC: needs "group"; pass structured `parameters` for the signature (read back via SAPRead includeSignature=true). ' +
   "INCL with group=: create/delete FUGR structural includes ([/NS/]L<GROUP>…, e.g. /NS/LFOOF01); verify the main program's INCLUDE line after create. " +

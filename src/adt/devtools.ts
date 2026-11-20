@@ -54,7 +54,13 @@ export async function syntaxCheck(
   http: AdtHttpClient,
   safety: SafetyConfig,
   objectUrl: string,
-  options?: { version?: 'active' | 'inactive'; content?: string; artifactContentType?: 'application/json' },
+  options?: {
+    version?: 'active' | 'inactive';
+    content?: string;
+    artifactContentType?: 'application/json' | 'application/vnd.sap.adt.blues.v1+xml; charset=utf-8';
+    /** Defaults to `<objectUrl>/source/main`; metadata-only objects (SOD1/SOD2) check the object URI itself. */
+    artifactUri?: string;
+  },
   requestOptions?: AdtRequestOptions,
 ): Promise<SyntaxCheckResult> {
   checkOperation(safety, OperationType.Read, 'SyntaxCheck');
@@ -62,7 +68,7 @@ export async function syntaxCheck(
   const version = options?.version ?? 'active';
 
   if (options?.content !== undefined) {
-    const artifactUri = `${objectUrl}/source/main`;
+    const artifactUri = options.artifactUri ?? `${objectUrl}/source/main`;
     const encoded = Buffer.from(options.content, 'utf-8').toString('base64');
     const body = `<?xml version="1.0" encoding="UTF-8"?>
 <chkrun:checkObjectList xmlns:chkrun="http://www.sap.com/adt/checkrun" xmlns:adtcore="http://www.sap.com/adt/core">

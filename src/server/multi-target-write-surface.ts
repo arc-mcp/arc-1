@@ -63,6 +63,13 @@ function transportsAllowed(args: Record<string, unknown>, config: ServerConfig):
 export function pinnedMutationAllowed(tool: string, args: Record<string, unknown>, config: ServerConfig): boolean {
   if (!pinnedWriteEnabled(config)) return false;
   if (!SHARED_PINNED_ACTIONS.has(`${tool}.${String(actionOf(tool, args))}`)) return false;
+  // Catalog deletion carries CTS in the XML body, outside the pinned corrNr barrier.
+  if (
+    tool === 'SAPWrite' &&
+    args.action === 'delete' &&
+    ['SOD1', 'SOD2'].includes(String(args.type).trim().toUpperCase())
+  )
+    return false;
   const keys = singleTargetKeys(tool, config);
   if (Object.entries(args).some(([key, value]) => value !== undefined && !keys.has(key))) return false;
   return args.preaudit !== false && transportsAllowed(args, config);

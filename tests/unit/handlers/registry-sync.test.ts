@@ -107,7 +107,7 @@ describe('registry sync — JSON-Schema enums equal the registry', () => {
   it.each([onpremFull, btpFull])('SAPWrite batch items on $systemType', (config) => {
     const write = getToolDefinitions(config, true).find((tool) => tool.name === 'SAPWrite')!;
     const props = (write.inputSchema as any).properties;
-    const excluded = new Set<string>(['TABL/DTT', ...SDO_TYPES]);
+    const excluded = new Set<string>(['TABL/DTT', 'SOD1', 'SOD2', ...SDO_TYPES]);
     const expected = typeEnum(config, 'SAPWrite').filter((type) => !excluded.has(type));
     expect(props.objects.items.properties.type.enum).toEqual(expected);
 

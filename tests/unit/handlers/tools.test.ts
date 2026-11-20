@@ -425,9 +425,10 @@ describe('Tool Definitions', () => {
     const onPremTypeDescription: string = onPremSchema.properties.type.description;
 
     // As on BTP, the enum is the complete type list; property help no longer repeats it.
-    for (const type of ['DCLS', 'SRVB', 'SKTD', 'TABL/DT', 'TABL/DS', 'MSAG', 'RONT', 'NONT']) {
+    for (const type of ['DCLS', 'SRVB', 'SKTD', 'TABL/DT', 'TABL/DS', 'MSAG', 'RONT', 'NONT', 'SOD1', 'SOD2']) {
       expect(onPremTypeEnum).toContain(type);
     }
+    expect(onPremTypeDescription).toContain('KTD aliases SKTD');
     expect(onPremDescription).toContain('DCLS');
     expect(onPremTypeDescription).toContain('change_method_visibility');
     // include is CLAS-ONLY and is dropped (not rejected) for the surgery actions, which

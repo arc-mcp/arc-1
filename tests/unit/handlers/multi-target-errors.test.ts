@@ -6,6 +6,15 @@ import { logger } from '../../../src/server/logger.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 describe('multi-target SAP error contract', () => {
+  it('retains confirmed creation and avoids retry instructions for unreadable assignment metadata', () => {
+    const error = new AdtApiError('Failure', 500, '/sap/bc/adt/aps/com/sod2/ztest', 'private-backend-detail');
+    const read = classifyMultiTargetSapError(error, 'A4H/001', 'SAPRead');
+    expect(read).toMatchObject({ retryable: false, message: expect.stringContaining('referenced API object') });
+    error.creationOutcome = 'confirmed';
+    const create = classifyMultiTargetSapError(error, 'A4H/001', 'SAPWrite', 'per-user', true);
+    expect(create).toMatchObject({ retryable: false, message: expect.stringContaining('SAP confirmed creation') });
+    expect(create?.message).not.toContain('private-backend-detail');
+  });
   it('treats a 401 as retryable SAP authentication failure', () => {
     const result = classifyMultiTargetSapError(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'Unauthorized'),

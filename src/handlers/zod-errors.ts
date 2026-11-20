@@ -6,7 +6,7 @@
  */
 
 import type { ZodError } from 'zod';
-import { isServerDrivenObjectType } from '../adt/server-driven.js';
+import { SAPWRITE_TYPES_BTP, SAPWRITE_TYPES_ONPREM } from './tool-registry.js';
 
 /**
  * Format a ZodError into an LLM-friendly multi-line string.
@@ -19,7 +19,12 @@ import { isServerDrivenObjectType } from '../adt/server-driven.js';
  *   Hint: Fix the fields listed above, then retry — do NOT resend the same arguments unchanged.
  *   Tip: omit optional fields you do not need (do not send empty strings or null for them).
  */
-export function formatZodError(error: ZodError, toolName: string, args?: Record<string, unknown>): string {
+export function formatZodError(
+  error: ZodError,
+  toolName: string,
+  args?: Record<string, unknown>,
+  isBtp = false,
+): string {
   const issues = error.issues.map((issue) => {
     const path = issue.path.length > 0 ? `"${issue.path.join('.')}"` : 'input';
 
@@ -35,9 +40,10 @@ export function formatZodError(error: ZodError, toolName: string, args?: Record<
         Array.isArray(args.objects)
       ) {
         const item = args.objects[index];
-        if (typeof item?.type === 'string' && isServerDrivenObjectType(item.type)) {
+        const singleTypes: readonly string[] = isBtp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM;
+        if (item?.type !== 'TABL/DTT' && singleTypes.includes(item?.type)) {
           const name = typeof item.name === 'string' ? item.name : '…';
-          return `${path}: batch_create does not support server-driven object type ${item.type}. Create it with a single SAPWrite(action="create", type="${item.type}", name=${JSON.stringify(name)}) call.`;
+          return `${path}: batch_create does not support object type ${item.type}. Create it with a single SAPWrite(action="create", type="${item.type}", name=${JSON.stringify(name)}) call.`;
         }
       }
       return `${path}: expected one of: ${issue.values.join(', ')}`;

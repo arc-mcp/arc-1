@@ -224,6 +224,13 @@ describe('pinned PROG writes through the single-target handler', () => {
     expect(pinnedMutationAllowed('SAPWrite', update({ action: 'edit_unit' }), config)).toBe(true);
   });
 
+  it.each(['SOD1', 'sod2'])('refuses %s deletion with a body transport before contacting SAP', async (type) => {
+    const args = { action: 'delete', type, name: 'ZTEST' };
+    expect(pinnedMutationAllowed('SAPWrite', args, config)).toBe(false);
+    expect((await call(args)).isError).toBe(true);
+    expect(requests).toHaveLength(0);
+  });
+
   it('refuses fields outside the single-target schema; CLAS/INTF use the same rule as every type', async () => {
     for (const args of [update({ target: 'A4H/001' }), update({ unknownField: 'x' })])
       expect(pinnedMutationAllowed('SAPWrite', args, config), JSON.stringify(args)).toBe(false);

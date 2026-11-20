@@ -71,6 +71,9 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'BDEF', btp: true },
   { type: 'SRVD', btp: true },
   { type: 'SRVB', btp: true },
+  // API package (SOD1) and API package assignment (SOD2, with ORD document and resource definitions). Discovery-gated.
+  { type: 'SOD1', btp: false },
+  { type: 'SOD2', btp: false },
   { type: 'SKTD', btp: true },
   // Friendly alias for Knowledge Transfer Documents; normalized to canonical SKTD at dispatch.
   { type: 'KTD', btp: true },
@@ -158,6 +161,9 @@ const SAPWRITE_TYPE_TABLE = [
   { type: 'ENQU', btp: true },
   // BAdI implementations (ENHO/XHB) only; on BTP only for BAdIs released for cloud development (C1).
   { type: 'ENHO', btp: true },
+  // API packages and API package assignments: metadata JSON, saved active (src/adt/api-packages.ts).
+  { type: 'SOD1', btp: false },
+  { type: 'SOD2', btp: false },
   // Server-driven objects (8.16+) — write via the generic blue:blueSource + AFF JSON engine.
   // Rows derive from SDO_TYPES exactly like the SAPRead table above.
   ...SDO_TYPES.map((t) => ({ type: t, btp: true }) as const),
@@ -168,7 +174,9 @@ export const SAPWRITE_TYPES_ONPREM = sapWriteTypes.onprem;
 /** SAPWrite types available on BTP ABAP Environment (the `btp: true` rows). */
 export const SAPWRITE_TYPES_BTP = sapWriteTypes.btp;
 export const SAPWRITE_BATCH_TYPES = deriveTypeArrays(
-  SAPWRITE_TYPE_TABLE.filter(({ type }) => type !== 'TABL/DTT' && !isServerDrivenObjectType(type)),
+  SAPWRITE_TYPE_TABLE.filter(
+    ({ type }) => !['TABL/DTT', 'SOD1', 'SOD2'].includes(type) && !isServerDrivenObjectType(type),
+  ),
 );
 
 // ─── SAPContext ─────────────────────────────────────────────────────

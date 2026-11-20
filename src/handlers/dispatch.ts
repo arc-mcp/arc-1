@@ -226,6 +226,8 @@ function buildBaseErrorMessage(
   if (err instanceof AdtResponseLimitError && err.endpointFamily === 'package-browser') {
     return `${message} Narrow with an advertised objectType or a smaller package. maxResults only caps returned entries, not SAP's response size. No listing was returned.`;
   }
+  if (err instanceof AdtResponseLimitError && err.endpointFamily === 'api-catalog-document')
+    return `${message} SAP supplies the complete document to ADT even for a grep or line range. Inspect it in SAP.`;
   if (err instanceof AdtResponseLimitError && err.endpointFamily === 'search-help-metadata') {
     return `${message} SHLP metadata cannot be narrowed or paged here. Inspect the search help in SAP. No partial metadata was returned.`;
   }
@@ -399,6 +401,8 @@ function buildBaseErrorMessage(
       );
     }
     if (err.isServerError) {
+      if (tool === 'SAPRead' && argType === 'SOD2' && !args.include)
+        return `${enriched}\nCheck the assignment's referenced API object in SAP.`;
       const syntaxHint = withDependentSyntaxHint(err, enriched);
       if (syntaxHint !== enriched || err.creationOutcome === 'confirmed') return syntaxHint;
       return `${enriched}\n\nHint: SAP application server error (${err.statusCode}). This is often transient — wait 10-30 seconds and retry. If the error persists, check SAPDiagnose(action="dumps") for short dumps, or verify the SAP system is responding via SAPRead(type="SYSTEM").`;
@@ -788,7 +792,9 @@ export function classifyMultiTargetSapError(
   mutation = false,
 ): MultiTargetSapFailure | undefined {
   const readBack =
-    'ARC-1 cannot confirm whether the change was applied. Do not retry blindly; read the object back, including its inactive version, before any replay.';
+    error.creationOutcome === 'confirmed'
+      ? 'SAP confirmed creation before this follow-up failed. Inspect the object in SAP. Do not repeat create.'
+      : 'ARC-1 cannot confirm whether the change was applied. Do not retry blindly; read the object back, including its inactive version, before any replay.';
   if (error instanceof AdtNetworkError) {
     if (mutation) {
       return {
@@ -889,6 +895,12 @@ export function classifyMultiTargetSapError(
         retryable: false,
       };
     }
+    if (toolName === 'SAPRead' && /^\/sap\/bc\/adt\/aps\/com\/sod2\/[^$/?#]+(?:\?|$)/i.test(error.path))
+      return {
+        code: 'SAP_REQUEST_FAILED',
+        message: `SAP could not read the assignment metadata on target ${target}. Inspect its referenced API object in SAP.`,
+        retryable: false,
+      };
     if (mutation) {
       return {
         code: 'SAP_REQUEST_FAILED',
@@ -1107,7 +1119,7 @@ export async function handleToolCall(
     args = normalizedArgs;
     const parsed = schema.safeParse(args);
     if (!parsed.success) {
-      const validationError = formatZodError(parsed.error, toolName, args);
+      const validationError = formatZodError(parsed.error, toolName, args, isBtp);
       logger.emitAudit({
         timestamp: new Date().toISOString(),
         level: 'warn',

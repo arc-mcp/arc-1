@@ -3,6 +3,7 @@ export function readLineRange(
   source: string,
   lineStart: number,
   lineEnd: number,
+  maxChars = Infinity,
 ): { output: string; invalidRange: boolean } {
   const lines = source.replace(/\r\n/g, '\n').split('\n');
   const totalLines = lines.length;
@@ -18,6 +19,16 @@ export function readLineRange(
   const end = Math.min(lineEnd, totalLines);
   const clampNote = lineEnd > totalLines ? ` (lineEnd clamped to ${totalLines}, the last line)` : '';
   const output = [`Lines ${lineStart}-${end} of ${totalLines} total${clampNote}:`];
-  for (let line = lineStart; line <= end; line++) output.push(`${String(line).padStart(5)}: ${lines[line - 1]}`);
+  let length = output[0]!.length;
+  for (let line = lineStart; line <= end; line++) {
+    const numbered = `${String(line).padStart(5)}: ${lines[line - 1]}`;
+    length += numbered.length + 1;
+    if (length > maxChars)
+      return {
+        invalidRange: true,
+        output: `This line range exceeds ${maxChars} characters. Request fewer lines or use grep for a long line.`,
+      };
+    output.push(numbered);
+  }
   return { output: output.join('\n'), invalidRange: false };
 }

@@ -218,7 +218,7 @@ describe('SAPWrite handler — create / batch_create', () => {
         package: '$TMP',
         objects: [{ type: 'DSFD', name: 'ZARC1_SF', description: 'x' }],
       });
-      expect(result.content[0]?.text).toContain('does not support server-driven object type DSFD');
+      expect(result.content[0]?.text).toContain('does not support object type DSFD');
       expect(callMatching('POST', '/sap/bc/adt/programs/programs')).toBeUndefined();
     });
 

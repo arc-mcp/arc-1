@@ -110,6 +110,7 @@ sequence.
 | [FEAT-72](#feat-72) | CDS index objects | P3 | M | Blocked | Object coverage |
 | [FEAT-73](#feat-73) | Additional server-driven object types | P3 | S | Needs research | Object coverage |
 | [FEAT-99](#feat-99) | Schema check for further JSON server-driven types | P3 | S | Needs research | Object coverage |
+| [FEAT-100](#feat-100) | Value helps and wider release coverage for API packages | P3 | S | Needs research | Object coverage |
 | [FEAT-78](#feat-78) | Table type access type and keys | P2 | M | Needs research | Object coverage |
 | [FEAT-09](#feat-09) | Cross Trace result reader | P2 | M | Needs research | Diagnostics |
 | [FEAT-69](#feat-69) | Wider syntax-batch qualification | P3 | S | Needs research | Diagnostics |
@@ -1022,6 +1023,18 @@ independently; do not infer their create subtype or source format from the famil
 **Why it remains.** On SAP_BASIS 816 SAP stored and activated an SMBC source with a value outside its schema and dropped the value without any message; ARC-1 now refuses such SMBC updates (`schemaCheck` in `SDO_REGISTRY`, `src/adt/object-schema.ts`). Whether the other JSON types serve the same schema resource and drop invalid values the same way has not been checked.
 
 **Resume with.** Per type: confirm the `objecttypeschema` link and media type in the metadata, capture one save with an invalid enum value and its read-back, then set `schemaCheck` on the registry entry with a test.
+
+<a id="feat-100"></a>
+### FEAT-100 — Value helps and wider release coverage for API packages
+
+- **Priority / effort / status:** P3 / S / Needs research
+- **Category:** Object coverage
+
+**Idea.** Offer the value helps Eclipse uses when editing API packages (SOD1) and API package assignments (SOD2): the tag values per category (`/sap/bc/adt/aps/com/sod1/tagvaluehelp/values`), the package types, and the API object lookup of the assignment wizard (`apiobjecttype`, `tadir`, `odatav4groupservice`, `leadingbusinessobjecttype`, `$apidetails`).
+
+**Why it remains.** ARC-1 reports SAP’s findings after a refused save. The editor’s value helps would let callers choose supported values before saving. Reads, writes and KTDs have been verified on SAP_BASIS 7.58 and 8.16. BTP ABAP Environment remains unverified.
+
+**Resume with.** Capture the value-help responses from an Eclipse communication log, decide whether they belong in `SAPRead` (an `include`) or in the error hint, and check collection discovery and SOD2 documents on BTP ABAP Environment.
 
 <a id="feat-78"></a>
 ### FEAT-78 — Table type access type and keys
