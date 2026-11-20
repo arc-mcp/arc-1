@@ -258,20 +258,31 @@ describe('E2E SAPTransport Tests', () => {
       }
     });
 
-    it('create with type W creates Customizing transport', async (ctx) => {
+    it('creates a Customizing transport with requestType W', async (ctx) => {
       if (!transportsEnabled) return skipTest(ctx, 'Transport writes not enabled on MCP server');
 
+      const description = `ARC-1 E2E Customizing ${Date.now()}`;
+      const components = await callTool(client, 'SAPRead', { type: 'COMPONENTS' });
+      const basis = JSON.parse(expectToolSuccess(components)).find((c: { name: string }) => c.name === 'SAP_BASIS');
+      expect(basis?.release).toMatch(/^\d{3}$/);
       let id = '';
       try {
-        const result = await callTool(client, 'SAPTransport', {
-          action: 'create',
-          description: `ARC-1 E2E type-W ${Date.now()}`,
-          type: 'W',
-        });
-        const text = expectToolSuccessOrSkip(ctx, result);
-        const match = text.match(/([A-Z0-9]+\w\d+)/);
-        expect(match).toBeTruthy();
-        id = match![1];
+        const result = await callTool(client, 'SAPTransport', { action: 'create', description, requestType: 'W' });
+        // Keep the created ID for cleanup even if the handler reports a read-back mismatch.
+        id =
+          result.content[0]?.text?.match(
+            /^(?:SAP created transport request|Created transport request:) ([A-Z0-9]+K\d+)/,
+          )?.[1] ?? '';
+        if (basis.release === '750') {
+          expectToolError(result, 'cannot create Customizing requests through ADT', 'SE09/SE10');
+        } else {
+          expectToolSuccess(result);
+          expect(id).toBeTruthy();
+          const saved = await callTool(client, 'SAPTransport', { action: 'get', id });
+          const request = JSON.parse(expectToolSuccess(saved));
+          expect(request).toMatchObject({ id, description, type: 'W' });
+          expect(request.tasks).toHaveLength(1);
+        }
       } finally {
         if (id) {
           const deleteResult = await callTool(client, 'SAPTransport', { action: 'delete', id, recursive: true });
