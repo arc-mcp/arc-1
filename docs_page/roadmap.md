@@ -1032,9 +1032,9 @@ independently; do not infer their create subtype or source format from the famil
 
 **Idea.** Offer the value helps Eclipse uses when editing API packages (SOD1) and API package assignments (SOD2): the tag values per category (`/sap/bc/adt/aps/com/sod1/tagvaluehelp/values`), the package types, and the API object lookup of the assignment wizard (`apiobjecttype`, `tadir`, `odatav4groupservice`, `leadingbusinessobjecttype`, `$apidetails`).
 
-**Why it remains.** SAP refuses a tag value that is not in its value help and a manual documentation link outside internal ODA packages; ARC-1 reports SAP's check findings after the refused save, but an agent cannot look up valid values beforehand. SOD1/SOD2 were verified on SAP_BASIS 8.16 only; 7.58, BTP ABAP Environment and the resource definition of an OData V2 service from a service binding are unverified.
+**Why it remains.** ARC-1 reports SAP’s findings after a refused save. The editor’s value helps would let callers choose supported values before saving. Reads, writes and KTDs have been verified on SAP_BASIS 7.58 and 8.16. BTP ABAP Environment remains unverified.
 
-**Resume with.** Capture the value-help responses from an Eclipse communication log, decide whether they belong in `SAPRead` (an `include`) or in the error hint, and repeat the SOD2 read cases on a 7.58 and a BTP system.
+**Resume with.** Capture the value-help responses from an Eclipse communication log, decide whether they belong in `SAPRead` (an `include`) or in the error hint, and check collection discovery and SOD2 documents on BTP ABAP Environment.
 
 <a id="feat-78"></a>
 ### FEAT-78 — Table type access type and keys

@@ -41,8 +41,8 @@ Verified 2026-10-29 through ARC-1 on the same release:
   `chkrun:contentType="application/vnd.sap.adt.blues.v1+xml; charset=utf-8"`), as Eclipse sends before
   saving, names the cause. ARC-1 runs it after a refused save and adds the findings to the error.
 - Tag values come from a value help per category (`GET …/sod1/tagvaluehelp/values?name=*&data=<category>`);
-  other values are refused ("tag value … is not allowed for tag category …").
-- `adtConfigurationItems` in the metadata switch fields off per API package. In a customer-namespace package
+  the captured system refused other values ("tag value … is not allowed for tag category …").
+- `adtConfigurationItems` in the metadata switch fields off per API package. On the captured system, in a customer-namespace package
   (`namespace` `customer.ext`) `ui_attribute__type` and `ui_attribute__is_scope_dependent` have
   `isEnabled=false`; SAP then keeps the stored value and still answers the save with `200`. ARC-1 refuses a
   change to a switched-off field before saving.
@@ -52,3 +52,26 @@ Verified 2026-10-29 through ARC-1 on the same release:
 `POST /sap/bc/adt/documentation/ktd/documents?corrNr=…` with `<sktd:refObject adtcore:type="SOD1"
 adtcore:uri="/sap/bc/adt/aps/com/sod1/<name>"/>` (respectively `SOD2`): the parent type has no slash
 subtype, the URI uses the lowercase name. The KTD is then edited and activated like any other KTD.
+
+## Direct CLI verification, 2026-11-20
+
+The local PR #1131 build used on-premise Basic authentication, cache disabled, and disposable
+objects in `$TMP`. Both 7.58 and 8.16 created, updated and deleted SOD1 and SOD2. A SOD2
+referencing `SPRX CO_KEY_MAP_RPLCTCO` accepted a locked follow-up save. On each release,
+KTD create, Markdown update, activation and read-back succeeded on both parent types.
+Parent deletion named the dependent KTD. After deleting the KTD, ARC-1 deleted the parent.
+Deleting a package with a remaining assignment produced SAP's prerequisites message. A separate
+assignment listing named the blocker. On 7.50 both collections were absent from discovery.
+
+In `$TMP`, both releases stored types `1` and `2` in namespace `customer.ext`.
+8.16 also stored changes to `isScopeDependent` in both directions. The 7.58 document omitted
+this field, so an explicit edit was refused. Omitting it from the read result let a full
+read-edit-save round trip succeed. Neither system reproduced the 8.16 author's switched-off
+field configuration. Both accepted an arbitrary category-`2` value under `customer.arc1`.
+Category `ZZ_INVALID` produced a transformation/deserialization error on both object types.
+
+On both releases a manual documentation link on a type-`2` assignment and a nonexistent
+leading business object type produced `SWB_TOOL/036`. The check run identified the internal-package
+requirement and the unknown business object respectively. ARC-1 runs this diagnostic for that
+message when detailed errors are enabled. Transportable-package recording and a live
+principal-propagation route were outside this run.

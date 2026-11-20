@@ -40,9 +40,11 @@ so it is not used to decide availability. Button visibility in Eclipse is client
 ## Size and line structure
 
 EDMX, WSDL, RFC signatures, ORD documents and several JSON specifications arrive on one line (a SEGW
-OData V2 EDMX was 527 KB). ARC-1 adds ignorable whitespace before grep or line-range reads: XML is
-broken only between directly adjacent tags, JSON is re-indented outside string literals without a
-parse round trip. A document above 100,000 characters needs `grep` or `lineStart`/`lineEnd`.
+OData V2 EDMX was 527 KB). ARC-1 adds ignorable whitespace before grep or line-range reads: XML breaks inside tag delimiters, which preserves mixed content and whitespace-sensitive text.
+Documents with a DOCTYPE retain their original layout. JSON indentation is capped at eight levels
+and preserves string and number literals and duplicate keys. Each result is limited to 100,000
+characters. Use grep or a smaller line range for larger documents. SAP returns the complete
+wrapper on each request. ARC-1 limits its decompressed size to 8 MiB before parsing.
 
 ## Writes
 
@@ -52,8 +54,28 @@ Create, update and delete share the SOD1 contract, see [sod1.md](sod1.md). The c
 service group name padded to 36 characters followed by the version. Eclipse's "Documentation Link"
 field writes `documentationLinkReplacement`; SAP then returns the same URL in `documentationLink`. SAP accepts a manual documentation link only when the API package is an internal ODA package (`type` `1`); otherwise the save is refused ("manual documentation link is only allowed for internal ODA packages"). Tags follow the SOD1 rules (value help per category).
 
+## Direct CLI verification, 2026-11-20
+
+The 7.58 test system returned an empty ORD slot for all seven discoverable assignments. On 8.16
+all nine contained SAP's HTML 403 page in a successful ADT response. The 8.16 class
+`CL_APS_ODA_WBI_SOD2_ORD` calls the internal HTTP service and copies the response body even
+on failure. `CL_APS_ORD_DOCUMENT_HTTP_SRV=>CO_ORD_SERVICE_PATH` identifies
+`/sap/bc/http/sap/ord_document/ApiResources` and `/sap/bc/http/sap/ord_document/EventResources`.
+ARC-1 reports the embedded failure. The 7.58 empty slot remains a successful empty result.
+
+Resource definitions take a different path. On 8.16 `CL_APS_ODA_WBI_SOD2_SWAGGER` calls
+`get_swagger_file` once per format and copies each provider's bytes into the corresponding slot.
+Neither release returned an HTML page in these slots. Both returned OpenAPI 2.0 and WSDL 1.1 for
+`OP_CO_KEY_MAP_RPLCTCO` and `OP_CO_KEY_MAP_RPLCTRQ`; the remaining assignments had empty
+definitions. The test client read a single document, searched OpenAPI and read a WSDL line range.
+
+Both releases registered a SOD2 pointing to `CL_ABAP_CHAR_UTILITIES`, then returned a 500 on
+metadata construction because the constructor is private. The create result now distinguishes
+confirmed creation from failed read-back. ADT exact lookup identified the assignment, URI and
+`$TMP` package on both systems. The normal single-target delete call verified that evidence against
+the allowlist and successfully removed the unreadable assignment.
+
 ## Not covered
 
 `$apidetails` and the value helps (`apiobjecttype`, `tadir`, `odatav4groupservice`,
-`leadingbusinessobjecttype`). Not verified on SAP_BASIS 7.58 or BTP ABAP Environment; availability is
-discovery-gated.
+`leadingbusinessobjecttype`). BTP ABAP Environment remains unverified and the types are excluded from its tool schemas.
