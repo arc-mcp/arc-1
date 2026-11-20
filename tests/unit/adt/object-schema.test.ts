@@ -62,10 +62,10 @@ describe('checkAgainstObjectSchema with the SMBC schema', () => {
     expect(problems.at(-1)).toBe('/header: unknown property "field19"');
   });
 
-  it('counts Unicode characters in maxLength', () => {
-    const field = { type: 'string', maxLength: 2 };
+  it('counts UTF-16 units in maxLength, as SAP does', () => {
+    const field = { type: 'string', maxLength: 3 };
     expect(checkAgainstObjectSchema(field, 'A🌍')).toEqual([]);
-    expect(checkAgainstObjectSchema(field, 'A🌍B')).toEqual(['/: longer than 2 characters']);
+    expect(checkAgainstObjectSchema(field, 'AB🌍')).toEqual(['/: longer than 3 characters']);
   });
 
   it('ignores keywords it does not interpret instead of failing', () => {

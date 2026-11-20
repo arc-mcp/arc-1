@@ -49,7 +49,8 @@ export function checkAgainstObjectSchema(schema: unknown, value: unknown): strin
       errors.push(`${at}: ${JSON.stringify(data)} is not allowed. Allowed values: ${node.enum.join(', ')}`);
       if (errors.length === MAX_ERRORS) return;
     }
-    if (typeof node.maxLength === 'number' && typeof data === 'string' && [...data].length > node.maxLength) {
+    // UTF-16 units, as SAP counts: 49 letters + one emoji in a 50-character field is a 400 (758, 816).
+    if (typeof node.maxLength === 'number' && typeof data === 'string' && data.length > node.maxLength) {
       errors.push(`${at}: longer than ${node.maxLength} characters`);
     }
     if (isPlainObject(data)) {
