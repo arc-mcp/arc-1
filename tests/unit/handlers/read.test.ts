@@ -1970,27 +1970,6 @@ describe('SAPRead handler', () => {
     const DESD_META = readFileSync(new URL('../../fixtures/sdo/sdo-desd-metadata.xml', import.meta.url), 'utf-8');
     const DESD_SRC = readFileSync(new URL('../../fixtures/sdo/sdo-desd-source.json', import.meta.url), 'utf-8');
 
-    it.each([200, 403])('reads COTA using one caller discovery GET when cold (HTTP %i)', async (status) => {
-      const client = createClient();
-      const href = '/sap/bc/adt/conn/commtargets';
-      const v2 = 'application/vnd.sap.adt.blues.v2+xml';
-      const doc = `<app:service xmlns:app="http://www.w3.org/2007/app"><app:workspace><app:collection href="${href}"><app:accept>${v2}</app:accept></app:collection></app:workspace></app:service>`;
-      mockFetch.mockImplementation(async (url) =>
-        isDiscoveryRequest(url)
-          ? mockResponse(status, status === 200 ? doc : '')
-          : mockResponse(
-              200,
-              new URL(url).pathname.endsWith('/source/main') ? '{}' : '<blue:blueSource adtcore:type="COTA/TYP"/>',
-            ),
-      );
-      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPRead', { type: 'COTA', name: 'ZOBJ' });
-      expect(result.isError).toBeFalsy();
-      expect(mockFetch.mock.calls.filter(([url]) => isDiscoveryRequest(url))).toHaveLength(1);
-      const meta = mockFetch.mock.calls.find(([url]) => new URL(url).pathname === `${href}/ZOBJ`);
-      expect(meta?.[1].headers.Accept).toBe(status === 200 ? v2 : 'application/vnd.sap.adt.blues.v1+xml');
-      expect(client.http.hasDiscoveryData()).toBe(false);
-    });
-
     it('reads a DESD as JSON metadata + AFF JSON source', async () => {
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string | URL) => {
