@@ -320,7 +320,10 @@ function buildBaseErrorMessage(
       }
       const name = String(args.name ?? '');
       const type = String(args.type ?? '');
-      return `${enriched}\n\nHint: Object "${name}" (type ${type}) was not found. Use SAPSearch with query "${name}" to verify the name exists and check the correct type.`;
+      const replay = err.notFoundMayBeReplayed
+        ? ' This SAP system repeats a not-found answer for the same URL for about a minute. If the object was just created, wait 60 seconds and retry.'
+        : '';
+      return `${enriched}\n\nHint: Object "${name}" (type ${type}) was not found. Use SAPSearch with query "${name}" to verify the name exists and check the correct type.${replay}`;
     }
     if (err.isUnauthorized || err.isForbidden) {
       if (isSamlBearer && err.isUnauthorized) {
@@ -395,10 +398,9 @@ function buildBaseErrorMessage(
         'Common fixes: add missing @AbapCatalog annotations, fix field type names, check key field definitions.'
       );
     }
-    // Server errors (500, 502, 503, etc.)
     if (err.isServerError) {
       const syntaxHint = withDependentSyntaxHint(err, enriched);
-      if (syntaxHint !== enriched) return syntaxHint;
+      if (syntaxHint !== enriched || err.creationOutcome === 'confirmed') return syntaxHint;
       return `${enriched}\n\nHint: SAP application server error (${err.statusCode}). This is often transient — wait 10-30 seconds and retry. If the error persists, check SAPDiagnose(action="dumps") for short dumps, or verify the SAP system is responding via SAPRead(type="SYSTEM").`;
     }
     return enriched;
@@ -553,7 +555,8 @@ function withDependentSyntaxHint(err: AdtApiError, message: string): string {
   const syntaxMatch = err.isServerError && err.message.match(/[Ss]yntax error in program (\S+)/);
   if (!syntaxMatch) return message;
   const program = syntaxMatch[1].replace(/=+\w*$/, ''); // Strip "====BD" padding
-  return `${message}\n\nHint: A dependent object has syntax errors that block this operation. The program "${program}" has syntax errors — fix those first, then retry. Use SAPRead to inspect the object, or SAPDiagnose(action="dumps") for details.`;
+  const retryHint = err.creationOutcome === 'confirmed' ? '' : ', then retry';
+  return `${message}\n\nHint: A dependent object has syntax errors that block this operation. The program "${program}" has syntax errors — fix those first${retryHint}. Use SAPRead to inspect the object, or SAPDiagnose(action="dumps") for details.`;
 }
 
 /** Enrich error message with additional SAP XML diagnostic detail (extra messages, properties) */
@@ -1104,7 +1107,7 @@ export async function handleToolCall(
     args = normalizedArgs;
     const parsed = schema.safeParse(args);
     if (!parsed.success) {
-      const validationError = formatZodError(parsed.error, toolName);
+      const validationError = formatZodError(parsed.error, toolName, args);
       logger.emitAudit({
         timestamp: new Date().toISOString(),
         level: 'warn',

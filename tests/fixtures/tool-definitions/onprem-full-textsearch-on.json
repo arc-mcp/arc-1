@@ -20,7 +20,6 @@
             "BDEF",
             "SRVD",
             "SRVB",
-            "SMBC",
             "SOD1",
             "SOD2",
             "SKTD",
@@ -70,7 +69,8 @@
             "SAJT",
             "RONT",
             "NONT",
-            "TABL/DTI"
+            "TABL/DTI",
+            "SMBC"
           ],
           "description": "Repository or metadata type. TABL includes structures. KTD aliases SKTD; MESSAGES aliases MSAG. FTG2 aliases FEATURE_TOGGLE. SYNTAX requires objectType+name. Server-driven: discovery-gated XML metadata, AFF JSON source; DTSC/DSFD/DTDC/DRTY use DDL text. ENQU: JSON. TABL/DTI: TABLE~INDEX, prefers pending JSON. DESD external schema; EVTB/EVTO event binding/object; CSNM CSN model; COTA communication target; DTSC/DTDC static/dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template; RONT/NONT SAP object/node type."
         },
@@ -405,7 +405,8 @@
             "SAJT",
             "RONT",
             "NONT",
-            "TABL/DTI"
+            "TABL/DTI",
+            "SMBC"
           ],
           "description": "Object type (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). KTD aliases SKTD. Class-section surgery actions require CLAS. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only. SOD1/SOD2: source is the SAPRead JSON or the fields to change; saved active."
         },
@@ -495,7 +496,7 @@
         },
         "description": {
           "type": "string",
-          "description": "Object description for create action (defaults to name if omitted). Max 60 chars for most types."
+          "description": "Object description for create (default: name). Max 60 chars for most types."
         },
         "package": {
           "type": "string",
@@ -691,7 +692,7 @@
             "properties": {
               "number": {
                 "type": "string",
-                "description": "Message number (e.g., \"001\")"
+                "description": "Message number 000-999 (e.g., \"001\")"
               },
               "shortText": {
                 "type": "string",
@@ -858,25 +859,9 @@
                   "MSAG",
                   "TTYP",
                   "ENQU",
-                  "ENHO",
-                  "DESD",
-                  "DTSC",
-                  "CSNM",
-                  "EVTB",
-                  "EVTO",
-                  "COTA",
-                  "DSFD",
-                  "DTDC",
-                  "UIAD",
-                  "DRTY",
-                  "APLO",
-                  "SAJC",
-                  "SAJT",
-                  "RONT",
-                  "NONT",
-                  "TABL/DTI"
+                  "ENHO"
                 ],
-                "description": "Creatable object type; technical settings TABL/DTT are update-only"
+                "description": "Use single create for server-driven types. TABL/DTT is update-only."
               },
               "name": {
                 "type": "string",

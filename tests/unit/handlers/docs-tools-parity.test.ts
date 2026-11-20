@@ -129,6 +129,13 @@ describe('docs_page/tools.md public-schema parity', () => {
     },
   );
 
+  it('links the SMBC read entry to its write contract', () => {
+    const read = toolSection(TOOLS_DOC, 'SAPRead');
+    const row = read?.split('\n').find((line) => line.startsWith('| `SMBC` |'));
+    expect(row).toContain('(#server-driven-object-writes)');
+    expect(toolSection(TOOLS_DOC, 'SAPWrite')).toMatch(/^#### Server-driven object writes$/m);
+  });
+
   it('detects an undocumented relations action', () => {
     const changed = TOOLS_DOC.replace('`relations` (when available)', '`omitted` (when available)');
     expect(documentationGaps(changed, true)).toContain('SAPNavigate missing actions: relations');

@@ -12,6 +12,7 @@ import {
   isServerDrivenObjectType,
   SDO_REGISTRY,
   SDO_TYPES,
+  serverDrivenNewObjectUrl,
   serverDrivenObjectUrl,
   serverDrivenSourceContentType,
   supportsServerDrivenObject,
@@ -161,7 +162,11 @@ describe('SDO registry + gate', () => {
   });
 
   it('supportsServerDrivenObject: false when the collection is absent (758) or the code is unknown', () => {
-    const http = { hasDiscoveryData: () => true, discoveryAcceptFor: () => undefined } as unknown as AdtHttpClient;
+    const http = {
+      hasDiscoveryData: () => true,
+      discoveryAcceptFor: () => undefined,
+      hasDiscoveryCollection: () => false,
+    } as unknown as AdtHttpClient;
     expect(supportsServerDrivenObject(http, 'DESD')).toBe(false);
     expect(supportsServerDrivenObject(http, 'NOPE')).toBe(false);
   });
@@ -173,10 +178,13 @@ describe('SDO registry + gate', () => {
  */
 describe('ensureServerDrivenSupport', () => {
   /** `has` controls whether the served discovery doc advertises ddic/desd with the blues accept. */
-  function mockHttp(opts: { loaded: boolean; has?: boolean; getThrows?: boolean }) {
+  function mockHttp(opts: { loaded: boolean; has?: boolean; getThrows?: boolean; blank?: boolean }) {
     const doc =
       '<?xml version="1.0"?><app:service xmlns:app="http://www.w3.org/2007/app" ' +
       'xmlns:atom="http://www.w3.org/2005/Atom"><app:workspace><atom:title>W</atom:title>' +
+      (opts.blank
+        ? '<app:collection href="/sap/bc/adt/ddic/desd"><atom:title>D</atom:title><app:accept/></app:collection>'
+        : '') +
       (opts.has
         ? '<app:collection href="/sap/bc/adt/ddic/desd"><atom:title>D</atom:title>' +
           '<app:accept>application/vnd.sap.adt.blues.v1+xml</app:accept></app:collection>'
@@ -192,7 +200,10 @@ describe('ensureServerDrivenSupport', () => {
         get,
         hasDiscoveryData: () => opts.loaded,
         discoveryAcceptFor: (path: string) =>
-          opts.loaded && path === '/sap/bc/adt/ddic/desd' ? 'application/vnd.sap.adt.blues.v1+xml' : undefined,
+          opts.loaded && !opts.blank && path === '/sap/bc/adt/ddic/desd'
+            ? 'application/vnd.sap.adt.blues.v1+xml'
+            : undefined,
+        hasDiscoveryCollection: () => opts.loaded && !!opts.blank,
         setDiscoveryMap: vi.fn(),
       } as unknown as AdtHttpClient,
       get,
@@ -203,6 +214,36 @@ describe('ensureServerDrivenSupport', () => {
     const { http, get } = mockHttp({ loaded: true });
     await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
     expect(get).not.toHaveBeenCalled();
+  });
+
+  it("re-checks a negative cached answer against the caller's own discovery before refusing", async () => {
+    // The cached map came from another identity (e.g. a technical startup probe user) that SAP did not
+    // show the collection to; the caller's own discovery advertises it.
+    const { http, get } = mockHttp({ loaded: true, has: true });
+    (http as unknown as { discoveryAcceptFor: () => undefined }).discoveryAcceptFor = () => undefined;
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(http.setDiscoveryMap).not.toHaveBeenCalled();
+  });
+
+  it('keeps the cached refusal when caller discovery is unavailable', async () => {
+    const { http, get } = mockHttp({ loaded: true, getThrows: true });
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DTDC')).resolves.toBe(false);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(http.setDiscoveryMap).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the caller's own discovery also lacks the collection", async () => {
+    const { http, get } = mockHttp({ loaded: true, has: false });
+    (http as unknown as { discoveryAcceptFor: () => undefined }).discoveryAcceptFor = () => undefined;
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(false);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  // SAP 758/816 answer a user without create authorization with `<app:accept/>` (live: /sap/bc/adt/atc/items).
+  it.each([true, false])('proceeds when SAP lists the collection without media types (loaded=%s)', async (loaded) => {
+    const { http } = mockHttp({ loaded, blank: true });
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
   });
 
   it('fetches discovery when cold, then reports the type as unavailable on that release', async () => {
@@ -584,5 +625,33 @@ describe('deleteServerDrivenObject', () => {
     const { http, calls } = mockWriteHttp();
     await expect(deleteServerDrivenObject(http, readOnlySafety(), 'CSNM', 'ZC')).rejects.toBeInstanceOf(AdtSafetyError);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('SMBC as a server-driven type', () => {
+  it('addresses SMBC in lower case like the other SAP clients', () => {
+    expect(serverDrivenObjectUrl('SMBC', '/NS/CONFIG')).toBe('/sap/bc/adt/bct/smbctyp/%2Fns%2Fconfig');
+    expect(serverDrivenObjectUrl('DESD', 'ZSCHEMA')).toBe('/sap/bc/adt/ddic/desd/ZSCHEMA');
+  });
+
+  it('POSTs an SMBC shell to the smbctyp collection with blues v1', async () => {
+    const { http, calls } = mockWriteHttp();
+    await createServerDrivenObject(http, unrestrictedSafetyConfig(), 'SMBC', 'ZCONFIG', {
+      package: 'ZLOCAL_CFG',
+      description: 'Config',
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      path: '/sap/bc/adt/bct/smbctyp',
+      contentType: 'application/vnd.sap.adt.blues.v1+xml',
+    });
+    expect(calls[0].body).toContain('<blue:blueSource');
+    expect(calls[0].body).toContain('adtcore:type="SMBC/TYP"');
+    expect(calls[0].body).toContain('<adtcore:packageRef adtcore:name="ZLOCAL_CFG"/>');
+  });
+
+  it('serves create-time resources under $new', () => {
+    expect(serverDrivenNewObjectUrl('SMBC')).toBe('/sap/bc/adt/bct/smbctyp/$new');
   });
 });

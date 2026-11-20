@@ -197,6 +197,26 @@ describe('TABL/DTT public routing and safety', () => {
     expect(r.content[0]?.text).toContain('unavailable');
     expect(mutations()).toEqual([]);
   });
+  // SAP 758/816 answer a user without create authorization with `<app:accept/>` (live: /sap/bc/adt/atc/items).
+  it.each([
+    ['startup discovery', new Map([[collection, [] as string[]]])],
+    ['cold discovery', new Map<string, string[]>()],
+  ])('reads when %s lists the service without media types', async (_label, map) => {
+    client.http.setDiscoveryMap(map);
+    const xmlFor = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: string, init?: RequestInit) =>
+      new URL(url).pathname === '/sap/bc/adt/discovery'
+        ? Promise.resolve(
+            mockResponse(
+              200,
+              `<app:service xmlns:app="http://www.w3.org/2007/app"><app:workspace><app:collection href="${collection}"><app:accept/></app:collection></app:workspace></app:service>`,
+            ),
+          )
+        : xmlFor(url, init),
+    );
+    const r = await call('SAPRead', { type: 'TABL/DTT', name: 'ZTEST' });
+    expect(r.isError, r.content[0]?.text).toBeUndefined();
+  });
   it('unlocks when a locked working document is invalid', async () => {
     xml = '';
     expect((await write()).isError).toBe(true);

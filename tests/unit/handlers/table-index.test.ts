@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
-import { mockResponse } from '../../helpers/mock-fetch.js';
+import { DISCOVERY_WITHOUT_SERVER_DRIVEN, isDiscoveryRequest, mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
@@ -175,9 +175,11 @@ it.each([{ type: 'TABL', version: 'active' }, { type: 'TTYP' }])(
 );
 it('refuses missing discovery before listing or mutations', async () => {
   client.http.setDiscoveryMap(new Map([['/sap/bc/adt/oo/classes', ['application/xml']]]));
+  mockFetch.mockImplementation(async () => mockResponse(200, DISCOVERY_WITHOUT_SERVER_DRIVEN));
   expect((await write()).isError).toBe(true);
   expect((await call('SAPRead', { type: 'TABL', name: 'ZTEST', include: 'indexes' })).isError).toBe(true);
-  expect(mockFetch).not.toHaveBeenCalled();
+  // Only the caller's own discovery is read to confirm the absence; nothing reaches the index resource.
+  expect(mockFetch.mock.calls.every(([url]) => isDiscoveryRequest(url))).toBe(true);
 });
 it.each([false, true])('activates the native index resource (batch=%s)', async (batch) => {
   const obj = { type: 'TABL/DTI', name: 'ZTEST~001' };

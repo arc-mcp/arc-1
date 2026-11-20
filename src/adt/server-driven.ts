@@ -76,6 +76,13 @@ export interface SdoRegistryEntry {
    * application/json. Live-verified per type on 816.
    */
   sourceFormat: SdoSourceFormat;
+  /** Object URLs use the lower-case name (SAP's own clients address these types in lower case). */
+  lowercaseName?: true;
+  /**
+   * Check source against the schema SAP serves (`<object>/schema`, before a create `<collection>/$new/schema`)
+   * before saving, because SAP drops invalid values silently.
+   */
+  schemaCheck?: true;
 }
 
 /** AFF JSON body vs plain DDL text. Required per entry — a wrong guess is a hard 415 from SAP. */
@@ -113,6 +120,11 @@ export function serverDrivenSourceContentType(code: string): string {
   }
 }
 
+/** True when creates and updates of the type are checked against SAP's object schema first. */
+export function serverDrivenSchemaCheck(code: string): boolean {
+  return sdoEntry(code).schemaCheck === true;
+}
+
 /** Declared source flavor for a registered type (drives the client-side JSON parse gate). */
 export function serverDrivenSourceFormat(code: string): SdoSourceFormat {
   return sdoEntry(code).sourceFormat;
@@ -141,6 +153,7 @@ export const SDO_TYPES = [
   'RONT',
   'NONT',
   'TABL/DTI',
+  'SMBC',
 ] as const;
 
 /** Curated registry of high-value server-driven object types — keys are exactly SDO_TYPES. */
@@ -287,6 +300,21 @@ export const SDO_REGISTRY = {
     metadataContentType: BLUES_V1,
     ...BLUE_METADATA,
     sourceFormat: 'json',
+    lowercaseName: true,
+  },
+  // Business Configuration Maintenance Object. Create, update and delete follow the blue pattern;
+  // discovery advertises no $new templates, but `$new/schema` answers. The smbc object generator
+  // remains the route when service and data model do not exist yet.
+  // Evidence: docs/research/abap-types/types/smbc.md
+  SMBC: {
+    href: '/sap/bc/adt/bct/smbctyp',
+    label: 'Business Configuration Maintenance Object',
+    createType: 'SMBC/TYP',
+    metadataContentType: BLUES_V1,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+    lowercaseName: true,
+    schemaCheck: true,
   },
 } satisfies Record<(typeof SDO_TYPES)[number], SdoRegistryEntry>;
 
@@ -309,7 +337,13 @@ function sdoEntry(code: string): SdoRegistryEntry {
 /** ADT object URL for a server-driven object: collection href + url-encoded name. */
 export function serverDrivenObjectUrl(code: string, name: string): string {
   if (code === 'TABL/DTI') parseTableIndexName(name);
-  return `${sdoEntry(code).href}/${encodeURIComponent(code === 'TABL/DTI' ? name.toLowerCase() : name)}`;
+  const entry = sdoEntry(code);
+  return `${entry.href}/${encodeURIComponent(entry.lowercaseName ? name.toLowerCase() : name)}`;
+}
+
+/** URL SAP serves create-time resources under (`<collection>/$new`, e.g. `$new/schema`). */
+export function serverDrivenNewObjectUrl(code: string): string {
+  return `${sdoEntry(code).href}/$new`;
 }
 
 /**
@@ -332,7 +366,10 @@ export function supportsServerDrivenObject(http: AdtHttpClient, code: string): b
   const entry = REGISTRY_BY_CODE[code];
   if (!entry) return false;
   if (!http.hasDiscoveryData()) return undefined;
-  return (http.discoveryAcceptFor(entry.href) ?? '').includes(entry.discoveryMarker);
+  const accept = http.discoveryAcceptFor(entry.href);
+  // SAP lists a collection without media types for a user who may not create the object type.
+  if (!accept && http.hasDiscoveryCollection(entry.href)) return undefined;
+  return (accept ?? '').includes(entry.discoveryMarker);
 }
 
 /**
@@ -354,22 +391,26 @@ export function supportsServerDrivenObject(http: AdtHttpClient, code: string): b
  * unreachable" from "discovery empty", and failing closed would break every SDO read on a system
  * where /sap/bc/adt/discovery is 403'd. This gate only improves the error message — the real
  * controls are checkOperation and the package allowlist.
+ *
+ * Re-check a cached negative with the caller's identity. Keep it if the caller supplies no evidence.
  */
 export async function ensureServerDrivenSupport(
   http: AdtHttpClient,
   safety: SafetyConfig,
   code: string,
 ): Promise<boolean> {
-  const known = supportsServerDrivenObject(http, code);
-  if (known !== undefined) return known;
   const entry = REGISTRY_BY_CODE[code];
   if (!entry) return false;
+  const cached = supportsServerDrivenObject(http, code);
+  if (cached === true) return true;
   checkOperation(safety, OperationType.Read, 'FetchDiscovery');
   const { map } = await fetchDiscoveryDocument(http); // never throws
   // Empty map = discovery unreachable, NOT "collection absent" — those must not collapse together,
   // or a 403'd discovery would block every SDO read. A populated map lacking the href IS unsupported.
-  if (map.size === 0) return true;
-  return (resolveAcceptType(map, entry.href) ?? '').includes(entry.discoveryMarker);
+  if (map.size === 0) return cached ?? true;
+  const accept = resolveAcceptType(map, entry.href);
+  if (!accept && map.has(entry.href)) return true; // listed without media types, see above
+  return (accept ?? '').includes(entry.discoveryMarker);
 }
 
 /** Shared "this release does not have this type" message for the three SDO entry points. */

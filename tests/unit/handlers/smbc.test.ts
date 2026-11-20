@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -6,7 +7,8 @@ import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const readOnlyClient = () => createClient().withSafety(defaultSafetyConfig());
-const uri = '/sap/bc/adt/bct/smbctyp/%2Fns%2Fconfig';
+const collection = '/sap/bc/adt/bct/smbctyp';
+const uri = `${collection}/%2Fns%2Fconfig`;
 const source = '{"formatVersion":"1","header":{"description":"Native configuration"}}';
 beforeEach(() => vi.resetAllMocks());
 
@@ -83,13 +85,307 @@ it.each(['check', 'history'])('routes read-only transport %s to the namespaced S
   );
 });
 
-it('does not add SMBC source mutation support', async () => {
+const LOCK = (corrNr = '') =>
+  `<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>LH1</LOCK_HANDLE><CORRNR>${corrNr}</CORRNR></DATA></asx:values></asx:abap>`;
+
+// The 816 discovery advertises the SMBC collection with blues v1 and the deletion check without
+// its request type (so the engine skips the check and relies on the post-delete absence read).
+const DISCOVERY = `<app:service xmlns:app="http://www.w3.org/2007/app" xmlns:atom="http://www.w3.org/2005/Atom"><app:workspace>
+<app:collection href="/sap/bc/adt/bct/smbctyp"><app:accept>application/vnd.sap.adt.blues.v1+xml</app:accept></app:collection>
+<app:collection href="/sap/bc/adt/deletion/check"><app:accept>application/xml</app:accept></app:collection>
+</app:workspace></app:service>`;
+
+/** Records every SAP send except discovery; answers lock, unlock, source PUT and DELETE. */
+function writeBackend(
+  opts: { corrNr?: string; schema?: string; schemaStatus?: number; schemaError?: Error; sourceStatus?: number } = {},
+) {
+  const sends: Array<{ method: string; path: string; body: string; contentType?: string; accept?: string }> = [];
+  let deleted = false;
+  mockFetch.mockImplementation(async (url, init) => {
+    const parsed = new URL(String(url));
+    const method = String(init?.method ?? 'GET');
+    const path = `${parsed.pathname}${parsed.search}`;
+    if (parsed.pathname.endsWith('/discovery')) return mockResponse(200, DISCOVERY, { 'x-csrf-token': 'T' });
+    if (method !== 'HEAD') {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      sends.push({
+        method,
+        path,
+        body: String(init?.body ?? ''),
+        contentType: headers['Content-Type'],
+        accept: headers.Accept,
+      });
+    }
+    if (path.includes('_action=LOCK')) return mockResponse(200, LOCK(opts.corrNr), { 'x-csrf-token': 'T' });
+    if (parsed.pathname === `${uri}/schema` || parsed.pathname === `${collection}/$new/schema`) {
+      if (opts.schemaError) throw opts.schemaError;
+      return mockResponse(opts.schemaStatus ?? (opts.schema === undefined ? 404 : 200), opts.schema ?? '');
+    }
+    if (method === 'PUT' && opts.sourceStatus) return mockResponse(opts.sourceStatus, 'Source step failed');
+    if (method === 'DELETE') deleted = true;
+    if (method === 'GET' && deleted && parsed.pathname === uri) return mockResponse(404, 'Not Found');
+    return mockResponse(200, '', { 'x-csrf-token': 'T' });
+  });
+  return sends;
+}
+
+it('updates the SMBC source under one lock with JSON content and the lock transport', async () => {
+  const sends = writeBackend({ corrNr: 'A4HK900123' });
   const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
     action: 'update',
     type: 'SMBC/TYP',
     name: '/NS/CONFIG',
     source,
   });
+  expect(result.isError, result.content[0]?.text).toBeUndefined();
+  expect(result.content[0]?.text).toContain('SAPActivate(type="SMBC"');
+  const lock = sends.findIndex((r) => r.path.includes('_action=LOCK'));
+  const put = sends.findIndex((r) => r.method === 'PUT');
+  const unlock = sends.findIndex((r) => r.path.includes('_action=UNLOCK'));
+  expect(lock).toBeGreaterThanOrEqual(0);
+  expect(lock).toBeLessThan(put);
+  expect(put).toBeLessThan(unlock);
+  expect(sends[lock]?.path).toMatch(new RegExp(`^${uri}\\?_action=LOCK`));
+  expect(sends[put]?.path).toMatch(new RegExp(`^${uri}/source/main\\?lockHandle=LH1&corrNr=A4HK900123(&|$)`));
+  expect(sends[put]?.contentType).toMatch(/^application\/json/);
+  expect(sends[put]?.body).toBe(source);
+});
+
+const SMBC_SCHEMA = readFileSync(new URL('../../fixtures/sdo/smbc-schema-816.json', import.meta.url), 'utf8');
+
+it("refuses values outside SAP's schema before locking, because SAP would drop them silently", async () => {
+  const sends = writeBackend({ schema: SMBC_SCHEMA });
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'update',
+    type: 'SMBC',
+    name: '/NS/CONFIG',
+    source: '{"formatVersion":"1","appConfiguration":{"listReport":{"variantManagement":"control"}}}',
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('listReport/variantManagement: "control" is not allowed');
+  expect(result.content[0]?.text).toContain('Nothing was written');
+  expect(sends.some((r) => r.path.includes('_action=LOCK') || r.method === 'PUT')).toBe(false);
+});
+
+it('saves a schema-conform source and says so when the schema cannot be read', async () => {
+  const conform = writeBackend({ schema: SMBC_SCHEMA });
+  const formattedSource = JSON.stringify(JSON.parse(source), null, 2);
+  const ok = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'update',
+    type: 'SMBC',
+    name: '/NS/CONFIG',
+    source: formattedSource,
+  });
+  expect(ok.isError, ok.content[0]?.text).toBeUndefined();
+  expect(ok.content[0]?.text).not.toContain('could not be read');
+  expect(conform.find((r) => r.method === 'PUT')?.body).toBe(formattedSource);
+
+  writeBackend();
+  const noSchema = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'update',
+    type: 'SMBC',
+    name: '/NS/CONFIG',
+    source,
+  });
+  expect(noSchema.isError, noSchema.content[0]?.text).toBeUndefined();
+  expect(noSchema.content[0]?.text).toContain("SAP's schema for SMBC could not be read");
+});
+
+it.each([
+  { action: 'create', opts: { schemaStatus: 401 } },
+  { action: 'update', opts: { schemaStatus: 403 } },
+  { action: 'create', opts: { schemaStatus: 500 } },
+  { action: 'update', opts: { schemaError: new DOMException('time limit', 'TimeoutError') } },
+  { action: 'update', opts: { schema: '<html>gateway</html>' } },
+  { action: 'create', opts: { schema: '{"error":"temporarily unavailable"}' } },
+])('stops $action before mutation on schema failure $opts', async ({ action, opts }) => {
+  const sends = writeBackend(opts);
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action,
+    type: 'SMBC',
+    name: action === 'update' ? '/NS/CONFIG' : 'ZCONFIG',
+    package: '$TMP',
+    source,
+  });
+  expect(result.isError).toBe(true);
+  const path = action === 'create' ? `${collection}/$new/schema` : `${uri}/schema`;
+  expect(result.content[0]?.text).toContain(`GET ${path}`);
+  expect(result.content[0]?.text).toContain('Nothing was written');
+  expect(sends.some((r) => r.path.includes('/schema'))).toBe(true);
+  expect(sends.every((r) => r.method === 'GET')).toBe(true);
+});
+
+it('allows a write with a note when SAP serves neither schema representation', async () => {
+  const sends = writeBackend({ schemaStatus: 406 });
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'update',
+    type: 'SMBC',
+    name: '/NS/CONFIG',
+    source,
+  });
+  expect(result.isError, result.content[0]?.text).toBeUndefined();
+  expect(result.content[0]?.text).toContain('could not be read');
+  expect(sends.some((r) => r.method === 'PUT')).toBe(true);
+});
+
+it('refuses an update with invalid JSON before contacting SAP', async () => {
+  const sends = writeBackend();
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'update',
+    type: 'SMBC',
+    name: '/NS/CONFIG',
+    source: '{"formatVersion":',
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('valid AFF JSON');
+  expect(sends).toEqual([]);
+});
+
+it('creates an SMBC shell, then writes its source under a lock', async () => {
+  const sends = writeBackend({ schema: SMBC_SCHEMA });
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'create',
+    type: 'SMBC',
+    name: 'ZCONFIG',
+    package: '$TMP',
+    description: 'Config',
+    source,
+  });
+  expect(result.isError, result.content[0]?.text).toBeUndefined();
+  expect(result.content[0]?.text).toContain('Created SMBC ZCONFIG in package $TMP and wrote source');
+  expect(result.content[0]?.text).toContain('SAPActivate(type="SMBC"');
+  const schema = sends.findIndex((r) => r.method === 'GET' && r.path.startsWith(`${collection}/$new/schema?`));
+  const post = sends.findIndex((r) => r.method === 'POST' && r.path.startsWith(`${collection}?`));
+  const put = sends.findIndex((r) => r.method === 'PUT');
+  expect(sends[schema]?.accept).toBe(
+    'application/vnd.sap.adt.serverdriven.schema.v1+json; framework=objectTypes.v1, application/vnd.sap.adt.objecttypeschema.v1+json',
+  );
+  expect(schema).toBeLessThan(post);
+  expect(post).toBeLessThan(put);
+  expect(sends[post]?.contentType).toMatch(/^application\/vnd\.sap\.adt\.blues\.v1\+xml/);
+  expect(sends[post]?.body).toContain('adtcore:type="SMBC/TYP"');
+  expect(sends[put]?.path).toMatch(new RegExp(`^${collection}/zconfig/source/main\\?lockHandle=LH1`));
+  expect(sends[put]?.body).toBe(source);
+});
+
+it("refuses an SMBC create outside SAP's schema before anything is created", async () => {
+  const sends = writeBackend({ schema: SMBC_SCHEMA });
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'create',
+    type: 'SMBC',
+    name: 'ZCONFIG',
+    package: '$TMP',
+    source: '{"formatVersion":"1","appConfiguration":{"listReport":{"variantManagement":"control"}}}',
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('listReport/variantManagement: "control" is not allowed');
+  expect(result.content[0]?.text).toContain('Nothing was written');
+  expect(sends.some((r) => r.method === 'POST' || r.method === 'PUT')).toBe(false);
+});
+
+it.each([404, 500])('reports the confirmed SMBC shell when the source PUT returns %i', async (sourceStatus) => {
+  const sends = writeBackend({ schema: SMBC_SCHEMA, sourceStatus });
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'create',
+    type: 'SMBC',
+    name: 'ZCONFIG',
+    package: '$TMP',
+    source,
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain(`status ${sourceStatus}`);
+  expect(result.content[0]?.text).toContain('was created in package $TMP');
+  expect(result.content[0]?.text).toContain('do not repeat create');
+  expect(result.content[0]?.text).not.toMatch(/wait 10-30 seconds and retry|Use SAPSearch with query/);
+  expect(sends.some((r) => r.method === 'PUT')).toBe(true);
+});
+
+it('creates an SMBC and says so when the create schema cannot be read', async () => {
+  writeBackend();
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'create',
+    type: 'SMBC',
+    name: 'ZCONFIG',
+    package: '$TMP',
+    source,
+  });
+  expect(result.isError, result.content[0]?.text).toBeUndefined();
+  expect(result.content[0]?.text).toContain("SAP's schema for SMBC could not be read");
+});
+
+it.each([['SMBC'], ['DESD'], ['CLAS', 'SMBC', 'DESD']])(
+  'rejects the batch before any SAP request (%j)',
+  async (...types) => {
+    const sends = writeBackend();
+    const objects = types.map((type) => ({ type, name: `Z_${type}`, package: '$TMP' }));
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'batch_create',
+      objects,
+    });
+    expect(result.isError).toBe(true);
+    for (const { type, name } of objects.filter((item) => item.type !== 'CLAS')) {
+      expect(result.content[0]?.text).toContain(`single SAPWrite(action="create", type="${type}", name="${name}")`);
+    }
+    expect(sends).toEqual([]);
+  },
+);
+
+it.each(['create', 'update', 'delete'])('honors the package allowlist before an SMBC %s', async (action) => {
+  const sends = writeBackend();
+  const base = createClient();
+  const client = base.withSafety({ ...base.safety, allowedPackages: ['$TMP'] });
+  const resolve = vi.spyOn(client, 'resolveObjectPackage').mockResolvedValue('ZOTHER');
+  const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+    action,
+    type: 'SMBC',
+    name: 'ZCONFIG',
+    package: action === 'create' ? 'ZOTHER' : '$TMP',
+    source,
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('ZOTHER');
+  if (action !== 'create')
+    expect(resolve).toHaveBeenCalledWith(`${collection}/zconfig`, 'application/vnd.sap.adt.blues.v1+xml', undefined);
+  expect(sends).toEqual([]);
+});
+
+it('applies a denied SMBC update before discovery', async () => {
+  writeBackend();
+  const result = await handleToolCall(
+    createClient(),
+    { ...DEFAULT_CONFIG, denyActions: ['SAPWrite.update'] },
+    'SAPWrite',
+    {
+      action: 'update',
+      type: 'SMBC',
+      name: 'ZCONFIG',
+      source,
+    },
+  );
   expect(result.isError).toBe(true);
   expect(mockFetch).not.toHaveBeenCalled();
+});
+
+it('deletes the SMBC under a lock', async () => {
+  const sends = writeBackend();
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'delete',
+    type: 'SMBC',
+    name: '/NS/CONFIG',
+  });
+  expect(result.isError, result.content[0]?.text).toBeUndefined();
+  const del = sends.find((r) => r.method === 'DELETE');
+  expect(del?.path).toMatch(new RegExp(`^${uri}\\?lockHandle=LH1`));
+});
+
+it('keeps SMBC writes behind the write gate', async () => {
+  const sends = writeBackend();
+  const result = await handleToolCall(readOnlyClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'update',
+    type: 'SMBC',
+    name: '/NS/CONFIG',
+    source,
+  });
+  expect(result.isError).toBe(true);
+  expect(sends.some((r) => r.method === 'PUT')).toBe(false);
 });

@@ -38,9 +38,7 @@ export function apiCatalogObjectUrl(type: ApiCatalogType, name: string): string 
 
 /** False only when discovery is loaded and lacks the collection; an unloaded map lets SAP answer. */
 export function apiCatalogAvailable(http: AdtHttpClient, type: ApiCatalogType): boolean {
-  if (!http.hasDiscoveryData()) return true;
-  // Presence, not media types: a display-only user gets the collection without `accept` elements.
-  return http.discoveryListsCollection(COLLECTIONS[type]);
+  return http.hasDiscoveryCollection(COLLECTIONS[type]) !== false;
 }
 
 export function apiCatalogUnavailableMessage(type: ApiCatalogType): string {

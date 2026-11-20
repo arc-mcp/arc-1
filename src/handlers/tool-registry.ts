@@ -28,7 +28,7 @@
  */
 
 import { ATC_BATCH_TYPES } from '../adt/atc-batch.js';
-import { SDO_TYPES } from '../adt/server-driven.js';
+import { isServerDrivenObjectType, SDO_TYPES } from '../adt/server-driven.js';
 import type { ResolvedFeatures } from '../adt/types.js';
 import type { ServerConfig } from '../server/types.js';
 
@@ -71,7 +71,6 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'BDEF', btp: true },
   { type: 'SRVD', btp: true },
   { type: 'SRVB', btp: true },
-  { type: 'SMBC', btp: true },
   // API package (SOD1) and API package assignment (SOD2, with ORD document and resource definitions). Discovery-gated.
   { type: 'SOD1', btp: false },
   { type: 'SOD2', btp: false },
@@ -174,10 +173,11 @@ const sapWriteTypes = deriveTypeArrays(SAPWRITE_TYPE_TABLE);
 export const SAPWRITE_TYPES_ONPREM = sapWriteTypes.onprem;
 /** SAPWrite types available on BTP ABAP Environment (the `btp: true` rows). */
 export const SAPWRITE_TYPES_BTP = sapWriteTypes.btp;
-/** Types batch_create refuses: TABL/DTT is update-only, SOD1/SOD2 are created one call at a time. */
-export const SAPWRITE_BATCH_EXCLUDED = ['TABL/DTT', 'SOD1', 'SOD2'] as const;
-export const isBatchCreatable = (type: string): boolean =>
-  !(SAPWRITE_BATCH_EXCLUDED as readonly string[]).includes(type);
+export const SAPWRITE_BATCH_TYPES = deriveTypeArrays(
+  SAPWRITE_TYPE_TABLE.filter(
+    ({ type }) => !['TABL/DTT', 'SOD1', 'SOD2'].includes(type) && !isServerDrivenObjectType(type),
+  ),
+);
 
 // ─── SAPContext ─────────────────────────────────────────────────────
 

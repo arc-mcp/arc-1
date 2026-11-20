@@ -12,7 +12,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
-import { isServerDrivenObjectType } from '../../../src/adt/server-driven.js';
+import { isServerDrivenObjectType, SDO_TYPES } from '../../../src/adt/server-driven.js';
 import { canonicalTablType, KNOWN_BASE_TYPES, normalizeObjectType } from '../../../src/handlers/object-types.js';
 import { getToolSchema } from '../../../src/handlers/schemas.js';
 import {
@@ -103,6 +103,19 @@ describe('registry sync — JSON-Schema enums equal the registry', () => {
   it('SAPWrite', () => {
     expect(typeEnum(onpremFull, 'SAPWrite')).toEqual([...SAPWRITE_TYPES_ONPREM]);
     expect(typeEnum(btpFull, 'SAPWrite')).toEqual([...SAPWRITE_TYPES_BTP]);
+  });
+  it.each([onpremFull, btpFull])('SAPWrite batch items on $systemType', (config) => {
+    const write = getToolDefinitions(config, true).find((tool) => tool.name === 'SAPWrite')!;
+    const props = (write.inputSchema as any).properties;
+    const excluded = new Set<string>(['TABL/DTT', ...SDO_TYPES]);
+    const expected = typeEnum(config, 'SAPWrite').filter((type) => !excluded.has(type));
+    expect(props.objects.items.properties.type.enum).toEqual(expected);
+
+    const schema = getToolSchema('SAPWrite', config.systemType === 'btp')!;
+    for (const type of [...expected, ...excluded]) {
+      const input = { action: 'batch_create', objects: [{ type, name: 'ZARC1_X' }] };
+      expect(schema.safeParse(input).success, type).toBe(!excluded.has(type));
+    }
   });
   it('SAPContext', () => {
     expect(typeEnum(onpremFull, 'SAPContext')).toEqual([...SAPCONTEXT_TYPES_ONPREM]);

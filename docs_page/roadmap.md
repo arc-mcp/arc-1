@@ -109,6 +109,7 @@ sequence.
 | [FEAT-70](#feat-70) | Additional table technical settings | P3 | S | Needs research | Object coverage |
 | [FEAT-72](#feat-72) | CDS index objects | P3 | M | Blocked | Object coverage |
 | [FEAT-73](#feat-73) | Additional server-driven object types | P3 | S | Needs research | Object coverage |
+| [FEAT-99](#feat-99) | Schema check for further JSON server-driven types | P3 | S | Needs research | Object coverage |
 | [FEAT-100](#feat-100) | Value helps and wider release coverage for API packages | P3 | S | Needs research | Object coverage |
 | [FEAT-78](#feat-78) | Table type access type and keys | P2 | M | Needs research | Object coverage |
 | [FEAT-09](#feat-09) | Cross Trace result reader | P2 | M | Needs research | Diagnostics |
@@ -421,8 +422,16 @@ The pre-delete case's forced read returned the creation template; persistence of
 inactive source was not checked. The control's delete hit a text-pool LOCK 404 until a later
 source update and activation, so only its activation succeeded without recovery.
 
-**Resume with.** Verify source persistence and default/active/inactive metadata across releases;
-trace the SAP response before changing package resolution. Preserve fail-closed package checks. Unique E2E
+Cause ([#1261](https://github.com/arc-mcp/arc-1/issues/1261)): the 7.50 ICM caches every 404 for
+60 seconds by default (`icm/HTTP/server_cache_0/ufo_codelist = 404`, `ufo_expiration = 60`) and
+repeats it for the exact URL, query string included, before ABAP is reached. A 7.50 ADT 404 carries
+no `sap-cache-control` header; 7.58 and 8.16 send `+0` and show no delay. A URL SAP has not seen is
+answered at once, which is why `?version=inactive` worked. ARC-1 adds a retry hint to such a
+not-found error; its own follow-up requests after a miss are still exposed.
+
+**Resume with.** Decide whether ARC-1 should repeat a 404 that lacks `sap-cache-control` once under
+a URL SAP has not seen (for example an extra query parameter), and verify that every affected ADT
+endpoint accepts it. Preserve fail-closed package checks. Unique E2E
 fixtures avoid the pre-delete, but do not fix this runtime gap; do not add a skip for it.
 
 <a id="compat-19"></a>
@@ -642,10 +651,13 @@ and revocation, and never cross users or fall back to `SAP_USER`.
 **Idea.** Qualify native tool discovery, two-user authorization and the intended VS Code assistant
 on a read-only gateway route. See the [Free pilot and repeatable tests](https://github.com/arc-mcp/arc-1/blob/main/docs/research/sap-mcp-gateway-retest.md).
 
-**Why it remains.** The Free pilot imported one tool from a separate schema catalog. The runtime
-JWT bearer destination invoked stock ARC-1 as the signed-in developer. VS Code’s native tool API
-and a local MCP client both read the class, with the mapped user confirmed in A4H workload statistics. The pilot
-covered one user and one version of the catalog. The Basic credential belongs only to discovery.
+**Why it remains.** The v0.9.27 Free pilot imported one tool from a separate schema catalog.
+The v1.10.1 retest published all twelve standard tools from a release-specific snapshot. VS Code
+invoked all twelve with the same developer’s read scope. Nine succeeded, including Git after
+a feature probe, and ARC-1 denied three for insufficient scope. A4H workload statistics confirmed
+the developer’s mapped ABAP user on the class read. Both runs used Basic authentication for
+catalog discovery and JWT bearer exchange at runtime. Native protected discovery, synchronization
+and a second user’s ABAP authorization decision still need live evidence.
 See the [source and validation boundary](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-21-sap-api-policy-custom-mcp.md#remote-mcp-gateway-validation-boundary).
 
 **Resume with.** One operator can qualify the assistant, refresh, tool filtering, errors and quotas
@@ -999,6 +1011,18 @@ is a reference for researching the remaining candidates, not a guarantee they sh
 **Resume with.** Discovery markers, metadata/source media types, create subtype, stateful CRUD,
 activation and read-back evidence for each remaining type. Measure schema cost and add candidates
 independently; do not infer their create subtype or source format from the family.
+
+<a id="feat-99"></a>
+### FEAT-99 — Schema check for further JSON server-driven types
+
+- **Priority / effort / status:** P3 / S / Needs research
+- **Category:** Object coverage
+
+**Idea.** Check `update` sources of further AFF-JSON server-driven types (for example DESD, EVTB, COTA, APLO, SAJC) against the schema SAP serves under `<object>/schema`, as SMBC does.
+
+**Why it remains.** On SAP_BASIS 816 SAP stored and activated an SMBC source with a value outside its schema and dropped the value without any message; ARC-1 now refuses such SMBC updates (`schemaCheck` in `SDO_REGISTRY`, `src/adt/object-schema.ts`). Whether the other JSON types serve the same schema resource and drop invalid values the same way has not been checked.
+
+**Resume with.** Per type: confirm the `objecttypeschema` link and media type in the metadata, capture one save with an invalid enum value and its read-back, then set `schemaCheck` on the registry entry with a test.
 
 <a id="feat-100"></a>
 ### FEAT-100 — Value helps and wider release coverage for API packages

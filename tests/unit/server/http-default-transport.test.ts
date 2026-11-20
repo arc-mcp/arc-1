@@ -145,15 +145,25 @@ async function startFactory(allowedPackages: string[], pkg: string) {
         login,
       );
     }
-    if (String(url).includes('/repository/nodestructure') && String(url).includes('parent_name=ZROOT')) {
+    // Package metadata for the allowedPackages chain walk: <pkg> sits under ZROOT while inAllowedTree.
+    if (new URL(String(url)).pathname.toUpperCase() === `/SAP/BC/ADT/PACKAGES/${pkg.toUpperCase()}`) {
       return mockResponse(
         200,
-        `<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><TREE_CONTENT>${sap.inAllowedTree ? `<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>${pkg}</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>` : ''}</TREE_CONTENT></DATA></asx:values></asx:abap>`,
+        `<pak:package xmlns:pak="http://www.sap.com/adt/packages" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${pkg}"><pak:superPackage adtcore:name="${sap.inAllowedTree ? 'ZROOT' : 'ZELSEWHERE'}"/></pak:package>`,
         { 'x-csrf-token': 'T' },
         login,
       );
     }
-    if (String(url).includes('/repository/nodestructure')) return mockResponse(200, '', { 'x-csrf-token': 'T' });
+    const parent = sap.inAllowedTree ? 'ZROOT' : 'ZELSEWHERE';
+    if (new URL(String(url)).pathname === `/sap/bc/adt/packages/${parent}`) {
+      return mockResponse(
+        200,
+        `<pak:package xmlns:pak="http://www.sap.com/adt/packages" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${parent}"/>`,
+        {},
+        login,
+      );
+    }
+    if (String(url).includes('/sap/bc/adt/packages/')) return mockResponse(404, 'not found');
     if (String(url).includes('_action=LOCK')) {
       return mockResponse(200, '<asx:values><LOCK_HANDLE>LH7</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {}, login);
     }
@@ -205,7 +215,7 @@ it('shares the SAP login across HTTP requests but re-resolves TABL routes per re
 it('resolves the SAP_ALLOWED_PACKAGES subtree afresh for every HTTP request', async () => {
   // A package re-parented in SAP must affect the next request, not wait out a process-wide cache TTL.
   const { sap, callTable } = await startFactory(['ZROOT/**'], 'ZCHILD');
-  const hierarchyFetches = () => sap.calls.filter((c) => c.url.includes('/repository/nodestructure')).length;
+  const hierarchyFetches = () => sap.calls.filter((c) => c.url.includes('/sap/bc/adt/packages/')).length;
 
   expect((await callTable('update')).isError).not.toBe(true);
   expect(hierarchyFetches()).toBeGreaterThan(0);

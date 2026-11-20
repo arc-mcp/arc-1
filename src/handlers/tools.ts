@@ -29,12 +29,12 @@ import {
 import { SAPWRITE_DESC_BTP, SAPWRITE_DESC_ONPREM } from './tool-descriptions.js';
 import {
   ATC_BATCH_TYPES_BTP,
-  isBatchCreatable,
   isGitToolVisible,
   SAPCONTEXT_TYPES_BTP,
   SAPCONTEXT_TYPES_ONPREM,
   SAPREAD_TYPES_BTP,
   SAPREAD_TYPES_ONPREM,
+  SAPWRITE_BATCH_TYPES,
   SAPWRITE_TYPES_BTP,
   SAPWRITE_TYPES_ONPREM,
 } from './tool-registry.js';
@@ -727,8 +727,7 @@ export function getToolDefinitions(
           },
           description: {
             type: 'string',
-            description:
-              'Object description for create action (defaults to name if omitted). Max 60 chars for most types.',
+            description: 'Object description for create (default: name). Max 60 chars for most types.',
           },
           package: {
             type: 'string',
@@ -791,7 +790,7 @@ export function getToolDefinitions(
             items: {
               type: 'object',
               properties: {
-                number: { type: 'string', description: 'Message number (e.g., "001")' },
+                number: { type: 'string', description: 'Message number 000-999 (e.g., "001")' },
                 shortText: { type: 'string', description: 'Message short text (use & for placeholders: "&1", "&2")' },
               },
               required: ['number', 'shortText'],
@@ -901,8 +900,8 @@ export function getToolDefinitions(
               properties: {
                 type: {
                   type: 'string',
-                  enum: (btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM).filter(isBatchCreatable),
-                  description: 'Creatable object type; technical settings TABL/DTT are update-only',
+                  enum: btp ? SAPWRITE_BATCH_TYPES.btp : SAPWRITE_BATCH_TYPES.onprem,
+                  description: 'Use single create for server-driven types. TABL/DTT is update-only.',
                 },
                 name: { type: 'string', description: 'Object name' },
                 source: { type: 'string', description: 'ABAP source code (optional — some objects have no source)' },
