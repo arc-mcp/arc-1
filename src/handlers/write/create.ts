@@ -2,6 +2,7 @@
  * SAPWrite actions — create + batch_create.
  */
 
+import { apiCatalogAvailable, apiCatalogUnavailableMessage } from '../../adt/api-packages.js';
 import {
   createObject,
   lockObject,
@@ -606,6 +607,11 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       return errorResult(
         `"refObjectType" is required for SKTD/KTD create — the ADT type+subtype of the parent object being documented (for example: ${KTD_REF_OBJECT_TYPES_HINT}).`,
       );
+    }
+    if (refType === 'SOD1' || refType === 'SOD2') {
+      if (resolveWriteSystemType(config, client) === 'btp')
+        return errorResult(`KTD creation on ${refType} is supported only on-premise.`);
+      if (!apiCatalogAvailable(client.http, refType)) return errorResult(apiCatalogUnavailableMessage(refType));
     }
     const refTypeError = validateKtdRefObjectType(refType);
     if (refTypeError) return errorResult(refTypeError);

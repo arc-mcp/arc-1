@@ -395,6 +395,31 @@ describe('SAPWrite type=SOD1/SOD2', () => {
 });
 
 describe('SAPWrite type=SKTD on SOD1/SOD2 parents', () => {
+  it.each(['btp', 'onprem'] as const)('refuses unavailable catalog parents on %s before create', async (systemType) => {
+    const calls = mockSap();
+    const client = createClient();
+    if (systemType === 'onprem') client.http.setDiscoveryMap(new Map([['/sap/bc/adt/oo/classes', []]]));
+    const result = await handleToolCall(client, { ...DEFAULT_CONFIG, systemType }, 'SAPWrite', {
+      type: 'SKTD',
+      action: 'create',
+      name: 'ZTEST',
+      package: '$TMP',
+      refObjectType: 'SOD2',
+    });
+    expect(result.isError).toBe(true);
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+    if (systemType === 'btp') {
+      for (const tool of ['SAPRead', 'SAPWrite']) {
+        const denied = await handleToolCall(client, { ...DEFAULT_CONFIG, systemType }, tool, {
+          type: 'SOD2',
+          name: 'ZTEST',
+          ...(tool === 'SAPWrite' ? { action: 'delete' } : {}),
+        });
+        expect(denied.isError).toBe(true);
+      }
+      expect(calls).toHaveLength(0);
+    }
+  });
   it.each([
     ['SOD1', 'Z_DEMO_API_PACKAGE', SOD1_URL],
     ['SOD2', 'Z_UI_DEMO_DOC_O4_0001', SOD2_URL],
