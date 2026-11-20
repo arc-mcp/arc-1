@@ -225,11 +225,13 @@ function validateSapReadInput(
       });
     }
 
-    if (input.type === 'DDLS' && !SAPREAD_DDLS_INCLUDES.includes(include as (typeof SAPREAD_DDLS_INCLUDES)[number])) {
+    const validIncludes: readonly string[] | undefined =
+      input.type === 'DDLS' ? SAPREAD_DDLS_INCLUDES : input.type === 'SRVB' ? ['service_info'] : undefined;
+    if (validIncludes && !validIncludes.includes(include)) {
       ctx.addIssue({
         code: 'custom',
         path: ['include'],
-        message: `Invalid include value "${input.include}" for type DDLS. Valid values: ${SAPREAD_DDLS_INCLUDES.join(', ')}`,
+        message: `Invalid include value "${input.include}" for type ${input.type}. Valid values: ${validIncludes.join(', ')}`,
       });
     }
   }

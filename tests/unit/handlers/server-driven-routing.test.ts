@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
-import { SDO_REGISTRY, serverDrivenObjectUrl } from '../../../src/adt/server-driven.js';
+import { getServerDrivenObject, SDO_REGISTRY, serverDrivenObjectUrl } from '../../../src/adt/server-driven.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
-import { mockResponse } from '../../helpers/mock-fetch.js';
+import { isDiscoveryRequest, mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
@@ -33,6 +33,35 @@ beforeEach(() => {
 });
 
 describe('shared server-driven routing', () => {
+  it.each([200, 403])('reads COTA using one caller discovery GET when cold (HTTP %i)', async (status) => {
+    const caller = client();
+    const href = '/sap/bc/adt/conn/commtargets';
+    const v2 = 'application/vnd.sap.adt.blues.v2+xml';
+    const doc = `<app:service xmlns:app="http://www.w3.org/2007/app"><app:workspace><app:collection href="${href}"><app:accept>${v2}</app:accept></app:collection></app:workspace></app:service>`;
+    mockFetch.mockImplementation(async (url) =>
+      isDiscoveryRequest(url)
+        ? mockResponse(status, status === 200 ? doc : '')
+        : mockResponse(
+            200,
+            new URL(url).pathname.endsWith('/source/main') ? '{}' : '<blue:blueSource adtcore:type="COTA/TYP"/>',
+          ),
+    );
+    const result = await handleToolCall(caller, DEFAULT_CONFIG, 'SAPRead', { type: 'COTA', name: 'ZOBJ' });
+    expect(result.isError).toBeFalsy();
+    expect(mockFetch.mock.calls.filter(([url]) => isDiscoveryRequest(url))).toHaveLength(1);
+    const meta = mockFetch.mock.calls.find(([url]) => new URL(url).pathname === `${href}/ZOBJ`);
+    expect(meta?.[1].headers.Accept).toBe(status === 200 ? v2 : 'application/vnd.sap.adt.blues.v1+xml');
+    expect(caller.http.hasDiscoveryData()).toBe(false);
+
+    // Direct ADT callers have no preceding handler support check.
+    mockFetch.mockClear();
+    await getServerDrivenObject(caller.http, caller.safety, 'COTA', 'ZOBJ');
+    expect(mockFetch.mock.calls.filter(([url]) => isDiscoveryRequest(url))).toHaveLength(1);
+    expect(mockFetch.mock.calls.find(([url]) => new URL(url).pathname === `${href}/ZOBJ`)?.[1].headers.Accept).toBe(
+      meta?.[1].headers.Accept,
+    );
+  });
+
   it('derives every registered path and encodes namespaced names', () => {
     for (const [type, entry] of Object.entries(SDO_REGISTRY)) {
       expect(objectBasePath(type)).toBe(`${entry.href}/`);

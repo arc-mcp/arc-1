@@ -16,7 +16,6 @@ import {
   ensureServerDrivenSupport,
   getServerDrivenObject,
   isServerDrivenObjectType,
-  serverDrivenMetadataContentType,
   serverDrivenUnavailableMessage,
 } from '../adt/server-driven.js';
 import { getTableSettings, tableSettingsParentUrl, tableSettingsUrl } from '../adt/table-settings.js';
@@ -248,10 +247,13 @@ export async function handleSAPActivate(
         rawObjects.map((o) => normalizeObjectType(String(o.type ?? type))).filter((t) => isServerDrivenObjectType(t)),
       ),
     ];
+    const metadataTypes = new Map<string, string>();
     for (const sdoType of batchSdoTypes) {
-      if (!(await ensureServerDrivenSupport(client.http, client.safety, sdoType))) {
+      const support = await ensureServerDrivenSupport(client.http, client.safety, sdoType);
+      if (!support) {
         return errorResult(serverDrivenUnavailableMessage('SAPActivate', sdoType));
       }
+      metadataTypes.set(sdoType, support.metadataContentType);
     }
     // Resolve URLs sequentially. For TABL we await the URL resolver so DDIC
     // structures (which live at /sap/bc/adt/ddic/structures/) are addressed
@@ -308,9 +310,7 @@ export async function handleSAPActivate(
         client,
         o.type === 'TABL/DTT' ? tableSettingsParentUrl(o.name) : o.url,
         `Activation of ${o.type} '${o.name}'`,
-        // Mirror the single-object call: SDO metadata (and its packageRef) is negotiated with
-        // the type's own content type rather than relying on discovery-driven negotiation.
-        isServerDrivenObjectType(o.type) ? serverDrivenMetadataContentType(o.type) : undefined,
+        metadataTypes.get(o.type),
         { includeGroupHint: true },
       );
     }
@@ -368,6 +368,7 @@ export async function handleSAPActivate(
   // (issue #250) — `objectBasePath('FUNC')` deliberately throws so generic
   // builders fail loudly. Auto-resolve the group when omitted.
   let objectUrl: string;
+  let metadataType: string | undefined;
   if (type === 'REPT') assertTextElementsService(client.http, 'PROG');
   if (type === 'TABL/DTT') {
     objectUrl = await settingsActivationUrl(client, name);
@@ -406,9 +407,11 @@ export async function handleSAPActivate(
     objectUrl = group ? functionGroupIncludeObjectUrl(group, name) : objectUrlForType(type, name);
   } else if (isServerDrivenObjectType(type)) {
     // A registered path does not prove the target supports activation for this type.
-    if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
+    const support = await ensureServerDrivenSupport(client.http, client.safety, type);
+    if (!support) {
       return errorResult(serverDrivenUnavailableMessage('SAPActivate', type));
     }
+    metadataType = support.metadataContentType;
     objectUrl = objectUrlForType(type, name);
   } else {
     objectUrl = objectUrlForType(type, name);
@@ -423,7 +426,7 @@ export async function handleSAPActivate(
     client,
     type === 'TABL/DTT' ? tableSettingsParentUrl(name) : objectUrl,
     `Activation of ${type} '${name}'`,
-    isServerDrivenObjectType(type) ? serverDrivenMetadataContentType(type) : undefined,
+    metadataType,
     { includeGroupHint: true },
   );
 
