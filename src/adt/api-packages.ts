@@ -138,11 +138,16 @@ export async function getApiPackage(
   checkOperation(safety, OperationType.Read, 'GetSOD1');
   const metadata = await http.get(apiCatalogObjectUrl('SOD1', name), { Accept: BLUES_V1 });
   const info = parseApiPackage(metadata.body);
+  return { ...info, assignments: await getAssignments(http, safety, name) };
+}
+
+async function getAssignments(http: AdtHttpClient, safety: SafetyConfig, name: string) {
+  checkOperation(safety, OperationType.Read, 'GetSOD1Assignments');
   const listing = await http.get(
     `${COLLECTIONS.SOD1}/$packageassignments?name=${encodeURIComponent(name.toUpperCase())}`,
     { Accept: 'application/vnd.sap.adt.oda.packageassignments+xml' },
   );
-  return { ...info, assignments: parseApiPackageAssignments(listing.body) };
+  return parseApiPackageAssignments(listing.body);
 }
 
 // ─── Write input ────────────────────────────────────────────────────
@@ -555,9 +560,17 @@ export async function deleteApiCatalogObject(
     { retryTransientErrors: false },
   );
   const deleted = singleObject(result.body, 'deletionResult');
-  if (deleted?.['@_isDeleted'] !== 'true') {
-    const reason = deleted ? messagesOf(deleted).join(' ') : '';
-    throw new AdtError(`SAP did not delete ${type} ${name}${reason ? `: ${reason}` : '.'}`);
+  if (deleted?.['@_uri'] !== url || !['true', 'false'].includes(text(deleted['@_isDeleted'])))
+    throw new AdtError(
+      `SAP did not confirm the deletion outcome for ${type} ${name}. Check the object before retrying.`,
+    );
+  if (deleted['@_isDeleted'] === 'false') {
+    const reason = messagesOf(deleted).join(' ');
+    const assignments = type === 'SOD1' ? await getAssignments(http, safety, name).catch(() => []) : [];
+    const names = assignments.map((a) => a.name).filter(Boolean);
+    throw new AdtError(
+      `SAP did not delete ${type} ${name}${reason ? `: ${reason}` : '.'}${names.length ? ` Current assignments: ${names.join(', ')}.` : ''}`,
+    );
   }
   return { transport: effectiveTransport };
 }

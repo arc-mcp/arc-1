@@ -32,6 +32,7 @@ function mockSap(
   routes: {
     check?: string;
     deleted?: string;
+    assignments?: string;
     putError?: string;
     putStatus?: number;
     metadataStatus?: number;
@@ -75,7 +76,11 @@ function mockSap(
       if (method === 'GET' && u.pathname === SOD2_URL)
         return mockResponse(200, fixture('sod2-metadata-odatav4.xml'), csrf);
       if (method === 'GET' && u.pathname === '/sap/bc/adt/aps/com/sod1/$packageassignments')
-        return mockResponse(200, '<sod1:packageAssignments xmlns:sod1="http://www.sap.com/oda/sod1"/>', csrf);
+        return mockResponse(
+          200,
+          routes.assignments ?? '<sod1:packageAssignments xmlns:sod1="http://www.sap.com/oda/sod1"/>',
+          csrf,
+        );
       if (method === 'POST' && !u.search.includes('_action')) return mockResponse(201, '', csrf);
       return mockResponse(200, '', csrf);
     },
@@ -293,6 +298,25 @@ describe('SAPWrite type=SOD1/SOD2', () => {
       `<del:object adtcore:uri="${SOD2_URL}"><del:transportNumber>DEVK900001</del:transportNumber></del:object>`,
     );
     expect(calls.some((c) => c.method === 'DELETE' || c.url.includes('_action=LOCK'))).toBe(false);
+  });
+
+  it('adds current assignment names to a refused package deletion', async () => {
+    mockSap({
+      check: deletionCheck(SOD1_URL),
+      deleted: deletionResult(SOD1_URL, false, 'Prerequisites not met'),
+      assignments:
+        '<packageAssignments><packageAssignment><name>Z_ONE</name></packageAssignment><packageAssignment><name>Z_TWO</name></packageAssignment></packageAssignments>',
+    });
+    const result = await write({ action: 'delete', type: 'SOD1', name: 'Z_DEMO_API_PACKAGE' });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain('Prerequisites not met Current assignments: Z_ONE, Z_TWO.');
+  });
+
+  it('does not report another object’s deletion as success', async () => {
+    mockSap({ deleted: deletionResult(SOD1_URL, true) });
+    const result = await write({ action: 'delete', type: 'SOD2', name: 'Z_UI_DEMO_DOC_O4_0001' });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain('did not confirm');
   });
 
   it('refuses to delete an assignment that still has a KTD', async () => {
