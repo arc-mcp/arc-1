@@ -67,6 +67,11 @@ async function withSap(
       res.end();
       return;
     }
+    if (req.method === 'GET' && req.url?.startsWith('/sap/bc/adt/core/http/systeminformation')) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
     state.posts++;
     if (state.exists) {
       res.writeHead(400);

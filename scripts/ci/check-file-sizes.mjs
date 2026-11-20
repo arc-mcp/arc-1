@@ -91,7 +91,7 @@ const BUDGETS = {
   'src/adt/http.ts': 1644,
   'tests/unit/adt/http.test.ts': 3008, // Same-cookie logoff must omit SAML Authorization.
   // #817: reject absent CTS documents at the existing list/get parser boundary.
-  'src/adt/transport.ts': 1477, // Exhaustive lock-holder parsing extracted to transport-locks.ts (#1080).
+  'src/adt/transport.ts': 1489, // Includes best-effort ABAP task-owner resolution for newrequest.
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed
   // XSUAA startup from main.
   // PP pool wiring and secret-free reuse audit status; logic lives in per-user-transport.ts (#1085).

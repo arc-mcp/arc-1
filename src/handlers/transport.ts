@@ -29,6 +29,7 @@ import {
 import type { InactiveObject, ObjectTransportHistory, TransportReleaseReport, TransportRequest } from '../adt/types.js';
 import { logger } from '../server/logger.js';
 import type { ServerConfig } from '../server/types.js';
+import { getCachedFeatures } from './feature-cache.js';
 import { resolveIncludeGroup } from './include-group.js';
 import { functionGroupObjectUrl, functionModuleObjectUrl, objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
@@ -287,7 +288,8 @@ export async function handleSAPTransport(
             'works when CTC and the target group are configured.';
 
       let id: string;
-      if (explicitTarget || requestType === 'W') {
+      const newRequest = Boolean(explicitTarget) || requestType === 'W';
+      if (newRequest) {
         // Discovery-gate first — the same capability SAP's own Eclipse client checks: the TM
         // resource that sets an explicit target is advertised in ADT discovery only on releases
         // that implement it (the transportorganizer Accept type on cts/transportrequests). When
@@ -348,27 +350,35 @@ export async function handleSAPTransport(
       const target = created?.target?.trim() ?? '';
       const targetDesc = created?.targetDesc?.trim() ?? '';
 
+      const tasks = !newRequest
+        ? ''
+        : !created
+          ? '\nTask count unavailable.'
+          : `\nTasks: ${created.tasks.length}${created.tasks.length === 0 ? '. No task was created.' : ''}`;
+      const heading = `Created transport request: ${id}${tasks}`;
+
       // Only a Customizing create is verified; a Workbench create keeps its result whatever the read-back reports.
       if (requestType === 'W') {
         if (created?.type !== 'W')
           return errorResult(
-            created?.type
+            (created?.type
               ? `SAP created transport request ${id} with type ${created.type}. Requested type was W.`
-              : `SAP created transport request ${id}, but its type could not be verified.`,
+              : `SAP created transport request ${id}, but its type could not be verified.`) + tasks,
           );
         return textResult(
-          `Created transport request: ${id}\nRequest type: W (Customizing)\nTransport target: ${target || '<none> (local)'}${targetDesc ? ` (${targetDesc})` : ''}`,
+          `${heading}\nRequest type: W (Customizing)\nTransport target: ${target || '<none> (local)'}${targetDesc ? ` (${targetDesc})` : ''}`,
         );
       }
-      if (!created) return textResult(`Created transport request: ${id}`);
+      if (!created) return textResult(heading);
       if (target) {
-        return textResult(
-          `Created transport request: ${id}\nTransport target: ${target}${targetDesc ? ` (${targetDesc})` : ''}`,
-        );
+        return textResult(`${heading}\nTransport target: ${target}${targetDesc ? ` (${targetDesc})` : ''}`);
       }
+      const local = `${heading}\nTransport target: <none>${targetDesc ? ` — "${targetDesc}"` : ''}. This is a LOCAL request — it cannot be transported onward.`;
+      if ((config.systemType === 'auto' ? getCachedFeatures()?.systemType : config.systemType) === 'btp')
+        return textResult(`${local}\nUse SAPTransport(action="targets") to list available transport targets.`);
       return textResult(
-        `Created transport request: ${id}\n` +
-          `Transport target: <none>${targetDesc ? ` — "${targetDesc}"` : ''}. This is a LOCAL request — it cannot be transported onward.\n\n` +
+        local +
+          '\n\n' +
           'To create a request that targets another system, either:\n' +
           '  • set an explicit target — pass target=<system | system.client | /group/> (e.g. target="/TRG/" or "C11"); ' +
           'the group and system.client forms require extended transport control (CTC) to be active; or\n' +

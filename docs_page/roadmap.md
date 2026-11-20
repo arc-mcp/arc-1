@@ -93,6 +93,7 @@ sequence.
 | [COMPAT-22](#compat-22) | Integration Suite remote MCP discovery and cross-user validation | P2 | M | Needs research | Compatibility |
 | [COMPAT-23](#compat-23) | Shared reader for function-group object URIs | P2 | M | Ready | Compatibility |
 | [COMPAT-24](#compat-24) | Uniform not-found for reads of deleted objects | P3 | S | Needs research | Compatibility |
+| [COMPAT-25](#compat-25) | Resolve the BTP package responsible from ADT system information | P2 | S | Ready | Compatibility |
 | [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
 | [FEAT-85](#feat-85) | Set the ABAP language version of packages and objects | P1 | M | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
@@ -711,6 +712,17 @@ The checklist therefore accepts any absence response corroborated by an exact `S
 **Resume with.** Capture each type's native missing-object response on 7.50/7.58/8.16, then map
 only proven shapes to one not-found result. Keep authorization and server errors distinct from
 absence; never infer absence from an unclassified failure.
+
+<a id="compat-25"></a>
+### COMPAT-25 — Resolve the BTP package responsible from ADT system information
+
+**Priority:** P2 · **Effort:** S · **Status:** Ready · **Category:** Compatibility
+
+A first package create on BTP can require an explicit internal ABAP user. H01 returns that user in
+`userName` from `GET /sap/bc/adt/core/http/systeminformation` with Accept
+`application/vnd.sap.adt.core.http.systeminformation.v1+json`. When next changing BTP package
+creation, use it when no responsible was supplied and verify a fresh-session create under ZLOCAL.
+Preserve the existing fallback when the endpoint is unavailable.
 
 ## Developer workflows
 

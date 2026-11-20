@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
-import { createClient, mockFetch } from './setup-undici-mock.js';
+import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const create = (args: Record<string, unknown> = {}, client = createClient()) =>
@@ -34,6 +34,53 @@ describe('CTS request category on create', () => {
       expect(new URL(mockFetch.mock.calls.at(-1)![0]).pathname).toBe(`/sap/bc/adt/cts/transportrequests/${id}`);
     },
   );
+
+  it.each([
+    { configured: true, info: '', status: 404, owner: 'admin' },
+    { configured: false, info: '{"userName":"CB0000000001"}', status: 200, owner: 'CB0000000001' },
+    { configured: false, info: '', status: 404, owner: '' },
+    { configured: false, info: '{"userName":" "}', status: 200, owner: '' },
+  ])(
+    'uses the SAP task owner and reports the read-back ($configured, $status, $owner)',
+    async ({ configured, info, status, owner }) => {
+      const client = configured
+        ? createClient()
+        : new AdtClient({ baseUrl: 'http://sap:8000', username: '', password: '', safety: createClient().safety });
+      mockFetch.mockImplementation(async (url) => {
+        if (new URL(url).pathname.endsWith('/systeminformation')) return mockResponse(status, info);
+        const task = owner ? '<tm:task tm:number="DEVK900002"/>' : '';
+        return mockResponse(200, xml('W').replace('/></tm:root>', `>${task}</tm:request></tm:root>`), {
+          'x-csrf-token': 'T',
+        });
+      });
+      const result = await create({}, client);
+      expect(result.isError).toBeFalsy();
+      const lookups = mockFetch.mock.calls.filter(
+        ([url]) => new URL(url).pathname === '/sap/bc/adt/core/http/systeminformation',
+      );
+      expect(lookups).toHaveLength(configured ? 0 : 1);
+      if (!configured)
+        expect(lookups[0]?.[1]).toMatchObject({
+          method: 'GET',
+          headers: { Accept: 'application/vnd.sap.adt.core.http.systeminformation.v1+json' },
+        });
+      const post = mockFetch.mock.calls.find(([, opts]) => opts.method === 'POST');
+      expect(post?.[1].body).toContain(owner ? `<tm:task tm:owner="${owner}"/>` : '<tm:task/>');
+      expect(result.content[0].text).toContain(owner ? 'Tasks: 1' : 'Tasks: 0. No task was created.');
+      expect(result.content[0].text).toContain(id);
+    },
+  );
+
+  it('gives cloud guidance for a local Workbench request', async () => {
+    mockFetch.mockResolvedValue(mockResponse(200, xml('K'), { 'x-csrf-token': 'T' }));
+    const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, systemType: 'btp' }, 'SAPTransport', {
+      action: 'create',
+      description: 'ZARC1_CX',
+      target: 'DEV',
+    });
+    expect(result.content[0].text).toContain('Tasks: 0. No task was created.');
+    expect(result.content[0].text).not.toMatch(/Basis task|SE10/);
+  });
 
   it.each([{ package: 'ZTEST' }, { transportLayer: 'ZDEV' }])(
     'rejects Workbench routing before any SAP call',

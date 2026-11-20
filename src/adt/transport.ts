@@ -290,6 +290,18 @@ export async function createTransportWithTarget(
 ): Promise<string> {
   checkTransport(safety, '', 'CreateTransport', true);
 
+  if (!owner) {
+    checkOperation(safety, OperationType.Read, 'GetSystemInformation');
+    try {
+      const response = await http.get('/sap/bc/adt/core/http/systeminformation', {
+        Accept: 'application/vnd.sap.adt.core.http.systeminformation.v1+json',
+      });
+      const user = JSON.parse(response.body)?.userName;
+      if (typeof user === 'string') owner = user.trim();
+    } catch {
+      // Owner lookup is best effort. Report the tasks SAP actually creates on read-back.
+    }
+  }
   const ownerAttr = owner ? ` tm:owner="${escapeXmlAttr(owner)}"` : '';
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <tm:root xmlns:tm="${CTS_NAMESPACE_TM}" tm:useraction="newrequest">
