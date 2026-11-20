@@ -266,9 +266,10 @@ export async function handleSAPTransport(
       if (!description) return errorResult('Description is required for "create" action.');
       // Distinguish "target omitted" from "target present but empty": an explicit but
       // blank target is a caller mistake, not a request to use the package/layer path.
+      const requestType = args.requestType === 'W' ? 'W' : 'K';
       const targetProvided = args.target !== undefined && args.target !== null;
       const explicitTarget = targetProvided ? String(args.target).trim() : undefined;
-      if (targetProvided && !explicitTarget) {
+      if (requestType === 'K' && targetProvided && !explicitTarget) {
         return errorResult(
           '"target" was provided but is empty. Pass a transport target — a system (C11), ' +
             'system.client (C11.021), or target group (/GROUP/) — or omit target to let SAP resolve it from the package.',
@@ -277,14 +278,16 @@ export async function handleSAPTransport(
 
       // Shared guidance when this release's ADT stack can't set an explicit target.
       const targetUnsupportedMsg =
-        "This system's ADT stack does not support setting an explicit transport target — the tm:root/newrequest " +
-        'action is not implemented (an ADT-framework limitation on SAP_BASIS 7.50, verified on SP02 and SP32, ' +
-        'independent of STMS/CTC config). It works on newer ABAP Platform / S/4HANA releases. Workaround here: ' +
-        'create the request without "target", then set the Transportziel manually in SE09/SE10 (SAP GUI), which ' +
-        'works when CTC and the target group are configured.';
+        requestType === 'W'
+          ? 'This system cannot create Customizing requests through ADT. Create the request in SE09/SE10.'
+          : "This system's ADT stack does not support setting an explicit transport target — the tm:root/newrequest " +
+            'action is not implemented (an ADT-framework limitation on SAP_BASIS 7.50, verified on SP02 and SP32, ' +
+            'independent of STMS/CTC config). It works on newer ABAP Platform / S/4HANA releases. Workaround here: ' +
+            'create the request without "target", then set the Transportziel manually in SE09/SE10 (SAP GUI), which ' +
+            'works when CTC and the target group are configured.';
 
       let id: string;
-      if (explicitTarget) {
+      if (explicitTarget || requestType === 'W') {
         // Discovery-gate first — the same capability SAP's own Eclipse client checks: the TM
         // resource that sets an explicit target is advertised in ADT discovery only on releases
         // that implement it (the transportorganizer Accept type on cts/transportrequests). When
@@ -302,8 +305,9 @@ export async function handleSAPTransport(
             client.http,
             client.safety,
             description,
-            explicitTarget,
+            explicitTarget ?? '',
             client.username,
+            requestType,
           );
         } catch (err) {
           if (err instanceof AdtApiError && (err.statusCode === 400 || err.statusCode === 404)) {
@@ -344,6 +348,18 @@ export async function handleSAPTransport(
       const target = created?.target?.trim() ?? '';
       const targetDesc = created?.targetDesc?.trim() ?? '';
 
+      if (created?.type && created.type !== requestType) {
+        return errorResult(
+          `SAP created transport request ${id} with type ${created.type}. Requested type was ${requestType}.`,
+        );
+      }
+      if (requestType === 'W') {
+        if (!created?.type)
+          return errorResult(`SAP created transport request ${id}, but its type could not be verified.`);
+        return textResult(
+          `Created transport request: ${id}\nRequest type: W (Customizing)\nTransport target: ${target || '<none> (local)'}${targetDesc ? ` (${targetDesc})` : ''}`,
+        );
+      }
       if (!created) return textResult(`Created transport request: ${id}`);
       if (target) {
         return textResult(

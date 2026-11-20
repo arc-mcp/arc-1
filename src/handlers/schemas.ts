@@ -1353,6 +1353,7 @@ export const SAPTransportSchema = z
     pgmid: z.string().optional(),
     package: z.string().optional(),
     target: z.string().optional(),
+    requestType: z.enum(['K', 'W']).optional(),
     transportLayer: z.string().optional(),
     user: z.string().optional(),
     status: z.string().optional(),
@@ -1376,6 +1377,16 @@ export const SAPTransportSchema = z
   })
   .strict()
   .superRefine((input, ctx) => {
+    if (input.requestType !== undefined && input.action !== 'create') {
+      ctx.addIssue({ code: 'custom', path: ['requestType'], message: 'requestType is only supported for create.' });
+    }
+    if (input.requestType === 'W' && (input.package !== undefined || input.transportLayer !== undefined)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['requestType'],
+        message: 'package and transportLayer apply to Workbench requests only. Use target to set the destination.',
+      });
+    }
     if (input.timeoutSeconds !== undefined && input.action !== 'release' && input.action !== 'release_recursive') {
       ctx.addIssue({
         code: 'custom',

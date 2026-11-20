@@ -44,6 +44,7 @@ const MULTI_TARGET_ACTION_RULES = new Map<
         'pgmid',
         'target',
         'transportLayer',
+        'requestType',
         'owner',
         'recursive',
         'removeLockedObjects',

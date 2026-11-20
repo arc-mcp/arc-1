@@ -140,16 +140,16 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toEqual(['list', 'get', 'diff', 'check', 'history', 'layers', 'targets']);
   });
 
-  it('SAPTransport exposes create/modify checks and documents Workbench-only request creation', () => {
+  it('SAPTransport exposes create/modify checks and documents both request categories', () => {
     const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, allowTransportWrites: true });
     const sapTransport = tools.find((tool) => tool.name === 'SAPTransport')!;
     const schema = sapTransport.inputSchema as Record<string, any>;
 
     expect(schema.properties.operation.enum).toEqual(['create', 'modify']);
     expect(schema.properties.operation.description).toContain('default');
-    expect(schema.properties.package.description).toContain('Workbench type K');
-    expect(schema.properties.type.description).toContain('Workbench (K)');
-    expect(sapTransport.description).toContain('always a Workbench (K) request');
+    expect(schema.properties.requestType.enum).toEqual(['K', 'W']);
+    expect(schema.properties.requestType.description).toContain('Workbench (default)');
+    expect(sapTransport.description).toContain('Customizing W');
   });
 
   it('SAPTransport documents history as current assignment status, not complete history', () => {

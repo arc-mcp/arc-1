@@ -150,14 +150,14 @@ const SAPSEARCH_DESC_BTP =
 // ─── SAPTransport ───────────────────────────────────────────────────
 const SAPTRANSPORT_DESC_ONPREM =
   'Manage CTS transport requests (SE09/SE10). Actions: list (current user, modifiable), get (tasks + objects), ' +
-  'create (always a Workbench (K) request — the package/target sets target & layer, not the request category; optional explicit target), ' +
+  'create (Workbench K or Customizing W; optional target), ' +
   'release, delete, remove_object (keep the request), reassign (change owner), release_recursive (tasks then parent), ' +
   'check (does a package need a transport — type, name, package), history (legacy name: current object lock plus assignment candidates — type, name; not complete transport history; read-only, no write scope needed). ' +
   'IDs look like A4HK900123. Status: D/L=modifiable, O/P=releasing, R/N=released.';
 
 const SAPTRANSPORT_DESC_BTP =
   'Manage transport requests (BTP ABAP Environment, SE09/SE10). Actions: list (current user, modifiable), get (tasks + objects), ' +
-  'create (always a Workbench (K) request — the package/target sets target & layer; optional explicit target), ' +
+  'create (Workbench K or Customizing W; optional target), ' +
   'release, delete, remove_object (keep the request), reassign (change owner), release_recursive (tasks then parent), ' +
   'check (does a package need a transport — type, name, package), history (legacy name: current object lock plus assignment candidates — type, name; not complete transport history; read-only). ' +
   'On BTP, release triggers a gCTS push to the software-component Git repo; import is via Manage Software Components / cTMS, not this tool.';
@@ -1602,7 +1602,7 @@ export function getToolDefinitions(
               "list: show transports (defaults to current user, modifiable only). Pass summary=true for a headers-only overview that omits each transport's object lists (keeps an objectCount) — far cheaper when many transports are open. " +
               'get: fetch transport details including tasks and objects. ' +
               'diff: source review. Released requests need attributed snapshots; open requests use active source, never drafts. baselineStatus: prior-revision=attributed pair; prior-revision-unverified=unattributed candidate; no-prior-snapshot=missing history, NOT creation; baseline-ambiguous=uncertain predecessor; baseline-unavailable=no comparison, NOT unchanged. Non-source gaps are explicit. Follow nextOffset; pages are not snapshots. ' +
-              'create: create a new transport request (description required). To target another system, pass target=<system | system.client | /group/> (the Transportziel / TR_TARGET, e.g. "/TRG/" or "C11"; the group and system.client forms require extended transport control to be active). Otherwise omit target and pass an optional package to let SAP infer the route (defaults to $TMP). The response reports the resolved transport target; an empty target means a LOCAL request (cannot be transported onward). ' +
+              'create: create a new transport request (description required). To target another system, pass target=<system | system.client | /group/> (the Transportziel / TR_TARGET, e.g. "/TRG/" or "C11"; the group and system.client forms require extended transport control to be active). For Workbench requests SAP can infer the route from the package (default $TMP). The response reports the resolved transport target; an empty target means a LOCAL request (cannot be transported onward). ' +
               'release: release a single transport or task. ' +
               'delete: delete a transport (use recursive=true to delete tasks first; removeLockedObjects=true to strip locked objects that otherwise block deletion with "...contains locked objects"). ' +
               'remove_object: remove one object from a request, keeping the request — needs the full key pgmid+type+name. ' +
@@ -1620,12 +1620,16 @@ export function getToolDefinitions(
           },
           offset: { type: 'number', description: 'diff: first object to diff (default 0).' },
           limit: { type: 'number', description: 'diff: objects per call (default 20, max 40); page with offset.' },
-          description: { type: 'string', description: 'Transport description text (required for create)' },
+          description: { type: 'string' },
+          requestType: {
+            type: 'string',
+            enum: ['K', 'W'],
+            description: 'Create: K Workbench (default), W Customizing.',
+          },
           name: { type: 'string', description: 'Object name (for check, history, or remove_object actions)' },
           package: {
             type: 'string',
-            description:
-              'Package name. For create: optional — defaults to $TMP; an explicit package influences the route/target, while the request remains Workbench type K. For check: required.',
+            description: 'Required for check. Workbench create: route package (default $TMP).',
           },
           target: {
             type: 'string',
@@ -1635,7 +1639,7 @@ export function getToolDefinitions(
           transportLayer: {
             type: 'string',
             description:
-              'Transport layer for create (optional, advanced). Sent as the ?transportLayer= query param to override which consolidation route — and therefore which target — SAP resolves. OMIT IT by default: SAP resolves the target from the package automatically, which is correct for almost all cases. Never invent a value — if you need a specific layer, obtain it from action="layers" or from the user. Only effective when that layer has a classic STMS consolidation route; otherwise the request is local regardless.',
+              'Optional Workbench transport layer. Sent as the ?transportLayer= query param to override which consolidation route — and therefore which target — SAP resolves. OMIT IT by default: SAP resolves the target from the package automatically, which is correct for almost all cases. Never invent a value — if you need a specific layer, obtain it from action="layers" or from the user. Only effective when that layer has a classic STMS consolidation route; otherwise the request is local regardless.',
           },
           user: { type: 'string', description: 'List user (default: current SAP user; "*" means all visible owners).' },
           status: {
@@ -1644,8 +1648,7 @@ export function getToolDefinitions(
           },
           type: {
             type: 'string',
-            description:
-              'Object type for check/history/remove_object actions (PROG, CLAS, DDLS, etc.). Not used by create, which creates a Workbench (K) request.',
+            description: 'Object type for check/history/remove_object actions (PROG, CLAS, DDLS, etc.).',
           },
           operation: {
             type: 'string',
