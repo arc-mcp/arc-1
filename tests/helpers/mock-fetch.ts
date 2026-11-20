@@ -39,3 +39,17 @@ export function mockResponse(
     json: async () => JSON.parse(body),
   } as unknown as Response;
 }
+
+/**
+ * ADT discovery document of a release without the server-driven collections: it advertises only the
+ * program collection. Serve it where a test needs the caller's own discovery to confirm an absence.
+ */
+export const DISCOVERY_WITHOUT_SERVER_DRIVEN =
+  '<?xml version="1.0"?><app:service xmlns:app="http://www.w3.org/2007/app" xmlns:atom="http://www.w3.org/2005/Atom">' +
+  '<app:workspace><atom:title>W</atom:title><app:collection href="/sap/bc/adt/programs/programs">' +
+  '<atom:title>P</atom:title><app:accept>text/plain</app:accept></app:collection></app:workspace></app:service>';
+
+/** True for a request to the ADT discovery document. */
+export function isDiscoveryRequest(url: unknown): boolean {
+  return new URL(String(url)).pathname === '/sap/bc/adt/discovery';
+}

@@ -23,6 +23,7 @@ import {
 import { changePackage } from '../adt/refactoring.js';
 import { checkOperation, checkPackage, OperationType } from '../adt/safety.js';
 import { getTransportInfo } from '../adt/transport.js';
+import type { ResolvedFeatures } from '../adt/types.js';
 import { parseSearchResults } from '../adt/xml-parser.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
@@ -37,6 +38,10 @@ import {
 
 // ─── SAPManage Handler ────────────────────────────────────────────────
 
+function featureResult({ discoveryMap, ...features }: Partial<ResolvedFeatures>): ToolResult {
+  return textResult(toolJson({ ...features, discovery: discoveryMap && { endpointCount: discoveryMap.size } }));
+}
+
 export async function handleSAPManage(
   client: AdtClient,
   config: ServerConfig,
@@ -50,12 +55,13 @@ export async function handleSAPManage(
 
   switch (action) {
     case 'features': {
-      if (!getCachedFeatures()) {
+      const features = getCachedFeatures();
+      if (!features) {
         return textResult(
           toolJson({ message: 'No features probed yet. Use action="probe" to probe the SAP system first.' }),
         );
       }
-      return textResult(toolJson(getCachedFeatures()));
+      return featureResult(features);
     }
 
     case 'set_api_state': {
@@ -535,7 +541,7 @@ export async function handleSAPManage(
       cacheProbedFeatures(probed, !!isPerUserClient || config.ppEnabled);
       const discoveryMap = getCachedFeatures()?.discoveryMap;
       if (discoveryMap) client.http.setDiscoveryMap(discoveryMap);
-      return textResult(toolJson(probed));
+      return featureResult(probed);
     }
 
     default:

@@ -354,21 +354,23 @@ export function supportsServerDrivenObject(http: AdtHttpClient, code: string): b
  * unreachable" from "discovery empty", and failing closed would break every SDO read on a system
  * where /sap/bc/adt/discovery is 403'd. This gate only improves the error message — the real
  * controls are checkOperation and the package allowlist.
+ *
+ * Re-check a cached negative with the caller's identity. Keep it if the caller supplies no evidence.
  */
 export async function ensureServerDrivenSupport(
   http: AdtHttpClient,
   safety: SafetyConfig,
   code: string,
 ): Promise<boolean> {
-  const known = supportsServerDrivenObject(http, code);
-  if (known !== undefined) return known;
   const entry = REGISTRY_BY_CODE[code];
   if (!entry) return false;
+  const cached = supportsServerDrivenObject(http, code);
+  if (cached === true) return true;
   checkOperation(safety, OperationType.Read, 'FetchDiscovery');
   const { map } = await fetchDiscoveryDocument(http); // never throws
   // Empty map = discovery unreachable, NOT "collection absent" — those must not collapse together,
   // or a 403'd discovery would block every SDO read. A populated map lacking the href IS unsupported.
-  if (map.size === 0) return true;
+  if (map.size === 0) return cached ?? true;
   return (resolveAcceptType(map, entry.href) ?? '').includes(entry.discoveryMarker);
 }
 

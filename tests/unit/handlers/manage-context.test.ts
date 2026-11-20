@@ -73,6 +73,27 @@ describe('SAPManage / SAPContext handlers', () => {
       expect(result.content[0]?.text).toContain('No features probed yet');
     });
 
+    it('reports the discovery count from both a fresh and a cached probe', async () => {
+      const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
+      resetCachedFeatures();
+      try {
+        mockFetch.mockResolvedValue(
+          mockResponse(
+            200,
+            '<service><workspace><collection href="/sap/bc/adt/test"><accept>text/plain</accept></collection></workspace></service>',
+          ),
+        );
+        for (const action of ['probe', 'features']) {
+          const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', { action });
+          const features = JSON.parse(result.content[0].text);
+          expect(features.discovery).toEqual({ endpointCount: 1 });
+          expect(features).not.toHaveProperty('discoveryMap');
+        }
+      } finally {
+        resetCachedFeatures();
+      }
+    });
+
     it('returns error for unknown action', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
         action: 'invalid',
