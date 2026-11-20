@@ -15,7 +15,8 @@
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 
-const SCHEMA_ACCEPT = 'application/vnd.sap.adt.serverdriven.schema.v1+json; framework=objectTypes.v1';
+const SCHEMA_ACCEPT =
+  'application/vnd.sap.adt.serverdriven.schema.v1+json; framework=objectTypes.v1, application/vnd.sap.adt.objecttypeschema.v1+json';
 const MAX_ERRORS = 20;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

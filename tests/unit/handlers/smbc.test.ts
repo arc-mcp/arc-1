@@ -97,7 +97,7 @@ const DISCOVERY = `<app:service xmlns:app="http://www.w3.org/2007/app" xmlns:ato
 
 /** Records every SAP send except discovery; answers lock, unlock, source PUT and DELETE. */
 function writeBackend(opts: { corrNr?: string; schema?: string } = {}) {
-  const sends: Array<{ method: string; path: string; body: string; contentType?: string }> = [];
+  const sends: Array<{ method: string; path: string; body: string; contentType?: string; accept?: string }> = [];
   let deleted = false;
   mockFetch.mockImplementation(async (url, init) => {
     const parsed = new URL(String(url));
@@ -106,7 +106,13 @@ function writeBackend(opts: { corrNr?: string; schema?: string } = {}) {
     if (parsed.pathname.endsWith('/discovery')) return mockResponse(200, DISCOVERY, { 'x-csrf-token': 'T' });
     if (method !== 'HEAD') {
       const headers = (init?.headers ?? {}) as Record<string, string>;
-      sends.push({ method, path, body: String(init?.body ?? ''), contentType: headers['Content-Type'] });
+      sends.push({
+        method,
+        path,
+        body: String(init?.body ?? ''),
+        contentType: headers['Content-Type'],
+        accept: headers.Accept,
+      });
     }
     if (path.includes('_action=LOCK')) return mockResponse(200, LOCK(opts.corrNr), { 'x-csrf-token': 'T' });
     if (parsed.pathname === `${uri}/schema` || parsed.pathname === `${collection}/$new/schema`)
@@ -208,7 +214,9 @@ it('creates an SMBC shell, then writes its source under a lock', async () => {
   const schema = sends.findIndex((r) => r.method === 'GET' && r.path.startsWith(`${collection}/$new/schema?`));
   const post = sends.findIndex((r) => r.method === 'POST' && r.path.startsWith(`${collection}?`));
   const put = sends.findIndex((r) => r.method === 'PUT');
-  expect(schema).toBeGreaterThanOrEqual(0);
+  expect(sends[schema]?.accept).toBe(
+    'application/vnd.sap.adt.serverdriven.schema.v1+json; framework=objectTypes.v1, application/vnd.sap.adt.objecttypeschema.v1+json',
+  );
   expect(schema).toBeLessThan(post);
   expect(post).toBeLessThan(put);
   expect(sends[post]?.contentType).toMatch(/^application\/vnd\.sap\.adt\.blues\.v1\+xml/);
