@@ -29,6 +29,7 @@ import {
 import type { InactiveObject, ObjectTransportHistory, TransportReleaseReport, TransportRequest } from '../adt/types.js';
 import { logger } from '../server/logger.js';
 import type { ServerConfig } from '../server/types.js';
+import { getCachedFeatures } from './feature-cache.js';
 import { resolveIncludeGroup } from './include-group.js';
 import { functionGroupObjectUrl, functionModuleObjectUrl, objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
@@ -266,9 +267,10 @@ export async function handleSAPTransport(
       if (!description) return errorResult('Description is required for "create" action.');
       // Distinguish "target omitted" from "target present but empty": an explicit but
       // blank target is a caller mistake, not a request to use the package/layer path.
+      const requestType = args.requestType === 'W' ? 'W' : 'K';
       const targetProvided = args.target !== undefined && args.target !== null;
       const explicitTarget = targetProvided ? String(args.target).trim() : undefined;
-      if (targetProvided && !explicitTarget) {
+      if (requestType === 'K' && targetProvided && !explicitTarget) {
         return errorResult(
           '"target" was provided but is empty. Pass a transport target — a system (C11), ' +
             'system.client (C11.021), or target group (/GROUP/) — or omit target to let SAP resolve it from the package.',
@@ -277,14 +279,17 @@ export async function handleSAPTransport(
 
       // Shared guidance when this release's ADT stack can't set an explicit target.
       const targetUnsupportedMsg =
-        "This system's ADT stack does not support setting an explicit transport target — the tm:root/newrequest " +
-        'action is not implemented (an ADT-framework limitation on SAP_BASIS 7.50, verified on SP02 and SP32, ' +
-        'independent of STMS/CTC config). It works on newer ABAP Platform / S/4HANA releases. Workaround here: ' +
-        'create the request without "target", then set the Transportziel manually in SE09/SE10 (SAP GUI), which ' +
-        'works when CTC and the target group are configured.';
+        requestType === 'W'
+          ? 'This system cannot create Customizing requests through ADT. Create the request in SE09/SE10.'
+          : "This system's ADT stack does not support setting an explicit transport target — the tm:root/newrequest " +
+            'action is not implemented (an ADT-framework limitation on SAP_BASIS 7.50, verified on SP02 and SP32, ' +
+            'independent of STMS/CTC config). It works on newer ABAP Platform / S/4HANA releases. Workaround here: ' +
+            'create the request without "target", then set the Transportziel manually in SE09/SE10 (SAP GUI), which ' +
+            'works when CTC and the target group are configured.';
 
       let id: string;
-      if (explicitTarget) {
+      const newRequest = Boolean(explicitTarget) || requestType === 'W';
+      if (newRequest) {
         // Discovery-gate first — the same capability SAP's own Eclipse client checks: the TM
         // resource that sets an explicit target is advertised in ADT discovery only on releases
         // that implement it (the transportorganizer Accept type on cts/transportrequests). When
@@ -302,8 +307,9 @@ export async function handleSAPTransport(
             client.http,
             client.safety,
             description,
-            explicitTarget,
+            explicitTarget ?? '',
             client.username,
+            requestType,
           );
         } catch (err) {
           if (err instanceof AdtApiError && (err.statusCode === 400 || err.statusCode === 404)) {
@@ -344,15 +350,35 @@ export async function handleSAPTransport(
       const target = created?.target?.trim() ?? '';
       const targetDesc = created?.targetDesc?.trim() ?? '';
 
-      if (!created) return textResult(`Created transport request: ${id}`);
-      if (target) {
+      const tasks = !newRequest
+        ? ''
+        : !created
+          ? '\nTask count unavailable.'
+          : `\nTasks: ${created.tasks.length}${created.tasks.length === 0 ? '. No task was created.' : ''}`;
+      const heading = `Created transport request: ${id}${tasks}`;
+
+      // Only a Customizing create is verified; a Workbench create keeps its result whatever the read-back reports.
+      if (requestType === 'W') {
+        if (created?.type !== 'W')
+          return errorResult(
+            (created?.type
+              ? `SAP created transport request ${id} with type ${created.type}. Requested type was W.`
+              : `SAP created transport request ${id}, but its type could not be verified.`) + tasks,
+          );
         return textResult(
-          `Created transport request: ${id}\nTransport target: ${target}${targetDesc ? ` (${targetDesc})` : ''}`,
+          `${heading}\nRequest type: W (Customizing)\nTransport target: ${target || '<none> (local)'}${targetDesc ? ` (${targetDesc})` : ''}`,
         );
       }
+      if (!created) return textResult(heading);
+      if (target) {
+        return textResult(`${heading}\nTransport target: ${target}${targetDesc ? ` (${targetDesc})` : ''}`);
+      }
+      const local = `${heading}\nTransport target: <none>${targetDesc ? ` — "${targetDesc}"` : ''}. This is a LOCAL request — it cannot be transported onward.`;
+      if ((config.systemType === 'auto' ? getCachedFeatures()?.systemType : config.systemType) === 'btp')
+        return textResult(`${local}\nUse SAPTransport(action="targets") to list available transport targets.`);
       return textResult(
-        `Created transport request: ${id}\n` +
-          `Transport target: <none>${targetDesc ? ` — "${targetDesc}"` : ''}. This is a LOCAL request — it cannot be transported onward.\n\n` +
+        local +
+          '\n\n' +
           'To create a request that targets another system, either:\n' +
           '  • set an explicit target — pass target=<system | system.client | /group/> (e.g. target="/TRG/" or "C11"); ' +
           'the group and system.client forms require extended transport control (CTC) to be active; or\n' +

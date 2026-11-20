@@ -110,6 +110,7 @@ describe('multi-target tool surface', () => {
     expect(property(transport, 'action').enum).toEqual(['list', 'get', 'diff', 'check', 'history']);
     expect(transport.inputSchema.properties).not.toHaveProperty('target');
     expect(transport.inputSchema.properties).not.toHaveProperty('transportLayer');
+    expect(transport.inputSchema.properties).not.toHaveProperty('requestType');
     expect(transport.inputSchema.properties).not.toHaveProperty('resultFormat');
     expect(transport.inputSchema.properties).toHaveProperty('offset');
     expect(transport.inputSchema.properties).toHaveProperty('limit');

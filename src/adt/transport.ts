@@ -263,9 +263,8 @@ export async function createTransport(
 }
 
 /**
- * Create a transport request with an explicit transport target (Transportziel /
- * `TR_TARGET` / SAP GUI field `KO013-TARSYSTEM`) — a target system (`C11`),
- * system.client (`C11.021`), or target group (`/TRG/`).
+ * Create a Workbench or Customizing request. TR_TARGET accepts a system (`C11`),
+ * system.client (`C11.021`), target group (`/TRG/`), or an empty string for Customizing.
  *
  * Unlike `createTransport` (the `CreateCorrectionRequest` endpoint, which can only let
  * SAP infer a target from the package route and silently ignores any target field),
@@ -279,7 +278,7 @@ export async function createTransport(
  * endpoint was rejected on NW 7.50 (npl) — older releases may not support it.
  *
  * @param target  the transport target (`TR_TARGET`); e.g. `C11`, `C11.021`, `/TRG/`, `LOCAL`
- * @param owner   task owner; defaults to the connected user when omitted
+ * @param requestType Workbench (K) or Customizing (W). W accepts an empty target.
  */
 export async function createTransportWithTarget(
   http: AdtHttpClient,
@@ -287,13 +286,26 @@ export async function createTransportWithTarget(
   description: string,
   target: string,
   owner?: string,
+  requestType: 'K' | 'W' = 'K',
 ): Promise<string> {
   checkTransport(safety, '', 'CreateTransport', true);
 
+  if (!owner) {
+    checkOperation(safety, OperationType.Read, 'GetSystemInformation');
+    try {
+      const response = await http.get('/sap/bc/adt/core/http/systeminformation', {
+        Accept: 'application/vnd.sap.adt.core.http.systeminformation.v1+json',
+      });
+      const user = JSON.parse(response.body)?.userName;
+      if (typeof user === 'string') owner = user.trim();
+    } catch {
+      // Owner lookup is best effort. Report the tasks SAP actually creates on read-back.
+    }
+  }
   const ownerAttr = owner ? ` tm:owner="${escapeXmlAttr(owner)}"` : '';
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <tm:root xmlns:tm="${CTS_NAMESPACE_TM}" tm:useraction="newrequest">
-  <tm:request tm:desc="${escapeXmlAttr(description)}" tm:type="K" tm:target="${escapeXmlAttr(target)}" tm:cts_project="">
+  <tm:request tm:desc="${escapeXmlAttr(description)}" tm:type="${escapeXmlAttr(requestType)}" tm:target="${escapeXmlAttr(target)}" tm:cts_project="">
     <tm:task${ownerAttr}/>
   </tm:request>
 </tm:root>`;
