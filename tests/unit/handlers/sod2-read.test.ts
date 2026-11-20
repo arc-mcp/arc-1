@@ -130,8 +130,8 @@ describe('SAPRead type=SOD2', () => {
       .replace(/&quot;/g, '"')
       .replace(/&apos;/g, "'")
       .replace(/&amp;/g, '&');
-    expect(doc.replace(/>\n *</g, '><')).toBe(original);
-    expect(doc).toContain('<FUNCTIONNAME>/US4G/BUPA_SEARCH_2</FUNCTIONNAME>');
+    expect(doc.replace(/\n(?=\/?>)|(?<=\?>)\n/g, '')).toBe(original);
+    expect(doc).toContain('<FUNCTIONNAME>/US4G/BUPA_SEARCH_2</FUNCTIONNAME');
   });
 
   it('separates the tabs of an OData V4 assignment and refuses a missing kind', async () => {
@@ -158,7 +158,7 @@ describe('SAPRead type=SOD2', () => {
 
     const grep = await read({ include: 'edmx', grep: 'EntityType Name="E1999"' });
     expect(grep.isError, text(grep)).toBeUndefined();
-    expect(text(grep)).toContain('<EntityType Name="E1999">');
+    expect(text(grep)).toContain('<EntityType Name="E1999"');
     expect(text(grep).length).toBeLessThan(2000);
 
     const range = await read({ include: 'edmx', lineStart: 1, lineEnd: 3 });

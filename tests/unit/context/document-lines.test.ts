@@ -53,23 +53,32 @@ describe('breakJsonLines', () => {
 });
 
 describe('breakXmlLines', () => {
-  it('breaks between adjacent tags only and indents by depth', () => {
-    expect(breakXmlLines('<?xml version="1.0"?><a x="1"><b>text</b><c/><d><e>t</e></d></a>')).toBe(
-      '<?xml version="1.0"?>\n<a x="1">\n  <b>text</b>\n  <c/>\n  <d>\n    <e>t</e>\n  </d>\n</a>',
-    );
+  it('preserves mixed content and empty elements without adding text nodes', () => {
+    const xml = '<p xml:space="preserve">Hi <b>A</b><i>B</i><br/>!</p>';
+    expect(breakXmlLines(xml)).toBe('<p xml:space="preserve">Hi <b>A</b\n><i>B</i\n><br/>!</p>');
   });
 
-  it('adds only whitespace between tags', () => {
+  it('preserves CDATA, comments, instructions, attribute values and existing whitespace', () => {
     const xml =
-      '<?xml version="1.0" encoding="utf-8"?><r a="x>y" b=\'<z/>\'><!-- c<d> --><s><![CDATA[<p></p>]]></s><t> lead and trail </t><u>a&lt;b</u></r>';
+      '<?xml version="1.0"?><r a="x>y"><!-- >< --><?pi >< ?><s><![CDATA[><]]></s><t> lead and trail </t>\n</r>';
     const broken = breakXmlLines(xml);
-    expect(broken.replace(/>\n *</g, '><')).toBe(xml);
-    expect(broken).toContain('<r a="x>y" b=\'<z/>\'>');
-    expect(broken).toContain('<s><![CDATA[<p></p>]]></s>');
-    expect(broken).toContain('<t> lead and trail </t>');
+    expect(broken.replace(/\n(?=\/?>)|(?<=\?>)\n/g, '')).toBe(xml);
+    expect(broken).toContain('<!-- >< --><?pi >< ?>');
+    expect(broken).toContain('<![CDATA[><]]>');
+    expect(breakXmlLines('<a>\n  <b/>\n</a>')).toBe('<a>\n  <b/>\n</a>');
   });
 
-  it('keeps existing whitespace text between tags', () => {
-    expect(breakXmlLines('<a>\n  <b/>\n</a>')).toBe('<a>\n  <b/>\n</a>');
+  it('retains a DTD verbatim', () => {
+    const xml = '<!DOCTYPE a [<!ENTITY x "><">]><a><b/>&x;</a>';
+    expect(breakXmlLines(xml)).toBe(xml);
+  });
+
+  it('keeps formatting cost proportional to input at large nesting depths', () => {
+    const depth = 30000;
+    const json = '['.repeat(depth) + '"><"' + ']'.repeat(depth);
+    expect(breakJsonLines(json).length).toBeLessThan(json.length * 20);
+    expect(minifyJson(breakJsonLines(json))).toBe(json);
+    const xml = '<a>'.repeat(depth) + '</a>'.repeat(depth);
+    expect(breakXmlLines(xml).length).toBeLessThan(xml.length * 2);
   });
 });

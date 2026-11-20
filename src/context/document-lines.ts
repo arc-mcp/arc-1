@@ -5,8 +5,7 @@
  *
  * Only whitespace that the format ignores is added: JSON gets indentation between tokens (strings,
  * numbers and literals are copied verbatim — no JSON.parse round trip that would round large
- * integers or drop duplicate keys); XML gets a line break only where one tag directly follows
- * another, so text content and attribute values stay byte-identical. Pure functions, no I/O.
+ * integers or drop duplicate keys); XML breaks inside markup, preserving every text node. Pure functions, no I/O.
  */
 import { MAX_GREP_LINE_LENGTH } from './grep.js';
 
@@ -14,7 +13,12 @@ const INDENT = '  ';
 
 /** True when some line is too long for grep to show in full — the reason to add line breaks. */
 export function needsLineBreaks(document: string): boolean {
-  return document.split('\n').some((line) => line.length > MAX_GREP_LINE_LENGTH);
+  let start = 0;
+  for (let end = document.indexOf('\n'); end >= 0; end = document.indexOf('\n', start)) {
+    if (end - start > MAX_GREP_LINE_LENGTH) return true;
+    start = end + 1;
+  }
+  return document.length - start > MAX_GREP_LINE_LENGTH;
 }
 
 /** Re-indent JSON outside of string literals. Input that is not JSON comes back re-spaced but intact. */
@@ -22,7 +26,7 @@ export function breakJsonLines(json: string): string {
   let out = '';
   let depth = 0;
   let inString = false;
-  const newline = () => `\n${INDENT.repeat(depth)}`;
+  const newline = () => `\n${INDENT.repeat(Math.min(depth, 8))}`;
   for (let i = 0; i < json.length; i++) {
     const ch = json[i]!;
     if (inString) {
@@ -84,38 +88,26 @@ function markupEnd(xml: string, start: number): number {
   return xml.length;
 }
 
-/** Break XML between directly adjacent tags and indent by element depth. Text runs are not touched. */
+/** Split adjacent markup inside tag delimiters. Whitespace between tags can be mixed content. */
 export function breakXmlLines(xml: string): string {
-  let out = '';
-  let depth = 0;
-  let previousWasMarkup = false;
-  let i = 0;
-  while (i < xml.length) {
-    if (xml[i] !== '<') {
-      const next = xml.indexOf('<', i);
-      const end = next < 0 ? xml.length : next;
-      out += xml.slice(i, end);
-      i = end;
-      previousWasMarkup = false;
-      continue;
+  // Internal DTD subsets have their own markup grammar. Keep them and their references verbatim.
+  if (xml.includes('<!DOCTYPE')) return xml;
+  const parts: string[] = [];
+  let copied = 0;
+  for (let start = xml.indexOf('<'); start >= 0; ) {
+    const end = markupEnd(xml, start);
+    if (xml[end] === '<' && xml[end - 1] === '>') {
+      if (xml.startsWith('<?xml ', start)) {
+        parts.push(xml.slice(copied, end), '\n');
+        copied = end;
+      } else if (xml[start + 1] !== '!' && xml[start + 1] !== '?') {
+        const split = xml[end - 2] === '/' ? end - 2 : end - 1;
+        parts.push(xml.slice(copied, split), '\n');
+        copied = split;
+      }
     }
-    const end = markupEnd(xml, i);
-    const token = xml.slice(i, end);
-    // CDATA is element text: whitespace next to it would change the content.
-    if (token.startsWith('<![CDATA[')) {
-      out += token;
-      i = end;
-      previousWasMarkup = false;
-      continue;
-    }
-    const isClosing = token.startsWith('</');
-    const isOpening = !isClosing && !/^<[?!]/.test(token) && !token.endsWith('/>');
-    if (isClosing) depth = Math.max(0, depth - 1);
-    if (previousWasMarkup) out += `\n${INDENT.repeat(depth)}`;
-    out += token;
-    if (isOpening) depth++;
-    previousWasMarkup = true;
-    i = end;
+    start = xml.indexOf('<', end);
   }
-  return out;
+  parts.push(xml.slice(copied));
+  return parts.join('');
 }
