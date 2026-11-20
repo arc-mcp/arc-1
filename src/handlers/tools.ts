@@ -34,6 +34,7 @@ import {
   SAPCONTEXT_TYPES_ONPREM,
   SAPREAD_TYPES_BTP,
   SAPREAD_TYPES_ONPREM,
+  SAPWRITE_BATCH_TYPES,
   SAPWRITE_TYPES_BTP,
   SAPWRITE_TYPES_ONPREM,
 } from './tool-registry.js';
@@ -899,8 +900,8 @@ export function getToolDefinitions(
               properties: {
                 type: {
                   type: 'string',
-                  enum: (btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM).filter((type) => type !== 'TABL/DTT'),
-                  description: 'Creatable object type; technical settings TABL/DTT are update-only',
+                  enum: btp ? SAPWRITE_BATCH_TYPES.btp : SAPWRITE_BATCH_TYPES.onprem,
+                  description: 'Use single create for server-driven types. TABL/DTT is update-only.',
                 },
                 name: { type: 'string', description: 'Object name' },
                 source: { type: 'string', description: 'ABAP source code (optional — some objects have no source)' },

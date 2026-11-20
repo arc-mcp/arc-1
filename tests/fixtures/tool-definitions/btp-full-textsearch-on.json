@@ -794,26 +794,9 @@
                   "MSAG",
                   "TTYP",
                   "ENQU",
-                  "ENHO",
-                  "DESD",
-                  "DTSC",
-                  "CSNM",
-                  "EVTB",
-                  "EVTO",
-                  "COTA",
-                  "DSFD",
-                  "DTDC",
-                  "UIAD",
-                  "DRTY",
-                  "APLO",
-                  "SAJC",
-                  "SAJT",
-                  "RONT",
-                  "NONT",
-                  "TABL/DTI",
-                  "SMBC"
+                  "ENHO"
                 ],
-                "description": "Creatable object type; technical settings TABL/DTT are update-only"
+                "description": "Use single create for server-driven types. TABL/DTT is update-only."
               },
               "name": {
                 "type": "string",

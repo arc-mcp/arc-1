@@ -313,16 +313,22 @@ it('creates an SMBC and says so when the create schema cannot be read', async ()
   expect(result.content[0]?.text).toContain("SAP's schema for SMBC could not be read");
 });
 
-it('points an SMBC batch item to a single create, without creating anything', async () => {
-  const sends = writeBackend();
-  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-    action: 'batch_create',
-    objects: [{ type: 'SMBC', name: 'ZCONFIG', package: '$TMP' }],
-  });
-  expect(result.isError).toBe(true);
-  expect(result.content[0]?.text).toContain('single SAPWrite(action="create", type="SMBC"');
-  expect(sends.filter((send) => send.method !== 'GET')).toEqual([]);
-});
+it.each([['SMBC'], ['DESD'], ['CLAS', 'SMBC', 'DESD']])(
+  'rejects the batch before any SAP request (%j)',
+  async (...types) => {
+    const sends = writeBackend();
+    const objects = types.map((type) => ({ type, name: `Z_${type}`, package: '$TMP' }));
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'batch_create',
+      objects,
+    });
+    expect(result.isError).toBe(true);
+    for (const { type, name } of objects.filter((item) => item.type !== 'CLAS')) {
+      expect(result.content[0]?.text).toContain(`single SAPWrite(action="create", type="${type}", name="${name}")`);
+    }
+    expect(sends).toEqual([]);
+  },
+);
 
 it.each(['create', 'update', 'delete'])('honors the package allowlist before an SMBC %s', async (action) => {
   const sends = writeBackend();
