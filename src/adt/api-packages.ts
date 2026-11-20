@@ -330,26 +330,26 @@ export function applyApiCatalogDefinition(type: ApiCatalogType, xml: string, def
   ] as const) {
     if (definition[key] !== undefined) fields.set(key, () => xmlText(String(definition[key])));
   }
-  if (definition.documentationLink !== undefined)
-    fields.set('documentationLinkReplacement', () => xmlText(definition.documentationLink!));
+  const { documentationLink, tags, urls } = definition;
+  if (documentationLink !== undefined) fields.set('documentationLinkReplacement', () => xmlText(documentationLink));
   const element = (name: string, inner: string) => `<${name}>${inner}</${name}>`;
-  if (definition.tags)
+  if (tags)
     fields.set('tags', (prefix) =>
-      definition
-        .tags!.map((tag) =>
+      tags
+        .map((tag) =>
           element(
-            prefix + 'tag',
-            element(prefix + 'value', xmlText(tag.value)) + element(prefix + 'category', xmlText(tag.category)),
+            `${prefix}tag`,
+            element(`${prefix}value`, xmlText(tag.value)) + element(`${prefix}category`, xmlText(tag.category)),
           ),
         )
         .join(''),
     );
-  if (definition.urls)
+  if (urls)
     fields.set('urls', (prefix) =>
-      definition
-        .urls!.map((url) =>
+      urls
+        .map((url) =>
           element(
-            prefix + 'url',
+            `${prefix}url`,
             (['technicalName', 'displayName', 'value', 'version', 'text'] as const)
               .map((key) => element(prefix + key, xmlText(url[key])))
               .join(''),
@@ -358,6 +358,7 @@ export function applyApiCatalogDefinition(type: ApiCatalogType, xml: string, def
         .join(''),
     );
 
+  // Use namespace-aware parser offsets to splice only the requested attribute and child contents.
   const parser = new SaxesParser({ xmlns: true });
   const seen = new Set<string>();
   const edits: Array<{ start: number; end: number; value: string }> = [];
@@ -401,14 +402,15 @@ export function applyApiCatalogDefinition(type: ApiCatalogType, xml: string, def
     if (depth === 3 && content && tag.uri === ns) {
       const render = fields.get(tag.local);
       if (render) {
-        const inner = render(tag.prefix ? tag.prefix + ':' : '');
+        const inner = render(tag.prefix ? `${tag.prefix}:` : '');
         const end = tag.isSelfClosing ? parser.position : xml.lastIndexOf('</', parser.position - 1);
-        edits.push({ start: fieldStart, end, value: tag.isSelfClosing ? `>${inner}</${tag.name}>` : '>' + inner });
+        edits.push({ start: fieldStart, end, value: tag.isSelfClosing ? `>${inner}</${tag.name}>` : `>${inner}` });
       }
     }
     depth--;
   });
   parser.write(xml).close();
+  if (!foundContent) throw new AdtError(`SAP returned no ${type} content element; nothing was saved.`);
   for (const field of fields.keys()) {
     if (!seen.has(field))
       throw new AdtError(`SAP's metadata document has no <${type.toLowerCase()}:${field}> element; nothing was saved.`);

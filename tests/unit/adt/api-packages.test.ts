@@ -213,6 +213,10 @@ describe('applyApiCatalogDefinition', () => {
   });
 
   it('refuses a document that lacks the addressed element or the root', () => {
+    const missingContent = SOD2.replaceAll('sod2:content', 'sod2:other');
+    expect(() => applyApiCatalogDefinition('SOD2', missingContent, { description: 'new' })).toThrow(
+      'no SOD2 content element',
+    );
     const noAlias = SOD1.replace(/<sod1:alias>[^<]*<\/sod1:alias>/, '');
     expect(() => applyApiCatalogDefinition('SOD1', noAlias, { alias: 'x' })).toThrow('has no <sod1:alias> element');
     expect(() => applyApiCatalogDefinition('SOD2', SOD1, { tags: [] })).toThrow('no SOD2 metadata document');
