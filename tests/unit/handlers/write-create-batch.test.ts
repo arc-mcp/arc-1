@@ -473,36 +473,48 @@ describe('SAPWrite handler — create / batch_create', () => {
 
     // ─── Subtree (`X/**`) rules — handler-level security regression suite ────
     describe('subtree rules (`X/**`) on SAPWrite', () => {
-      /** Build a fetch mock that serves a fixed DEVCLASS hierarchy via the nodestructure endpoint. */
+      /** `GET /sap/bc/adt/packages/{name}` body with the given super-package ('' = top-level). */
+      function packageXml(name: string, superPackage: string): string {
+        return (
+          `<pak:package xmlns:pak="http://www.sap.com/adt/packages" xmlns:adtcore="http://www.sap.com/adt/core" ` +
+          `adtcore:name="${name}"><pak:superPackage adtcore:name="${superPackage}"/></pak:package>`
+        );
+      }
+
+      /** Super-package of every package in a children graph; packages without a parent are top-level. */
+      function parentsOf(graph: Record<string, string[]>): Record<string, string> {
+        const parents: Record<string, string> = {};
+        for (const [parent, children] of Object.entries(graph)) {
+          parents[parent] ??= '';
+          for (const child of children) parents[child] = parent;
+        }
+        return parents;
+      }
+
+      /** Serve `GET /sap/bc/adt/packages/{name}` for the packages of the graph; 404 for unknown ones. */
+      function packageResponse(u: string, parents: Record<string, string>): Response | undefined {
+        const m = new URL(u).pathname.match(/^\/sap\/bc\/adt\/packages\/([^/]+)$/);
+        if (!m) return undefined;
+        const name = decodeURIComponent(m[1]!).toUpperCase();
+        return name in parents
+          ? mockResponse(200, packageXml(name, parents[name]!), { 'x-csrf-token': 'T' })
+          : mockResponse(404, 'not found');
+      }
+
+      /** Build a fetch mock that serves a fixed DEVCLASS hierarchy through the package metadata endpoint. */
       function mockHierarchy(
         graph: Record<string, string[]>,
         extras?: (url: string, method: string) => Response | undefined,
       ) {
+        const parents = parentsOf(graph);
         mockFetch.mockReset();
         mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
           const u = String(url);
           const method = opts?.method ?? 'GET';
           const ex = extras?.(u, method);
           if (ex !== undefined) return Promise.resolve(ex);
-          // Nodestructure call from getSubpackages — match parent_name=<X> and serve the graph.
-          if (u.includes('/sap/bc/adt/repository/nodestructure') && u.includes('parent_type=DEVC%2FK')) {
-            const m = u.match(/parent_name=([^&]+)/);
-            const parent = m ? decodeURIComponent(m[1]).toUpperCase() : '';
-            const children = graph[parent] ?? [];
-            const nodes = children
-              .map(
-                (c) =>
-                  `<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>${c}</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>`,
-              )
-              .join('');
-            return Promise.resolve(
-              mockResponse(
-                200,
-                `<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TREE_CONTENT>${nodes}</TREE_CONTENT></DATA></asx:values></asx:abap>`,
-                { 'x-csrf-token': 'T' },
-              ),
-            );
-          }
+          const pkg = packageResponse(u, parents);
+          if (pkg) return Promise.resolve(pkg);
           return Promise.resolve(mockResponse(200, 'OK', { 'x-csrf-token': 'T' }));
         });
       }
@@ -550,7 +562,7 @@ describe('SAPWrite handler — create / batch_create', () => {
         mockFetch.mockReset();
         mockFetch.mockImplementation((url: string | URL) => {
           const u = String(url);
-          if (u.includes('objectType=DEVC%2FK')) {
+          if (new URL(u).pathname.startsWith('/sap/bc/adt/packages/')) {
             return Promise.resolve(mockResponse(500, '<error>SAP down</error>'));
           }
           return Promise.resolve(mockResponse(200, 'OK', { 'x-csrf-token': 'T' }));
@@ -564,8 +576,7 @@ describe('SAPWrite handler — create / batch_create', () => {
           source: 'CLASS zcl_x DEFINITION PUBLIC. ENDCLASS. CLASS zcl_x IMPLEMENTATION. ENDCLASS.',
         });
         expect(result.isError).toBe(true);
-        // Either the resolver fail-closed message OR the raw block message — both qualify as denied.
-        expect(result.content[0]?.text).toMatch(/hierarchy resolution failed|blocked/);
+        expect(result.content[0]?.text).toContain('hierarchy resolution failed');
       });
 
       it('update is BLOCKED when the resolved object package is outside the subtree', async () => {
@@ -639,30 +650,15 @@ describe('SAPWrite handler — create / batch_create', () => {
         expect(result.content[0]?.text).toContain('blocked');
       });
 
-      it('caches the subtree across multiple writes — only one BFS per root', async () => {
-        let subpkgCalls = 0;
+      it('caches the chain across writes on one client — one request per level', async () => {
+        const parents = parentsOf({ ZFOO: ['ZFOO_SUB'], ZFOO_SUB: [] });
+        let chainCalls = 0;
         mockFetch.mockReset();
         mockFetch.mockImplementation((url: string | URL) => {
-          const u = String(url);
-          if (u.includes('/sap/bc/adt/repository/nodestructure') && u.includes('parent_type=DEVC%2FK')) {
-            subpkgCalls++;
-            const m = u.match(/parent_name=([^&]+)/);
-            const parent = m ? decodeURIComponent(m[1]).toUpperCase() : '';
-            const graph: Record<string, string[]> = { ZFOO: ['ZFOO_SUB'], ZFOO_SUB: [] };
-            const children = graph[parent] ?? [];
-            const nodes = children
-              .map(
-                (c) =>
-                  `<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>DEVC/K</OBJECT_TYPE><OBJECT_NAME>${c}</OBJECT_NAME></SEU_ADT_REPOSITORY_OBJ_NODE>`,
-              )
-              .join('');
-            return Promise.resolve(
-              mockResponse(
-                200,
-                `<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TREE_CONTENT>${nodes}</TREE_CONTENT></DATA></asx:values></asx:abap>`,
-                { 'x-csrf-token': 'T' },
-              ),
-            );
+          const pkg = packageResponse(String(url), parents);
+          if (pkg) {
+            chainCalls++;
+            return Promise.resolve(pkg);
           }
           return Promise.resolve(mockResponse(200, 'OK', { 'x-csrf-token': 'T' }));
         });
@@ -676,8 +672,8 @@ describe('SAPWrite handler — create / batch_create', () => {
             source: 'CLASS zcl_child DEFINITION PUBLIC. ENDCLASS. CLASS zcl_child IMPLEMENTATION. ENDCLASS.',
           });
         }
-        // BFS visits ZFOO once and ZFOO_SUB once → 2 subtree GETs total, regardless of write count.
-        expect(subpkgCalls).toBe(2);
+        // ZFOO_SUB -> ZFOO -> (top): two package reads in total, regardless of write count.
+        expect(chainCalls).toBe(2);
       });
     });
 
