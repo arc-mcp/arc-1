@@ -479,6 +479,7 @@ export interface MessageClassCreateParams {
   description: string;
   package: string;
   messages?: MessageClassMessage[];
+  deleteMessages?: string[];
   /** Maintenance + master language (e.g. "EN", "DE"), emitted as BOTH
    *  adtcore:language and adtcore:masterLanguage — matching the server's own
    *  GET serialization. Live-verified on a4h (S/4HANA 2023, 7.58): the MSAG
@@ -504,6 +505,9 @@ export function buildMessageClassXml(params: MessageClassCreateParams): string {
           )
           .join('\n');
 
+  const deletedXml = (params.deleteMessages ?? [])
+    .map((number) => `\n  <mc:deletedmessages mc:msgno="${escapeXmlAttr(number)}"/>`)
+    .join('');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <mc:messageClass xmlns:mc="http://www.sap.com/adt/MessageClass"
                  xmlns:adtcore="http://www.sap.com/adt/core"
@@ -511,7 +515,7 @@ export function buildMessageClassXml(params: MessageClassCreateParams): string {
                  adtcore:name="${escapeXmlAttr(params.name)}"
                  adtcore:language="${masterLanguage}"
                  adtcore:masterLanguage="${masterLanguage}">
-  <adtcore:packageRef adtcore:name="${escapeXmlAttr(params.package)}"/>${messagesXml}
+  <adtcore:packageRef adtcore:name="${escapeXmlAttr(params.package)}"/>${messagesXml}${deletedXml}
 </mc:messageClass>`;
 }
 

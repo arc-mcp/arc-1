@@ -240,6 +240,7 @@ export function getMetadataWriteProperties(input: Record<string, unknown>): Reco
     deactivateInputHistory: input.deactivateInputHistory,
     changeDocument: input.changeDocument,
     messages: input.messages,
+    deleteMessages: input.deleteMessages,
     serviceDefinition: input.serviceDefinition,
     bindingType: input.bindingType,
     category: input.category,
@@ -284,10 +285,23 @@ export async function mergeMetadataWriteProperties(
 ): Promise<Record<string, unknown>> {
   if (type === 'MSAG') {
     const existing = await client.getMessageClassInfo(name);
+    const deleted = new Set(provided.deleteMessages as string[] | undefined);
+    const changes = provided.messages as MessageClassCreateParams['messages'];
+    if (deleted.size) {
+      const overlap = changes?.find((message) => deleted.has(message.number.padStart(3, '0')));
+      if (overlap)
+        throw new Error(`Message ${overlap.number} occurs in both messages and deleteMessages; nothing was changed.`);
+      const stored = new Set(existing.messages.map((message) => message.number.padStart(3, '0')));
+      for (const number of deleted) {
+        if (!stored.has(number)) throw new Error(`Message ${number} does not exist in ${name}; nothing was changed.`);
+      }
+    }
     return {
       _description: existing.description,
       _package: existing.package,
-      messages: provided.messages ?? existing.messages,
+      // A deletion-only save sends no message elements: SAP keeps every message it is not told to change.
+      messages: changes ?? (deleted.size ? [] : existing.messages),
+      deleteMessages: provided.deleteMessages,
     };
   }
   if (type === 'DOMA') {
@@ -820,6 +834,7 @@ function buildCreateXmlBody(
         description,
         package: pkg,
         messages: messages.length > 0 ? messages : undefined,
+        deleteMessages: properties?.deleteMessages as string[] | undefined,
         // Thread the configured language into the body (same spirit as #343).
         // Live-verified on a4h 7.58: the MSAG handler keys T100.SPRSL by the
         // BODY adtcore:language — without it the messages are stored under a

@@ -75,6 +75,16 @@ export async function writeMetadataUpdate(ctx: SapWriteContext, existingPackage?
         vendorContentTypeForType(type),
         transport ?? (lock.corrNr || undefined),
       );
+      const deleted = args.deleteMessages as string[] | undefined;
+      if (deleted?.length) {
+        const saved = await current.getMessageClassInfo(name);
+        if (saved.name !== name) throw new Error(`Saved MSAG ${name}, but could not verify its deleted messages.`);
+        const remaining = new Set(saved.messages.map((message) => message.number.padStart(3, '0')));
+        const retained = deleted.filter((number) => remaining.has(number));
+        if (retained.length)
+          throw new Error(`Saved MSAG ${name}, but messages ${retained.join(', ')} are still present.`);
+        return textResult(`Successfully updated MSAG ${name}. Deleted messages: ${deleted.join(', ')}.`);
+      }
       return result;
     } finally {
       try {
