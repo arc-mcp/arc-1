@@ -97,7 +97,7 @@ export async function writeApiCatalogObject(
     if (Object.keys(definition).length === 0)
       return errorResult(`SAPWrite update for ${type} ${name}: source changes nothing.${ignoredNote}`);
     try {
-      await updateApiCatalogObject(client.http, client.safety, type, name, definition, transport);
+      await updateApiCatalogObject(client.http, client.safety, type, name, definition, transport, config.minimalErrors);
     } finally {
       invalidate();
     }
@@ -128,7 +128,7 @@ export async function writeApiCatalogObject(
     if (type === 'SOD2') await getApiPackageAssignment(client.http, client.safety, name);
     recovery = 'Saving the remaining fields failed. Check it with SAPRead and use SAPWrite(action="update").';
     if (needsFollowUpSave(type, definition))
-      await updateApiCatalogObject(client.http, client.safety, type, name, definition, transport);
+      await updateApiCatalogObject(client.http, client.safety, type, name, definition, transport, config.minimalErrors);
   } catch (cause) {
     throw postCreateError(
       { config, invalidateWrittenObject: invalidate },

@@ -228,6 +228,27 @@ describe('SAPWrite type=SOD1/SOD2', () => {
     expect(calls.at(-1)!.url).toContain('_action=UNLOCK');
   });
 
+  it.each([
+    [true, 'SWB_TOOL', '036'],
+    [false, 'OTHER', '036'],
+    [false, 'SWB_TOOL', '099'],
+  ] as const)(
+    'skips checkrun diagnostics for minimal errors or a different SAP refusal (%s, %s/%s)',
+    async (minimalErrors, id, no) => {
+      const calls = mockSap({
+        putError: `<exception><message>Rejected field</message><properties><entry key="T100KEY-ID">${id}</entry><entry key="T100KEY-NO">${no}</entry></properties></exception>`,
+      });
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPWrite', {
+        type: 'SOD2',
+        action: 'update',
+        name: 'Z_UI_DEMO_DOC_O4_0001',
+        source: '{"description":"changed"}',
+      });
+      expect(result.isError).toBe(true);
+      expect(calls.some((c) => c.url.includes('/checkruns'))).toBe(false);
+      if (minimalErrors) expect(text(result)).not.toContain('Rejected field');
+    },
+  );
   it('refuses an update that changes nothing', async () => {
     const calls = mockSap();
     const result = await write({

@@ -13,7 +13,7 @@
  */
 import { SaxesParser } from 'saxes';
 import { postCreate } from './create-request.js';
-import { lockObject, unlockObject, updateObject } from './crud.js';
+import { updateObject, withLockedMutation } from './crud.js';
 import { syntaxCheck } from './devtools.js';
 import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
@@ -441,32 +441,28 @@ export async function updateApiCatalogObject(
   type: ApiCatalogType,
   name: string,
   definition: ApiCatalogDefinition,
-  transport?: string,
+  transport: string | undefined,
+  minimalErrors: boolean,
 ): Promise<void> {
   checkOperation(safety, OperationType.Update, `Update${type}`);
   const url = apiCatalogObjectUrl(type, name);
-  await http.withStatefulSession(async (session) => {
-    const lock = await lockObject(session, safety, url, 'MODIFY');
+  await withLockedMutation(http, safety, url, async (session, lock) => {
+    const current = await session.get(url, { Accept: BLUES_V1, 'Cache-Control': 'no-cache' });
+    const body = applyApiCatalogDefinition(type, current.body, definition);
     try {
-      const current = await session.get(url, { Accept: BLUES_V1, 'Cache-Control': 'no-cache' });
-      const body = applyApiCatalogDefinition(type, current.body, definition);
-      try {
-        await updateObject(
-          session,
-          safety,
-          url,
-          body,
-          lock.lockHandle,
-          BLUES_V1,
-          transport ?? (lock.corrNr || undefined),
-        );
-      } catch (err) {
-        if (err instanceof AdtApiError && err.statusCode === 400)
-          await explainRefusedSave(session, safety, url, body, err);
-        throw err;
-      }
-    } finally {
-      await unlockObject(session, url, lock.lockHandle);
+      await updateObject(
+        session,
+        safety,
+        url,
+        body,
+        lock.lockHandle,
+        BLUES_V1,
+        transport ?? (lock.corrNr || undefined),
+      );
+    } catch (err) {
+      if (!minimalErrors && err instanceof AdtApiError && err.statusCode === 400)
+        await explainRefusedSave(session, safety, url, body, err);
+      throw err;
     }
   });
 }
@@ -484,6 +480,8 @@ async function explainRefusedSave(
   err: AdtApiError,
 ): Promise<void> {
   try {
+    const diagnostics = AdtApiError.extractDdicDiagnostics(err.responseBody ?? '');
+    if (!diagnostics.some((d) => d.messageId === 'SWB_TOOL' && d.messageNumber === '036')) return;
     const check = await syntaxCheck(http, safety, url, {
       content: body,
       artifactUri: url,
