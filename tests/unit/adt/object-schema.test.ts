@@ -62,6 +62,20 @@ describe('checkAgainstObjectSchema with the SMBC schema', () => {
     expect(problems.at(-1)).toBe('/header: unknown property "field19"');
   });
 
+  it('stops at the twentieth problem even when an array item breaks two rules', () => {
+    const items = { type: 'string', enum: ['a'], maxLength: 1 };
+    const values = ['b', ...Array<string>(11).fill('bb')];
+    const problems = checkAgainstObjectSchema({ type: 'array', items }, values);
+    expect(problems).toHaveLength(20);
+    expect(problems.at(-1)).toContain('/10: "bb" is not allowed');
+  });
+
+  it('checks numbers and leaves unrecognized types and open object properties to SAP', () => {
+    expect(checkAgainstObjectSchema({ type: 'number' }, 1.5)).toEqual([]);
+    expect(checkAgainstObjectSchema({ type: 'number' }, '1.5')).toEqual(['/: expected number']);
+    expect(checkAgainstObjectSchema({ type: 'future' }, { field: 1 })).toEqual([]);
+  });
+
   it('counts UTF-16 units in maxLength, as SAP does', () => {
     const field = { type: 'string', maxLength: 3 };
     expect(checkAgainstObjectSchema(field, 'A🌍')).toEqual([]);
