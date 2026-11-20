@@ -320,7 +320,10 @@ function buildBaseErrorMessage(
       }
       const name = String(args.name ?? '');
       const type = String(args.type ?? '');
-      return `${enriched}\n\nHint: Object "${name}" (type ${type}) was not found. Use SAPSearch with query "${name}" to verify the name exists and check the correct type.`;
+      const replay = err.notFoundMayBeReplayed
+        ? ' This SAP system repeats a not-found answer for the same URL for about a minute. If the object was just created, wait 60 seconds and retry.'
+        : '';
+      return `${enriched}\n\nHint: Object "${name}" (type ${type}) was not found. Use SAPSearch with query "${name}" to verify the name exists and check the correct type.${replay}`;
     }
     if (err.isUnauthorized || err.isForbidden) {
       if (isSamlBearer && err.isUnauthorized) {

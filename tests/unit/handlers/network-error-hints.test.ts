@@ -96,3 +96,15 @@ describe('network error guidance', () => {
     expect(result.content[0]?.text).not.toContain('client time limit');
   });
 });
+
+// SAP 7.50 sends a 404 without sap-cache-control and its ICM repeats it for 60 seconds;
+// 7.58 and 8.16 send "+0" (#1261).
+it.each([
+  [{}, true],
+  [{ 'sap-cache-control': '+0' }, false],
+])('says a not-found answer may be repeated only without sap-cache-control (%j)', async (headers, repeated) => {
+  mockFetch.mockResolvedValue(mockResponse(404, 'Not found', headers));
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'PROG', name: 'ZNEW' });
+  expect(result.content[0]?.text).toContain('Object "ZNEW" (type PROG) was not found');
+  expect(result.content[0]?.text.includes('wait 60 seconds and retry')).toBe(repeated);
+});

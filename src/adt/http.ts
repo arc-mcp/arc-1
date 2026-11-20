@@ -1082,7 +1082,7 @@ export class AdtHttpClient {
       if (status === 401) {
         this.notifyUnauthorized(path);
       }
-      throw new AdtApiError(body.slice(0, 500), status, path, body);
+      throw new AdtApiError(body.slice(0, 500), status, path, body, { sapCache: headers.get('sap-cache-control') });
     }
 
     // Flatten headers to Record<string, string>
