@@ -1,8 +1,10 @@
 # Retest ARC-1 behind SAP Integration Suite’s MCP Gateway
 
-Use this runbook to repeat a read-only VS Code call, verify who executed it in ABAP, and decide whether a new SAP release can simplify the setup. It applies to one remote ARC-1 server on Cloud Foundry, in the same subaccount as the gateway, with one pinned principal-propagation target. The tested configuration requires no ARC-1 runtime change.
+Use this runbook to repeat the VS Code gateway tests, verify who executed the class read in ABAP, and reassess discovery when SAP ships changes. Both runs used stock ARC-1 on Cloud Foundry in the gateway subaccount, with principal propagation to A4H client 001. The original pilot published one tool on a pinned route. The [v1.10.1 retest](#v1101-twelve-tool-retest) published all twelve standard tools against a dedicated single-target app.
 
-## Baseline from 19 November 2026
+<a id="baseline-from-19-november-2026"></a>
+
+## v0.9.27 single-tool baseline (19 November 2026)
 
 The request path was **VS Code → SAP-managed Integration Cell → ARC-1 → BTP Connectivity and Cloud Connector → A4H client 001**. The gateway imported an existing MCP tool. The Microsoft Copilot Studio example instead generates tools from Business Partner API operations and gives the gateway the SAP connection. Its user sign-in and backend identity checks are relevant to both designs. [Microsoft reference](https://learn.microsoft.com/en-us/azure/sap/microsoft-ai/copilot-studio/architecture-mcp-gateway-integration-suite) · [Walkthrough, part 4](https://github.com/hobru/sap-mcp-gateway-copilot-studio/blob/c31f5f34e26b96546c3982b6b91daa5b09e977d3/guides/04-principal-propagation.md)
 
@@ -14,7 +16,43 @@ The request path was **VS Code → SAP-managed Integration Cell → ARC-1 → BT
 | Published endpoint | A local MCP client negotiated `2025-11-25`, listed exactly `SAPRead`, and received the class definition with HTTP 200 and no tool error. ARC-1's per-user audit and A4H workload statistics (STAD) matched at 11:03:20 UTC. |
 | Native VS Code | VS Code 1.145.2 invoked the gateway tool through `vscode.lm.invokeTool`. The result contained the class declaration. ARC-1 recorded the exact object and active source GET. At 11:49:27 UTC, STAD showed one matching HTTP class read under the developer's mapped ABAP account in client 001. An assistant choosing the tool in a chat, a second user, refresh, quotas and schema synchronization remain untested. |
 
+## v1.10.1 twelve-tool retest
+
+On 19 November 2026, desktop VS Code 1.145.2 discovered all twelve standard tools and invoked each with `vscode.lm.invokeTool` through SAP Integration Suite Free in US10. Eight tools succeeded on the first call, a ninth succeeded after a feature probe, and three returned the expected ARC-1 scope denial. Each row covers one representative action. `SAPTargets` was excluded.
+
+**Release and route.** The operator verified the official Linux x64 binary against the published SHA-256 sums and confirmed `/health` reported `1.10.1`. The new CF app used 256 MiB, one route, the existing XSUAA, Destination and Connectivity bindings, and strict principal propagation on `/mcp`. The runtime destination requested only the qualified ARC-1 `read` scope. Writes, data preview and free SQL were disabled. The org stayed on its Free quota. [ARC-1 v1.10.1 release and checksums](https://github.com/arc-mcp/arc-1/releases/tag/v1.10.1)
+
+**Discovery and publication.** The twelve definitions came from `tools/list` on a separate local v1.10.1 process in standard mode. With the write and data gates enabled and no reachable SAP target, it supplied the full schema. The Basic-authenticated catalog served that snapshot at `/v1101-discovery/mcp` and rejected tool execution. A separate gateway artifact used the catalog for discovery and a new `OAuth2JWTBearer` destination for runtime. The artifact reached **STARTED**. Developer Hub published it in a separate product and the operator added that product to the existing VS Code agent subscription. Both the published gateway endpoint and the ARC-1 MCP endpoint returned HTTP 401 to anonymous requests.
+
+| Tool | Arguments sent from VS Code | Observed through the gateway |
+|---|---|---|
+| SAPRead | `{"type":"CLAS","name":"CL_ABAP_CHAR_UTILITIES"}` | Returned the class declaration. |
+| SAPSearch | `{"query":"CL_ABAP_CHAR_UTILITIES","maxResults":1}` | Found the class. |
+| SAPNavigate | `{"action":"relations","type":"CLAS","name":"CL_ABAP_CHAR_UTILITIES","maxResults":5}` | Returned dependency nodes and edges. |
+| SAPContext | `{"action":"structure","type":"TABL","name":"SFLIGHT"}` | Returned the table structure. |
+| SAPLint | `{"action":"lint","name":"ZARC1_GW_LINT","source":"REPORT zarc1_gw_lint.\nSTART-OF-SELECTION.\n  WRITE 'Gateway'.\n"}` | Returned an empty findings list. This action runs locally in ARC-1. |
+| SAPDiagnose | `{"action":"object_state","type":"CLAS","name":"CL_ABAP_CHAR_UTILITIES"}` | Returned the class state. |
+| SAPManage | `{"action":"features"}`, then `{"action":"probe"}` | The first call returned the configured on-premise system type. The probe returned capabilities. |
+| SAPTransport | `{"action":"layers"}` | Returned transport layers. |
+| SAPGit | `{"action":"list_repos","backend":"abapgit"}` | First call errored. After `SAPManage.probe`, the identical input returned an abapGit repository list and ARC-1 audited success. |
+| SAPQuery | `{"action":"long_text","longText":{"mode":"discover","object":"TEXT","namePrefix":"ZARC1_GW_SMOKE_","limit":1}}` | ARC-1 required `data` scope. |
+| SAPWrite | `{"action":"generate_behavior_implementation","type":"CLAS","name":"ZBP_ARC1_DEMO_BOOK","dryRun":true,"activate":false}` | ARC-1 required `write` scope even for this preview. |
+| SAPActivate | `{"action":"activate","type":"CLAS","name":"ZCL_ARC1_GW_NO_SUCH_9CA12"}` | ARC-1 required `write` scope. The test named a nonexistent class. |
+
+**Backend identity.** The editor received `CLASS CL_ABAP_CHAR_UTILITIES DEFINITION`. ARC-1 audited the developer’s class read at 20:53:48–49 UTC (1,534 ms). In the same window, A4H STAD showed four HTTP requests for the abbreviated ADT class path, all under that developer’s mapped ABAP account in client 001. The editor result identifies the exact class. STAD supplies the backend user. The three scope denials occurred at ARC-1, so they provide no evidence of an ABAP authorization decision.
+
+In the separate direct control, the official macOS arm64 executable reported `1.10.1` in the stdio MCP handshake. With SAP Basic credentials and bounded data preview enabled, the long-text discovery returned zero candidates, the write dry run returned a preview, and the activation sentinel returned HTTP 404 during lookup. Positive gateway coverage for data and mutations, two-user isolation and signed agent attribution remain open.
+
+### Repeat the twelve-tool run
+
+1. Record the release checksum, live `/health` version and read-only settings. Use the [Free pilot setup](#reopen-the-free-pilot) with the single-target runtime path `/mcp`. Keep the twelve-tool artifact, product and workspace endpoint distinct from the one-tool pilot.
+2. Capture the full standard `tools/list` from the same release in an isolated stdio process with dummy credentials and an unreachable loopback SAP target. For schema capture only, the test enabled the write, transport-write, Git-write, data-preview and free-SQL gates in that local process. Compare the complete definitions with the versioned catalog before importing them. Select the twelve names in the table, save, deploy and subscribe the VS Code agent to the new product. Confirm the signed-in editor discovers that exact set.
+3. Invoke the table inputs from the [native VS Code tool API](#run-the-read-and-check-the-backend). Keep the live token read-scoped and the runtime read-only. For activation, use a name confirmed absent in the test client. Run Git once before the explicit feature probe, then repeat the same Git input after the probe. Validate the result shape and upstream audit status. An error message that mentions abapGit can otherwise look like a successful match.
+4. Correlate the class read with STAD using the upstream execution window after the editor confirmation. Record scope denials as such. For gateway filtering, use the single-tool pilot’s unpublished-tool test below. For a newer SAP release, follow the [reassessment criteria](#reassess-when-sap-ships-a-relevant-change) to test native protected discovery and synchronization.
+
 ## Reopen the Free pilot
+
+The paths and one-tool catalog archive below reproduce the v0.9.27 baseline. Use the release-specific catalog and runtime path above for the twelve-tool retest.
 
 1. **Check the landscape.** Record date, region, plan, artifact version and deployed ARC-1 version. Use the BTP commands below with the intended subaccount ID. Check the CF target, routes and quota before provisioning anything. Reuse the active Free subscription, managed Integration Cell, API Management, Developer Hub and existing catalog where available. Free activation is time-limited and reactivation deletes previous integration content. Export the package before expiry and retain the catalog deployment bundle, schema, destination settings without secrets and OAuth callback details in the operator's handover. Store credentials separately. If the region or feature needs a paid plan, record that limitation and stop the Free test. [Free plan lifecycle](https://help.sap.com/docs/SAP_INTEGRATION_SUITE/51ab953548be4459bfe8539ecaeee98d/using-free-service-plans) · [Plan matrix](https://me.sap.com/notes/2903776)
 
@@ -88,9 +126,9 @@ Use **MCP: List Servers** to start the configured server. Run each client separa
 
 | Check | Evidence to retain |
 |---|---|
-| Ingress and tool result | Anonymous initialization receives 401. Signed-in initialization negotiates a protocol version, `tools/list` returns exactly `SAPRead`, and the result contains `CLASS CL_ABAP_CHAR_UTILITIES DEFINITION` without a tool error. An HTTP 200 can also carry an MCP error. |
+| Ingress and tool result | Anonymous initialization receives 401. Signed-in initialization negotiates a protocol version. Compare `tools/list` with the selected artifact (only `SAPRead` for v0.9.27, the twelve names above for the v1.10.1 retest). Confirm the class-read result contains `CLASS CL_ABAP_CHAR_UTILITIES DEFINITION` without a tool error. An HTTP 200 can also carry an MCP error. |
 | Unpublished tool (new test) | Confirm an unimported read tool such as `SAPSearch` is available and succeeds on the direct read-only route. Using the same user's authenticated gateway session, send the same benign arguments in a JSON-RPC `tools/call` from a protocol client that accepts an explicit tool name (for example the local probe). Record the outbound request ID and matching gateway error response, then check that ARC-1 had no corresponding `tool_call_start` in that window. If the client refuses locally, or no gateway response is available, record this check as unverified. A hidden tool that still executes fails the pilot. |
-| Human identity | Correlate the UTC window, request ID, target and exact class GET in ARC-1's `auth_pp_created` and tool audit events. Capture STAD promptly, convert UTC to SAP system time, select the target client, include in-memory records and check the matching HTTP class read and its ABAP user. STAD can abbreviate the path. If multiple records match, repeat in a quiet window or obtain a backend trace before marking identity verified. [Backend identity checks](../../docs_page/principal-propagation-setup.md#verify-the-backend-identity) |
+| Human identity | Correlate the UTC window, request ID, target and class read in ARC-1’s audit with the matching HTTP class rows in STAD. Capture STAD promptly, convert UTC to SAP system time, select the target client and include in-memory records. One tool call can issue several class requests. Check their ABAP users and allow for abbreviated paths. If competing calls or mixed users make attribution ambiguous, repeat in a quiet window or obtain a backend trace. [Backend identity checks](../../docs_page/principal-propagation-setup.md#verify-the-backend-identity) |
 | Second user | Use an isolated VS Code session and separately authenticated browser session for B. For **each** user compare a direct read with the same gateway read. Include an object both can read to verify two distinct backend accounts. Separately use an object A may read and B is expected to be denied by SAP. Give both the ARC-1 read role so an upstream role denial cannot masquerade as an ABAP decision. Record the object, denying layer and authorization outcome. |
 | Refresh and operations | Repeat after normal token expiry and reconnect. Verify the same backend user. Exercise revocation of a disposable pilot grant through its documented propagation/expiry window. For a configured gateway quota, use a small agreed test limit and compare its rejection with the presence or absence of an ARC-1 call. |
 | Schema lifecycle | After an ARC-1 schema change, capture the upstream read-scoped `tools/list` again. If using the static catalog, refresh its snapshot first. On a disposable artifact choose **Synchronize**, inspect the diff, retain only the authorized tool, redeploy and compare the published schema and a real call. Restore the previous artifact/catalog pair if acceptance fails. [SAP synchronization procedure][sync] |
