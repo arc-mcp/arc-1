@@ -29,7 +29,15 @@ interface Call {
 }
 
 function mockSap(
-  routes: { check?: string; deleted?: string; putError?: string; putStatus?: number; checkRun?: string } = {},
+  routes: {
+    check?: string;
+    deleted?: string;
+    putError?: string;
+    putStatus?: number;
+    metadataStatus?: number;
+    search?: string;
+    checkRun?: string;
+  } = {},
 ): Call[] {
   const calls: Call[] = [];
   mockFetch.mockImplementation(
@@ -61,6 +69,9 @@ function mockSap(
       if (method === 'PUT' && routes.putError) return mockResponse(routes.putStatus ?? 400, routes.putError, csrf);
       if (u.pathname === '/sap/bc/adt/checkruns' && routes.checkRun) return mockResponse(200, routes.checkRun, csrf);
       if (method === 'GET' && u.pathname === SOD1_URL) return mockResponse(200, fixture('sod1-metadata.xml'), csrf);
+      if (u.pathname.endsWith('/informationsystem/search')) return mockResponse(200, routes.search ?? '', csrf);
+      if (method === 'GET' && u.pathname === SOD2_URL && routes.metadataStatus)
+        return mockResponse(routes.metadataStatus, 'The constructor of the class CL_TEST is PRIVATE', csrf);
       if (method === 'GET' && u.pathname === SOD2_URL)
         return mockResponse(200, fixture('sod2-metadata-odatav4.xml'), csrf);
       if (method === 'GET' && u.pathname === '/sap/bc/adt/aps/com/sod1/$packageassignments')
@@ -223,6 +234,53 @@ describe('SAPWrite type=SOD1/SOD2', () => {
     expect(result.isError).toBe(true);
     expect(text(result)).toContain('source changes nothing');
     expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(0);
+  });
+
+  it('reports a confirmed but unreadable assignment and preserves the metadata cause', async () => {
+    mockSap({ metadataStatus: 500 });
+    const input = { type: 'SOD2', name: 'Z_UI_DEMO_DOC_O4_0001' };
+    const result = await write({
+      ...input,
+      action: 'create',
+      package: '$TMP',
+      source: '{"apiPackage":"P","apiObject":{"type":"CLAS","name":"CL_TEST"}}',
+    });
+    expect(text(result)).toContain('was created in package $TMP');
+    expect(text(result)).toContain('SAP cannot read its metadata');
+    expect(text(result)).toContain('is PRIVATE');
+    const read = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', input);
+    expect(read.isError).toBe(true);
+    expect(text(read)).toContain('is PRIVATE');
+    expect(text(read)).not.toMatch(/often transient/);
+  });
+
+  it.each([
+    [500, '$TMP', SOD2_URL, 'SOD2', 1, true],
+    [500, 'Z_OTHER', SOD2_URL, 'SOD2', 1, false],
+    [500, '$TMP', SOD1_URL, 'SOD2', 1, false],
+    [500, '$TMP', SOD2_URL, 'SOD1', 1, false],
+    [500, '', SOD2_URL, 'SOD2', 1, false],
+    [500, '$TMP', SOD2_URL, 'SOD2', 0, false],
+    [500, '$TMP', SOD2_URL, 'SOD2', 2, false],
+    [403, '$TMP', SOD2_URL, 'SOD2', 1, false],
+  ] as const)('verifies delete evidence %j %s %s %s %i', async (status, pkg, uri, type, count, allowed) => {
+    const ref = (p: string) =>
+      `<objectReference type="${type}" name="Z_UI_DEMO_DOC_O4_0001" uri="${uri}" packageName="${p}"/>`;
+    const calls = mockSap({
+      metadataStatus: status,
+      search: `<objectReferences>${count ? ref(pkg) : ''}${count === 2 ? ref('CONFLICT') : ''}</objectReferences>`,
+    });
+    const client = createClient();
+    client.safety.allowedPackages = ['$TMP'];
+    const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'delete',
+      type: 'SOD2',
+      name: 'Z_UI_DEMO_DOC_O4_0001',
+      package: '$TMP',
+    });
+    expect(!result.isError, text(result)).toBe(allowed);
+    expect(calls.some((c) => c.url.includes('informationsystem/search'))).toBe(status === 500);
+    expect(calls.some((c) => c.url === '/sap/bc/adt/deletion/check')).toBe(allowed);
   });
 
   it('deletes through the deletion framework with the transport SAP reports', async () => {

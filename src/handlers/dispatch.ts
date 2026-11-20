@@ -399,6 +399,8 @@ function buildBaseErrorMessage(
       );
     }
     if (err.isServerError) {
+      if (tool === 'SAPRead' && argType === 'SOD2' && !args.include)
+        return `${enriched}\nCheck the assignment's referenced API object in SAP.`;
       const syntaxHint = withDependentSyntaxHint(err, enriched);
       if (syntaxHint !== enriched || err.creationOutcome === 'confirmed') return syntaxHint;
       return `${enriched}\n\nHint: SAP application server error (${err.statusCode}). This is often transient — wait 10-30 seconds and retry. If the error persists, check SAPDiagnose(action="dumps") for short dumps, or verify the SAP system is responding via SAPRead(type="SYSTEM").`;

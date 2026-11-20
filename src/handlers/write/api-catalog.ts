@@ -1,3 +1,4 @@
+import { getApiPackageAssignment } from '../../adt/api-package-assignment.js';
 import {
   type ApiCatalogType,
   apiCatalogAvailable,
@@ -10,6 +11,7 @@ import {
   updateApiCatalogObject,
 } from '../../adt/api-packages.js';
 import type { AdtClient } from '../../adt/client.js';
+import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
 import { checkPackage } from '../../adt/safety.js';
 import type { CachingLayer } from '../../cache/caching-layer.js';
 import type { ServerConfig } from '../../server/types.js';
@@ -20,6 +22,26 @@ import { resolveCreateTransport } from './create-transport.js';
 import { postCreateError } from './post-create-error.js';
 
 const METADATA_ACCEPT = 'application/vnd.sap.adt.blues.v1+xml';
+
+async function verifyDeletePackage(client: AdtClient, type: ApiCatalogType, name: string, url: string) {
+  let pkg: string | undefined;
+  try {
+    pkg = await client.resolveObjectPackage(url, METADATA_ACCEPT);
+  } catch (error) {
+    if (type !== 'SOD2' || !(error instanceof AdtApiError && error.isServerError)) throw error;
+    // SAP can register an assignment whose API object fails during metadata construction.
+    const [entry] = await client.lookupObjects([name], { objectTypes: [type] }).catch(() => []);
+    const matches = entry?.matches ?? [];
+    const hit = matches[0];
+    if (matches.length === 1 && hit?.objectType === type && hit.objectName === name.toUpperCase() && hit.uri === url)
+      pkg = hit.packageName;
+  }
+  if (!pkg?.trim())
+    throw new AdtSafetyError(
+      `Cannot delete ${type} ${name}: SAP did not establish a verified package for this object.`,
+    );
+  await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
+}
 
 /**
  * SAPWrite for API packages (SOD1) and API package assignments (SOD2). `source` is the SAPRead JSON
@@ -49,7 +71,7 @@ export async function writeApiCatalogObject(
   };
 
   if (action === 'delete') {
-    await enforceAllowedPackageForObjectUrl(client, url, label, METADATA_ACCEPT);
+    await verifyDeletePackage(client, type, name, url);
     try {
       const result = await deleteApiCatalogObject(client.http, client.safety, type, name, transport);
       return textResult(`Deleted ${type} ${name}${result.transport ? ` (transport ${result.transport})` : ''}.`);
@@ -100,7 +122,11 @@ export async function writeApiCatalogObject(
     invalidate();
     throw error;
   }
+  let recovery =
+    'SAP cannot read its metadata. Inspect the referenced API object or remove the assignment with SAPWrite(action="delete").';
   try {
+    if (type === 'SOD2') await getApiPackageAssignment(client.http, client.safety, name);
+    recovery = 'Saving the remaining fields failed. Check it with SAPRead and use SAPWrite(action="update").';
     if (needsFollowUpSave(type, definition))
       await updateApiCatalogObject(client.http, client.safety, type, name, definition, transport);
   } catch (cause) {
@@ -109,7 +135,7 @@ export async function writeApiCatalogObject(
       cause,
       type,
       name,
-      `${type} ${name} was created in package ${pkg}, but saving the remaining fields failed. Check it with SAPRead and use SAPWrite(action="update"). Do not repeat create.`,
+      `${type} ${name} was created in package ${pkg}. ${recovery} Do not repeat create.`,
     );
   }
   invalidate();
