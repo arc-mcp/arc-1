@@ -467,6 +467,13 @@ const messageClassMessageSchema = z.object({
   shortText: z.string(),
 });
 
+const deleteMessagesUsage = 'deleteMessages requires action="update" and type="MSAG"; nothing was changed.';
+const deleteMessagesSchema = z
+  .array(messageClassMessageSchema.shape.number)
+  .max(1000)
+  .transform((numbers) => [...new Set(numbers.map((number) => number.padStart(3, '0')))])
+  .optional();
+
 const functionProcessingTypeSchema = z.enum(FUNCTION_PROCESSING_TYPES);
 const functionUpdateTaskKindSchema = z.enum(FUNCTION_UPDATE_TASK_KINDS);
 const ktdShortTextSchema = z.object({
@@ -495,6 +502,7 @@ function validateSapWriteInput(
     processingType?: string;
     updateTaskKind?: string;
     shortTexts?: unknown[];
+    deleteMessages?: string[];
     oldContent?: string;
     newContent?: string;
     expectedSourceHash?: string;
@@ -504,6 +512,9 @@ function validateSapWriteInput(
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
+  if (input.deleteMessages && (input.action !== 'update' || input.type !== 'MSAG')) {
+    ctx.addIssue({ code: 'custom', path: ['deleteMessages'], message: deleteMessagesUsage });
+  }
   if (input.type === 'TABL/DTT' && input.action !== 'update') {
     ctx.addIssue({
       code: 'custom',
@@ -703,6 +714,7 @@ const batchObjectSchemaOnprem = z
     deactivateInputHistory: looseOptionalBoolean,
     changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
+    deleteMessages: z.custom<never>(() => false, deleteMessagesUsage).optional(),
     serviceDefinition: z.string().optional(),
     bindingType: z.string().optional(),
     odataVersion: z.enum(['V2', 'V4']).optional(),
@@ -759,6 +771,7 @@ const batchObjectSchemaBtp = z
     deactivateInputHistory: looseOptionalBoolean,
     changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
+    deleteMessages: z.custom<never>(() => false, deleteMessagesUsage).optional(),
     serviceDefinition: z.string().optional(),
     bindingType: z.string().optional(),
     odataVersion: z.enum(['V2', 'V4']).optional(),
@@ -854,6 +867,7 @@ export const SAPWriteSchema = z
     deactivateInputHistory: looseOptionalBoolean,
     changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
+    deleteMessages: deleteMessagesSchema,
     serviceDefinition: z.string().optional(),
     bindingType: z.string().optional(),
     odataVersion: z.enum(['V2', 'V4']).optional(),
@@ -961,6 +975,7 @@ export const SAPWriteSchemaBtp = z
     deactivateInputHistory: looseOptionalBoolean,
     changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
+    deleteMessages: deleteMessagesSchema,
     serviceDefinition: z.string().optional(),
     bindingType: z.string().optional(),
     odataVersion: z.enum(['V2', 'V4']).optional(),

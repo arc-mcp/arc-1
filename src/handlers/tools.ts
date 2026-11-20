@@ -790,11 +790,17 @@ export function getToolDefinitions(
             items: {
               type: 'object',
               properties: {
-                number: { type: 'string', description: 'Message number 000-999 (e.g., "001")' },
-                shortText: { type: 'string', description: 'Message short text (use & for placeholders: "&1", "&2")' },
+                number: { type: 'string', pattern: '^\\d{1,3}$' },
+                shortText: { type: 'string', description: 'Short text with &1, &2 placeholders' },
               },
               required: ['number', 'shortText'],
             },
+          },
+          deleteMessages: {
+            type: 'array',
+            maxItems: 1000,
+            items: { type: 'string', pattern: '^\\d{1,3}$' },
+            description: 'MSAG update: existing numbers to delete.',
           },
           parameters: {
             type: 'array',

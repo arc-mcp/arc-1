@@ -740,6 +740,7 @@ keep their separate behavior.
 | `deactivateInputHistory` | boolean | No | DTEL: `true` disables SAP GUI input history for fields using the data element; `false` does not suppress it |
 | `changeDocument` | boolean | No | DTEL: change document flag |
 | `messages` | array | No | MSAG: message entries (`[{number, shortText}]`) for `create`, `update`, or each `batch_create` entry — `number` is a string of 1–3 digits (`000`–`999`, e.g., `"001"`; SAP pads shorter values to 3 digits) and any other value is refused before the first SAP call, `shortText` is the message text (max 73 chars). On `update` the entries are merged by number: they add or overwrite, and never delete omitted messages |
+| `deleteMessages` | string[] | No | MSAG update only. Deletes existing message numbers (1–3 digits). Can be combined with `messages` when the numbers are disjoint. |
 | `serviceDefinition` | string | No | SRVB: referenced service definition name (SRVD). Required for SRVB create. |
 | `bindingType` | string | No | SRVB: binding type (default `ODATA`) |
 | `odataVersion` | string | No | SRVB OData protocol version, `V2` (default) or `V4`; overrides the value inferred from `bindingType`. |
@@ -789,10 +790,10 @@ Metadata updates for DOMA, DTEL, MSAG, SRVB and TTYP, and node edits for SKTD/KT
 read the current editable metadata after acquiring the SAP lock, then merge and
 save in that session. Omitted supported fields are preserved. Supplied collections
 (such as DOMA fixed values) still replace that collection; read first when extending
-one. MSAG `messages` are the exception: SAP merges them by number. A new number is
-added, an existing number gets the new text, and every message you leave out keeps
-its number and short text, also when `messages` is empty or omitted. `SAPWrite
-action=update` cannot delete individual messages. SKTD `dryRun` validates without a lock and does not
+one. SAP merges MSAG `messages` by number and preserves omitted messages. To delete 002,
+pass `"deleteMessages": ["2"]`. ARC-1 checks the numbers before saving and verifies deletion
+by reading the class back. An empty short text is a text edit. SAP_BASIS 7.58 SP02 and 8.16 SP01
+stored it as empty, while 7.50 SP02 rejected it. SKTD `dryRun` validates without a lock and does not
 reserve the previewed state. Live SKTD validation uses the locked envelope, so an
 invalid node edit can briefly take a lock but never writes.
 

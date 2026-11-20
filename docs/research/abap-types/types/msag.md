@@ -71,3 +71,17 @@ This dated section concerns read-only relationship roots, not new SAPRead operat
 ```
 
 Qualification and limitations: [per-type research](../../2026-09-10-live-relations-types.md). CI binds every qualified native identity to this document and replays the independent recorded fixtures. This proves the observed 758 shapes, not support on other releases or relationship completeness.
+
+## Individual message deletion (2026-11-20, #1248)
+
+Built CLI tests on SAP_BASIS 7.50 SP02, 7.58 SP02 and 8.16 SP01 verified single deletions
+and mixed add/change/delete updates. On 7.58 they also passed in a transportable test package.
+Under the class lock, send `<mc:deletedmessages mc:msgno="002"/>` after all `<mc:messages>` elements.
+The maintainer’s wire probes found that SAP ignores message elements following a deletion,
+accepts a missing deletion target with HTTP 200 and gives a deletion precedence over a
+change to the same number. The CLI normalizes short numbers, refuses missing or overlapping
+numbers before the PUT and confirms their absence after saving.
+
+The CLI stored an empty short text on 7.58 and 8.16. On 7.50 SP02, both a mixed update and
+a standalone empty-text edit returned HTTP 500 (`Message short text is missing for message
+number 001`). Read-back after the standalone edit confirmed the original text was intact.
