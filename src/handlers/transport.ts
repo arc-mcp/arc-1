@@ -348,14 +348,14 @@ export async function handleSAPTransport(
       const target = created?.target?.trim() ?? '';
       const targetDesc = created?.targetDesc?.trim() ?? '';
 
-      if (created?.type && created.type !== requestType) {
-        return errorResult(
-          `SAP created transport request ${id} with type ${created.type}. Requested type was ${requestType}.`,
-        );
-      }
+      // Only a Customizing create is verified; a Workbench create keeps its result whatever the read-back reports.
       if (requestType === 'W') {
-        if (!created?.type)
-          return errorResult(`SAP created transport request ${id}, but its type could not be verified.`);
+        if (created?.type !== 'W')
+          return errorResult(
+            created?.type
+              ? `SAP created transport request ${id} with type ${created.type}. Requested type was W.`
+              : `SAP created transport request ${id}, but its type could not be verified.`,
+          );
         return textResult(
           `Created transport request: ${id}\nRequest type: W (Customizing)\nTransport target: ${target || '<none> (local)'}${targetDesc ? ` (${targetDesc})` : ''}`,
         );

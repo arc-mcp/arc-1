@@ -54,6 +54,13 @@ describe('CTS request category on create', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
+  it('refuses a request category passed as type before any SAP call', async () => {
+    const result = await create({ requestType: undefined, type: 'W' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Use requestType');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('refuses requestType outside create', async () => {
     expect((await create({ action: 'list' })).content[0].text).toContain('only supported for create');
     expect(mockFetch).not.toHaveBeenCalled();
@@ -85,6 +92,17 @@ describe('CTS request category on create', () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain(id);
     expect(result.content[0].text).toContain(reason);
+  });
+
+  it('keeps the Workbench result when the read-back reports another type', async () => {
+    mockFetch.mockImplementation(async (url, opts) =>
+      mockResponse(200, opts.method === 'POST' && new URL(url).pathname.endsWith('/transports') ? id : xml('X'), {
+        'x-csrf-token': 'T',
+      }),
+    );
+    const result = await create({ requestType: undefined });
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0].text).toContain(`Created transport request: ${id}`);
   });
 
   it.each([undefined, 'DEV'])(

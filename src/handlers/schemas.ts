@@ -1380,6 +1380,10 @@ export const SAPTransportSchema = z
     if (input.requestType !== undefined && input.action !== 'create') {
       ctx.addIssue({ code: 'custom', path: ['requestType'], message: 'requestType is only supported for create.' });
     }
+    // `type` is the object type; a request category there would silently create a Workbench request.
+    if (input.action === 'create' && /^[KWT]$/i.test(input.type ?? '')) {
+      ctx.addIssue({ code: 'custom', path: ['type'], message: 'type is an object type. Use requestType (K or W).' });
+    }
     if (input.requestType === 'W' && (input.package !== undefined || input.transportLayer !== undefined)) {
       ctx.addIssue({
         code: 'custom',

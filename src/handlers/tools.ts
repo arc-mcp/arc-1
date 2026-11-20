@@ -1648,7 +1648,8 @@ export function getToolDefinitions(
           },
           type: {
             type: 'string',
-            description: 'Object type for check/history/remove_object actions (PROG, CLAS, DDLS, etc.).',
+            description:
+              'Object type for check/history/remove_object actions (PROG, CLAS, DDLS, etc.). Not the request category: use requestType.',
           },
           operation: {
             type: 'string',

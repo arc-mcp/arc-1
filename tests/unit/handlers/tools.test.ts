@@ -148,6 +148,7 @@ describe('Tool Definitions', () => {
     expect(schema.properties.operation.enum).toEqual(['create', 'modify']);
     expect(schema.properties.operation.description).toContain('default');
     expect(schema.properties.requestType.enum).toEqual(['K', 'W']);
+    expect(schema.properties.type.description).toContain('use requestType');
     expect(schema.properties.requestType.description).toContain('Workbench (default)');
     expect(sapTransport.description).toContain('Customizing W');
   });
