@@ -396,9 +396,8 @@ function buildBaseErrorMessage(
       );
     }
     if (err.isServerError) {
-      if (err.creationOutcome === 'confirmed') return enriched;
       const syntaxHint = withDependentSyntaxHint(err, enriched);
-      if (syntaxHint !== enriched) return syntaxHint;
+      if (syntaxHint !== enriched || err.creationOutcome === 'confirmed') return syntaxHint;
       return `${enriched}\n\nHint: SAP application server error (${err.statusCode}). This is often transient — wait 10-30 seconds and retry. If the error persists, check SAPDiagnose(action="dumps") for short dumps, or verify the SAP system is responding via SAPRead(type="SYSTEM").`;
     }
     return enriched;
@@ -553,7 +552,8 @@ function withDependentSyntaxHint(err: AdtApiError, message: string): string {
   const syntaxMatch = err.isServerError && err.message.match(/[Ss]yntax error in program (\S+)/);
   if (!syntaxMatch) return message;
   const program = syntaxMatch[1].replace(/=+\w*$/, ''); // Strip "====BD" padding
-  return `${message}\n\nHint: A dependent object has syntax errors that block this operation. The program "${program}" has syntax errors — fix those first, then retry. Use SAPRead to inspect the object, or SAPDiagnose(action="dumps") for details.`;
+  const retryHint = err.creationOutcome === 'confirmed' ? '' : ', then retry';
+  return `${message}\n\nHint: A dependent object has syntax errors that block this operation. The program "${program}" has syntax errors — fix those first${retryHint}. Use SAPRead to inspect the object, or SAPDiagnose(action="dumps") for details.`;
 }
 
 /** Enrich error message with additional SAP XML diagnostic detail (extra messages, properties) */
