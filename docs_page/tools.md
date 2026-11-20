@@ -791,7 +791,7 @@ read the current editable metadata after acquiring the SAP lock, then merge and
 save in that session. Omitted supported fields are preserved. Supplied collections
 (such as DOMA fixed values) still replace that collection; read first when extending
 one. SAP merges MSAG `messages` by number and preserves omitted messages. To delete 002,
-pass `"deleteMessages": ["2"]`. ARC-1 checks the numbers before saving and verifies deletion
+pass `"deleteMessages": ["002"]`. ARC-1 checks the numbers before saving and verifies deletion
 by reading the class back. An empty short text is a text edit. SAP_BASIS 7.58 SP02 and 8.16 SP01
 stored it as empty, while 7.50 SP02 rejected it. SKTD `dryRun` validates without a lock and does not
 reserve the previewed state. Live SKTD validation uses the locked envelope, so an

@@ -60,6 +60,12 @@ describe('MSAG deleteMessages', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
+  it('treats an empty deleteMessages list as omitted on other calls', async () => {
+    mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+    const result = await write({ action: 'delete', deleteMessages: [] });
+    expect(result.content[0].text).not.toContain('deleteMessages');
+  });
+
   it('rejects more than 1000 deletion entries before any SAP call', async () => {
     const result = await write({ deleteMessages: Array(1001).fill('001') });
     expect(result.isError).toBe(true);
@@ -93,7 +99,7 @@ describe('MSAG deleteMessages', () => {
       { number: '001', shortText: '' },
       { number: '003', shortText: 'New' },
     ],
-  ])('orders all retained or changed messages before deletions and verifies once under lock', async (messages) => {
+  ])('sends changed messages before deletions and verifies once under lock', async (messages) => {
     const { operations, bodies } = mockClass();
     const args = { messages, deleteMessages: ['2', '002'] };
     const result = await write(args);
@@ -101,8 +107,13 @@ describe('MSAG deleteMessages', () => {
     expect(result.content[0].text).toContain('Deleted messages: 002.');
     expect(operations.slice(operations.indexOf('lock'))).toEqual(['lock', 'read', 'put', 'read', 'unlock']);
     const body = bodies[0]!;
-    expect(body).toContain(`<mc:messages mc:msgno="001" mc:msgtext="${messages ? '' : 'Original'}"`);
-    if (messages) expect(body).toContain('<mc:messages mc:msgno="003" mc:msgtext="New"');
+    if (messages) {
+      expect(body).toContain('<mc:messages mc:msgno="001" mc:msgtext=""');
+      expect(body).toContain('<mc:messages mc:msgno="003" mc:msgtext="New"');
+    } else {
+      // Deletion only: retained messages are not sent again.
+      expect(body).not.toContain('<mc:messages ');
+    }
     expect(body).not.toContain('<mc:messages mc:msgno="002"');
     expect(body.match(/<mc:deletedmessages mc:msgno="002"\/>/g)).toHaveLength(1);
     expect(body.lastIndexOf('<mc:messages ')).toBeLessThan(body.indexOf('<mc:deletedmessages'));

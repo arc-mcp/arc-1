@@ -299,7 +299,8 @@ export async function mergeMetadataWriteProperties(
     return {
       _description: existing.description,
       _package: existing.package,
-      messages: changes ?? existing.messages.filter((message) => !deleted.has(message.number.padStart(3, '0'))),
+      // A deletion-only save sends no message elements: SAP keeps every message it is not told to change.
+      messages: changes ?? (deleted.size ? [] : existing.messages),
       deleteMessages: provided.deleteMessages,
     };
   }

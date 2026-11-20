@@ -512,7 +512,7 @@ function validateSapWriteInput(
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
-  if (input.deleteMessages && (input.action !== 'update' || input.type !== 'MSAG')) {
+  if (input.deleteMessages?.length && (input.action !== 'update' || input.type !== 'MSAG')) {
     ctx.addIssue({ code: 'custom', path: ['deleteMessages'], message: deleteMessagesUsage });
   }
   if (input.type === 'TABL/DTT' && input.action !== 'update') {
