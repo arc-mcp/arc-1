@@ -14,6 +14,7 @@
  * the API type and not from the ORD resourceDefinitions (which advertise formats ADT does not deliver).
  */
 import { apiCatalogObjectUrl } from './api-packages.js';
+import { AdtError, looksLikeIcfServiceInactivePage } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { getNestedArray, parseXml } from './xml-parser.js';
@@ -128,12 +129,30 @@ export async function getApiPackageAssignment(
   return parseApiPackageAssignment(resp.body);
 }
 
-/** Decoded text of one wrapper slot; '' for an empty element, a missing slot or an empty body. */
-function slot(body: string, wrapper: string, name: string): string {
-  if (!body.trim()) return '';
-  // Whitespace-preserving parse: the slot text is the downloaded document and must stay byte-identical.
-  const value = record(record(parseXml(body, true))[wrapper])[name];
-  return typeof value === 'string' ? value : '';
+function documentSlots(body: string, wrapper: string): Record<string, unknown> {
+  if (!body.trim()) return {};
+  const parsed = parseXml(body, true);
+  if (!(wrapper in parsed)) throw new AdtError(`SAP returned an unexpected document; expected the ${wrapper} wrapper.`);
+  return record(parsed[wrapper]);
+}
+
+function slot(slots: Record<string, unknown>, name: string): string {
+  const value = slots[name] ?? '';
+  if (typeof value !== 'string') throw new AdtError(`SAP returned unexpected markup in ${name}.`);
+  return value;
+}
+
+function htmlError(content: string, label: string): string | undefined {
+  if (!content.trimStart().startsWith('<')) return undefined;
+  if (looksLikeIcfServiceInactivePage(content)) {
+    const status = /\b403\s+Forbidden\b/i.test(content) ? ' (403 Forbidden)' : '';
+    const service =
+      label === 'ORD' ? 'its ORD service /sap/bc/http/sap/ord_document' : 'the resource definition service';
+    return `SAP could not reach ${service}. Its ${label} response contains the HTML “Service cannot be reached” page${status}.`;
+  }
+  if (/^\s*(?:<!doctype\s+html\b|<html[\s>])/i.test(content) || xmlRoot(content)?.local.toLowerCase() === 'html')
+    return `SAP returned an HTML page in the ${label} response.`;
+  return undefined;
 }
 
 function documentUrl(file: '$ordfile' | '$swaggerfile', name: string): string {
@@ -146,8 +165,18 @@ export async function getOrdDocument(http: AdtHttpClient, safety: SafetyConfig, 
   const resp = await http.get(documentUrl('$ordfile', name), {
     Accept: 'application/vnd.sap.adt.oda.ordfile+xml',
   });
-  const ord = slot(resp.body, 'ordFile', 'ordDocumentFile');
-  return isEmptyDocument(ord) ? '' : ord;
+  const ord = slot(documentSlots(resp.body, 'ordFile'), 'ordDocumentFile');
+  if (isEmptyDocument(ord)) return '';
+  const page = htmlError(ord, 'ORD');
+  if (page) throw new AdtError(page);
+  try {
+    if (ord.trimStart().startsWith('{') && JSON.parse(ord)) return ord;
+  } catch {
+    // Report the same bounded diagnostic for malformed JSON and other formats.
+  }
+  throw new AdtError(
+    `SAP returned an invalid ORD document (expected a JSON object). Response starts with: ${ord.trim().slice(0, 160)}`,
+  );
 }
 
 /** Both tabs of the "Resource Definition" dialog, classified and merged by kind. Empty when SAP has none. */
@@ -155,15 +184,25 @@ export async function getResourceDefinitions(
   http: AdtHttpClient,
   safety: SafetyConfig,
   name: string,
+  requestedKind?: string,
 ): Promise<ResourceDefinition[]> {
   checkOperation(safety, OperationType.Read, 'GetSOD2ResourceDefinition');
   const resp = await http.get(documentUrl('$swaggerfile', name), {
     Accept: 'application/vnd.sap.adt.oda.swaggerfile+xml',
   });
-  return mergeResourceDefinitions(
-    slot(resp.body, 'swaggerFile', 'jsonFile'),
-    slot(resp.body, 'swaggerFile', 'edmxFile'),
-  );
+  const slots = documentSlots(resp.body, 'swaggerFile');
+  const json = slot(slots, 'jsonFile'),
+    edmx = slot(slots, 'edmxFile');
+  const jsonError = htmlError(json, 'JSON tab'),
+    edmxError = htmlError(edmx, 'EDMX tab');
+  const definitions = mergeResourceDefinitions(jsonError ? '' : json, edmxError ? '' : edmx);
+  if ((jsonError || edmxError) && !definitions.some((d) => d.kind === requestedKind)) {
+    const available = definitions.map((d) => d.kind).join(', ');
+    throw new AdtError(
+      [jsonError, edmxError, available && `Available separately: ${available}.`].filter(Boolean).join(' '),
+    );
+  }
+  return definitions;
 }
 
 /** Eclipse shows an empty slot as "null"; SAP may also send the literal. */

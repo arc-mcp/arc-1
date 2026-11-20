@@ -98,7 +98,7 @@ export async function readApiPackageAssignment(client: AdtClient, args: Record<s
       if (!ord) return textResult(`SAP returned no ORD document for API package assignment ${name}.`);
       return documentResult(args, `The ORD document of ${name}`, include, ord, 'application/json');
     }
-    const definitions = await getResourceDefinitions(client.http, client.safety, name);
+    const definitions = await getResourceDefinitions(client.http, client.safety, name, include);
     if (definitions.length === 0)
       return textResult(`SAP returned no resource definition for API package assignment ${name}.`);
     if (include === 'specs') {

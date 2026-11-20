@@ -81,6 +81,32 @@ describe('SAPRead type=SOD2', () => {
     expect(text(result)).toBe(`SAP returned no ORD document for API package assignment ${NAME}.`);
   });
 
+  const icf = '<html><head><title>Service cannot be reached</title></head><body>403 Forbidden</body></html>';
+  it.each([
+    [icf, '/sap/bc/http/sap/ord_document'],
+    ['<html>sign in</html>', 'HTML page'],
+    ['{bad', 'expected a JSON object'],
+    ['Not supported yet', 'Not supported yet'],
+    ['[]', 'expected a JSON object'],
+  ])('rejects an invalid ORD response %s', async (body, message) => {
+    backend(undefined, `<ordFile><ordDocumentFile>${escapeXml(body)}</ordDocumentFile></ordFile>`);
+    const result = await read({ include: 'ord' });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain(message);
+  });
+  it.each(['JSON', 'EDMX'])(
+    'identifies an HTML error in the %s tab and keeps the healthy tab readable',
+    async (tab) => {
+      const valid = '{"openapi":"3.0.0"}';
+      backend(swaggerFile(tab === 'JSON' ? icf : valid, tab === 'EDMX' ? icf : valid));
+      const result = await read({ include: 'specs' });
+      expect(result.isError).toBe(true);
+      expect(text(result)).toContain(tab + ' tab');
+      expect(text(result)).toContain('403 Forbidden');
+      expect(text(await read({ include: 'openapi' }))).toBe(valid);
+    },
+  );
+
   it('lists the resource definitions once per kind', async () => {
     const requests = backend();
     const result = await read({ include: 'specs' });

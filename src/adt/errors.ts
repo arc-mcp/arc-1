@@ -943,7 +943,7 @@ export function classifySapDomainError(
   return undefined;
 }
 
-function looksLikeIcfServiceInactivePage(body: string): boolean {
+export function looksLikeIcfServiceInactivePage(body: string): boolean {
   return /<(?:title|h1)[^>]*>\s*Service cannot be reached\s*<\/(?:title|h1)>/i.test(body);
 }
 
