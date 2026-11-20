@@ -59,7 +59,7 @@ export function checkAgainstObjectSchema(schema: unknown, value: unknown): strin
       errors.push(`${at}: ${JSON.stringify(data)} is not allowed. Allowed values: ${node.enum.join(', ')}`);
       if (errors.length === MAX_ERRORS) return;
     }
-    if (typeof node.maxLength === 'number' && typeof data === 'string' && data.length > node.maxLength) {
+    if (typeof node.maxLength === 'number' && typeof data === 'string' && [...data].length > node.maxLength) {
       errors.push(`${at}: longer than ${node.maxLength} characters`);
     }
     if (isPlainObject(data)) {
