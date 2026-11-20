@@ -145,15 +145,15 @@ function slot(slots: Record<string, unknown>, name: string): string {
 
 function htmlError(content: string, label: string): string | undefined {
   if (!content.trimStart().startsWith('<')) return undefined;
+  if (!/^\s*(?:<!doctype\s+html\b|<html[\s>])/i.test(content) && xmlRoot(content)?.local.toLowerCase() !== 'html')
+    return undefined;
   if (looksLikeIcfServiceInactivePage(content)) {
     const status = /\b403\s+Forbidden\b/i.test(content) ? ' (403 Forbidden)' : '';
     const service =
       label === 'ORD' ? 'its ORD service /sap/bc/http/sap/ord_document' : 'the resource definition service';
     return `SAP could not reach ${service}. Its ${label} response contains the HTML “Service cannot be reached” page${status}.`;
   }
-  if (/^\s*(?:<!doctype\s+html\b|<html[\s>])/i.test(content) || xmlRoot(content)?.local.toLowerCase() === 'html')
-    return `SAP returned an HTML page in the ${label} response.`;
-  return undefined;
+  return `SAP returned an HTML page in the ${label} response.`;
 }
 
 // ADT sends the complete escaped wrapper, including both tabs, even for a one-line read.

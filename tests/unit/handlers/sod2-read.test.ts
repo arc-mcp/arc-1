@@ -107,6 +107,12 @@ describe('SAPRead type=SOD2', () => {
     },
   );
 
+  it('retains XML documentation containing an example ICF error page', async () => {
+    const wsdl = `<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"><documentation><![CDATA[${icf}]]></documentation></definitions>`;
+    backend(swaggerFile('', wsdl));
+    expect(text(await read({ include: 'wsdl' }))).toBe(wsdl);
+  });
+
   it('lists the resource definitions once per kind', async () => {
     const requests = backend();
     const result = await read({ include: 'specs' });
