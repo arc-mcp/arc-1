@@ -78,8 +78,9 @@ describe('checkAgainstObjectSchema with the SMBC schema', () => {
 
   it('counts UTF-16 units in maxLength, as SAP does', () => {
     const field = { type: 'string', maxLength: 3 };
+    expect(checkAgainstObjectSchema(field, 'AB⌚')).toEqual([]);
     expect(checkAgainstObjectSchema(field, 'A🌍')).toEqual([]);
-    expect(checkAgainstObjectSchema(field, 'AB🌍')).toEqual(['/: longer than 3 characters']);
+    expect(checkAgainstObjectSchema(field, 'AB🌍')).toEqual(['/: longer than 3 UTF-16 code units']);
   });
 
   it('ignores keywords it does not interpret instead of failing', () => {

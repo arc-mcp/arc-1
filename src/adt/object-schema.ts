@@ -49,9 +49,9 @@ export function checkAgainstObjectSchema(schema: unknown, value: unknown): strin
       errors.push(`${at}: ${JSON.stringify(data)} is not allowed. Allowed values: ${node.enum.join(', ')}`);
       if (errors.length === MAX_ERRORS) return;
     }
-    // UTF-16 units, as SAP counts: 49 letters + one emoji in a 50-character field is a 400 (758, 816).
+    // SAP 758 and 816 enforce SMBC field lengths in UTF-16 code units.
     if (typeof node.maxLength === 'number' && typeof data === 'string' && data.length > node.maxLength) {
-      errors.push(`${at}: longer than ${node.maxLength} characters`);
+      errors.push(`${at}: longer than ${node.maxLength} UTF-16 code units`);
     }
     if (isPlainObject(data)) {
       const properties = isPlainObject(node.properties) ? node.properties : {};
