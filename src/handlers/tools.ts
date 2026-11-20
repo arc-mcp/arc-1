@@ -790,7 +790,7 @@ export function getToolDefinitions(
             items: {
               type: 'object',
               properties: {
-                number: { type: 'string', description: 'Message number (e.g., "001")' },
+                number: { type: 'string', description: 'Message number 000-999 (e.g., "001")' },
                 shortText: { type: 'string', description: 'Message short text (use & for placeholders: "&1", "&2")' },
               },
               required: ['number', 'shortText'],

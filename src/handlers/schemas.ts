@@ -463,7 +463,7 @@ const ddicFixedValueSchema = z.object({
 });
 
 const messageClassMessageSchema = z.object({
-  number: z.string(),
+  number: z.string().regex(/^\d{1,3}$/, 'Message number must be 1-3 digits (000-999), e.g. "001".'),
   shortText: z.string(),
 });
 

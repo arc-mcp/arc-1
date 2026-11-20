@@ -687,7 +687,7 @@
             "properties": {
               "number": {
                 "type": "string",
-                "description": "Message number (e.g., \"001\")"
+                "description": "Message number 000-999 (e.g., \"001\")"
               },
               "shortText": {
                 "type": "string",
