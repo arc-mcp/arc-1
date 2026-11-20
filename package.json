@@ -128,6 +128,7 @@
     "jose": "^6.2.17",
     "on-headers": "^1.1.0",
     "rate-limiter-flexible": "^11.4.1",
+    "saxes": "^6.0.0",
     "undici": "^8.12.4",
     "xml-crypto": "^6.1.2",
     "zod": "^4.6.7"

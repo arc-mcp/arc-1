@@ -180,6 +180,38 @@ describe('applyApiCatalogDefinition', () => {
     expect(out).toContain('<sod2:leadingBusinessObjectType>Currency</sod2:leadingBusinessObjectType>');
   });
 
+  it('edits only a unique namespaced content field, preserving attributes, comments, CDATA and foreign siblings', () => {
+    const xml = SOD1.replaceAll('sod1:', 'q:')
+      .replace('xmlns:sod1=', 'xmlns:q=')
+      .replace(
+        '<q:content>',
+        '<q:extension><q:alias>nested</q:alias></q:extension><q:content><!-- <q:alias/> --><q:note><![CDATA[<q:alias/>]]></q:note><q:alias xmlns:q="urn:other"/>',
+      )
+      .replace(/<q:alias>([^<]*)<\/q:alias><q:namespace>/, '<q:alias flag=">">$1</q:alias><q:namespace>');
+    const out = applyApiCatalogDefinition('SOD1', xml, { alias: '<&$1' });
+    expect(out).toBe(xml.replace(/(<q:alias(?: flag=">")?>)(?!nested)([^<]+)(<\/q:alias>)/, '$1&lt;&amp;$$1$3'));
+    expect(() =>
+      applyApiCatalogDefinition('SOD1', SOD1.replace('<sod1:content>', '<sod1:content><sod1:alias/>'), { alias: 'X' }),
+    ).toThrow('duplicate');
+  });
+
+  it('updates the real root attribute with single quotes and a renamed ADT prefix', () => {
+    const xml = SOD1.replaceAll('adtcore:', 'core:')
+      .replace('xmlns:adtcore=', 'xmlns:core=')
+      .replace(/core:description="[^"]*"/, `other='core:description="keep"' core:description='old > value'`);
+    const out = applyApiCatalogDefinition('SOD1', xml, { description: "it's <new>" });
+    expect(out).toBe(xml.replace("core:description='old > value'", "core:description='it&apos;s &lt;new&gt;'"));
+  });
+
+  it('omits scope dependency from the read-back when this release lacks the field', () => {
+    const xml = SOD1.replace(/<sod1:isScopeDependent>.*?<\/sod1:isScopeDependent>/, '');
+    const info = parseApiPackage(xml);
+    expect(info).not.toHaveProperty('isScopeDependent');
+    expect(() =>
+      applyApiCatalogDefinition('SOD1', xml, parseApiCatalogSource('SOD1', JSON.stringify(info), 'update').definition),
+    ).not.toThrow();
+  });
+
   it('refuses a document that lacks the addressed element or the root', () => {
     const noAlias = SOD1.replace(/<sod1:alias>[^<]*<\/sod1:alias>/, '');
     expect(() => applyApiCatalogDefinition('SOD1', noAlias, { alias: 'x' })).toThrow('has no <sod1:alias> element');
