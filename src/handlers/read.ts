@@ -381,11 +381,19 @@ async function handleSAPReadBase(
   // Preserve the unversioned developer view for omitted/auto; explicit selection is checked by SAP metadata.
   if (isServerDrivenObjectType(type)) {
     if (!name) return errorResult(`"name" is required for SAPRead type=${type}.`);
-    if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
+    const support = await ensureServerDrivenSupport(client.http, client.safety, type);
+    if (!support) {
       return errorResult(serverDrivenUnavailableMessage('SAPRead', type));
     }
     const version = args.version === 'active' || args.version === 'inactive' ? args.version : undefined;
-    const sdo = await getServerDrivenObject(client.http, client.safety, type, name, version);
+    const sdo = await getServerDrivenObject(
+      client.http,
+      client.safety,
+      type,
+      name,
+      version,
+      support.metadataContentType,
+    );
     return textResult(toolJson(sdo));
   }
 

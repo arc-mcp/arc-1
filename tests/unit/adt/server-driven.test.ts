@@ -70,6 +70,8 @@ const asObj = (v: unknown): Record<string, unknown> => v as Record<string, unkno
 /** Mock http whose get() returns a body chosen by the request path. */
 function mockHttp(resolve: (path: string) => { statusCode?: number; body: string }): AdtHttpClient {
   return {
+    hasDiscoveryData: () => false,
+    discoveryAcceptFor: () => undefined,
     get: vi.fn(async (path: string) => ({ statusCode: 200, headers: {}, ...resolve(path) })),
   } as unknown as AdtHttpClient;
 }
@@ -212,7 +214,9 @@ describe('ensureServerDrivenSupport', () => {
 
   it('uses the already-loaded map without fetching discovery', async () => {
     const { http, get } = mockHttp({ loaded: true });
-    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toMatchObject({
+      metadataContentType: 'application/vnd.sap.adt.blues.v1+xml',
+    });
     expect(get).not.toHaveBeenCalled();
   });
 
@@ -221,7 +225,9 @@ describe('ensureServerDrivenSupport', () => {
     // show the collection to; the caller's own discovery advertises it.
     const { http, get } = mockHttp({ loaded: true, has: true });
     (http as unknown as { discoveryAcceptFor: () => undefined }).discoveryAcceptFor = () => undefined;
-    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toMatchObject({
+      metadataContentType: 'application/vnd.sap.adt.blues.v1+xml',
+    });
     expect(get).toHaveBeenCalledTimes(1);
     expect(http.setDiscoveryMap).not.toHaveBeenCalled();
   });
@@ -243,7 +249,9 @@ describe('ensureServerDrivenSupport', () => {
   // SAP 758/816 answer a user without create authorization with `<app:accept/>` (live: /sap/bc/adt/atc/items).
   it.each([true, false])('proceeds when SAP lists the collection without media types (loaded=%s)', async (loaded) => {
     const { http } = mockHttp({ loaded, blank: true });
-    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toMatchObject({
+      metadataContentType: 'application/vnd.sap.adt.blues.v1+xml',
+    });
   });
 
   it('fetches discovery when cold, then reports the type as unavailable on that release', async () => {
@@ -254,7 +262,9 @@ describe('ensureServerDrivenSupport', () => {
 
   it('fetches discovery when cold, then reports the type as available', async () => {
     const { http } = mockHttp({ loaded: false, has: true });
-    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toMatchObject({
+      metadataContentType: 'application/vnd.sap.adt.blues.v1+xml',
+    });
   });
 
   it('never stores the fetched map — server.ts re-injects per call, and sharing it would leak per-user capabilities', async () => {
@@ -265,7 +275,9 @@ describe('ensureServerDrivenSupport', () => {
 
   it('proceeds when discovery itself is unreachable — the gate is an error-message affordance, not a control', async () => {
     const { http } = mockHttp({ loaded: false, getThrows: true });
-    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toMatchObject({
+      metadataContentType: 'application/vnd.sap.adt.blues.v1+xml',
+    });
   });
 
   it('rejects an unknown code without paying for a discovery round-trip', async () => {
@@ -300,6 +312,34 @@ describe('getServerDrivenObject', () => {
     expect(asObj(r.source).boName).toBe('BusinessPartner');
     expect(Array.isArray(asObj(r.source).events)).toBe(true);
     expect((asObj(r.source).events as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  it('uses the COTA collection media type for metadata reads, creates and delete confirmation', async () => {
+    const collection = '/sap/bc/adt/conn/commtargets';
+    const safety = unrestrictedSafetyConfig();
+    for (const version of [2, 1, undefined]) {
+      const { http } = mockWriteHttp();
+      const mime = `application/vnd.sap.adt.blues.v${version ?? 1}+xml`;
+      http.discoveryAcceptFor = (path) => (path === collection && version ? mime : undefined);
+      http.hasDiscoveryData = () => version !== undefined;
+      await getServerDrivenObject(http, safety, 'COTA', 'ZOBJ');
+      expect(http.get).toHaveBeenCalledWith(`${collection}/ZOBJ`, { Accept: mime });
+      await createServerDrivenObject(http, safety, 'COTA', 'ZOBJ', { package: '$TMP', description: 'Target' });
+      expect(http.post).toHaveBeenCalledWith(
+        collection,
+        expect.stringContaining('<blue:blueSource'),
+        mime,
+        undefined,
+        expect.anything(),
+      );
+      if (version === undefined) continue; // Missing discovery also prevents the separate deletion safety check.
+      await deleteServerDrivenObject(http, safety, 'COTA', 'ZOBJ');
+      expect(http.get).toHaveBeenCalledWith(
+        `${collection}/ZOBJ`,
+        { Accept: mime, 'Cache-Control': 'no-cache' },
+        expect.anything(),
+      );
+    }
   });
 
   it('url-encodes the object name', async () => {
