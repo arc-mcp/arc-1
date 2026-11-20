@@ -1107,7 +1107,7 @@ export async function handleToolCall(
     args = normalizedArgs;
     const parsed = schema.safeParse(args);
     if (!parsed.success) {
-      const validationError = formatZodError(parsed.error, toolName, args);
+      const validationError = formatZodError(parsed.error, toolName, args, isBtp);
       logger.emitAudit({
         timestamp: new Date().toISOString(),
         level: 'warn',

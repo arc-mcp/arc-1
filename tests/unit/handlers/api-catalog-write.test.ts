@@ -259,14 +259,15 @@ describe('SAPWrite type=SOD1/SOD2', () => {
     expect(calls.some((c) => c.method === 'PUT' || c.url.includes('_action=LOCK'))).toBe(false);
   });
 
-  it('refuses batch_create for SOD1/SOD2 at the schema', async () => {
+  it.each(['SOD1', 'SOD2'])('directs a batch %s to single create', async (type) => {
     mockSap();
     const result = await write({
       action: 'batch_create',
       package: '$TMP',
-      objects: [{ type: 'SOD1', name: 'Z_X', source: '{"abbreviation":"ZX"}' }],
+      objects: [{ type, name: 'Z_X', source: '{"abbreviation":"ZX"}' }],
     });
     expect(result.isError).toBe(true);
+    expect(text(result)).toContain(`single SAPWrite(action="create", type="${type}", name="Z_X")`);
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });
