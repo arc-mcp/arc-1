@@ -192,7 +192,7 @@ it.each([
   { action: 'create', opts: { schemaStatus: 401 } },
   { action: 'update', opts: { schemaStatus: 403 } },
   { action: 'create', opts: { schemaStatus: 500 } },
-  { action: 'update', opts: { schemaError: new Error('schema request timed out') } },
+  { action: 'update', opts: { schemaError: new DOMException('time limit', 'TimeoutError') } },
   { action: 'update', opts: { schema: '<html>gateway</html>' } },
   { action: 'create', opts: { schema: '{"error":"temporarily unavailable"}' } },
 ])('stops $action before mutation on schema failure $opts', async ({ action, opts }) => {
@@ -205,6 +205,9 @@ it.each([
     source,
   });
   expect(result.isError).toBe(true);
+  const path = action === 'create' ? `${collection}/$new/schema` : `${uri}/schema`;
+  expect(result.content[0]?.text).toContain(`GET ${path}`);
+  expect(result.content[0]?.text).toContain('Nothing was written');
   expect(sends.some((r) => r.path.includes('/schema'))).toBe(true);
   expect(sends.every((r) => r.method === 'GET')).toBe(true);
 });

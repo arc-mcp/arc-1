@@ -79,12 +79,15 @@ export async function getObjectSchema(
   objectUrl: string,
 ): Promise<unknown | undefined> {
   checkOperation(safety, OperationType.Read, 'GetObjectSchema');
+  const path = `${objectUrl}/schema`;
+  const hint = `Nothing was written. Check GET ${path} in SAP ADT before retrying the write.`;
   let body: string;
   try {
-    const response = await http.get(`${objectUrl}/schema`, { Accept: SCHEMA_ACCEPT }, { suppressNotFoundLog: true });
+    const response = await http.get(path, { Accept: SCHEMA_ACCEPT }, { suppressNotFoundLog: true });
     body = response.body;
   } catch (error) {
     if (error instanceof AdtApiError && (error.isNotFound || error.statusCode === 406)) return undefined;
+    if (error instanceof AdtError) error.extraHint = [error.extraHint, hint].filter(Boolean).join('\n');
     throw error;
   }
 
@@ -92,10 +95,10 @@ export async function getObjectSchema(
   try {
     schema = JSON.parse(body);
   } catch {
-    throw new AdtError('SAP returned invalid JSON for the object schema. Nothing was written.');
+    throw new AdtError(`SAP returned invalid JSON for the object schema. ${hint}`);
   }
   if (!isPlainObject(schema) || schema.type !== 'object' || !isPlainObject(schema.properties)) {
-    throw new AdtError('SAP did not return the expected object schema. Nothing was written.');
+    throw new AdtError(`SAP did not return the expected object schema. ${hint}`);
   }
   return schema;
 }
