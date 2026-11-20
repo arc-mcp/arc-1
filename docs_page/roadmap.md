@@ -421,8 +421,16 @@ The pre-delete case's forced read returned the creation template; persistence of
 inactive source was not checked. The control's delete hit a text-pool LOCK 404 until a later
 source update and activation, so only its activation succeeded without recovery.
 
-**Resume with.** Verify source persistence and default/active/inactive metadata across releases;
-trace the SAP response before changing package resolution. Preserve fail-closed package checks. Unique E2E
+Cause ([#1261](https://github.com/arc-mcp/arc-1/issues/1261)): the 7.50 ICM caches every 404 for
+60 seconds by default (`icm/HTTP/server_cache_0/ufo_codelist = 404`, `ufo_expiration = 60`) and
+repeats it for the exact URL, query string included, before ABAP is reached. A 7.50 ADT 404 carries
+no `sap-cache-control` header; 7.58 and 8.16 send `+0` and show no delay. A URL SAP has not seen is
+answered at once, which is why `?version=inactive` worked. ARC-1 adds a retry hint to such a
+not-found error; its own follow-up requests after a miss are still exposed.
+
+**Resume with.** Decide whether ARC-1 should repeat a 404 that lacks `sap-cache-control` once under
+a URL SAP has not seen (for example an extra query parameter), and verify that every affected ADT
+endpoint accepts it. Preserve fail-closed package checks. Unique E2E
 fixtures avoid the pre-delete, but do not fix this runtime gap; do not add a skip for it.
 
 <a id="compat-19"></a>

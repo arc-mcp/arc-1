@@ -115,12 +115,18 @@ export class AdtApiError extends AdtError {
   /** The handler withheld unsafe diagnostics; generic cause/retry advice cannot be inferred. */
   diagnosticsOmitted?: boolean;
 
+  /**
+   * A 404 without `sap-cache-control`: SAP's ICM repeats it for the same URL for about a minute (#1261).
+   * 7.50 omits the header; 7.58 and 8.16 send "+0".
+   */
+  notFoundMayBeReplayed?: boolean;
+
   constructor(
     message: string,
     public readonly statusCode: number,
     public readonly path: string,
     public readonly responseBody?: string,
-    options: { plainText?: boolean } = {},
+    options: { plainText?: boolean; sapCache?: string | null } = {},
   ) {
     // Extract a human-readable message, stripping raw XML/HTML — but only from a raw SAP body.
     // Try the truncated message first; if that only yields a generic title (e.g., "Application Server Error"),
@@ -138,6 +144,7 @@ export class AdtApiError extends AdtError {
     }
     super(`ADT API error: status ${statusCode} at ${path}: ${clean}`);
     this.name = 'AdtApiError';
+    if (statusCode === 404 && options.sapCache === null) this.notFoundMayBeReplayed = true;
   }
 
   /**
