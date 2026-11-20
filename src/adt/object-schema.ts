@@ -9,7 +9,7 @@
  *
  * The schema comes from the backend, so it is interpreted, never compiled: no Ajv (which generates
  * code from schemas and treats them as trusted) and no `pattern` (ReDoS). Only the keywords SAP's
- * schemas use are checked — type, enum, properties, additionalProperties: false, items, maxLength;
+ * schemas use for loss checks are interpreted: type, enum, string const, properties, additionalProperties: false, items, maxLength;
  * everything else is ignored, so an unfamiliar schema can only make the check more lenient.
  */
 import type { AdtHttpClient } from './http.js';
@@ -49,6 +49,10 @@ export function checkAgainstObjectSchema(schema: unknown, value: unknown): strin
     const at = path || '/';
     if (node.type !== undefined && !typeMatches(node.type, data)) {
       errors.push(`${at}: expected ${String(node.type)}`);
+      return;
+    }
+    if (typeof node.const === 'string' && data !== node.const) {
+      errors.push(`${at}: expected ${JSON.stringify(node.const)}`);
       return;
     }
     if (Array.isArray(node.enum) && !node.enum.some((allowed) => allowed === data)) {

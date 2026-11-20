@@ -1037,7 +1037,7 @@ export async function handleServerDrivenObjectWrite(
     return {
       ok: false,
       result: errorResult(
-        `SAPWrite ${action} for ${type} ${name}: the source does not match SAP's schema for this object, and SAP would drop these values silently. Nothing was written.\n- ${problems.join('\n- ')}`,
+        `SAPWrite ${action} for ${type} ${name}: the source does not match SAP's schema for this object. Nothing was written.\n- ${problems.join('\n- ')}`,
       ),
     };
   };

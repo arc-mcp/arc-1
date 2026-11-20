@@ -28,6 +28,12 @@ describe('checkAgainstObjectSchema with the SMBC schema', () => {
     expect(checkAgainstObjectSchema(schema, valid)).toEqual([]);
   });
 
+  it('refuses a format version that 758 silently rewrites to version 1', () => {
+    expect(checkAgainstObjectSchema(schema, { ...valid, formatVersion: '2' })).toEqual([
+      '/formatVersion: expected "1"',
+    ]);
+  });
+
   it('reports the value SAP dropped silently on 816', () => {
     const source = structuredClone(valid);
     source.appConfiguration.listReport.variantManagement = 'control';
