@@ -14,7 +14,7 @@ export interface BatchEntryResult {
   status: 'success' | 'failed' | 'skipped';
   creation: Persistence;
   write: Persistence | 'not_required';
-  activation: Persistence | 'failed';
+  activation: Persistence | 'failed' | 'not_required';
   failedPhase?: BatchFailurePhase;
   error?: string;
 }
@@ -81,7 +81,8 @@ export function batchCreateResult(
     visible
       .map((entry) => {
         const label = `${entry.name} (${entry.type})`;
-        if (entry.status === 'success') return `${label} ✓ [${entry.packageName}]`;
+        if (entry.status === 'success')
+          return `${label} ✓ [${entry.packageName}]${entry.activation === 'not_required' ? ' (activation not required)' : ''}`;
         const reason =
           entry.status === 'skipped'
             ? `skipped — ${options.preflight ? 'batch rejected by preflight' : 'stopped after previous failure'}`
@@ -98,11 +99,12 @@ export function batchCreateResult(
     ? `\n\nBatch activation messages: ${boundedSummary(options.activationMessages.join('; '), 2000)}`
     : '';
   if (failed === 0 && skipped === 0) {
-    const activation = !options.activateAtEnd
-      ? ''
-      : results.some((entry) => entry.activation === 'unknown')
-        ? '; batch activation requested'
-        : '; activated as a single batch';
+    const activation =
+      !options.activateAtEnd || results.every((entry) => entry.activation === 'not_required')
+        ? ''
+        : results.some((entry) => entry.activation === 'unknown')
+          ? '; batch activation requested'
+          : '; activated as a single batch';
     return textResult(`Batch created ${created} objects ${packageSummary}${activation}: ${summary}${warnings}`);
   }
   const prefix = options.preflight

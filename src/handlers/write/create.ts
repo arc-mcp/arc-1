@@ -1231,7 +1231,9 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         );
       }
       if (entry.write !== 'not_required') entry.write = 'confirmed';
-      if (activateAtEnd) {
+      if (plan.type === 'MSAG') {
+        entry.activation = 'not_required';
+      } else if (activateAtEnd) {
         writtenPlans.push(plan);
       } else {
         phase = 'activate';
