@@ -220,7 +220,8 @@ describe('applyApiCatalogDefinition', () => {
       SOD1.replace('<sod1:content>', '<sod1:content xmlns:sod1="urn:other">'),
       SOD1.replace('<sod1:content>', '<sod1:content/><sod1:content>'),
       SOD1.replace(/adtcore:description="[^"]*"/, ''),
-      SOD1 + '<secondRoot/>',
+      `${SOD1}<secondRoot/>`,
+      SOD1.replace('<sod1:sod1 ', '<sod1:sod1 xmlns:sod1="urn:other"/><sod1:sod1 '),
     ]) {
       expect(() => applyApiCatalogDefinition('SOD1', xml, { description: 'changed' })).toThrow();
     }

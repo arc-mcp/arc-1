@@ -392,7 +392,11 @@ export function applyApiCatalogDefinition(type: ApiCatalogType, xml: string, def
   if (XMLValidator.validate(xml) !== true) throw new AdtError('Invalid SAP catalog XML; nothing was saved.');
   const document = catalogParser.parse(xml) as Record<string, unknown>;
   const root = catalogChild(type.toLowerCase(), ns, document);
-  if (!root || Object.keys(document).filter((key) => !key.startsWith('?')).length !== 1)
+  if (
+    !root ||
+    Array.isArray(document[root.name]) ||
+    Object.keys(document).filter((key) => !key.startsWith('?')).length !== 1
+  )
     throw new AdtError(`SAP returned no ${type} metadata document; nothing was saved.`);
   const content = catalogChild('content', ns, root.node);
   if (!content) throw new AdtError(`SAP returned no ${type} content element; nothing was saved.`);
