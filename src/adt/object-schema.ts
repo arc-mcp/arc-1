@@ -57,6 +57,7 @@ export function checkAgainstObjectSchema(schema: unknown, value: unknown): strin
     }
     if (Array.isArray(node.enum) && !node.enum.some((allowed) => allowed === data)) {
       errors.push(`${at}: ${JSON.stringify(data)} is not allowed. Allowed values: ${node.enum.join(', ')}`);
+      if (errors.length === MAX_ERRORS) return;
     }
     if (typeof node.maxLength === 'number' && typeof data === 'string' && data.length > node.maxLength) {
       errors.push(`${at}: longer than ${node.maxLength} characters`);
@@ -64,14 +65,16 @@ export function checkAgainstObjectSchema(schema: unknown, value: unknown): strin
     if (isPlainObject(data)) {
       const properties = isPlainObject(node.properties) ? node.properties : {};
       for (const [key, child] of Object.entries(data)) {
+        if (errors.length >= MAX_ERRORS) break;
         if (Object.hasOwn(properties, key)) walk(properties[key], child, `${path}/${key}`);
         else if (node.additionalProperties === false) errors.push(`${at}: unknown property "${key}"`);
       }
     }
     if (Array.isArray(data) && isPlainObject(node.items)) {
-      data.forEach((item, index) => {
+      for (const [index, item] of data.entries()) {
+        if (errors.length >= MAX_ERRORS) break;
         walk(node.items, item, `${path}/${index}`);
-      });
+      }
     }
   };
   walk(schema, value, '');

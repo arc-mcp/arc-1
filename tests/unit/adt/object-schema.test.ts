@@ -55,6 +55,13 @@ describe('checkAgainstObjectSchema with the SMBC schema', () => {
     );
   });
 
+  it('caps diagnostics across unknown fields and nested objects', () => {
+    const fields = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`field${i}`, true]));
+    const problems = checkAgainstObjectSchema(schema, { header: fields, ...fields });
+    expect(problems).toHaveLength(20);
+    expect(problems.at(-1)).toBe('/header: unknown property "field19"');
+  });
+
   it('ignores keywords it does not interpret instead of failing', () => {
     expect(checkAgainstObjectSchema({ type: 'string', pattern: '^(a+)+$', format: 'x' }, 'aaaa!')).toEqual([]);
     expect(checkAgainstObjectSchema(undefined, { any: 1 })).toEqual([]);
