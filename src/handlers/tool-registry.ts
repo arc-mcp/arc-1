@@ -28,7 +28,7 @@
  */
 
 import { ATC_BATCH_TYPES } from '../adt/atc-batch.js';
-import { SDO_TYPES } from '../adt/server-driven.js';
+import { isServerDrivenObjectType, SDO_TYPES } from '../adt/server-driven.js';
 import type { ResolvedFeatures } from '../adt/types.js';
 import type { ServerConfig } from '../server/types.js';
 
@@ -167,6 +167,9 @@ const sapWriteTypes = deriveTypeArrays(SAPWRITE_TYPE_TABLE);
 export const SAPWRITE_TYPES_ONPREM = sapWriteTypes.onprem;
 /** SAPWrite types available on BTP ABAP Environment (the `btp: true` rows). */
 export const SAPWRITE_TYPES_BTP = sapWriteTypes.btp;
+export const SAPWRITE_BATCH_TYPES = deriveTypeArrays(
+  SAPWRITE_TYPE_TABLE.filter(({ type }) => type !== 'TABL/DTT' && !isServerDrivenObjectType(type)),
+);
 
 // ─── SAPContext ─────────────────────────────────────────────────────
 
