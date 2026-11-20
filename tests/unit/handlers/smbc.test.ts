@@ -301,6 +301,42 @@ it('refuses SMBC batch items before accessing SAP', async () => {
   expect(sends).toEqual([]);
 });
 
+it.each(['create', 'update', 'delete'])('honors the package allowlist before an SMBC %s', async (action) => {
+  const sends = writeBackend();
+  const base = createClient();
+  const client = base.withSafety({ ...base.safety, allowedPackages: ['$TMP'] });
+  const resolve = vi.spyOn(client, 'resolveObjectPackage').mockResolvedValue('ZOTHER');
+  const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+    action,
+    type: 'SMBC',
+    name: 'ZCONFIG',
+    package: action === 'create' ? 'ZOTHER' : '$TMP',
+    source,
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('ZOTHER');
+  if (action !== 'create')
+    expect(resolve).toHaveBeenCalledWith(`${collection}/zconfig`, 'application/vnd.sap.adt.blues.v1+xml', undefined);
+  expect(sends).toEqual([]);
+});
+
+it('applies a denied SMBC update before discovery', async () => {
+  writeBackend();
+  const result = await handleToolCall(
+    createClient(),
+    { ...DEFAULT_CONFIG, denyActions: ['SAPWrite.update'] },
+    'SAPWrite',
+    {
+      action: 'update',
+      type: 'SMBC',
+      name: 'ZCONFIG',
+      source,
+    },
+  );
+  expect(result.isError).toBe(true);
+  expect(mockFetch).not.toHaveBeenCalled();
+});
+
 it('deletes the SMBC under a lock', async () => {
   const sends = writeBackend();
   const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
