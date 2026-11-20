@@ -57,8 +57,8 @@ function fixture(failure: Failure) {
     if (method === 'PUT' && url.pathname === `${root}/source/main`) {
       sourceAttempted = true;
       if (failure === 'timeout') throw Object.assign(new Error('request timed out'), { name: 'TimeoutError' });
-      if (failure === 'source' || failure === 'source-and-unlock')
-        return mockResponse(400, sensitive, { 'x-csrf-token': 'T' });
+      if (failure === 'source') return mockResponse(500, sensitive, { 'x-csrf-token': 'T' });
+      if (failure === 'source-and-unlock') return mockResponse(400, sensitive, { 'x-csrf-token': 'T' });
     }
     return ok();
   });
@@ -94,6 +94,7 @@ describe('FUNC creation recovery after accepted POST', () => {
         expect(text).toContain('was created');
         expect(text).toContain('unconfirmed');
         expect(text).toContain('do not repeat create');
+        expect(text).not.toContain('seconds and retry');
         expect(text).toContain('name="Z_RECOVERY_FM"');
         expect(text).toContain('group="Z_RECOVERY"');
         expect(text).toContain('version="inactive"');
@@ -113,7 +114,7 @@ describe('FUNC creation recovery after accepted POST', () => {
         expect(cache.cache.getSource('FUNC', 'Z_RECOVERY_FM')).toBeNull();
         expect(cache.inactiveLists.getCached('admin')).toBeNull();
         if (failure === 'source' || failure === 'source-and-unlock' || failure === 'metadata') {
-          expect(text).toContain(`status ${failure === 'metadata' ? 403 : 400}`);
+          expect(text).toContain(`status ${failure === 'metadata' ? 403 : failure === 'source' ? 500 : 400}`);
           if (minimalErrors) expect(text).not.toContain(sensitive);
           else expect(text).toContain(failure === 'source-and-unlock' ? 'UNLOCK_DIAGNOSTIC' : sensitive);
         }
