@@ -289,6 +289,17 @@ it('creates an SMBC and says so when the create schema cannot be read', async ()
   expect(result.content[0]?.text).toContain("SAP's schema for SMBC could not be read");
 });
 
+it('refuses SMBC batch items before accessing SAP', async () => {
+  const sends = writeBackend();
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    action: 'batch_create',
+    objects: [{ type: 'SMBC', name: 'ZCONFIG', package: '$TMP' }],
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('objects.0.type');
+  expect(sends).toEqual([]);
+});
+
 it('deletes the SMBC under a lock', async () => {
   const sends = writeBackend();
   const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {

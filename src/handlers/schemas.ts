@@ -665,7 +665,7 @@ const tableTypeDimensionSchema = z
 
 const batchObjectSchemaOnprem = z
   .object({
-    type: z.enum(SAPWRITE_TYPES_ONPREM).exclude(['TABL/DTT']),
+    type: z.enum(SAPWRITE_TYPES_ONPREM).exclude(['TABL/DTT', 'SMBC']),
     name: z.string(),
     source: z.string().optional(),
     description: z.string().optional(),
@@ -722,7 +722,7 @@ const batchObjectSchemaOnprem = z
 
 const batchObjectSchemaBtp = z
   .object({
-    type: z.enum(SAPWRITE_TYPES_BTP).exclude(['TABL/DTT']),
+    type: z.enum(SAPWRITE_TYPES_BTP).exclude(['TABL/DTT', 'SMBC']),
     name: z.string(),
     source: z.string().optional(),
     description: z.string().optional(),

@@ -871,8 +871,7 @@
                   "SAJT",
                   "RONT",
                   "NONT",
-                  "TABL/DTI",
-                  "SMBC"
+                  "TABL/DTI"
                 ],
                 "description": "Creatable object type; technical settings TABL/DTT are update-only"
               },

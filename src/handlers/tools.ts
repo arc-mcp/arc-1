@@ -899,7 +899,9 @@ export function getToolDefinitions(
               properties: {
                 type: {
                   type: 'string',
-                  enum: (btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM).filter((type) => type !== 'TABL/DTT'),
+                  enum: (btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM).filter(
+                    (type) => type !== 'TABL/DTT' && type !== 'SMBC',
+                  ),
                   description: 'Creatable object type; technical settings TABL/DTT are update-only',
                 },
                 name: { type: 'string', description: 'Object name' },
