@@ -14,7 +14,7 @@ import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
-import { sourcePreconditionError } from './editable-source.js';
+import { sourceWriteRequestError } from './editable-source.js';
 import {
   isDomainsEndpointAvailable,
   isTablesEndpointAvailable,
@@ -97,8 +97,8 @@ export async function handleSAPWrite(
     );
   }
 
-  const preconditionError = sourcePreconditionError(type, action, args.expectedSourceHash);
-  if (preconditionError) return errorResult(preconditionError);
+  const requestError = sourceWriteRequestError(type, action, args);
+  if (requestError) return errorResult(requestError);
 
   if (type === 'TABL/DTT') return writeTableSettings(client, action, name, args, cachingLayer, cacheSecurity);
   if (type === 'SOD1' || type === 'SOD2')

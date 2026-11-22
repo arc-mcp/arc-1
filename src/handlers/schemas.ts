@@ -33,7 +33,7 @@ import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { type DataPreviewInput, validateDataPreviewInput } from './data-preview-input.js';
 import { CI_PACKAGES_SCHEMA, DIAGNOSE_ADT_ID_SCHEMA, DIAGNOSE_OBJECT_NAME_SCHEMA } from './diagnose-fields.js';
 import { dumpFilters, validateDumpFilterInputs } from './dump-filter-inputs.js';
-import { sourcePreconditionError, supportsEditContent } from './editable-source.js';
+import { resultHashError, sourcePreconditionError, supportsEditContent } from './editable-source.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { MANAGE_OBJECT_URI_SCHEMA } from './manage-fields.js';
 import { CLASS_WRITE_INCLUDES, KNOWN_BASE_TYPES } from './object-types.js';
@@ -535,6 +535,8 @@ function validateSapWriteInput(
   }
   const preconditionError = sourcePreconditionError(input.type ?? '', input.action, input.expectedSourceHash);
   if (preconditionError) ctx.addIssue({ code: 'custom', path: ['expectedSourceHash'], message: preconditionError });
+  const resultError = resultHashError(input);
+  if (resultError) ctx.addIssue({ code: 'custom', path: ['expectedResultHash'], message: resultError });
   // Treat empty/whitespace include as "not provided" — some MCP clients serialize
   // an omitted optional string as "" and shouldn't trip the include validation.
   if (input.include && input.include.trim() !== '') {
@@ -810,6 +812,7 @@ export const SAPWriteSchema = z
     name: z.string().optional(),
     source: z.string().optional(),
     expectedSourceHash: z.string().optional(),
+    expectedResultHash: z.string().optional(),
     include: z.preprocess(
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.enum(CLASS_WRITE_INCLUDES).optional(),
@@ -932,6 +935,7 @@ export const SAPWriteSchemaBtp = z
     name: z.string().optional(),
     source: z.string().optional(),
     expectedSourceHash: z.string().optional(),
+    expectedResultHash: z.string().optional(),
     include: z.preprocess(
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.enum(CLASS_WRITE_INCLUDES).optional(),

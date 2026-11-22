@@ -13,3 +13,12 @@ export function assertSourceHash(source: string, expected: string | undefined, s
     );
   }
 }
+
+/** A dry run's resultHash: the rebuilt write must equal the approved bytes exactly. */
+export function assertResultHash(result: string, expected: string | undefined, sourceUrl: string): void {
+  if (expected !== undefined && sourceHash(result) !== expected) {
+    throw new AdtSafetyError(
+      `The rebuilt change differs from the approved dry run (expectedResultHash). No write was made. Checked ${sourceUrl}. Run the dry run again, review the new diff, and pass its sourceHash and resultHash.`,
+    );
+  }
+}

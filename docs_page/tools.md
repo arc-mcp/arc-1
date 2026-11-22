@@ -697,6 +697,7 @@ keep their separate behavior.
 | `parameters` | array | No | FUNC structured signature: `{kind,name,type?,description?,byValue?,default?,optional?}` rows for importing/exporting/changing/tables/exceptions/raising. ARC-1 builds and splices the clauses; omit to send `source` verbatim. |
 | `name` | string | No | Object name (for single object actions) |
 | `expectedSourceHash` | string | For `edit_content` | Required for `edit_content`; optional otherwise. SHA-256 from `SAPRead(format="editable")`; rejects changed source under the SAP lock before an update or class/procedural edit. For other actions, omitted/null/blank disables cross-call protection. See [Source preconditions](#source-preconditions). |
+| `expectedResultHash` | string | No | `resultHash` from a source-write `dryRun`. Requires `expectedSourceHash` from the same preview. The write rebuilds the change under the SAP lock and refuses it, without a PUT, when the rebuilt bytes differ from the previewed ones (for example when class structure or function-group metadata changed). See [Preview a source change](#preview-a-source-change). |
 | `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`/`add_unit`: the complete replacement/new `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
 | `include` | string | No | For CLAS write actions `update`, `edit_method`, and `edit_class_definition`: write a class-local include (`definitions`, `implementations`, `macros`, or `testclasses`) instead of `/source/main`. Omit this parameter for main class source updates. `add_method`/`edit_method_signature`/`delete_method`/`change_method_visibility` operate on the global class `/source/main` only and reject `include=`. Include writes create an inactive draft; verify with `SAPRead(version="inactive")` until activation. NOTE: `edit_class_definition` with `include=` skips the symmetry refuse-policy (cross-include validation is not performed; rely on `SAPActivate` to catch breaks). **Auto-init:** whole-include writes (`update` and `edit_class_definition` with `include=`) create the target include automatically if it does not exist yet — notably `testclasses` (CCAU) on a freshly-created class. No separate init step or user-supplied lock handle is needed; the success message notes when ARC-1 initialized it. |
 | `textPart` | string | No | For `edit_text_symbols`: which part of the textpool to write — `symbols` (default; the numbered `TEXT-nnn` literals), `selections` (a report's selection texts — the labels beside `PARAMETERS`/`SELECT-OPTIONS`), or `headings` (list header and column headers). A class has only `symbols`; `PROG` and `FUGR` have all three. On BTP, this action requires `type="CLAS"` and supports only `symbols` (or an omitted part). Read first with `SAPRead(type="CLAS", include="text_symbols")`. |
@@ -710,7 +711,7 @@ keep their separate behavior.
 | `autoApply` | boolean | No | For `scaffold_rap_handlers`: when `true`, create missing `lhc_*` skeletons, inject missing signatures plus empty method stubs into the behavior pool, and write back. Not used by `generate_behavior_implementation` (which always applies; use `dryRun=true` there to preview). |
 | `targetAlias` | string | No | For `scaffold_rap_handlers` and `generate_behavior_implementation`: optional RAP entity alias filter (scaffold only one alias/handler class) |
 | `activate` | boolean | No | For `generate_behavior_implementation`: when `true` (default), runs `SAPActivate` on the class after writing. When `false`, only the source is written. Activation failures matching the well-known `Local classes of CL_ABAP_BEHAVIOR_HANDLER…` stale-active coupling do **not** throw — they return `activation.success=false` with a guided recovery hint so the just-written CCDEF/CCIMP source remains useful. |
-| `dryRun` | boolean | No | For `generate_behavior_implementation`: when `true`, runs discovery + cross-validation + scaffold planning and returns the report **without** writing or activating. Use this to preview what would change. For SKTD/KTD `update`: runs the identical validation of `source` and `shortTexts` and reports which nodes would change and which keep their text, without a PUT. |
+| `dryRun` | boolean | No | Preview without writing. For text-source `update` and the class/procedural edits (`edit_method`, `edit_class_definition`, `add_method`, `edit_method_signature`, `change_method_visibility`, `delete_method`, `edit_unit`, `add_unit`, `edit_content`): no lock, returns the unified diff, the pre-write check results, the current `sourceHash` and the `resultHash` of the bytes the write would send — see [Preview a source change](#preview-a-source-change). For `generate`, see [RAP service generator](#rap-service-generator). For `generate_behavior_implementation`: runs discovery + cross-validation + scaffold planning and returns the report **without** writing or activating. For SKTD/KTD `update`: runs the identical validation of `source` and `shortTexts` and reports which nodes would change and which keep their text, without a PUT. `scaffold_rap_handlers` accepts it only with `autoApply=false` (its own preview mode). All other actions refuse `dryRun` instead of writing. |
 | `generator` | string | No | For `generate`: `ui-service` (OData V4 UI service with Fiori preview) or `webapi-service` (OData V4 Web API). |
 | `description` | string | No | Object description for `create` (defaults to name if omitted, max 60 chars) |
 | `package` | string | No | Package for new objects (default `$TMP`) |
@@ -1354,6 +1355,45 @@ also refuses changes elsewhere in its containing source. Hashes compare exact UT
 including whitespace and line endings; they do not record edit history. A read does not hold a lock
 or reserve a version, and an identical source restored later has the same hash. A missing include
 cannot be initialized by a guarded write; its read/precondition must succeed first.
+
+### Preview a source change
+
+Add `dryRun=true` to a text-source `update` or a class/procedural edit to see the change before
+writing it. ARC-1 runs the action up to its final source on the same uncached editable read that
+`SAPRead(format="editable")` uses (including the function-group resolution of an `L*` include without
+`group`), applies the same splice and refusal rules, and runs the same pre-write checks (preflight,
+lint, and the syntax check when requested; when this call requested the check and ARC-1 cannot confirm that SAP ran it, the response says so). It
+takes no lock, writes nothing and activates nothing. Like `SAPRead`, the preview is not limited by the
+package allowlist, while the write still is; a server whose `SAP_DENY_ACTIONS` denies `SAPRead` for
+the type also refuses the preview, because the diff shows the source.
+
+The response starts with `Dry run for <TYPE> <NAME> — nothing was written.`, followed by
+`{"changed", "linesAdded", "linesRemoved", "sourceHash", "resultHash"}`, any check output, and the
+unified diff. Line endings are normalized and the final line break, which SAP drops on save, is
+settled, so neither alone is a change; both hashes still cover the exact bytes. A refusal is returned
+exactly as the write would return it; a no-op answer (for example a visibility already in place) keeps
+this format with `changed: false`.
+
+To write exactly the previewed change, repeat the same call without `dryRun`, with
+`expectedSourceHash=sourceHash` and `expectedResultHash=resultHash`. Under the SAP lock the write
+re-reads the source, rebuilds the change, and refuses it without a PUT when the source changed
+(see [Source preconditions](#source-preconditions)) or when the rebuilt bytes differ from the preview,
+for example because the class structure or the function group's original language changed. A
+`dryRun` with a non-matching `expectedSourceHash` or `expectedResultHash` is refused the same way.
+
+```text
+SAPWrite(action="edit_method", type="CLAS", name="ZCL_ORDER", method="validate",
+  source="METHOD validate. ... ENDMETHOD.", dryRun=true)
+// Show the diff for approval; keep sourceHash as S and resultHash as R.
+SAPWrite(action="edit_method", type="CLAS", name="ZCL_ORDER", method="validate",
+  source="METHOD validate. ... ENDMETHOD.", expectedSourceHash=S, expectedResultHash=R)
+```
+
+**Limits:** a preview cannot approve the creation of a missing class include (the write would
+create it without a precondition), so it is refused. Sources over 1 MiB, a diff that exceeds its
+work budget, or a diff over 1,000 lines / 64 KiB make the preview incomplete: it is refused without
+hashes, and the change should be split. The response does not include the resulting source; the diff
+and the editable read determine it, and `resultHash` pins it.
 
 ### Replace a small piece of source text
 

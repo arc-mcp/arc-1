@@ -34,6 +34,7 @@ import {
   stripFmParamCommentBlock,
 } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
+import { isDryRun, previewIncludeReplacement, readEditableForPreview, sourcePreviewResult } from './dry-run.js';
 import { writeMetadataUpdate } from './metadata-update.js';
 
 function isDeleteDependencyError(err: AdtApiError): boolean {
@@ -67,7 +68,11 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     invalidateWrittenObject,
     enforcePackageForExistingObject,
   } = ctx;
-  const existingPackage = await enforcePackageForExistingObject();
+  const expectedSourceHash = args.expectedSourceHash as string | undefined;
+  const expectedResultHash = args.expectedResultHash as string | undefined;
+  // A source preview reads like SAPRead; SKTD keeps its own report-style dry run behind the gate.
+  const dryRun = isDryRun(args) && type !== 'SKTD';
+  const existingPackage = dryRun ? undefined : await enforcePackageForExistingObject();
 
   // Keep CLAS local include writes ahead of the generic /source/main fallthrough.
   // If CLAS ever gains separate metadata-update handling, this branch must still
@@ -85,6 +90,8 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
       return errorResult('"source" is required when updating a CLAS include.');
     }
 
+    const includeUrl = classIncludeUrl(name, include);
+    if (dryRun) return previewIncludeReplacement(ctx, include, includeUrl, source);
     // Auto-initialise the include if it doesn't exist yet. On a fresh class
     // the testclasses (CCAU) include is absent — a content PUT alone fails
     // with HTTP 500 "…CCAU does not have any inactive version". safeUpdateClassInclude
@@ -97,7 +104,8 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
       source,
       transport,
       getCachedFeatures()?.abapRelease,
-      args.expectedSourceHash as string | undefined,
+      expectedSourceHash,
+      expectedResultHash,
     );
     invalidateWrittenObject(type, name);
     const initNote = initialized ? ` (initialised the ${include} include first)` : '';
@@ -182,6 +190,18 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     ? (current: string, session: AdtHttpClient) => checkSource(prepareFunctionSource(current), session)
     : await checkSource(effectiveSource);
 
+  if (dryRun) {
+    const current = await readEditableForPreview(client, type, srcUrl, expectedSourceHash);
+    const proposed = typeof replacement === 'function' ? await replacement(current, client.http) : replacement;
+    const notes = mergePreWriteWarnings(
+      preflightWarnings.warnings,
+      lintWarnings.warnings,
+      checkNotes,
+      fmParamStripWarning,
+    );
+    return sourcePreviewResult({ type, name, current, proposed, notes, expectedResultHash });
+  }
+
   // If safeUpdateSource throws (lock conflict, network error, etc.), checkNotes
   // is intentionally discarded — pre-check warnings only matter when the write succeeded.
   await safeUpdateSource(
@@ -192,7 +212,8 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     replacement,
     transport,
     getCachedFeatures()?.abapRelease,
-    args.expectedSourceHash as string | undefined,
+    expectedSourceHash,
+    expectedResultHash,
   );
   invalidateWrittenObject(type, name);
   const msg = `Successfully updated ${type} ${name}.`;

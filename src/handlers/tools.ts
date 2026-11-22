@@ -648,6 +648,7 @@ export function getToolDefinitions(
               (btp ? 'Optional' : 'Required for edit_content; otherwise optional') +
               ' SHA-256 from SAPRead(format=editable) for the whole source/include. Refuses changes under the lock. Text-source updates and class/procedural edits only.',
           },
+          expectedResultHash: { type: 'string' }, // dryRun resultHash; described under dryRun
           source: {
             type: 'string',
             description: btp
@@ -724,7 +725,7 @@ export function getToolDefinitions(
           dryRun: {
             type: 'boolean',
             description:
-              'For generate_behavior_implementation: when true, runs discovery + cross-validation + scaffold planning and returns the report without writing or activating. Use this to preview what would change. SKTD/KTD update: reports which nodes would change, writing nothing.',
+              'Preview, no write. Source update/class/procedural edits: no lock; returns diff, checks, sourceHash, resultHash; to write that, repeat without dryRun with expectedSourceHash, expectedResultHash. generate_behavior_implementation: report. SKTD: changed nodes.',
           },
           generator: { type: 'string', enum: ['ui-service', 'webapi-service'] }, // generate
           description: {

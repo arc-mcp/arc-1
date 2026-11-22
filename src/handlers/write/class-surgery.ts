@@ -34,27 +34,15 @@ import { errorResult, type ToolResult, textResult } from '../shared.js';
 import { runPreWriteLint, runPreWriteSyntaxCheck } from '../write-helpers.js';
 import { withClassEdit } from './class-edit.js';
 import type { SapWriteContext } from './context.js';
+import { enforcePackageUnlessDryRun, isDryRun, previewIncludeReplacement } from './dry-run.js';
 
 export async function writeActionEditMethod(ctx: SapWriteContext): Promise<ToolResult> {
-  const {
-    client,
-    args,
-    config,
-    type,
-    name,
-    source,
-    include,
-    lintOverride,
-    checkOverride,
-    objectUrl,
-    srcUrl,
-    enforcePackageForExistingObject,
-  } = ctx;
+  const { client, args, config, type, name, source, include, lintOverride, checkOverride, objectUrl, srcUrl } = ctx;
   const method = String(args.method ?? '');
   if (!method) return errorResult('"method" is required for edit_method action.');
   if (!source) return errorResult('"source" (new method body) is required for edit_method action.');
   if (type !== 'CLAS') return errorResult('edit_method is only supported for type=CLAS.');
-  await enforcePackageForExistingObject();
+  await enforcePackageUnlessDryRun(ctx);
 
   // ── Resolve which class section the method body lives in ──
   // Order:
@@ -128,10 +116,10 @@ export async function writeActionEditMethod(ctx: SapWriteContext): Promise<ToolR
       );
     }
 
-    await edit.save(writeUrl, spliced.newSource);
+    const extras = [lintWarnings.warnings, checkNotes].filter(Boolean).join('\n\n');
+    await edit.save(writeUrl, spliced.newSource, extras);
     const where = resolvedInclude ? ` (include: ${resolvedInclude})` : '';
     const msg = `Successfully updated method "${method}" in ${type} ${name}${where}.`;
-    const extras = [lintWarnings.warnings, checkNotes].filter(Boolean).join('\n\n');
     return extras ? textResult(`${msg}\n\n${extras}`) : textResult(msg);
   });
 }
@@ -152,7 +140,6 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
     objectUrl,
     srcUrl,
     invalidateWrittenObject,
-    enforcePackageForExistingObject,
   } = ctx;
   if (type !== 'CLAS') return errorResult('edit_class_definition is only supported for type=CLAS.');
   if (!hasSource) return errorResult('"source" (new CLASS DEFINITION block) is required for edit_class_definition.');
@@ -161,11 +148,13 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
       `Invalid CLAS include "${String(args.include)}". Valid values: ${CLASS_WRITE_INCLUDES.join(', ')}.`,
     );
   }
-  await enforcePackageForExistingObject();
+  await enforcePackageUnlessDryRun(ctx);
 
   if (include) {
     // Whole include replacement has no read/modify race; retain missing-include initialization.
     const spliced = source.endsWith('\n') ? source : `${source}\n`;
+    const includeUrl = classIncludeUrl(name, include);
+    if (isDryRun(args)) return previewIncludeReplacement(ctx, include, includeUrl, spliced);
     const initialized = await safeUpdateClassInclude(
       client.http,
       client.safety,
@@ -175,6 +164,7 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
       transport,
       getCachedFeatures()?.abapRelease,
       args.expectedSourceHash as string | undefined,
+      args.expectedResultHash as string | undefined,
     );
     invalidateWrittenObject(type, name);
     const initNote = initialized.initialized ? ` Initialised the ${include} include first.` : '';
@@ -218,7 +208,7 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
     const spliced = spliceClassDefinition(main, structure, source);
     const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
     if (lintWarnings.blocked) return lintWarnings.result!;
-    await edit.save(srcUrl, spliced);
+    await edit.save(srcUrl, spliced, lintWarnings.warnings);
     return textResult(
       `Successfully updated DEFINITION of ${type} ${name}. Active version unchanged until activation; read with SAPRead(version="inactive") to verify, then SAPActivate.`,
     );
@@ -226,7 +216,7 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
 }
 
 export async function writeActionEditMethodSignature(ctx: SapWriteContext): Promise<ToolResult> {
-  const { args, type, name, source, hasSource, includeProvided, srcUrl, enforcePackageForExistingObject } = ctx;
+  const { args, type, name, source, hasSource, includeProvided, srcUrl } = ctx;
   if (type !== 'CLAS') return errorResult('edit_method_signature is only supported for type=CLAS.');
   const methodSpecifier = String(args.method ?? '').trim();
   if (!methodSpecifier) {
@@ -243,7 +233,7 @@ export async function writeActionEditMethodSignature(ctx: SapWriteContext): Prom
       'edit_method_signature targets the global class DEFINITION (/source/main). For local-class (CCDEF) signatures, use edit_class_definition with include=definitions.',
     );
   }
-  await enforcePackageForExistingObject();
+  await enforcePackageUnlessDryRun(ctx);
 
   return withClassEdit(ctx, async (edit) => {
     const { structure, main } = await edit.readMainAndStructure();
@@ -273,7 +263,7 @@ export async function writeActionEditMethodSignature(ctx: SapWriteContext): Prom
 }
 
 export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolResult> {
-  const { args, config, type, name, includeProvided, lintOverride, srcUrl, enforcePackageForExistingObject } = ctx;
+  const { args, config, type, name, includeProvided, lintOverride, srcUrl } = ctx;
   if (type !== 'CLAS') return errorResult('add_method is only supported for type=CLAS.');
   const clause = String(args.method ?? '');
   if (!clause.trim()) {
@@ -305,7 +295,7 @@ export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolRe
       'add_method targets the global class DEFINITION (/source/main). For local-class (CCDEF) method additions, use edit_class_definition with include=definitions.',
     );
   }
-  await enforcePackageForExistingObject();
+  await enforcePackageUnlessDryRun(ctx);
 
   return withClassEdit(ctx, async (edit) => {
     const { structure, main } = await edit.readMainAndStructure();
@@ -349,7 +339,7 @@ export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolRe
     const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
     if (lintWarnings.blocked) return lintWarnings.result!;
 
-    await edit.save(srcUrl, spliced);
+    await edit.save(srcUrl, spliced, lintWarnings.warnings);
     const stubNote = isAbstract ? ' (abstract — no IMPL stub inserted)' : '';
     return textResult(
       `Successfully added method "${methodName}" (${visibility}) to ${type} ${name}${stubNote}. Active version unchanged until activation; SAPActivate next.`,
@@ -358,7 +348,7 @@ export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolRe
 }
 
 export async function writeActionDeleteMethod(ctx: SapWriteContext): Promise<ToolResult> {
-  const { args, config, type, name, includeProvided, lintOverride, srcUrl, enforcePackageForExistingObject } = ctx;
+  const { args, config, type, name, includeProvided, lintOverride, srcUrl } = ctx;
   if (type !== 'CLAS') return errorResult('delete_method is only supported for type=CLAS.');
   const methodSpecifier = String(args.method ?? '').trim();
   if (!methodSpecifier) {
@@ -371,7 +361,7 @@ export async function writeActionDeleteMethod(ctx: SapWriteContext): Promise<Too
       'delete_method targets the global class DEFINITION (/source/main). For local-class (CCDEF/CCIMP) method removal, use edit_class_definition with include=...',
     );
   }
-  await enforcePackageForExistingObject();
+  await enforcePackageUnlessDryRun(ctx);
 
   return withClassEdit(ctx, async (edit) => {
     const { structure, main } = await edit.readMainAndStructure();
@@ -391,7 +381,7 @@ export async function writeActionDeleteMethod(ctx: SapWriteContext): Promise<Too
     const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
     if (lintWarnings.blocked) return lintWarnings.result!;
 
-    await edit.save(srcUrl, spliced);
+    await edit.save(srcUrl, spliced, lintWarnings.warnings);
     const where = method.implementation ? ' (DEFINITION + IMPLEMENTATION)' : ' (DEFINITION only — was ABSTRACT)';
     return textResult(
       `Successfully deleted method "${method.name}" from ${type} ${name}${where}. Active version unchanged until activation; SAPActivate next.`,
@@ -400,7 +390,7 @@ export async function writeActionDeleteMethod(ctx: SapWriteContext): Promise<Too
 }
 
 export async function writeActionChangeMethodVisibility(ctx: SapWriteContext): Promise<ToolResult> {
-  const { args, config, type, name, includeProvided, lintOverride, srcUrl, enforcePackageForExistingObject } = ctx;
+  const { args, config, type, name, includeProvided, lintOverride, srcUrl } = ctx;
   // Body-preserving visibility move (issue #303 follow-up). Moves the METHODS
   // clause from its current section to the target section; the IMPLEMENTATION
   // block is never touched, so the method body survives. This is the safe
@@ -423,7 +413,7 @@ export async function writeActionChangeMethodVisibility(ctx: SapWriteContext): P
       'change_method_visibility targets the global class DEFINITION (/source/main). For local-class (CCDEF) methods, use edit_class_definition with include=definitions.',
     );
   }
-  await enforcePackageForExistingObject();
+  await enforcePackageUnlessDryRun(ctx);
 
   return withClassEdit(ctx, async (edit) => {
     const { structure, main } = await edit.readMainAndStructure();
@@ -469,7 +459,7 @@ export async function writeActionChangeMethodVisibility(ctx: SapWriteContext): P
     const lintWarnings = runPreWriteLint(spliced, type, name, config, lintOverride);
     if (lintWarnings.blocked) return lintWarnings.result!;
 
-    await edit.save(srcUrl, spliced);
+    await edit.save(srcUrl, spliced, lintWarnings.warnings);
     return textResult(
       `Successfully moved method "${method.name}" from ${method.visibility.toUpperCase()} to ${target.toUpperCase()} SECTION of ${type} ${name} (IMPLEMENTATION preserved). Active version unchanged until activation; SAPActivate next.`,
     );

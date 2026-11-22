@@ -197,3 +197,36 @@ describe('FUNC description input contract', () => {
     ).toBe(false);
   });
 });
+
+describe('signature-only FUNC update approved by dryRun', () => {
+  const update = { action: 'update', ...identity, parameters: [parameter], lintBeforeWrite: false };
+  const approve = async () => {
+    const preview = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', { ...update, dryRun: true });
+    expect(preview.isError, preview.content[0]?.text).toBeUndefined();
+    expect(calls.some((call) => call.method === 'PUT' || call.url.includes('_action=LOCK'))).toBe(false);
+    const { sourceHash, resultHash } = JSON.parse(preview.content[0]!.text.split('\n\n')[1]!);
+    calls = [];
+    return { expectedSourceHash: sourceHash, expectedResultHash: resultHash };
+  };
+
+  it('writes the previewed bytes when nothing changed', async () => {
+    const hashes = await approve();
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', { ...update, ...hashes });
+    expect(result.isError, result.content[0]?.text).toBeUndefined();
+    const { createHash } = await import('node:crypto');
+    expect(createHash('sha256').update(writtenSource()!).digest('hex')).toBe(hashes.expectedResultHash);
+  });
+
+  it('refuses under the lock when the group original language changed after the preview', async () => {
+    const hashes = await approve();
+    originalLanguage = 'EN';
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', { ...update, ...hashes });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('differs from the approved dry run');
+    expect(writtenSource()).toBeUndefined();
+    const sequence = calls
+      .filter((call) => /_action=(LOCK|UNLOCK)/.test(call.url) || call.url.includes('/source/main'))
+      .map((call) => call.url.match(/_action=(LOCK|UNLOCK)/)?.[1] ?? call.method);
+    expect(sequence).toEqual(['LOCK', 'GET', 'UNLOCK']);
+  });
+});

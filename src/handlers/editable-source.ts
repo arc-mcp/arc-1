@@ -4,6 +4,7 @@ import { AdtSafetyError } from '../adt/errors.js';
 import { checkOperation, OperationType } from '../adt/safety.js';
 import { sourceHash } from '../adt/source-precondition.js';
 import { isTablesEndpointAvailable } from './feature-cache.js';
+import { resolveIncludeGroupForMutation } from './include-group.js';
 import {
   canonicalTablType,
   classIncludeUrl,
@@ -49,6 +50,50 @@ export function sourcePreconditionError(rawType: string, action: string, hash: u
   return undefined;
 }
 
+/** Refuse dryRun where an action would otherwise ignore it and write. */
+export function dryRunError(rawType: string, action: string, args: Record<string, unknown>): string | undefined {
+  if (args.dryRun !== true) return undefined;
+  const type = canonicalTablType(rawType);
+  if (
+    action === 'generate_behavior_implementation' ||
+    // scaffold_rap_handlers previews through autoApply=false; dryRun cannot override autoApply=true.
+    (action === 'scaffold_rap_handlers' && args.autoApply !== true) ||
+    (action === 'update' && (type === 'SKTD' || TYPES.has(type))) ||
+    ['edit_unit', 'add_unit', 'edit_content'].includes(action) ||
+    CLASS_EDITS.has(action)
+  ) {
+    return undefined;
+  }
+  return 'dryRun previews text-source update, class/procedural surgery, generate, generate_behavior_implementation, SKTD update and scaffold_rap_handlers without autoApply only. No write was made; omit dryRun.';
+}
+
+/** expectedResultHash pins the exact bytes a dry run showed; it always travels with expectedSourceHash. */
+export function resultHashError(args: {
+  expectedResultHash?: unknown;
+  expectedSourceHash?: unknown;
+}): string | undefined {
+  const hash = args.expectedResultHash;
+  if (hash === undefined) return undefined;
+  if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash))
+    return 'expectedResultHash must be the 64-character resultHash from a SAPWrite dryRun.';
+  if (args.expectedSourceHash === undefined)
+    return 'expectedResultHash requires expectedSourceHash (sourceHash) from the same dryRun.';
+  return undefined;
+}
+
+/** SAPWrite request checks for expectedSourceHash, expectedResultHash and dryRun, before any SAP request. */
+export function sourceWriteRequestError(
+  type: string,
+  action: string,
+  args: Record<string, unknown>,
+): string | undefined {
+  return (
+    sourcePreconditionError(type, action, args.expectedSourceHash) ??
+    resultHashError(args) ??
+    dryRunError(type, action, args)
+  );
+}
+
 export async function readEditableSource(
   client: AdtClient,
   args: Record<string, unknown>,
@@ -68,12 +113,14 @@ export async function readEditableSource(
   if (args.include && (type !== 'CLAS' || (!include && String(args.include).toLowerCase() !== 'main')))
     return errorResult('format="editable" supports only CLAS source includes (or main).');
   let url: string;
+  let inclGroup: string | undefined;
   if (type === 'FUNC') {
     const group = String(args.group ?? '').trim() || (await client.resolveFunctionGroup(name));
     if (!group) return errorResult('Cannot resolve function group; provide group for the editable FUNC read.');
     url = `${functionModuleObjectUrl(group, name)}/source/main`;
-  } else if (type === 'INCL' && String(args.group ?? '').trim()) {
-    url = `${functionGroupIncludeObjectUrl(String(args.group), name)}/source/main`;
+  } else if (type === 'INCL' && (inclGroup = await resolveIncludeGroupForMutation(client, name, args.group))) {
+    // Same resolver as SAPWrite: an L* include without group is read from its function group.
+    url = `${functionGroupIncludeObjectUrl(inclGroup, name)}/source/main`;
   } else if (type === 'TABL') {
     // Hash the exact resource a guarded SAPWrite re-reads under its lock: the write resolver
     // (repository search + discovery) picks /tables/ or /structures/ and refuses transparent

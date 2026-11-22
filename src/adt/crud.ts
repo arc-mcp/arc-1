@@ -14,7 +14,7 @@ import { postCreate } from './create-request.js';
 import { AdtApiError, AdtSafetyError, extractExceptionType, isNotFoundError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, isPinnedTransportAllowed, OperationType, type SafetyConfig } from './safety.js';
-import { assertSourceHash } from './source-precondition.js';
+import { assertResultHash, assertSourceHash } from './source-precondition.js';
 /** Lock result from SAP */
 export interface LockResult {
   lockHandle: string;
@@ -258,6 +258,7 @@ export async function safeUpdateSource(
   transport?: string,
   abapRelease?: string,
   expectedSourceHash?: string,
+  expectedResultHash?: string,
 ): Promise<void> {
   checkOperation(safety, OperationType.Update, 'UpdateSource');
   await withLockedMutation(
@@ -275,6 +276,8 @@ export async function safeUpdateSource(
       } else {
         replacement = source;
       }
+      // A dry run's resultHash: the rebuilt bytes must equal the approved ones, checked last before the PUT.
+      assertResultHash(replacement, expectedResultHash, sourceUrl);
       await updateSource(session, safety, sourceUrl, replacement, lock.lockHandle, effectiveTransport);
     },
     abapRelease,
@@ -346,6 +349,7 @@ export async function safeUpdateClassInclude(
   transport?: string,
   abapRelease?: string,
   expectedSourceHash?: string,
+  expectedResultHash?: string,
 ): Promise<{ initialized: boolean }> {
   checkOperation(safety, OperationType.Update, 'UpdateSource');
   return await withLockedMutation(
@@ -368,6 +372,7 @@ export async function safeUpdateClassInclude(
           throw err;
         }
       }
+      assertResultHash(source, expectedResultHash, includeUrl);
       if (!exists) {
         await initClassInclude(session, safety, includeUrl, lock.lockHandle, effectiveTransport);
         initialized = true;
