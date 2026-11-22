@@ -1,7 +1,17 @@
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  accessSync,
+  chmodSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, parse, resolve, win32 } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, parse, resolve, win32 } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import type { Readable, Writable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -88,12 +98,34 @@ export function parseServerArgs(args: string[], env: NodeJS.ProcessEnv = process
   };
 }
 
+/**
+ * POSIX lookup of an executable file on PATH. `command -v` is a shell builtin, and most Linux
+ * distributions ship no `/usr/bin/command`, so spawning it fails there for every candidate.
+ */
+export function existsOnPath(
+  command: string,
+  env: NodeJS.ProcessEnv = process.env,
+  fs: { statSync: typeof statSync; accessSync: typeof accessSync } = { statSync, accessSync },
+): boolean {
+  for (const dir of (env.PATH ?? '').split(delimiter)) {
+    if (!dir) continue;
+    const candidate = join(dir, command);
+    try {
+      if (!fs.statSync(candidate).isFile()) continue;
+      fs.accessSync(candidate, constants.X_OK);
+      return true;
+    } catch {
+      // Not present or not executable in this PATH entry.
+    }
+  }
+  return false;
+}
+
 function commandExists(command: string): boolean {
-  const result =
-    process.platform === 'win32'
-      ? spawnSync('where.exe', [command], { stdio: 'ignore' })
-      : spawnSync('command', ['-v', command], { stdio: 'ignore' });
-  return result.status === 0;
+  if (process.platform === 'win32') {
+    return spawnSync('where.exe', [command], { stdio: 'ignore' }).status === 0;
+  }
+  return existsOnPath(command);
 }
 
 function resolveBrowserBinary(browser: BrowserChoice, platform: NodeJS.Platform): string {

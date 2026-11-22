@@ -1,12 +1,15 @@
 import { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { win32 } from 'node:path';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { delimiter, join, win32 } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 import { describe, expect, it, vi } from 'vitest';
 import {
   cookieMatchesHost,
   ensureOutputDirectory,
+  existsOnPath,
   fetchCookiesViaCdp,
   formatNetscapeCookieLine,
   killBrowserTree,
@@ -87,6 +90,40 @@ describe('extract-sap-cookies planExtraction', () => {
         platform: process.platform,
       }),
     ).toThrow('SAP_PP_ENABLED=true');
+  });
+});
+
+describe('existsOnPath', () => {
+  it('finds an executable file on PATH without spawning a shell builtin', () => {
+    const root = mkdtempSync(join(tmpdir(), 'arc1-path-test-'));
+    try {
+      const empty = join(root, 'empty');
+      const bin = join(root, 'bin');
+      mkdirSync(empty);
+      mkdirSync(bin);
+      writeFileSync(join(bin, 'google-chrome'), '#!/bin/sh\n');
+      chmodSync(join(bin, 'google-chrome'), 0o755);
+      mkdirSync(join(bin, 'chromium')); // a directory with the candidate's name is not a browser
+
+      const env = { PATH: ['', empty, bin].join(delimiter) };
+      expect(existsOnPath('google-chrome', env)).toBe(true);
+      expect(existsOnPath('chromium', env)).toBe(false);
+      expect(existsOnPath('firefox', env)).toBe(false);
+      expect(existsOnPath('google-chrome', {})).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('skips a file that is not executable', () => {
+    const fs = {
+      statSync: vi.fn(() => ({ isFile: () => true })),
+      accessSync: vi.fn(() => {
+        throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+      }),
+    };
+    expect(existsOnPath('google-chrome', { PATH: '/usr/bin' }, fs as never)).toBe(false);
+    expect(fs.accessSync).toHaveBeenCalledOnce();
   });
 });
 
