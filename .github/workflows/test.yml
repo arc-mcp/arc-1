@@ -184,6 +184,7 @@ jobs:
        needs.test.result == 'success')
     outputs:
       current: ${{ steps.current.outputs.current }}
+      credentials-eligible: ${{ steps.credentials.outputs.eligible }}
     steps:
       - &check-sap-pr-head
         name: Check PR head freshness
@@ -204,6 +205,24 @@ jobs:
             if (!current) core.notice('SAP tests skipped: PR is closed or its head changed. This is not a passed SAP suite.');
             core.setOutput('current', String(current));
 
+      - name: Check SAP test secret presence
+        id: credentials
+        if: steps.current.outputs.current == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          SAP_SECRETS_PRESENT: >-
+            ${{ secrets.TEST_SAP_URL != '' && secrets.TEST_SAP_USER != '' &&
+            secrets.TEST_SAP_PASSWORD != '' && secrets.TEST_SAP_CLIENT != '' }}
+        with:
+          script: |
+            // Upstream always reaches the existing preflights, which fail on missing secrets.
+            const upstream = context.repo.owner === 'arc-mcp' && context.repo.repo === 'arc-1';
+            const eligible = upstream || process.env.SAP_SECRETS_PRESENT === 'true';
+            core.setOutput('eligible', String(eligible));
+            if (!eligible) {
+              core.notice('Configure TEST_SAP_URL, TEST_SAP_USER, TEST_SAP_PASSWORD, and TEST_SAP_CLIENT to run integration and e2e in this repository.', { title: 'SAP jobs skipped' });
+            }
+
   # Run on internal PRs and manual dispatch; skip external fork PRs (no secrets)
   integration:
     runs-on: ubuntu-latest
@@ -212,12 +231,13 @@ jobs:
       cancel-in-progress: false
       queue: max
     if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository &&
-       needs.gate.result == 'success' &&
-       needs.test.result == 'success' &&
-       needs.sap-run-guard.outputs.current == 'true')
+      needs.sap-run-guard.outputs.credentials-eligible == 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        needs.gate.result == 'success' &&
+        needs.test.result == 'success' &&
+        needs.sap-run-guard.outputs.current == 'true'))
     needs: [test, gate, sap-run-guard]
 
     steps:
@@ -340,6 +360,7 @@ jobs:
       needs.gate.result == 'success' &&
       needs.test.result == 'success' &&
       needs.sap-run-guard.outputs.current == 'true' &&
+      needs.sap-run-guard.outputs.credentials-eligible == 'true' &&
       (github.event_name == 'workflow_dispatch' ||
        (github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name == github.repository))
