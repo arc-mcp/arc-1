@@ -30,6 +30,7 @@ import { lockObject, unlockObject } from './crud.js';
 import { fetchDiscoveryDocument, resolveAcceptType } from './discovery.js';
 import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
+import { encodeObjectNameSegment } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { parseTableIndexName, TABLE_INDEX_COLLECTION, tableIndexParentUrl } from './table-index.js';
 import type { DiscoveryMap, ServerDrivenObjectResult } from './types.js';
@@ -338,7 +339,7 @@ function sdoEntry(code: string): SdoRegistryEntry {
 export function serverDrivenObjectUrl(code: string, name: string): string {
   if (code === 'TABL/DTI') parseTableIndexName(name);
   const entry = sdoEntry(code);
-  return `${entry.href}/${encodeURIComponent(entry.lowercaseName ? name.toLowerCase() : name)}`;
+  return `${entry.href}/${encodeObjectNameSegment(entry.lowercaseName ? name.toLowerCase() : name)}`;
 }
 
 /** URL SAP serves create-time resources under (`<collection>/$new`, e.g. `$new/schema`). */

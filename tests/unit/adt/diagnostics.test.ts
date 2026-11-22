@@ -1925,6 +1925,12 @@ describe('parseCdsCreateStatements', () => {
 });
 
 describe('getCdsCreateStatements', () => {
+  it.each(['.', '..'])('refuses %s before making a request', async (name) => {
+    const http = mockHttp();
+    await expect(getCdsCreateStatements(http, unrestrictedSafetyConfig(), name)).rejects.toThrow();
+    expect(http.post).not.toHaveBeenCalled();
+  });
+
   it('POSTs to createstatements with CSRF-Accept and parses the SQL', async () => {
     const fixture = readFileSync(join(FIXTURES_DIR, 'createstatements-i-currency.xml'), 'utf-8');
     const http = mockHttp(fixture);

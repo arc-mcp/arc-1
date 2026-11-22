@@ -133,3 +133,43 @@ export function encodeAdtIdSegment(value: string): string {
   }
   return encodeURIComponent(decoded);
 }
+
+/** True when a value decodes to a `.`/`..` path segment. */
+export function isTraversalSegment(value: string): boolean {
+  const trimmed = String(value ?? '').trim();
+  let decoded = trimmed;
+  try {
+    decoded = decodeURIComponent(trimmed);
+  } catch {
+    // A literal `%` that is not an escape: judge the raw value.
+  }
+  return decoded === '.' || decoded === '..';
+}
+
+/** Encode an ABAP object name as one URL segment, refusing dot-segment names. */
+export function encodeObjectNameSegment(name: string): string {
+  if (name === '.' || name === '..') {
+    throw new Error(`Refusing "${name}": "." and ".." are not valid object names.`);
+  }
+  return encodeURIComponent(name);
+}
+
+/** Refuse path segments that URL parsing would resolve before the HTTP request is sent. */
+export function assertNoUrlDotSegments(path: string): string {
+  const pathname = path.split(/[?#]/, 1)[0] ?? '';
+  if (pathname.includes('\\') || pathname.split('/').some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))) {
+    throw new Error('Request path must not contain dot segments or backslashes.');
+  }
+  return path;
+}
+
+/** Canonical ADT URI for object metadata, allowing encoded slashes in namespaced object names. */
+export function canonicalAdtObjectUri(rawPath: string): string | null {
+  return canonicalHostRelativeAdtPath(rawPath, ADT_ROOT_PATH, { allowRawEncodedSlash: true });
+}
+
+export function assertCanonicalAdtObjectUri(rawPath: string): string {
+  const canonical = canonicalAdtObjectUri(rawPath);
+  if (!canonical) throw new Error('Object URI must be a canonical host-relative ADT path.');
+  return canonical;
+}

@@ -31,10 +31,11 @@ import { SYNTAX_BATCH_TYPES } from '../adt/syntax-batch.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { type DataPreviewInput, validateDataPreviewInput } from './data-preview-input.js';
-import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
+import { CI_PACKAGES_SCHEMA, DIAGNOSE_ADT_ID_SCHEMA, DIAGNOSE_OBJECT_NAME_SCHEMA } from './diagnose-fields.js';
 import { dumpFilters, validateDumpFilterInputs } from './dump-filter-inputs.js';
 import { sourcePreconditionError, supportsEditContent } from './editable-source.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
+import { MANAGE_OBJECT_URI_SCHEMA } from './manage-fields.js';
 import { CLASS_WRITE_INCLUDES, KNOWN_BASE_TYPES } from './object-types.js';
 import { SAPQuerySchema, SAPQuerySchemaBtp } from './query-input.js';
 import { readMethodOptionError } from './read-method-options.js';
@@ -1156,7 +1157,7 @@ export const SAPDiagnoseSchema = z
       'sql_trace_directory',
       'authorization_trace',
     ]),
-    name: z.string().optional(),
+    name: DIAGNOSE_OBJECT_NAME_SCHEMA.optional(),
     url: z.string().optional(),
     type: z.string().optional(),
     objects: atcBatchObjectsSchema(ATC_BATCH_TYPES),
@@ -1169,7 +1170,7 @@ export const SAPDiagnoseSchema = z
     proposalUserContent: z.string().optional(),
     proposalAffectedObjects: z.array(QuickfixAffectedObjectSchema).optional(),
     variant: z.string().optional(),
-    id: z.string().optional(),
+    id: DIAGNOSE_ADT_ID_SCHEMA.optional(),
     detailUrl: z.string().optional(),
     errorType: z.string().optional(),
     user: z.string().optional(),
@@ -1559,7 +1560,7 @@ export const SAPManageSchema = z
     recordChanges: z.boolean().optional(),
     packageType: z.enum(['development', 'structure', 'main']).optional(),
     transport: z.string().optional(),
-    objectUri: z.string().optional(),
+    objectUri: MANAGE_OBJECT_URI_SCHEMA.optional(),
     objectType: z.string().optional(),
     objectName: z.string().optional(),
     oldPackage: z.string().optional(),

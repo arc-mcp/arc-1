@@ -462,6 +462,22 @@ ENDCLASS.`;
   });
 
   describe('SAPDiagnose object_state', () => {
+    it.each([
+      ['object_state', '.'],
+      ['object_state', '..'],
+      ['cds_sql', '.'],
+      ['cds_sql', '..'],
+    ])('refuses %s name %s before any SAP request', async (action, name) => {
+      mockFetch.mockReset();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action,
+        type: 'CLAS',
+        name,
+      });
+      expect(result.isError).toBe(true);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('compares CLAS main and include active/inactive versions', async () => {
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string | URL) => {

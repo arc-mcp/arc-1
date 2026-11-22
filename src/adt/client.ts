@@ -31,7 +31,7 @@ import { filterIncludeHits, requiresUnfilteredIncludeSearch } from './include-se
 import { getDirectPackageContents } from './package-browser.js';
 import { requirePackageFilteredSearch } from './package-contents.js';
 import { AdtPackageHierarchyResolver, fetchSuperPackage, type PackageHierarchyResolver } from './package-hierarchy.js';
-import { canonicalRevisionSourcePath } from './path-safety.js';
+import { assertCanonicalAdtObjectUri, canonicalRevisionSourcePath } from './path-safety.js';
 import { clampUrlLimit } from './result-limits.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
@@ -1680,7 +1680,8 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
     // bindings resource), and that 406 body names no accepted type, so the generic negotiation
     // retry cannot recover. Parameters select nothing on these metadata reads.
     const bareAccept = accept?.split(';')[0]?.trim();
-    const resp = await this.http.get(objectUrl, bareAccept ? { Accept: bareAccept } : undefined, options);
+    const canonicalUri = assertCanonicalAdtObjectUri(objectUrl);
+    const resp = await this.http.get(canonicalUri, bareAccept ? { Accept: bareAccept } : undefined, options);
     const packageRefMatch = resp.body.match(/adtcore:packageRef[^>]*adtcore:name="([^"]*)"/);
     if (packageRefMatch?.[1]) return packageRefMatch[1];
     const containerRefMatch = resp.body.match(/adtcore:containerRef[^>]*adtcore:packageName="([^"]*)"/);

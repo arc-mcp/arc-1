@@ -12,7 +12,7 @@ import {
 } from './atc.js';
 import { AdtApiError, AdtNetworkError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
-import { canonicalHostRelativeAdtPath } from './path-safety.js';
+import { canonicalHostRelativeAdtPath, encodeObjectNameSegment } from './path-safety.js';
 import type { SafetyConfig } from './safety.js';
 
 // DDIC uses ATC's own R3TR reference: TABL covers both tables and structures,
@@ -21,7 +21,7 @@ const ATC_DDIC_BATCH_TYPES = ['TABL', 'DTEL', 'DOMA'] as const;
 
 export function atcDdicObjectUrl(type: string, name: string): string | undefined {
   return ATC_DDIC_BATCH_TYPES.some((candidate) => candidate === type)
-    ? `/sap/bc/adt/atc/objects/R3TR/${type}/${encodeURIComponent(name)}`
+    ? `/sap/bc/adt/atc/objects/R3TR/${type}/${encodeObjectNameSegment(name)}`
     : undefined;
 }
 

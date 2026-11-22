@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import { AdtApiError } from './errors.js';
 import { type FeedFilter, prepareDumpFilterQuery } from './feed-schema.js';
 import type { AdtHttpClient } from './http.js';
-import { assertCanonicalHostRelativeAdtPath, encodeAdtIdSegment } from './path-safety.js';
+import { assertCanonicalHostRelativeAdtPath, encodeAdtIdSegment, encodeObjectNameSegment } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type {
   DumpChapter,
@@ -1299,9 +1299,14 @@ export async function getCdsCreateStatements(
   name: string,
 ): Promise<CdsCreateStatements> {
   checkOperation(safety, OperationType.Read, 'GetCdsCreateStatements');
-  const resp = await http.post(`/sap/bc/adt/ddic/ddl/createstatements/${encodeURIComponent(name)}`, '', undefined, {
-    Accept: 'application/vnd.sap.adt.ddl.createStatements+xml',
-  });
+  const resp = await http.post(
+    `/sap/bc/adt/ddic/ddl/createstatements/${encodeObjectNameSegment(name)}`,
+    '',
+    undefined,
+    {
+      Accept: 'application/vnd.sap.adt.ddl.createStatements+xml',
+    },
+  );
   return parseCdsCreateStatements(resp.body, name);
 }
 
