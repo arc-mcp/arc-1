@@ -1,4 +1,4 @@
-/** SAPWrite action for locked text replacement and FORM/MODULE surgery in PROG and INCL sources. */
+/** SAPWrite actions: locked text replacement (PROG/INCL/TABL) and FORM/MODULE surgery (PROG/INCL). */
 
 import { lockObject, unlockObject, updateSource } from '../../adt/crud.js';
 import { ABAPLINT_MAX_RELEASE, mapSapReleaseToAbaplintVersion } from '../../adt/features.js';

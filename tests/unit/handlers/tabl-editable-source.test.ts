@@ -262,18 +262,29 @@ it('lets preflightBeforeWrite=false bypass the edit_content preflight', async ()
 
 const tablEdit = { ...quanEdit, newContent: 'matnr : matnr;\n  maktx : maktx;' };
 
-it('runs TABL edit_content under SAP_SYSTEM_TYPE=auto before the system type is detected', async () => {
-  const state = backend();
-  const result = await handleToolCall(createClient(), { ...config, systemType: 'auto' as const }, 'SAPWrite', tablEdit);
-  expect(result.isError, result.content[0]!.text).toBeUndefined();
-  expect(puts(state)).toHaveLength(1);
-  expect(state.locked).toBe(false);
-});
+it.each([undefined, 'onprem', 'btp'] as const)(
+  'runs TABL edit_content under SAP_SYSTEM_TYPE=auto (detected: %s)',
+  async (detected) => {
+    if (detected) setCachedFeatures({ ...featuresOff(), systemType: detected, abapRelease: '816' });
+    const state = backend();
+    const result = await handleToolCall(
+      createClient(),
+      { ...config, systemType: 'auto' as const },
+      'SAPWrite',
+      tablEdit,
+    );
+    expect(result.isError, result.content[0]!.text).toBeUndefined();
+    expect(state.source).toBe(initial.replace('matnr : matnr;', 'matnr : matnr;\n  maktx : maktx;'));
+    expect(puts(state)).toHaveLength(1);
+    expect(state.locked).toBe(false);
+  },
+);
 
 it('rejects edit_content under SAP_SYSTEM_TYPE=btp without SAP contact', async () => {
   backend();
   const result = await handleToolCall(createClient(), { ...config, systemType: 'btp' as const }, 'SAPWrite', tablEdit);
   expect(result.isError).toBe(true);
+  expect(result.content[0]!.text).toMatch(/"action": expected one of: (?!.*edit_content)/);
   expect(mockFetch).not.toHaveBeenCalled();
 });
 
