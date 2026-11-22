@@ -1123,9 +1123,11 @@ export class AdtNetworkError extends AdtError {
     return code || message ? { code, message } : undefined;
   }
 
-  /** Safe-to-show error code; undici's proxy `Client.request` throws the coded error directly. */
+  /** Only symbolic transport codes belong in minimal client messages. */
   get causeCode(): string | undefined {
-    return this.lowLevelCause?.code ?? errorCode(this.cause);
+    if (this.isTimeout || this.isCancelled) return undefined;
+    const code = this.lowLevelCause?.code ?? errorCode(this.cause);
+    return code && /^[A-Z][A-Z0-9_]{0,63}$/.test(code) ? code : undefined;
   }
 }
 

@@ -130,6 +130,7 @@ describe('extension POST replay through the dispatcher', () => {
         expect(text).toContain('request ID');
         expect(text).not.toContain('database connection');
         if (typeof status === 'number') expect(text).toContain(`status ${status}`);
+        else expect(text).toContain('(UND_ERR_SOCKET)');
       }
       expect(audit.mock.calls.some(([event]) => event.event === 'tool_call_end' && event.status === 'error')).toBe(
         true,

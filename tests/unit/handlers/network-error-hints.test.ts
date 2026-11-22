@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
-import { createClient, mockFetch } from './setup-undici-mock.js';
+import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
+const { Client } = await import('undici');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 
 beforeEach(() => vi.resetAllMocks());
@@ -120,9 +121,9 @@ describe('network error cause (#1272)', () => {
     ],
     [
       Object.assign(new AggregateError([coded('ECONNREFUSED', 'connect ECONNREFUSED ::1:443')], ''), {
-        code: 'ECONNREFUSED',
+        code: 'ETIMEDOUT',
       }),
-      'ADT network error: fetch failed (ECONNREFUSED: connect ECONNREFUSED ::1:443)',
+      'ADT network error: fetch failed (ETIMEDOUT: connect ECONNREFUSED ::1:443)',
     ],
     [
       new AggregateError([coded('ECONNREFUSED', 'connect ECONNREFUSED 127.0.0.1:443')], ''),
@@ -138,7 +139,8 @@ describe('network error cause (#1272)', () => {
 
   it('keeps the message unchanged without a cause', async () => {
     mockFetch.mockRejectedValue(fetchFailed());
-    expect((await read()).split('\n')[0]).toBe('ADT network error: fetch failed');
+    for (const minimal of [false, true])
+      expect((await read(minimal)).split('\n')[0]).toBe('ADT network error: fetch failed');
   });
 
   it('keeps timeouts unchanged', async () => {
@@ -161,12 +163,115 @@ describe('network error cause (#1272)', () => {
     expect(text).toContain('ADT network error (ERR_TLS_CERT_ALTNAME_INVALID).');
     expect(text).toContain('Cannot reach the SAP system');
     expect(text).not.toMatch(/10\.1\.2\.3|sap\.internal|altnames|fetch failed/);
+  });
 
-    // undici's proxy Client.request rejects with the coded error itself, not under `fetch failed`.
-    mockFetch.mockRejectedValue(coded('ECONNREFUSED', 'connect ECONNREFUSED 10.9.9.9:20003'));
-    const proxyText = await read(true);
-    expect(proxyText).toContain('ADT network error (ECONNREFUSED).');
-    expect(proxyText).not.toContain('10.9.9.9');
+  it.each([
+    [
+      coded('UND_ERR_CONNECT_TIMEOUT', 'Connect Timeout Error (proxy.internal:20003)'),
+      'UND_ERR_CONNECT_TIMEOUT',
+      'Connect Timeout Error (proxy.internal:20003)',
+    ],
+    [
+      new AggregateError([coded('ECONNREFUSED', 'connect ECONNREFUSED 10.9.9.9:20003')], ''),
+      'ECONNREFUSED',
+      'connect ECONNREFUSED 10.9.9.9:20003',
+    ],
+  ] as const)('formats a proxy %s through Client.request', async (proxyFailure, code, reason) => {
+    const proxyRequest = vi.spyOn(Client.prototype, 'request').mockRejectedValue(proxyFailure);
+    try {
+      const client = new AdtClient({
+        baseUrl: 'http://sap.internal',
+        btpProxy: { protocol: 'http', host: 'proxy.internal', port: 20003, getProxyToken: async () => 'test' },
+      });
+      // Batch handlers and deadline classifiers see only the outer message.
+      await expect(client.getSystemInfo()).rejects.toMatchObject({ message: 'ADT network error: fetch failed' });
+      for (const minimalErrors of [false, true]) {
+        const result = await handleToolCall(client, { ...DEFAULT_CONFIG, minimalErrors }, 'SAPRead', {
+          type: 'SYSTEM',
+        });
+        expect(result.isError).toBe(true);
+        const text = result.content[0]?.text ?? '';
+        expect(text).toContain('Connectivity probe failed');
+        if (minimalErrors) {
+          expect(text).toContain(`ADT network error (${code}).`);
+          expect(text).not.toMatch(/10\.9\.9\.9|internal|20003/);
+        } else {
+          expect(text.split('\n')[0]).toBe(`ADT network error: fetch failed (${code}: ${reason})`);
+        }
+      }
+      expect(proxyRequest).toHaveBeenCalledTimes(3);
+      expect(mockFetch).not.toHaveBeenCalled();
+    } finally {
+      proxyRequest.mockRestore();
+    }
+  });
+
+  it.each([
+    ['SAPActivate', { type: 'PROG', name: 'ZTEST' }, 'If activation was submitted'],
+    [
+      'SAPWrite',
+      { action: 'create', type: 'PROG', name: 'ZTEST', package: '$TMP' },
+      'Create completion is unconfirmed',
+    ],
+  ] as const)('preserves the code and recovery advice for %s when CSRF fails', async (tool, args, hint) => {
+    mockFetch.mockRejectedValue(fetchFailed(coded('ENOTFOUND', 'getaddrinfo ENOTFOUND sap.internal')));
+    for (const minimalErrors of [false, true]) {
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, tool, args);
+      const text = result.content[0]?.text ?? '';
+      expect(result.isError).toBe(true);
+      expect(text).toContain(hint);
+      if (minimalErrors) {
+        expect(text).toContain('(ENOTFOUND)');
+        expect(text).not.toContain('sap.internal');
+      } else {
+        expect(text.split('\n')[0]).toBe(
+          'ADT network error: CSRF token fetch failed: fetch failed (ENOTFOUND: getaddrinfo ENOTFOUND sap.internal)',
+        );
+      }
+    }
+  });
+
+  it.each(['TimeoutError', 'AbortError'])('keeps %s separate from network causes in both modes', async (name) => {
+    const cause = Object.assign(new Error('stopped for sap.internal'), {
+      name,
+      cause: coded('ENOTFOUND', 'private.example'),
+    });
+    mockFetch.mockRejectedValue(cause);
+    for (const minimal of [false, true]) {
+      const text = await read(minimal);
+      expect(text).not.toMatch(/private\.example|ENOTFOUND|Cannot reach/);
+      expect(text).toContain(name === 'TimeoutError' ? 'exceeded its client time limit' : 'was cancelled');
+      if (minimal) expect(text).not.toContain('sap.internal');
+      else expect(text.split('\n')[0]).toBe('ADT network error: stopped for sap.internal');
+    }
+  });
+
+  it('preserves the built-in deadline message in both modes', async () => {
+    const client = createClient();
+    vi.spyOn(client, 'getSystemInfo').mockImplementation(
+      async () => (await client.http.get('/unused', undefined, { deadline: 0 })).body,
+    );
+    for (const minimalErrors of [false, true]) {
+      const result = await handleToolCall(client, { ...DEFAULT_CONFIG, minimalErrors }, 'SAPRead', { type: 'SYSTEM' });
+      const text = result.content[0]?.text ?? '';
+      expect(result.isError).toBe(true);
+      expect(text.split('\n')[0]).toBe('ADT network error: The ADT request deadline was exceeded.');
+      expect(text).toContain('exceeded its client time limit');
+      expect(mockFetch).not.toHaveBeenCalled();
+    }
+  });
+
+  it('hides code-less details and non-symbolic code values in minimal mode', async () => {
+    for (const cause of [
+      new Error('bad port at sap.internal'),
+      coded('ENOTFOUND: sap.internal', 'DNS lookup failed'),
+    ]) {
+      mockFetch.mockRejectedValue(fetchFailed(cause));
+      const text = await read(true);
+      expect(text.split('\n')[0]).toBe(
+        'ADT network error. The full reason is hidden because ARC1_MINIMAL_ERRORS=true.',
+      );
+    }
   });
 });
 

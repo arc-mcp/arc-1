@@ -158,6 +158,7 @@ describe('publication over the real HTTP transport', () => {
             expect(text).toContain('request ID');
             expect(text).not.toContain('database connection');
             if (status !== 'disconnect') expect(text).toContain(`status ${status}`);
+            else expect(text).toContain('(UND_ERR_SOCKET)');
           }
           expect(sends.filter((s) => s.path.includes('/publishjobs'))).toHaveLength(1);
           const state = await client!.http.get('/sap/bc/adt/businessservices/bindings/ZARC1_PUBLISH?version=active');

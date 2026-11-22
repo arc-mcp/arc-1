@@ -161,6 +161,7 @@ function formatErrorForLLM(
   config: ServerConfig,
   isSamlBearer: boolean,
 ): string {
+  if (err instanceof AdtNetworkError) message = networkClientMessage(err, config.minimalErrors);
   const base = buildBaseErrorMessage(err, message, tool, args, config, isSamlBearer);
   // Handler-attached remediation hints (e.g., CDS delete blocker list) always
   // appear last so the message reads "what happened → diagnostics → how to fix".
@@ -186,24 +187,14 @@ function buildBaseErrorMessage(
         ? withDependentSyntaxHint(err, enrichWithSapDetails(err, message))
         : message;
     }
-    return err instanceof AdtApiError
-      ? formatMinimalAdtError(err)
-      : 'Activation request failed. Use the request ID to correlate server-side logs.';
+    return minimalOperationFailure('Activation request', err);
   }
   if (err instanceof AdtError && err.pluginPostOutcome === 'unknown') {
-    const detail = config.minimalErrors
-      ? err instanceof AdtApiError
-        ? formatMinimalAdtError(err)
-        : 'Extension POST failed. Use the request ID to correlate server-side logs.'
-      : message;
+    const detail = config.minimalErrors ? minimalOperationFailure('Extension POST', err) : message;
     return `${detail}\nPOST completion is unconfirmed. Inspect the service's result or business state before retrying. Do not blindly repeat the extension call.`;
   }
   if (err instanceof AdtError && err.creationOutcome === 'unknown') {
-    const detail = config.minimalErrors
-      ? err instanceof AdtApiError
-        ? formatMinimalAdtError(err)
-        : 'Create request failed. Use the request ID to correlate server-side logs.'
-      : message;
+    const detail = config.minimalErrors ? minimalOperationFailure('Create request', err) : message;
     let inspection =
       'Use SAPRead/SAPSearch to inspect the object identity, package and source, including its inactive version, before updating an existing object.';
     if (tool === 'SAPTransport') {
@@ -260,11 +251,7 @@ function buildBaseErrorMessage(
     args.action === 'publish_srvb' &&
     (err instanceof AdtNetworkError || (err instanceof AdtApiError && (err.statusCode === 429 || err.isServerError)))
   ) {
-    const detail = config.minimalErrors
-      ? err instanceof AdtApiError
-        ? formatMinimalAdtError(err)
-        : 'Publish request failed. Use the request ID to correlate server-side logs.'
-      : message;
+    const detail = config.minimalErrors ? minimalOperationFailure('Publish request', err) : message;
     return `${detail}\nPublish completion is unconfirmed. Use SAPRead to verify publication state before another publish.`;
   }
   if (err instanceof AdtApiError) {
@@ -434,20 +421,14 @@ function buildBaseErrorMessage(
     if (err.isCancelled) {
       return `${message}\n\nHint: The SAP request was cancelled. Submitted work may continue in SAP; check its state before retrying.`;
     }
-    // Low-level causes can name hosts, IPs and certificates; minimal mode keeps only their code.
-    const code = err.causeCode;
-    const shown =
-      config.minimalErrors && err.cause
-        ? `ADT network error${code ? ` (${code})` : ''}. The full reason is hidden because ARC1_MINIMAL_ERRORS=true.`
-        : message;
     if (tool === 'SAPRead' && String(args.type ?? '').toUpperCase() === 'SYSTEM') {
       return (
-        `${shown}\n\nHint: Connectivity probe failed. Fix connectivity first, then retry ` +
+        `${message}\n\nHint: Connectivity probe failed. Fix connectivity first, then retry ` +
         'SAPRead(type="SYSTEM") before running any batch or parallel tool calls.'
       );
     }
     return (
-      `${shown}\n\nHint: Cannot reach the SAP system. Run SAPRead(type="SYSTEM") once as a connectivity ` +
+      `${message}\n\nHint: Cannot reach the SAP system. Run SAPRead(type="SYSTEM") once as a connectivity ` +
       'probe before retrying batch/parallel calls.'
     );
   }
@@ -455,12 +436,47 @@ function buildBaseErrorMessage(
   return message;
 }
 
-/** `ADT network error: fetch failed (CODE: reason)` so a certificate problem is distinguishable from a down host. */
-function withNetworkCause(err: AdtNetworkError): string {
+// Fixed AbortSignal reasons used by Node, undici and http-deadline.ts.
+const STANDARD_STOP_REASONS = new Set([
+  'The ADT request deadline was exceeded.',
+  'The ADT request was cancelled.',
+  'The operation was aborted due to timeout',
+  'The operation was aborted',
+  'This operation was aborted',
+  'Request aborted',
+]);
+
+/** Format transport diagnostics only at the client boundary. Internally, handlers classify err.message. */
+function networkClientMessage(err: AdtNetworkError, minimal: boolean): string {
+  if (err.isTimeout || err.isCancelled) {
+    if (!minimal) return err.message;
+    const reason = err.message.replace(/^ADT network error: (?:CSRF token fetch failed: )?/, '');
+    if (STANDARD_STOP_REASONS.has(reason)) return err.message;
+    return err.isTimeout
+      ? 'ADT network error: The SAP request timed out.'
+      : 'ADT network error: The SAP request was cancelled.';
+  }
+  if (!err.cause) return err.message;
+  if (minimal) {
+    const code = err.causeCode;
+    if (
+      !code &&
+      !err.cause.cause &&
+      /^ADT network error: (?:CSRF token fetch failed: )?fetch failed$/.test(err.message)
+    )
+      return err.message;
+    return `ADT network error${code ? ` (${code})` : ''}. The full reason is hidden because ARC1_MINIMAL_ERRORS=true.`;
+  }
   const cause = err.lowLevelCause;
   if (!cause) return err.message;
   const detail = cause.code && cause.message ? `${cause.code}: ${cause.message}` : cause.code || cause.message;
   return `${err.message} (${detail})`;
+}
+
+function minimalOperationFailure(operation: string, err: AdtError): string {
+  if (err instanceof AdtApiError) return formatMinimalAdtError(err);
+  const code = err instanceof AdtNetworkError ? err.causeCode : undefined;
+  return `${operation} failed${code ? ` (${code})` : ''}. Use the request ID to correlate server-side logs.`;
 }
 
 function formatMinimalAdtError(err: AdtApiError): string {
@@ -1244,8 +1260,7 @@ export async function handleToolCall(
             // Best-effort cleanup must not replace the creation error or prevent its audit event.
           }
         }
-        const message =
-          err instanceof AdtNetworkError ? withNetworkCause(err) : err instanceof Error ? err.message : String(err);
+        const message = err instanceof Error ? err.message : String(err);
         const auditErrorMessage =
           err instanceof AdtApiError && (err.statusCode === 401 || err.statusCode === 403)
             ? `SAP HTTP ${err.statusCode} authentication/authorization failure (response details suppressed)`
