@@ -18,6 +18,8 @@ env:
 
 jobs:
   release-please:
+    # Release versions come from upstream tags. Skipping this job also skips its publish dependents.
+    if: ${{ github.repository == 'arc-mcp/arc-1' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

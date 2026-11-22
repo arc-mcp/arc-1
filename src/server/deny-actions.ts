@@ -2,7 +2,7 @@
  * SAP_DENY_ACTIONS parser and validator.
  *
  * Admin-facing replacement for the removed op-code blocklist env vars.
- * Grammar is **tool-qualified only**: `Tool`, `Tool.action`, or `Tool.glob*`.
+ * Grammar is tool-qualified: `Tool`, `Tool.action`, `Tool.glob*`, or an exact `Custom_<name>`.
  * Cross-tool wildcards (e.g. `*.delete`) are intentionally rejected — forces
  * admins to be explicit about which tool they're blocking.
  *
@@ -20,6 +20,7 @@ import { homedir } from 'node:os';
 import { resolve as resolvePath } from 'node:path';
 
 import { ACTION_POLICY } from '../authz/policy.js';
+import type { RegistryEntry } from '../registry/tool-registry.js';
 
 const PATH_PREFIXES = ['/', './', '~/', '../'] as const;
 // Windows drive-letter absolute path (e.g. C:\deny.json or C:/deny.json). Detected by a fixed
@@ -81,25 +82,36 @@ export function parseDenyActions(raw: string): string[] {
 /** Pattern grammar: Tool | Tool.action | Tool.glob* (glob allowed in action part; leading `*` or `_` ok). */
 const PATTERN_RE = /^[A-Z][A-Za-z]+(?:\.(?:\*|[A-Za-z_][A-Za-z0-9_]*\*?))?$/;
 const CROSS_TOOL_WILDCARD_RE = /^\*/;
+const PLUGIN_PREFIX = 'Custom_';
+const PLUGIN_TOOL_RE = /^Custom_[A-Za-z0-9_-]+$/;
+
+const VALID_FORMS = "Use 'Tool', 'Tool.action', 'Tool.glob*', or an exact plugin name such as 'Custom_LaunchReport'.";
 
 /**
- * Validate each pattern against the grammar and against ACTION_POLICY.
+ * Validate the grammar and check built-in patterns against ACTION_POLICY.
+ * Plugin names are checked against the registry after loading.
  * Throws with a specific error for any violation. No silent skipping.
  */
 export function validateDenyActions(patterns: string[]): void {
   for (const pattern of patterns) {
     if (CROSS_TOOL_WILDCARD_RE.test(pattern)) {
-      throw new Error(
-        `SAP_DENY_ACTIONS: cross-tool wildcards are not supported ('${pattern}'). ` +
-          `Use tool-qualified patterns: 'Tool', 'Tool.action', or 'Tool.glob*'.`,
-      );
+      throw new Error(`SAP_DENY_ACTIONS: cross-tool wildcards are not supported ('${pattern}'). ${VALID_FORMS}`);
+    }
+    if (pattern.startsWith(PLUGIN_PREFIX)) {
+      const label = `SAP_DENY_ACTIONS: invalid plugin tool pattern '${pattern}'.`;
+      if (pattern.includes('.')) {
+        throw new Error(`${label} Action suffixes are not supported for plugin tools. Use the exact tool name.`);
+      }
+      if (pattern.includes('*')) {
+        throw new Error(`${label} Wildcards are not supported for plugin tools. Use the exact tool name.`);
+      }
+      if (!PLUGIN_TOOL_RE.test(pattern)) {
+        throw new Error(`${label} Custom_ must be followed by one or more letters, digits, underscores, or hyphens.`);
+      }
+      continue;
     }
     if (!PATTERN_RE.test(pattern)) {
-      throw new Error(
-        `SAP_DENY_ACTIONS: invalid pattern '${pattern}'. ` +
-          `Valid forms: 'Tool' (e.g., SAPWrite), 'Tool.action' (e.g., SAPWrite.delete), ` +
-          `or 'Tool.glob*' (e.g., SAPManage.flp_*).`,
-      );
+      throw new Error(`SAP_DENY_ACTIONS: invalid pattern '${pattern}'. ${VALID_FORMS}`);
     }
 
     const [tool, action] = pattern.split('.');
@@ -131,6 +143,21 @@ export function validateDenyActions(patterns: string[]): void {
           `Valid actions for ${tool}: ${toolActions.sort().join(', ') || '(none — tool-level only)'}.`,
       );
     }
+  }
+}
+
+/** Refuse startup if an exact plugin deny rule names no registered plugin tool. */
+export function validatePluginDenyActions(
+  patterns: readonly string[],
+  registeredEntries: readonly Pick<RegistryEntry, 'name' | 'source'>[],
+): void {
+  const loaded = new Set(registeredEntries.filter((entry) => entry.source === 'plugin').map((entry) => entry.name));
+  for (const pattern of patterns) {
+    if (!pattern.startsWith(PLUGIN_PREFIX) || loaded.has(pattern)) continue;
+    const known = [...loaded].sort().join(', ') || '(none)';
+    throw new Error(
+      `SAP_DENY_ACTIONS: unknown plugin tool '${pattern}'. Loaded plugin tools: ${known}. Check ARC1_PLUGINS.`,
+    );
   }
 }
 

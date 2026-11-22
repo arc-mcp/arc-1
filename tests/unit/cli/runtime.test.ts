@@ -3,11 +3,14 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import type { AdtClient } from '../../../src/adt/client.js';
 import { type CliDependencies, main } from '../../../src/cli.js';
+import { defineTool } from '../../../src/public/index.js';
 import { CLI_CONFIG_OPTION_SPECS, resolveConfig } from '../../../src/server/config.js';
 import { appendIdeLinks } from '../../../src/server/ide-links.js';
 import { logger } from '../../../src/server/logger.js';
+import { registerPluginTool } from '../../../src/server/plugin-loader.js';
 import type { StartupAuthPreflightResult } from '../../../src/server/server.js';
 import type { ServerConfig } from '../../../src/server/types.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -52,12 +55,74 @@ function directDependencies(
   };
 }
 
+// Each CLI process starts with its own plugin registry.
+async function cliWithPlugin(name: `Custom_${string}`, handler = async () => successfulToolResult()) {
+  vi.resetModules();
+  const { getToolRegistry, handleToolCall } = await import('../../../src/handlers/dispatch.js');
+  const { main } = await import('../../../src/cli.js');
+  registerPluginTool(
+    getToolRegistry(),
+    'demo',
+    defineTool({
+      name,
+      description: 'preview',
+      schema: z.object({}),
+      policy: { scope: 'read', opType: 'R' },
+      handler,
+    }),
+  );
+  return { main, handleToolCall };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
 });
 
 describe('CLI runtime', () => {
+  it('advertises plugin tools only when their names are allowed and the tool mode supports them', async () => {
+    const name = 'Custom_CliPreview';
+    const { main } = await cliWithPlugin(name);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await main(['tools'], directDependencies(resolved()))).toBe(0);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(name));
+
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    for (const overrides of [{ denyActions: [name] }, { toolMode: 'hyperfocused' as const }]) {
+      log.mockClear();
+      expect(await main(['tools'], directDependencies(resolved(overrides)))).toBe(0);
+      expect(log).not.toHaveBeenCalledWith(expect.stringContaining(name));
+
+      error.mockClear();
+      expect(await main(['call', 'Typo'], directDependencies(resolved(overrides)))).toBe(2);
+      expect(error).toHaveBeenCalledWith(expect.stringMatching(/^Known tools: \S/));
+      expect(error).not.toHaveBeenCalledWith(expect.stringContaining(name));
+    }
+
+    error.mockClear();
+    expect(await main(['tools'], directDependencies(resolved({ denyActions: ['Custom_CliPrevew'] })))).toBe(2);
+    expect(error).toHaveBeenCalledWith(expect.stringMatching(/Loaded plugin tools: [^.]*\bCustom_CliPreview\b/));
+  });
+
+  it('audits a denied plugin call even when SAP preflight would block', async () => {
+    const name = 'Custom_CliDenied';
+    const handler = vi.fn(async () => successfulToolResult());
+    const { main, handleToolCall } = await cliWithPlugin(name, handler);
+    const { Logger } = await import('../../../src/server/logger.js');
+    const audit = vi.spyOn(Logger.prototype, 'emitAudit').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const dependencies = directDependencies(resolved({ url: 'https://sap.example.test', denyActions: [name] }), {
+      dispatchToolCall: handleToolCall,
+      authPreflight: vi.fn(async () => ({ ...successfulAuthPreflight(), status: 'failed' as const, blocking: true })),
+    });
+    expect(await main(['call', name], dependencies)).toBe(1);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('denied by server policy (SAP_DENY_ACTIONS)'));
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ event: 'safety_blocked', operation: name }));
+    expect(dependencies.authPreflight).not.toHaveBeenCalled();
+    expect(dependencies.probeFeatures).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   it.each(['TABL', 'TABL/DS', 'CLAS', 'DDLS'])('keeps flat %s exports free of extension context', async (type) => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const dispatch = vi.fn(async (_client, _config, _tool, args) => {

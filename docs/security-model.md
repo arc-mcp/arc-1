@@ -190,6 +190,8 @@ Assume the LLM can be fully steered by SAP-resident content. No control may rely
 "choosing" not to do something. Read-only by default; every dangerous capability is an explicit
 admin opt-in (`allowWrites`, `allowFreeSQL`, `allowDataPreview`, `allowTransportWrites`,
 `allowGitWrites`, package allowlist, deny-actions). Scopes can only *restrict* below the ceiling.
+An exact `Custom_<name>` deny rule hides a registered plugin tool and blocks calls through the
+shared dispatcher. Startup refuses a rule whose tool is absent after plugin loading.
 
 Where: [`src/adt/safety.ts`](../src/adt/safety.ts), [`src/server/config.ts`](../src/server/config.ts).
 Fails when: a capability becomes reachable without its opt-in, or a default loosens.

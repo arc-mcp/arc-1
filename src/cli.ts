@@ -43,6 +43,7 @@ import type { LintResult } from './lint/lint.js';
 import { sanitizeArgs } from './server/audit.js';
 import { assertNoRemovedCliFlags, CLI_CONFIG_OPTION_SPECS, resolveConfig } from './server/config.js';
 import { generateRequestId } from './server/context.js';
+import { isActionDenied, validatePluginDenyActions } from './server/deny-actions.js';
 import { initLogger, logger } from './server/logger.js';
 import { loadPlugins } from './server/plugin-loader.js';
 import {
@@ -311,6 +312,16 @@ function isLocalOnlyCall(toolName: string, args: Record<string, unknown>): boole
   return (toolName === 'SAPManage' && action === 'cache_stats') || (toolName === 'SAPLint' && action === 'list_rules');
 }
 
+function listedCliEntries(config: ServerConfig) {
+  return getToolRegistry()
+    .list()
+    .filter(
+      (entry) =>
+        entry.source === 'builtin' ||
+        (config.toolMode !== 'hyperfocused' && !isActionDenied(entry.name, undefined, config.denyActions)),
+    );
+}
+
 function isDisabledWriteTool(toolName: string, config: ServerConfig): boolean {
   return !config.allowWrites && (toolName === 'SAPWrite' || toolName === 'SAPActivate');
 }
@@ -376,11 +387,11 @@ function createRuntime(argv: readonly string[], state: CliExecutionState, overri
   };
 
   const loadConfiguredPlugins = async (config: ServerConfig): Promise<void> => {
-    if (!runtimeState.pluginsLoaded) {
-      runtimeState.pluginsLoaded = config.plugins?.length
-        ? loadPlugins(config.plugins, getToolRegistry()).then(() => undefined)
-        : Promise.resolve();
-    }
+    runtimeState.pluginsLoaded ??= (async () => {
+      const registry = getToolRegistry();
+      if (config.plugins?.length) await loadPlugins(config.plugins, registry);
+      validatePluginDenyActions(config.denyActions, registry.list());
+    })();
     await runtimeState.pluginsLoaded;
   };
 
@@ -445,19 +456,9 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
     .action(async (tool: string | undefined) => {
       const { config } = runtime.getResolvedConfig();
       await runtime.loadConfiguredPlugins(config);
-      const pluginDefs = getToolRegistry()
-        .list()
-        .flatMap((entry) =>
-          entry.source === 'plugin' && entry.listing
-            ? [
-                {
-                  name: entry.name,
-                  description: entry.listing.description,
-                  inputSchema: entry.listing.inputSchema,
-                },
-              ]
-            : [],
-        );
+      const pluginDefs = listedCliEntries(config).flatMap((entry) =>
+        entry.source === 'plugin' && entry.listing ? [{ name: entry.name, ...entry.listing }] : [],
+      );
       const definitions = [...getConfiguredToolDefinitions(config), ...pluginDefs];
       if (!tool) {
         for (const definition of definitions) {
@@ -880,9 +881,7 @@ export async function executeCliToolCall(
     return {
       kind: 'usage',
       message: `Unknown tool: ${toolName}`,
-      knownTools: getToolRegistry()
-        .list()
-        .map((entry) => entry.name),
+      knownTools: listedCliEntries(config).map((entry) => entry.name),
     };
   }
 
@@ -892,7 +891,12 @@ export async function executeCliToolCall(
   }
 
   const direct = await runtime.getDirectContext();
-  if (!localOnly && !isDisabledWriteTool(toolName, config)) {
+  // Let the dispatcher return and audit a whole-tool denial before contacting SAP.
+  if (
+    !localOnly &&
+    !isDisabledWriteTool(toolName, config) &&
+    !isActionDenied(toolName, undefined, config.denyActions)
+  ) {
     const preflightStartedAt = Date.now();
     const preflight = await runtime.deps.authPreflight(config, direct.client);
     if (preflight.blocking) {

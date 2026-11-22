@@ -17,6 +17,8 @@ type WorkflowStep = {
 
 type WorkflowJob = {
   concurrency?: Record<string, unknown>;
+  if?: string;
+  outputs?: Record<string, string>;
   steps?: WorkflowStep[];
 };
 
@@ -32,6 +34,12 @@ const SLOW_WORKFLOW = parse(
 function currentStep(job: string): WorkflowStep {
   const step = PARSED_WORKFLOW.jobs?.[job]?.steps?.find((step) => step.id === 'current');
   expect(step, `${job} must check PR freshness`).toBeDefined();
+  return step!;
+}
+
+function credentialStep() {
+  const step = PARSED_WORKFLOW.jobs?.['sap-run-guard']?.steps?.find((step) => step.id === 'credentials');
+  expect(step).toBeDefined();
   return step!;
 }
 
@@ -102,6 +110,51 @@ describe('test workflow gate behavior', () => {
     for (const job of [sapRunGuardJob, integrationJob, e2eJob]) {
       expect(job).toContain('github.event.pull_request.head.repo.full_name == github.repository');
     }
+  });
+
+  it('requires credential eligibility before either event can start a live SAP job', () => {
+    const { integration, e2e } = PARSED_WORKFLOW.jobs!;
+    const eligible = "needs.sap-run-guard.outputs.credentials-eligible == 'true'";
+    expect(integration.if).toContain(`${eligible} && (github.event_name == 'workflow_dispatch' ||`);
+    expect(e2e.if).toContain(`${eligible} && (github.event_name == 'workflow_dispatch' ||`);
+
+    const guard = PARSED_WORKFLOW.jobs?.['sap-run-guard'];
+    const check = credentialStep();
+    expect(guard?.outputs?.['credentials-eligible']).toBe('$' + '{{ steps.credentials.outputs.eligible }}');
+    expect(check.if).toBe("steps.current.outputs.current == 'true'");
+    expect(check.env).toEqual({
+      SAP_SECRETS_PRESENT:
+        '$' +
+        "{{ secrets.TEST_SAP_URL != '' && secrets.TEST_SAP_USER != '' && secrets.TEST_SAP_PASSWORD != '' && secrets.TEST_SAP_CLIENT != '' }}",
+    });
+  });
+
+  it.each([
+    ['arc-mcp', 'arc-1', 'true', true],
+    ['arc-mcp', 'arc-1', 'false', true],
+    ['example', 'arc-1', 'true', true],
+    ['example', 'arc-1', 'false', false],
+    ['arc-mcp', 'arc-1-fork', 'false', false],
+  ])('sets credential eligibility for %s/%s when secret presence is %s', (owner, repo, present, eligible) => {
+    const script = credentialStep().with?.script;
+    expect(script).toBeTypeOf('string');
+    const core = { setOutput: vi.fn(), notice: vi.fn() };
+    runInNewContext(script!, {
+      context: { repo: { owner, repo } },
+      process: { env: { SAP_SECRETS_PRESENT: present } },
+      core,
+    });
+    expect(core.setOutput).toHaveBeenCalledExactlyOnceWith('eligible', String(eligible));
+    if (eligible) expect(core.notice).not.toHaveBeenCalled();
+    else expect(core.notice).toHaveBeenCalledExactlyOnceWith(expect.any(String), { title: 'SAP jobs skipped' });
+  });
+
+  it.each(['integration', 'e2e'])('%s preflight fails when the required secrets are missing', (job) => {
+    const script = PARSED_WORKFLOW.jobs?.[job]?.steps?.find((step) => step.id === 'sap_auth')?.run;
+    expect(script).toContain('for name in TEST_SAP_URL TEST_SAP_USER TEST_SAP_PASSWORD TEST_SAP_CLIENT');
+    expect(script).toMatch(
+      /if \[ "\$\{#missing\[@\]\}" -gt 0 \]; then\n\s+echo "::error.*Missing required.*\n\s+exit 1/,
+    );
   });
 
   it('does not interpolate untrusted PR titles directly into shell scripts', () => {
