@@ -105,3 +105,71 @@ export function assertCanonicalHostRelativeAdtPath(rawPath: string, requiredPref
   }
   return canonical;
 }
+
+/**
+ * URL-encode a dump or trace ID as exactly one path segment, idempotently.
+ *
+ * The listing endpoints emit IDs that are already percent-encoded (`%20` for spaces), while a
+ * caller may also paste a raw ID. Decode once, then encode once: an encoded ID round-trips
+ * unchanged, a raw one is encoded, and nothing the caller sends can add a path segment or a query.
+ * An earlier version passed any value containing `%` through untouched, so an ID such as
+ * `%20/../../../sap/opu/odata/…?x=` left the dump path and read another resource on the host.
+ *
+ * Surrounding whitespace is trimmed; it would otherwise be encoded as `%20` and break the lookup.
+ */
+export function encodeAdtIdSegment(value: string): string {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return '';
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(trimmed);
+  } catch {
+    // A literal `%` that is not an escape: the value is raw, encode it as it stands.
+    decoded = trimmed;
+  }
+  // encodeURIComponent leaves dots alone, and the URL parser resolves a `.`/`..` segment.
+  if (decoded === '.' || decoded === '..') {
+    throw new Error(`Refusing "${value}": not a valid dump or trace id.`);
+  }
+  return encodeURIComponent(decoded);
+}
+
+/** True when a value decodes to a `.`/`..` path segment. */
+export function isTraversalSegment(value: string): boolean {
+  const trimmed = String(value ?? '').trim();
+  let decoded = trimmed;
+  try {
+    decoded = decodeURIComponent(trimmed);
+  } catch {
+    // A literal `%` that is not an escape: judge the raw value.
+  }
+  return decoded === '.' || decoded === '..';
+}
+
+/** Encode an ABAP object name as one URL segment, refusing dot-segment names. */
+export function encodeObjectNameSegment(name: string): string {
+  if (name === '.' || name === '..') {
+    throw new Error(`Refusing "${name}": "." and ".." are not valid object names.`);
+  }
+  return encodeURIComponent(name);
+}
+
+/** Refuse path segments that URL parsing would resolve before the HTTP request is sent. */
+export function assertNoUrlDotSegments(path: string): string {
+  const pathname = path.split(/[?#]/, 1)[0] ?? '';
+  if (pathname.includes('\\') || pathname.split('/').some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))) {
+    throw new Error('Request path must not contain dot segments or backslashes.');
+  }
+  return path;
+}
+
+/** Canonical ADT URI for object metadata, allowing encoded slashes in namespaced object names. */
+export function canonicalAdtObjectUri(rawPath: string): string | null {
+  return canonicalHostRelativeAdtPath(rawPath, ADT_ROOT_PATH, { allowRawEncodedSlash: true });
+}
+
+export function assertCanonicalAdtObjectUri(rawPath: string): string {
+  const canonical = canonicalAdtObjectUri(rawPath);
+  if (!canonical) throw new Error('Object URI must be a canonical host-relative ADT path.');
+  return canonical;
+}

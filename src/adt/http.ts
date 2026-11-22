@@ -34,6 +34,7 @@ import {
 import { parseRetryAfter } from './http-retry-after.js';
 import { prepareDataPreviewWireBody } from './http-wire-body.js';
 import { legacyContentHandlerFallback, rejectEmptyAdtHtmlResponse } from './legacy-content-handler.js';
+import { assertNoUrlDotSegments } from './path-safety.js';
 import { fetchWithAttemptBudget } from './request-attempt-budget.js';
 import { isPinnedTransportAllowed, type MultiTargetWritePolicy } from './safety.js';
 import { hasSecuritySessionCookie, SecuritySessionGate } from './security-session-gate.js';
@@ -1386,7 +1387,7 @@ export class AdtHttpClient {
   /** Add SAP context query params unless the caller sends that context in headers. */
   private buildUrl(path: string, sapContextInHeaders = false): string {
     const base = this.config.baseUrl.replace(/\/$/, '');
-    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const normalizedPath = assertNoUrlDotSegments(path.startsWith('/') ? path : `/${path}`);
     const url = new URL(base + normalizedPath);
 
     if (this.config.client && !sapContextInHeaders) {

@@ -1,5 +1,16 @@
 /** SAPDiagnose shared timeout/variant and package CI input definitions. Consumed by tools.ts and schemas.ts. */
 import { z } from 'zod';
+import { isTraversalSegment } from '../adt/path-safety.js';
+
+export const DIAGNOSE_ADT_ID_SCHEMA = z
+  .string()
+  .max(512)
+  .refine((value) => !isTraversalSegment(value), 'id must not resolve to a "." or ".." path segment');
+
+export const DIAGNOSE_OBJECT_NAME_SCHEMA = z
+  .string()
+  .refine((value) => !isTraversalSegment(value), 'name must not resolve to a "." or ".." path segment');
+
 export const CI_PACKAGES_SCHEMA = z
   .array(
     z

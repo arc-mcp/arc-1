@@ -1775,6 +1775,26 @@ describe('SAPDiagnoseSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('rejects traversal dump and trace ids while retaining real dump ids', () => {
+    for (const id of ['.', '..', '%2e%2e', '%2E']) {
+      expect(SAPDiagnoseSchema.safeParse({ action: 'dumps', id }).success).toBe(false);
+      expect(SAPDiagnoseSchema.safeParse({ action: 'traces', id }).success).toBe(false);
+    }
+    const realDumpId = '20261120144133vhcala4hci_A4H_00%20MARIAN%20001%208';
+    expect(SAPDiagnoseSchema.safeParse({ action: 'dumps', id: realDumpId }).success).toBe(true);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'traces', id: '20261120123456_MARIAN' }).success).toBe(true);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'dumps', id: 'A'.repeat(513) }).success).toBe(false);
+  });
+
+  it('rejects traversal names at the Diagnose schema before dispatch', () => {
+    for (const action of ['cds_sql', 'object_state'] as const) {
+      for (const name of ['.', '..', '%2e%2e']) {
+        expect(SAPDiagnoseSchema.safeParse({ action, type: 'CLAS', name }).success).toBe(false);
+      }
+      expect(SAPDiagnoseSchema.safeParse({ action, type: 'CLAS', name: 'ZCL_X' }).success).toBe(true);
+    }
+  });
+
   it('rejects invalid analysis type', () => {
     const result = SAPDiagnoseSchema.safeParse({ action: 'traces', id: '123', analysis: 'invalid' });
     expect(result.success).toBe(false);
@@ -2168,6 +2188,20 @@ describe('SAPContextSchemaBtp', () => {
 });
 
 describe('SAPManageSchema', () => {
+  it('requires caller objectUri to stay inside canonical ADT paths', () => {
+    expect(
+      SAPManageSchema.safeParse({ action: 'set_api_state', objectUri: '/sap/bc/adt/oo/classes/%2FDMO%2FZCL_X' })
+        .success,
+    ).toBe(true);
+    for (const objectUri of [
+      'https://evil.example/sap/bc/adt/oo/classes/X',
+      '/sap/opu/odata/sap/X',
+      '/sap/bc/adt/oo/classes/..',
+    ]) {
+      expect(SAPManageSchema.safeParse({ action: 'set_api_state', objectUri }).success).toBe(false);
+    }
+  });
+
   it('accepts valid actions', () => {
     expect(SAPManageSchema.safeParse({ action: 'features' }).success).toBe(true);
     expect(SAPManageSchema.safeParse({ action: 'probe' }).success).toBe(true);

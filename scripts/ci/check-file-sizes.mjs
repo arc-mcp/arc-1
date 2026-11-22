@@ -44,7 +44,7 @@ const BUDGETS = {
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
   // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
   'src/handlers/tools.ts': 1800, // MSAG message deletion (#1248), CTS request categories (#1047), SAPWrite generate.
-  'src/handlers/schemas.ts': 1629, // MSAG deletion (#1248), CTS request categories (#1047), SRVB include allowlist, generate.
+  'src/handlers/schemas.ts': 1630, // Canonical SAPManage objectUri schema; prior budget covered MSAG/CTS/SRVB/generate.
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
@@ -76,7 +76,7 @@ const BUDGETS = {
   // -5 after removing the forwarding-only guard factory and its extra import/configuration lines.
   // TABL write-route cache removed (never cache subtype routes for mutations); +9 for refusing TABL
   // mutations whose subtype cannot be verified on 7.50/7.51 (the resolver's error text).
-  'src/adt/client.ts': 1689, // TABL subtype search moved to src/adt/tabl-subtype.ts.
+  'src/adt/client.ts': 1690, // Validate object URI before package metadata GET; prior budget covered TABL subtype search.
   // The single live ADT integration suite covers every read/write surface against a real system;
   // it passed the 3000-line default test budget with the ATC check-variant binding cases
   // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.
@@ -88,7 +88,7 @@ const BUDGETS = {
   // +50: bounded same-cookie local-SAML security-session logoff stays beside the owning cookie jar
   // and stateful clone lifecycle; no separate transport or cross-user session pool is introduced.
   // +28: ADR-0011 pinned write barrier (no transient retry, CSRF-only 403 resend, dual request ceiling on corrNr).
-  'src/adt/http.ts': 1644,
+  'src/adt/http.ts': 1645, // Final request-path dot-segment guard for alternate object URL builders.
   'tests/unit/adt/http.test.ts': 3008, // Same-cookie logoff must omit SAML Authorization.
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1489, // Includes best-effort ABAP task-owner resolution for newrequest.

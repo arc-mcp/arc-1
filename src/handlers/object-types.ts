@@ -5,6 +5,7 @@
  * LLM arg-stripping, and class-include helpers.
  */
 
+import { encodeObjectNameSegment } from '../adt/path-safety.js';
 import { SDO_REGISTRY, serverDrivenObjectUrl } from '../adt/server-driven.js';
 
 // ─── Object URL Mapping ──────────────────────────────────────────────
@@ -423,15 +424,15 @@ export function functionGroupObjectUrl(group: string): string {
   if (!normalizedGroup) {
     throw new Error('functionGroupObjectUrl requires a function group.');
   }
-  return `/sap/bc/adt/functions/groups/${encodeURIComponent(normalizedGroup.toLowerCase())}`;
+  return `/sap/bc/adt/functions/groups/${encodeObjectNameSegment(normalizedGroup.toLowerCase())}`;
 }
 
 export function functionGroupIncludeObjectUrl(group: string, name: string): string {
-  return `${functionGroupObjectUrl(group)}/includes/${encodeURIComponent(name.toLowerCase())}`;
+  return `${functionGroupObjectUrl(group)}/includes/${encodeObjectNameSegment(name.toLowerCase())}`;
 }
 
 export function functionModuleObjectUrl(group: string, name: string): string {
-  return `${functionGroupObjectUrl(group)}/fmodules/${encodeURIComponent(name.toLowerCase())}`;
+  return `${functionGroupObjectUrl(group)}/fmodules/${encodeObjectNameSegment(name.toLowerCase())}`;
 }
 
 export function objectBasePath(type: string): string {
@@ -574,7 +575,7 @@ export function objectUrlForType(type: string, name: string): string {
   if (type === 'TABL/DTI') return serverDrivenObjectUrl(type, name);
   // KTD, SMBC, SOD1 and SOD2 use lowercase names in their verified ADT paths.
   const effectiveName = ['SKTD', 'SMBC', 'SOD1', 'SOD2'].includes(type) ? name.toLowerCase() : name;
-  return `${objectBasePath(type)}${encodeURIComponent(effectiveName)}`;
+  return `${objectBasePath(type)}${encodeObjectNameSegment(effectiveName)}`;
 }
 
 /** Infer SAP object type from naming conventions. Returns empty string if type cannot be determined. */
@@ -601,7 +602,7 @@ export const CLASS_WRITE_INCLUDES: readonly ClassWriteInclude[] = [
 
 /** Get a CLAS include URL (definitions/implementations/macros/testclasses) */
 export function classIncludeUrl(name: string, include: ClassWriteInclude): string {
-  return `/sap/bc/adt/oo/classes/${encodeURIComponent(name)}/includes/${include}`;
+  return `/sap/bc/adt/oo/classes/${encodeObjectNameSegment(name)}/includes/${include}`;
 }
 
 export function normalizeClassWriteInclude(include: unknown): ClassWriteInclude | undefined {

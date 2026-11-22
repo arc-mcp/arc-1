@@ -698,6 +698,44 @@ describe('Runtime Diagnostics', () => {
       expect(urls.some((url) => url.includes(' '))).toBe(false);
     });
 
+    it('keeps an ID with path or query characters inside the dump path', async () => {
+      // A value containing `%` used to be passed through as "already encoded", so `/`, `..` and
+      // `?` in it redirected the GET to another resource on the same host.
+      const hostile = '%20/../../../../../../sap/opu/odata/sap/API_X/Entity?$top=5&x=';
+      const http = mockHttp('');
+      try {
+        await getDump(http, unrestrictedSafetyConfig(), hostile);
+      } catch {
+        // empty response → parse failure, irrelevant for this assertion
+      }
+      const urls = (http.get as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0] as string);
+      expect(urls).toHaveLength(2);
+      for (const url of urls) {
+        const resolved = new URL(`https://sap.example${url}`);
+        expect(resolved.pathname.startsWith('/sap/bc/adt/runtime/dump/')).toBe(true);
+        expect(resolved.search).toBe('');
+        const segment = url.slice('/sap/bc/adt/runtime/dump/'.length).replace(/\/formatted$/, '');
+        expect(segment).not.toMatch(/[/?#]/);
+      }
+    });
+
+    it('encodes a literal percent sign that is not an escape', async () => {
+      const http = mockHttp('');
+      try {
+        await getDump(http, unrestrictedSafetyConfig(), '50%off');
+      } catch {
+        // ignore parse failure
+      }
+      const urls = (http.get as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0] as string);
+      expect(urls).toContain('/sap/bc/adt/runtime/dump/50%25off');
+    });
+
+    it.each(['..', '.', '%2e%2e', '%2E'])('refuses the dot segment %s', async (id) => {
+      const http = mockHttp('');
+      await expect(getDump(http, unrestrictedSafetyConfig(), id)).rejects.toThrow(/not a valid dump or trace id/);
+      expect(http.get).not.toHaveBeenCalled();
+    });
+
     it('returns the original dump ID in the parsed detail (round-trip)', async () => {
       // Even when we re-encode for the HTTP path, the response payload should
       // surface the ID exactly as the caller passed it — otherwise downstream
@@ -1380,6 +1418,22 @@ describe('Runtime Diagnostics', () => {
     });
   });
 
+  describe('trace id containment', () => {
+    it.each([
+      ['hitlist', getTraceHitlist],
+      ['statements', getTraceStatements],
+      ['dbAccesses', getTraceDbAccesses],
+    ] as const)('keeps a hostile trace ID inside the %s path', async (suffix, read) => {
+      const http = mockHttp('<x/>');
+      await read(http, unrestrictedSafetyConfig(), '%20/../../../cts/transportrequests?x=');
+      const url = (http.get as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+      const resolved = new URL(`https://sap.example${url}`);
+      expect(resolved.pathname.startsWith('/sap/bc/adt/runtime/traces/abaptraces/')).toBe(true);
+      expect(resolved.pathname.endsWith(`/${suffix}`)).toBe(true);
+      expect(resolved.search).toBe('');
+    });
+  });
+
   describe('getTraceStatements', () => {
     it('calls correct endpoint', async () => {
       const http = mockHttp('<statements/>');
@@ -1871,6 +1925,12 @@ describe('parseCdsCreateStatements', () => {
 });
 
 describe('getCdsCreateStatements', () => {
+  it.each(['.', '..'])('refuses %s before making a request', async (name) => {
+    const http = mockHttp();
+    await expect(getCdsCreateStatements(http, unrestrictedSafetyConfig(), name)).rejects.toThrow();
+    expect(http.post).not.toHaveBeenCalled();
+  });
+
   it('POSTs to createstatements with CSRF-Accept and parses the SQL', async () => {
     const fixture = readFileSync(join(FIXTURES_DIR, 'createstatements-i-currency.xml'), 'utf-8');
     const http = mockHttp(fixture);
