@@ -18,13 +18,15 @@ type Release = keyof typeof RELEASES;
 
 interface Sap {
   release?: Release;
-  existing?: string[]; // "TYPE NAME" found by the repository search before the run
-  afterRun?: (name: string) => { type: string; packageName: string } | undefined;
+  existing?: string[]; // planned "TYPE NAME" that already exist before the run
+  afterRun?: (name: string) => string | undefined; // package of a planned object after the run; undefined = missing
   validation?: 'ok' | 'error' | 'empty';
   runStatus?: number;
   feed?: string;
   feedStatus?: number;
+  preview?: string;
   transport?: string; // CTS document for GET /transportrequests/<id>
+  local?: boolean; // SAP's transport check reports the package as local
   tableMissing?: boolean;
 }
 
@@ -32,15 +34,16 @@ function sap(opts: Sap = {}) {
   const release = opts.release ?? '758';
   const { id, root } = RELEASES[release];
   const prefix = `${release}-${id}`;
-  const planned = [...fixture(`${prefix}-preview.xml`).matchAll(/adtcore:type="([^"]+)" adtcore:name="([^"]+)"/g)].map(
-    (m) => ({ type: m[1] as string, name: m[2] as string }),
+  const preview = opts.preview ?? fixture(`${prefix}-preview.xml`);
+  const planned = [...preview.matchAll(/adtcore:uri="([^"]+)" adtcore:type="([^"]+)" adtcore:name="([^"]+)"/g)].map(
+    (m) => ({ uri: m[1] as string, type: m[2] as string, name: m[3] as string }),
   );
   let ran = false;
-  const calls: Array<{ method: string; path: string; url: URL; body: string }> = [];
+  const calls: Array<{ method: string; path: string; url: URL; body: string; init: Record<string, unknown> }> = [];
   mockFetch.mockImplementation(async (raw, init) => {
     const url = new URL(String(raw));
     const method = String(init?.method ?? 'GET');
-    calls.push({ method, path: url.pathname, url, body: String(init?.body ?? '') });
+    calls.push({ method, path: url.pathname, url, body: String(init?.body ?? ''), init: init ?? {} });
     const ok = (body: string) => mockResponse(200, body, { 'x-csrf-token': 'T' });
     const path = url.pathname;
     if (path === '/sap/bc/adt/repository/generators') {
@@ -51,34 +54,31 @@ function sap(opts: Sap = {}) {
       if (opts.validation === 'empty') return ok('<other/>');
       return ok(fixture(`${prefix}-validation${opts.validation === 'error' ? '-error' : ''}.xml`));
     }
-    if (path === `${root}/preview`) return ok(fixture(`${prefix}-preview.xml`));
+    if (path === `${root}/preview`) return ok(preview);
     if (path === root && method === 'POST') {
       ran = true;
-      return mockResponse(opts.runStatus ?? 200, '<adtcore:objectReferences/>', { 'x-csrf-token': 'T' });
+      return mockResponse(opts.runStatus ?? 200, fixture(`${prefix}-run.xml`), { 'x-csrf-token': 'T' });
     }
-    if (path === '/sap/bc/adt/repository/informationsystem/search') {
-      const name = url.searchParams.get('query') ?? '';
-      const hits = ran
+    const object = planned.find((p) => p.uri === path);
+    if (object) {
+      const pkg = ran
         ? opts.afterRun
-          ? [opts.afterRun(name)]
-          : planned.filter((p) => p.name === name).map((p) => ({ type: p.type, packageName: '$TMP' }))
-        : (opts.existing ?? [])
-            .map((key) => key.split(' '))
-            .filter(([, n]) => n === name)
-            .map(([type]) => ({ type: type as string, packageName: 'ZOTHER' }));
-      const refs = hits
-        .filter((h): h is { type: string; packageName: string } => !!h)
-        .map(
-          (h) =>
-            `<adtcore:objectReference adtcore:uri="/x/${name}" adtcore:type="${h.type}" adtcore:name="${name}" adtcore:packageName="${h.packageName}"/>`,
-        );
+          ? opts.afterRun(object.name)
+          : '$TMP'
+        : opts.existing?.includes(`${object.type} ${object.name}`)
+          ? 'ZOTHER'
+          : undefined;
+      return pkg === undefined
+        ? mockResponse(404, 'not found')
+        : ok(`<x adtcore:name="${object.name}"><adtcore:packageRef adtcore:name="${pkg}"/></x>`);
+    }
+    if (path === '/sap/bc/adt/ddic/tables/ztravel') return mockResponse(opts.tableMissing ? 404 : 200, '<table/>');
+    if (path.startsWith('/sap/bc/adt/packages/')) return ok('<pak:package/>');
+    if (path === '/sap/bc/adt/cts/transportchecks') {
       return ok(
-        `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">${refs.join('')}</adtcore:objectReferences>`,
+        `<asx:abap><asx:values><DATA><DLVUNIT>${opts.local ? 'LOCAL' : 'HOME'}</DLVUNIT><RECORDING>${opts.local ? '' : 'X'}</RECORDING></DATA></asx:values></asx:abap>`,
       );
     }
-    if (path.startsWith('/sap/bc/adt/packages/')) return ok('<pak:package/>');
-    if (path.startsWith('/sap/bc/adt/ddic/tables/'))
-      return mockResponse(opts.tableMissing ? 404 : 200, '<blue:blueSource/>');
     if (path.startsWith('/sap/bc/adt/cts/transportrequests/')) return ok(opts.transport ?? '<tm:root/>');
     return mockResponse(404, 'unexpected');
   });
@@ -124,15 +124,21 @@ describe('SAPWrite action="generate"', () => {
     expect(validation.url.searchParams.get('referencedObject')).toBe('/sap/bc/adt/ddic/tables/ztravel');
   });
 
-  it('real run on 7.58: one run POST, every object read back', async () => {
-    const s = sap();
-    const result = await generate({});
-    expect(result.isError, result.content[0].text).toBeUndefined();
-    const body = json(result.content[0].text);
-    expect(body.objects.every((o: { state: string }) => o.state === 'found')).toBe(true);
-    expect(body.next).toContain('publish_srvb');
-    expect(s.posts().filter((c) => c.path === RELEASES['758'].root)).toHaveLength(1);
-  });
+  it.each(['758', '816'] as const)(
+    'real run on %s: one run POST, never redirected, every object read back',
+    async (release) => {
+      const s = sap({ release });
+      const result = await generate({});
+      expect(result.isError, result.content[0].text).toBeUndefined();
+      const body = json(result.content[0].text);
+      expect(body.objects.every((o: { state: string }) => o.state === 'found')).toBe(true);
+      expect(body.next).toContain('publish_srvb');
+      const runs = s.posts().filter((c) => c.path === RELEASES[release].root);
+      expect(runs).toHaveLength(1);
+      expect(runs[0]!.init.redirect).toBe('manual');
+      expect(body.objects).toHaveLength(RELEASES[release].count);
+    },
+  );
 
   it('defaults to $TMP like create', async () => {
     sap();
@@ -155,7 +161,15 @@ describe('SAPWrite action="generate"', () => {
       { safety: { allowedPackages: ['$TMP'] }, args: { package: 'ZOTHER', transport: 'A4HK900001' } },
       "package 'ZOTHER'",
     ],
-    ['transport missing', { args: { package: 'ZPKG' } }, '"transport" is required'],
+    ['metadata in source', { args: { source: '{"metadata":{"package":"ZOTHER"}}' } }, 'metadata is set by ARC-1'],
+    [
+      'transport not allowed, subtree package rule',
+      {
+        safety: { allowedTransports: ['A4HK9*'], allowedPackages: ['ZROOT/**'] },
+        args: { package: 'ZPKG', transport: 'B4HK900001' },
+      },
+      "transport 'B4HK900001'",
+    ],
     ['transport on $TMP', { args: { transport: 'A4HK900001' } }, 'takes no transport'],
     [
       'transport not allowed',
@@ -180,7 +194,6 @@ describe('SAPWrite action="generate"', () => {
       { businessService: { serviceBinding: { url: 'x' } } },
       '"businessService.serviceBinding.url" is not in SAP\'s proposal',
     ],
-    ['metadata', { metadata: { package: 'ZOTHER' } }, 'metadata is set by ARC-1'],
     ['the table name', { general: { referenceObjectName: 'ZOTHER' } }, 'names the table'],
     ['a changed shape', { businessObject: 'x' }, 'shape'],
   ])('refuses %s in source before validation', async (_label, overrides, message) => {
@@ -225,10 +238,7 @@ describe('SAPWrite action="generate"', () => {
   });
 
   it('is an error when an object is missing or in another package after the run', async () => {
-    sap({
-      afterRun: (name) =>
-        name === 'ZC_ZTRAVEL' ? undefined : { type: name.startsWith('ZBP') ? 'CLAS/OC' : 'X', packageName: 'ZOTHER' },
-    });
+    sap({ afterRun: (name) => (name === 'ZC_ZTRAVEL' ? undefined : name.startsWith('ZBP') ? 'ZOTHER' : '$TMP') });
     const result = await generate({});
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('not every object was confirmed');
@@ -272,13 +282,54 @@ describe('SAPWrite action="generate"', () => {
     expect(s.calls.at(-1)?.path).toBe('/sap/bc/adt/repository/generators');
   });
 
+  it('refuses a feed link for another rel (a preview link pointing at the run endpoint)', async () => {
+    const feed = fixture('758-uiservice-feed.xml').replace(
+      '/sap/bc/adt/businessservices/generators/uiservice/preview',
+      '/sap/bc/adt/businessservices/generators/uiservice',
+    );
+    const s = sap({ feed });
+    const result = await generate({ dryRun: true });
+    expect(result.content[0].text).toContain("no usable 'preview' endpoint");
+    expect(s.posts()).toHaveLength(0);
+  });
+
+  it('fails closed on a preview entry without a name', async () => {
+    const preview = fixture('816-ui-service-preview.xml').replace('adtcore:name="ZC_ZTRAVEL"', 'adtcore:name=""');
+    const s = sap({ release: '816', preview });
+    const result = await generate({});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('incomplete generator preview');
+    expect(s.ran()).toBe(false);
+  });
+
+  it("hides SAP's run error text with ARC1_MINIMAL_ERRORS but keeps the read-back", async () => {
+    sap({ runStatus: 500 });
+    const result = await generate({}, client(), { minimalErrors: true });
+    expect(result.content[0].text).toContain('SAP generation failed: SAP answered HTTP 500');
+    expect(result.content[0].text).toContain('"state":"found"');
+  });
+
   describe('transportable package', () => {
     const request = (status: string, objects: string[] = []) =>
       `<tm:root><tm:request tm:number="A4HK900001" tm:status="${status}"><tm:task tm:number="A4HK900002">${objects
         .map((o) => `<tm:abap_object tm:pgmid="R3TR" tm:type="${o.split(' ')[0]}" tm:name="${o.split(' ')[1]}"/>`)
         .join('')}</tm:task></tm:request></tm:root>`;
     const args = { package: 'ZPKG', transport: 'A4HK900001' };
-    const inPackage = (name: string) => ({ type: name.startsWith('ZBP') ? 'CLAS/OC' : 'DDLS/DF', packageName: 'ZPKG' });
+
+    it('needs a transport when SAP says the package records changes', async () => {
+      const s = sap();
+      const result = await generate({ package: 'ZPKG', dryRun: true });
+      expect(result.content[0].text).toContain('"transport" is required for package ZPKG');
+      expect(s.calls.some((c) => c.path.includes('/generators'))).toBe(false);
+    });
+
+    it('takes no transport in a local package (BTP ZLOCAL subpackage)', async () => {
+      sap({ local: true });
+      expect(json((await generate({ package: 'ZLOCAL_SUB', dryRun: true })).content[0].text).valid).toBe(true);
+      const refused = await generate({ package: 'ZLOCAL_SUB', transport: 'A4HK900001', dryRun: true });
+      expect(refused.content[0].text).toContain('is local and takes no transport');
+    });
+    const inPackage = () => 'ZPKG';
 
     it('passes corrNr and reports objects outside the request', async () => {
       const s = sap({ transport: request('D', ['DDLS ZR_ZTRAVEL']), afterRun: inPackage });

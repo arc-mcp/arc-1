@@ -47,6 +47,7 @@ const SAPWRITE_BODY_BTP =
   'SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (e.g. "DDLS/DF"); "name" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type="SKTD"). ' +
   'edit_method: replace one CLAS method body via source. Local-class methods use the qualified specifier (e.g. "lhc_project~approve_project"); auto-routing lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=). ' +
   'batch_create: preflight all objects, then create+activate in dependency order; failures report per-object persistence. scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers via rootEntityRef and activates by default). ' +
+  'Whole RAP OData service for an existing table: action="generate", dryRun=true first. ' +
   'ENQU: SAPRead JSON in source; create needs primaryTable. Entries need explicit lockMode/parameterWanted; update refuses lockParameters=[]. Then SAPActivate. ' +
   'ENHO (BAdI impl): as ENQU; create needs enhancementSpot + badiImplementations[{name,badiDefinition,implementingClass,filter?}]; C1 BAdIs only; update replaces the list. ' +
   'Server-driven objects (discovery-gated): AFF JSON source (DTSC/DSFD/DTDC/DRTY: DDL); create/update/delete. APLO/UIAD save active; others need SAPActivate. SAJC/SAJT create require source.generalInformation.className/catalogName. ' +

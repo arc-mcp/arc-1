@@ -925,6 +925,7 @@ export const SAPWriteSchemaBtp = z
       'scaffold_rap_handlers',
       'generate_behavior_implementation',
       'edit_text_symbols',
+      'generate',
     ]),
     type: z.enum(SAPWRITE_TYPES_BTP).optional(),
     name: z.string().optional(),
@@ -1002,6 +1003,7 @@ export const SAPWriteSchemaBtp = z
      * pass. See SAPWriteSchema (on-prem) for the full contract. */
     activateAtEnd: looseOptionalBoolean,
     dryRun: looseOptionalBoolean,
+    generator: z.enum(['ui-service', 'webapi-service']).optional(),
     /** FUNC structured signature parameters — same shape as on-prem. Harmless on BTP since FUNC write
      * is on-prem-only. */
     parameters: z.array(fmParameterSchema).optional(),

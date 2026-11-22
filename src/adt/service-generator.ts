@@ -26,7 +26,7 @@ export const SERVICE_GENERATORS = {
 } as const;
 export type ServiceGeneratorName = keyof typeof SERVICE_GENERATORS;
 
-// Feed hrefs come from SAP; only <prefix><id> and paths below it are ever called.
+// Feed hrefs come from SAP; only <prefix><id> (run) and <prefix><id>/<rel> are ever called.
 const PATH_PREFIXES = ['/sap/bc/adt/rap/generators/ui/', '/sap/bc/adt/businessservices/generators/'];
 const REL = 'http://www.sap.com/adt/repository/generator';
 // Both releases advertise exactly these checks on the validation link.
@@ -50,6 +50,7 @@ export interface GeneratorMessage {
 export interface PlannedObject {
   type: string;
   name: string;
+  uri: string;
   operation: string;
 }
 
@@ -70,13 +71,11 @@ export function tableUri(table: string): string {
   return `/sap/bc/adt/ddic/tables/${encodeURIComponent(table.toLowerCase())}`;
 }
 
-/** The canonical endpoint path when the href stays at or below one generator root, else undefined. */
-function generatorPath(href: string, id: string): string | undefined {
-  for (const root of PATH_PREFIXES.map((prefix) => `${prefix}${id}`)) {
-    const path = canonicalHostRelativeAdtPath(href, root);
-    if (path === root || path?.startsWith(`${root}/`)) return path;
-  }
-  return undefined;
+/** The href when it is exactly the expected path for this rel (both releases), else undefined. */
+function generatorPath(href: string, id: string, rel: Rel): string | undefined {
+  const path = canonicalHostRelativeAdtPath(href);
+  const expected = PATH_PREFIXES.map((prefix) => (rel === 'generator' ? `${prefix}${id}` : `${prefix}${id}/${rel}`));
+  return path && expected.includes(path) ? path : undefined;
 }
 
 /**
@@ -103,7 +102,7 @@ export async function findServiceGenerator(
     const link = nodes(entry.link).find((l) => l['@_rel'] === (rel === 'generator' ? REL : `${REL}/${rel}`));
     // SAP's own query (referencedObject, checks) is dropped; ARC-1 builds it per request.
     const href = String(link?.['@_href'] ?? '').split('?')[0] ?? '';
-    const path = generatorPath(href, id);
+    const path = generatorPath(href, id, rel);
     if (!path || !link?.['@_type']) {
       throw new AdtSafetyError(`Generator '${id}' advertises no usable '${rel}' endpoint (${href || 'none'}).`);
     }
@@ -188,6 +187,8 @@ export async function previewObjects(
   const planned = (ref: XmlNode, operation: unknown): PlannedObject => ({
     type: String(ref['@_type'] ?? ''),
     name: String(ref['@_name'] ?? '').toUpperCase(),
+    // Namespaced objects carry %2f in their URI (/sap/bc/adt/ddic/ddl/sources/%2fns%2fr_x).
+    uri: canonicalHostRelativeAdtPath(String(ref['@_uri'] ?? ''), undefined, { allowRawEncodedSlash: true }) ?? '',
     operation: String(operation ?? '').toUpperCase(),
   });
   // 7.58: flat adtcore:objectReferences; the operation travels in adtcore:description.
@@ -202,8 +203,11 @@ export async function previewObjects(
     }),
     ...nodes(group.group).flatMap(walk),
   ];
-  const objects = [...flat, ...nodes(parsed.group).flatMap(walk)].filter((o) => o.type && o.name);
-  if (objects.length === 0) throw new AdtError('SAP returned no objects in the generator preview.');
+  const objects = [...flat, ...nodes(parsed.group).flatMap(walk)];
+  // Fail closed: an entry ARC-1 cannot name would escape the collision check and the read-back.
+  if (objects.length === 0 || objects.some((o) => !o.type || !o.name || !o.uri)) {
+    throw new AdtError('SAP returned an empty or incomplete generator preview; nothing was generated.');
+  }
   return objects;
 }
 

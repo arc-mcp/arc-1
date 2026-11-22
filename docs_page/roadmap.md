@@ -98,7 +98,6 @@ sequence.
 | [FEAT-85](#feat-85) | Set the ABAP language version of packages and objects | P1 | M | Needs research | ABAP authoring |
 | [FEAT-101](#feat-101) | Business configuration generator (`smbc`) | P2 | M | Needs research | ABAP authoring |
 | [FEAT-102](#feat-102) | Generator listing and further SAP generators | P3 | M | Needs research | ABAP authoring |
-| [FEAT-103](#feat-103) | RAP service generator on BTP ABAP Environment | P2 | S | Needs environment | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
 | [FEAT-21](#feat-21) | ABAP F1 documentation | P3 | S | Needs research | Developer workflow |
 | [FEAT-92](#feat-92) | Function-group include expansion on the program walker | P2 | S | Ready | Developer workflow |
@@ -1074,18 +1073,6 @@ independently; do not infer their create subtype or source format from the famil
 **Why it remains.** 8.16 lists ten generators with `fetchAllGenerators=true`; 7.58 lists none without a referenced object. #1122's listing returned about 14,000 characters on 8.16, mostly media types and long descriptions, and each generator has its own input contract. A model can only use a generator ARC-1 has verified, so a listing alone helps little.
 
 **Resume with.** A concrete use case for one more generator, a compact listing (id, title, applicable object types), and captured responses for that generator on the releases it ships with.
-
-<a id="feat-103"></a>
-### FEAT-103 — RAP service generator on BTP ABAP Environment
-
-- **Priority / effort / status:** P2 / S / Needs environment
-- **Category:** ABAP authoring
-
-**Idea.** Offer `SAPWrite(action="generate")` in the BTP schema.
-
-**Why it remains.** #1122 saw the generator list on BTP release 920 but never ran a generator there. During the 2026-11-22 test the BTP test instance answered "System is stopped", so the action stays on-premise only. BTP uses the 8.16 path layout (`/sap/bc/adt/rap/generators/ui/`), which the code already accepts.
-
-**Resume with.** A dry run and a real run in a BTP package (parent `ZLOCAL` and an explicit transport), read-back, cleanup, and the schema/tool-definition change for BTP within the wire budget.
 
 <a id="feat-78"></a>
 ### FEAT-78 — Table type access type and keys

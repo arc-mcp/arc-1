@@ -10,7 +10,8 @@ evidence of two contributor PRs with the checks of the version that shipped:
 - [#1202](https://github.com/arc-mcp/arc-1/pull/1202) (Flavio): live contract of the 7.58 RAP service
   generators over RFC, 2026-11-06, in `$TMP` and a transportable package.
 - 2026-11-22: responses captured on 7.58 and 8.16 (now the unit-test fixtures in
-  `tests/fixtures/service-generators/`) and live runs through this version on 7.58, 8.16 and 7.50.
+  `tests/fixtures/service-generators/`) and live runs through this version on 7.58, 8.16, 7.50 and
+  BTP ABAP Environment (H01), plus an independent re-test by Codex (GPT-6.2-Astra) on 7.58 and 8.16.
 
 ## Requests
 
@@ -23,10 +24,11 @@ evidence of two contributor PRs with the checks of the version that shipped:
 | Run | `POST <generator>?referencedObject=…[&corrNr=…]`, same body | `adtcore:objectReferences` XML with only the binding, although the content type says JSON | same |
 
 Endpoint roots: `/sap/bc/adt/businessservices/generators/<id>` (7.58),
-`/sap/bc/adt/rap/generators/ui/<id>` (8.16, and BTP per #1122). Every feed entry links its endpoints
-by rel (`…/repository/generator/content`, `/validation`, `/preview`, and `…/repository/generator` for
-the run) with the media type in the link's `type`. ARC-1 takes path and media type from the feed,
-drops SAP's query, and calls only paths at or below `<root><id>`. The body content type of all three
+`/sap/bc/adt/rap/generators/ui/<id>` (8.16 and BTP). Every feed entry links its endpoints by rel
+(`…/repository/generator/content`, `/validation`, `/preview`, and `…/repository/generator` for the run)
+with the media type in the link's `type`. ARC-1 takes path and media type from the feed, drops SAP's
+query, and accepts a link only at its exact expected path (`<root><id>/<rel>`, the run at `<root><id>`),
+so a mislabeled link cannot turn a preview into a run. The body content type of all three
 POSTs is the content link's type. 7.50 has no generator collection: the feed answers 404.
 
 ## Input
@@ -40,7 +42,7 @@ another order (#1202). ARC-1 keeps the proposal's key order and sets
 |---|---|---|
 | Table name | `general.referenceObjectName` | `general.referencedObjectName` |
 | Binding name | `businessService.serviceBinding.name` | `businessService.serviceBinding.serviceBindingName` (+ `…Orgn`) |
-| Proposal `metadata` | `{}` | `{"package": …}` |
+| Proposal `metadata` | `{}` | `{"package": …}` (BTP: keys in alphabetical order, accepted as sent) |
 | Other | — | `general.sessionId`, `namespace`, `projectName`; every name has an `…Orgn` twin |
 
 A changed name travels through validation, preview and run (7.58 binding override, live 2026-11-22).
@@ -48,23 +50,28 @@ A wrong referenced table name passes SAP's validation (#1202), so ARC-1 refuses 
 
 ## What SAP does not check (ARC-1 does)
 
-- **Package and request.** Validation answered OK for a missing package, no package, an invalid
-  `corrNr` and another table (#1202). A run without `corrNr` landed on another open request of the
+- **Table, package and request.** Validation answered OK for a missing package, no package, an
+  invalid `corrNr` and another table (#1202); on 7.58 the feed, validation and preview also accept a
+  table that does not exist (2026-11-22). ARC-1 reads the table and the package and asks
+  `/sap/bc/adt/cts/transportchecks` about a new object in the package: local packages (BTP `ZLOCAL`
+  subpackages) take no request, recording packages need one. A run without `corrNr` landed on another open request of the
   user (8.16, `smbc`, #1122). With `corrNr` SAP honours it (#1202; 7.58 live 2026-11-22).
 - **Collisions.** The preview reports CREATE for existing objects. On 7.58 validation rejects every
   existing object, one per call ("ZARC1_CXG_T_D already exists; choose a different name."). On 8.16
   the proposal already avoids taken names (`…T000`), so a second run creates a second stack; a
   binding renamed to an existing one is refused by validation.
-- **Completeness.** The run names only the binding; the planned objects are read back.
+- **Completeness.** The run names only the binding. ARC-1 GETs every planned object's own preview URI:
+  404 means it does not exist, otherwise `adtcore:packageRef` gives its package (all generated types
+  on 7.58, 8.16 and BTP, `NONT`/`RONT` included). A repository search is not exact enough (page limit).
 
 ## Results
 
-| | 7.58 | 8.16 |
-|---|---|---|
-| `ui-service` objects | 9: DDLS ×2, BDEF ×2, CLAS, draft TABL, DDLX, SRVD, SRVB | 14: also DCLS ×2, projection CLAS, `NONT`, `RONT` |
-| `webapi-service` objects | 7 (no draft table, no DDLX) | 12 (#1122) |
-| Real run, `$TMP` | 16 s (ui), 10 s (webapi); all active | 102 s (ui); all active |
-| Publish + `service_info` | works | works (2026-11-22; refused in another client earlier, #1122) |
+| | 7.58 | 8.16 | BTP (H01) |
+|---|---|---|---|
+| `ui-service` objects | 9: DDLS ×2, BDEF ×2, CLAS, draft TABL, DDLX, SRVD, SRVB | 14: also DCLS ×2, projection CLAS, `NONT`, `RONT` | 14, as 8.16 |
+| `webapi-service` objects | 7 (no draft table, no DDLX) | 12 (#1122) | not run |
+| Real run | `$TMP`: 16 s (ui), 10 s (webapi); all active | `$TMP`: 33–102 s (ui); all active | `ZLOCAL` subpackage: 76 s (ui); all active |
+| Publish + `service_info` | works | works (2026-11-22; refused in another client earlier, #1122) | works (99 s) |
 
 Not in the preview, but recorded: one `G4BA` (named after the binding) and one `SUSH` (hash name) per
 run; `smbc` also adds `STOB` objects (#1122). In a transportable package they land on the request and
@@ -77,6 +84,6 @@ request. Validation and preview had passed. ARC-1 reported the failure with ever
 
 ## Not verified
 
-- BTP ABAP Environment: the instance was stopped on 2026-11-22 (roadmap FEAT-103).
+- A successful run into a transportable package (the 7.58 attempt failed on SAP's side, above).
 - `webapi-service` real run on 8.16 through this version (#1122 ran it).
 - `smbc` and the other generators (roadmap FEAT-101, FEAT-102).

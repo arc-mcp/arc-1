@@ -44,7 +44,7 @@ const BUDGETS = {
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
   // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
   'src/handlers/tools.ts': 1800, // MSAG message deletion (#1248), CTS request categories (#1047), SAPWrite generate.
-  'src/handlers/schemas.ts': 1627, // MSAG deletion (#1248), CTS request categories (#1047), SRVB include allowlist, generate.
+  'src/handlers/schemas.ts': 1629, // MSAG deletion (#1248), CTS request categories (#1047), SRVB include allowlist, generate.
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
