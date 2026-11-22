@@ -194,6 +194,11 @@ export function canonicalTablType(type: string): string {
   return type === 'TABL/DT' || type === 'TABL/DS' ? 'TABL' : type;
 }
 
+/** TABL edit_content is on-prem only: offered and executed only when on-prem is configured or detected. */
+export function tablEditContentAvailable(configured: string | undefined, detected: string | undefined): boolean {
+  return configured !== 'btp' && (detected ?? (configured !== 'auto' ? configured : undefined)) === 'onprem';
+}
+
 /**
  * Fields whose handler INTENTIONALLY treats an explicit empty string as a meaningful
  * signal distinct from "omitted", so the pre-validation strip must keep an empty-STRING

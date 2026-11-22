@@ -124,6 +124,7 @@ export function multiTargetInvocationDecision(
 // the pinned-surface test fails when tools.ts wording drifts.
 const EXCLUDED_GUIDANCE: ReadonlyArray<readonly [string, string]> = [
   ['; edit_content replaces one exact match and requires expectedSourceHash.', '.'],
+  ['edit_content also accepts TABL. ', ''],
   ['Required for edit_content; otherwise optional', 'Optional'],
 ];
 

@@ -1295,8 +1295,12 @@ SAPWrite(action="edit_unit", type="PROG", name="ZREPORT", unit="process_data",
          source="FORM process_data. ... ENDFORM.", expectedSourceHash=H)
 ```
 
-Supported types: `PROG`, `INCL`, `CLAS`, `INTF`, `FUNC`, `DDLS`, `DCLS`, `BDEF`, `SRVD`, `DDLX`.
-Supported actions: `update`, `edit_unit`, `add_unit`, `edit_content`, and the CLAS surgery actions. For class-local methods,
+Supported types: `PROG`, `INCL`, `CLAS`, `INTF`, `FUNC`, `DDLS`, `DCLS`, `BDEF`, `SRVD`, `DDLX`, `TABL`.
+Supported actions: `update`, `edit_unit`, `add_unit`, `edit_content`, and the CLAS surgery actions.
+`TABL` covers database tables and structures (`TABL/DT`, `TABL/DS`): the editable read hashes the DDL
+source at the same `/ddic/tables/` or `/ddic/structures/` resource that `SAPWrite` resolves for the
+update, so the read is refused where the write would be (transparent tables on systems without
+`/sap/bc/adt/ddic/tables/`, NW 7.50/7.51). For class-local methods,
 read the correct `include=implementations|testclasses|definitions|macros` and use that same include
 on the write (or the matching method prefix). The hash covers that entire include. For function-group
 includes pass the same `group`; FUNC can resolve its group or accept it explicitly. Unsupported
@@ -1311,7 +1315,7 @@ cannot be initialized by a guarded write; its read/precondition must succeed fir
 
 ### Replace a small piece of source text
 
-For on-prem programs and includes, read `format="editable"` first, then pass its `sourceHash`:
+For on-prem programs, includes and DDIC tables/structures (`TABL`), read `format="editable"` first, then pass its `sourceHash`:
 
 ```text
 SAPWrite(action="edit_content", type="PROG", name="ZREPORT",
@@ -1323,6 +1327,11 @@ The text must match exactly once. Use more surrounding text if it appears twice;
 `newContent=""` to delete it. ARC-1 checks the hash under the SAP lock, validates the resulting
 source, and saves it as a draft. If the source changed, re-read and prepare the edit again.
 Snippet line endings follow the source; bytes outside the match stay unchanged.
+For `TABL`, the resulting source also passes the same RAP preflight as a whole-source update
+(`preflightBeforeWrite=false` bypasses it). TABL `edit_content` needs a
+confirmed on-prem system: `SAP_SYSTEM_TYPE=onprem`, or `auto` once detection has found on-prem.
+Otherwise (BTP, or detection pending or inconclusive) the tool description does not offer it and a
+call is refused before any SAP request; use `action="update"` with `expectedSourceHash` instead.
 
 For structural includes such as `LZGROUPTOP`, edits and activation can find the function group
 from SAP search. Supply `group` when search cannot verify the owner; U01-style function-module

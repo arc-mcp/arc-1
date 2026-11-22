@@ -6,9 +6,10 @@ import { checkOperation, OperationType } from '../../adt/safety.js';
 import { assertSourceHash } from '../../adt/source-precondition.js';
 import { spliceContent } from '../../context/content-splice.js';
 import { insertUnit, spliceUnit } from '../../context/unit-surgery.js';
+import { supportsEditContent } from '../editable-source.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
-import { runPreWriteLint, runPreWriteSyntaxCheck } from '../write-helpers.js';
+import { runPreWriteLint, runPreWriteSyntaxCheck, runRapPreflightValidation } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
 
 export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult> {
@@ -21,6 +22,7 @@ export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult>
     source,
     transport,
     lintOverride,
+    preflightOverride,
     checkOverride,
     objectUrl,
     srcUrl,
@@ -35,8 +37,10 @@ export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult>
   if (!editingContent && !source.trim()) {
     return errorResult(`"source" (complete FORM...ENDFORM or MODULE...ENDMODULE block) is required for ${action}.`);
   }
-  if (type !== 'PROG' && type !== 'INCL') {
-    return errorResult(`${action} is only supported for type=PROG or type=INCL.`);
+  if (editingContent ? !supportsEditContent(type) : type !== 'PROG' && type !== 'INCL') {
+    return errorResult(
+      `${action} is only supported for type=PROG${editingContent ? ', type=INCL or type=TABL' : ' or type=INCL'}.`,
+    );
   }
   checkOperation(client.safety, OperationType.Update, 'EditUnit');
   await enforcePackageForExistingObject();
@@ -61,6 +65,17 @@ export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult>
           ? insertUnit(currentSource, name, unit, source, abaplintVersion)
           : spliceUnit(currentSource, name, unit, source, abaplintVersion);
       if (!spliced.success) return errorResult(spliced.error ?? `Failed to splice unit "${unit}" in ${name}.`);
+
+      // Same deterministic preflight as a whole-source update, on the complete resulting source.
+      const preflight = runRapPreflightValidation(
+        spliced.newSource,
+        type,
+        name,
+        cachedFeatures,
+        config.systemType,
+        preflightOverride,
+      );
+      if (preflight.blocked) return preflight.result!;
 
       const lint = runPreWriteLint(spliced.newSource, type, name, { ...config, abapRelease: release }, lintOverride);
       if (lint.blocked) return lint.result!;
@@ -91,7 +106,7 @@ export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult>
       const message = editingContent
         ? `Successfully ${args.newContent === '' ? 'removed' : 'replaced'} the matching text in ${type} ${name}.${activationHint}`
         : `Successfully ${adding ? 'added' : 'updated'} ${kind} "${unit}" in ${type} ${name}.${activationHint}`;
-      const extras = [lint.warnings, checkNotes].filter(Boolean).join('\n\n');
+      const extras = [preflight.warnings, lint.warnings, checkNotes].filter(Boolean).join('\n\n');
       return extras ? textResult(`${message}\n\n${extras}`) : textResult(message);
     } finally {
       // Surface failed unlocks: SAP may still hold the lock after a successful write.
