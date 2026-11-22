@@ -31,7 +31,7 @@ import {
   parseBadiImplementationDefinition,
   resolveBadiFilters,
 } from '../adt/enhancement-impl.js';
-import { AdtError, AdtSafetyError } from '../adt/errors.js';
+import { AdtApiError, AdtError, AdtSafetyError } from '../adt/errors.js';
 import {
   buildLockObjectXml,
   getLockObject,
@@ -1374,8 +1374,10 @@ export async function runPreWriteSyntaxCheck(
       { content: source, version: 'active' },
       requestOptions,
     );
-    // Object not created yet → SAP checked nothing. Silent: pre-write on a create is the normal case.
-    if (!result.checked || result.messages.length === 0) return '';
+    // Object not created yet → SAP checked nothing. Silent unless this call asked for the check.
+    if (!result.checked)
+      return perCallOverride === true ? syntaxCheckUnconfirmed('SAP returned no processed check report') : '';
+    if (result.messages.length === 0) return '';
 
     const errors = result.messages.filter((m) => m.severity === 'error');
     const warnings = result.messages.filter((m) => m.severity === 'warning');
@@ -1392,10 +1394,27 @@ export async function runPreWriteSyntaxCheck(
       parts.push(`Server syntax check warnings:\n${lines}`);
     }
     return parts.join('\n\n');
-  } catch {
-    // Best-effort: never let a failing pre-check fail the write.
-    return '';
+  } catch (err) {
+    // Best-effort: never let a failing pre-check fail the write, but say so when it was requested.
+    if (perCallOverride !== true) return '';
+    // This note rides a success payload, so ARC1_MINIMAL_ERRORS must withhold SAP text here.
+    const detail =
+      err instanceof AdtApiError
+        ? config.minimalErrors
+          ? `SAP request failed (status ${err.statusCode})`
+          : err.message.split('\n')[0]!.slice(0, 200)
+        : config.minimalErrors
+          ? 'request failed'
+          : err instanceof Error
+            ? err.message.split('\n')[0]!.slice(0, 200)
+            : String(err);
+    return syntaxCheckUnconfirmed(detail);
   }
+}
+
+/** A timeout can arrive after SAP ran the check, so ARC-1 reports that it could not confirm it. */
+function syntaxCheckUnconfirmed(detail: string): string {
+  return `Server syntax check not confirmed (checkBeforeWrite=true): ${detail}. ARC-1 cannot confirm that SAP checked this source.`;
 }
 
 // ─── Post-save syntax check ───
