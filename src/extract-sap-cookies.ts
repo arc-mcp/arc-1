@@ -1,8 +1,10 @@
-import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, parse, resolve } from 'node:path';
+import { dirname, isAbsolute, join, parse, resolve, win32 } from 'node:path';
 import { createInterface } from 'node:readline/promises';
+import type { Readable, Writable } from 'node:stream';
+import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { config as loadDotEnv } from 'dotenv';
 
@@ -168,15 +170,15 @@ Options:
 `);
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
-}
-
-async function waitForDebuggerWebSocketUrl(port: number, timeoutMs = 25_000): Promise<string> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
+export async function waitForDebuggerWebSocketUrl(
+  port: number,
+  signal: AbortSignal,
+  timeoutMs = 25_000,
+): Promise<string> {
+  const waiting = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
+  while (!waiting.aborted) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
+      const response = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: waiting });
       if (response.ok) {
         const payload = (await response.json()) as { webSocketDebuggerUrl?: string };
         if (payload.webSocketDebuggerUrl) return payload.webSocketDebuggerUrl;
@@ -184,15 +186,33 @@ async function waitForDebuggerWebSocketUrl(port: number, timeoutMs = 25_000): Pr
     } catch {
       // Browser not ready yet.
     }
-    await delay(300);
+    try {
+      await delay(300, undefined, { signal: waiting });
+    } catch {
+      break;
+    }
   }
+  signal.throwIfAborted();
   throw new Error(`Timed out waiting for browser debugging endpoint on http://127.0.0.1:${port}/json/version`);
 }
 
-async function waitForEnter(prompt: string): Promise<void> {
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
+export async function waitForEnter(
+  prompt: string,
+  signal: AbortSignal,
+  input: Readable = process.stdin,
+  output: Writable = process.stderr,
+): Promise<void> {
+  const rl = createInterface({ input, output });
+  // In a terminal readline consumes Ctrl+C itself. EOF also ends an unanswered question.
+  const inputClosed = new AbortController();
+  rl.once('SIGINT', () => inputClosed.abort(new Error('Cookie extraction interrupted by Ctrl+C.')));
+  rl.once('close', () => inputClosed.abort(new Error('Input closed before cookie extraction.')));
+  const waiting = AbortSignal.any([signal, inputClosed.signal]);
   try {
-    await rl.question(prompt);
+    await rl.question(prompt, { signal: waiting });
+  } catch (error) {
+    waiting.throwIfAborted();
+    throw error;
   } finally {
     rl.close();
   }
@@ -223,7 +243,8 @@ function startBrowser(browserBinary: string, browser: BrowserChoice, url: string
           '--new-window',
           url,
         ];
-  return spawn(browserBinary, args, { stdio: 'ignore' });
+  // Give the temporary browser its own POSIX process group so shutdown can include its helpers.
+  return spawn(browserBinary, args, { stdio: 'ignore', detached: process.platform !== 'win32' });
 }
 
 export function cookieMatchesHost(cookieDomain: string, hostname: string): boolean {
@@ -231,7 +252,14 @@ export function cookieMatchesHost(cookieDomain: string, hostname: string): boole
   return hostname === normalized || hostname.endsWith(`.${normalized}`);
 }
 
-async function fetchCookiesViaCdp(wsUrl: string, origin: string): Promise<CdpCookie[]> {
+export async function fetchCookiesViaCdp(
+  wsUrl: string,
+  origin: string,
+  interrupt: AbortSignal,
+  timeoutMs = 25_000,
+): Promise<CdpCookie[]> {
+  const signal = AbortSignal.any([interrupt, AbortSignal.timeout(timeoutMs)]);
+  signal.throwIfAborted();
   const hostname = new URL(origin).hostname;
   return new Promise<CdpCookie[]>((resolvePromise, rejectPromise) => {
     const ws = new WebSocket(wsUrl);
@@ -242,6 +270,7 @@ async function fetchCookiesViaCdp(wsUrl: string, origin: string): Promise<CdpCoo
     const settleOnce = (resolver: () => void): void => {
       if (settled) return;
       settled = true;
+      signal.removeEventListener('abort', onAbort);
       resolver();
     };
 
@@ -251,6 +280,13 @@ async function fetchCookiesViaCdp(wsUrl: string, origin: string): Promise<CdpCoo
       }
       pending.clear();
     };
+
+    const onAbort = () => {
+      settleOnce(() => rejectPromise(signal.reason));
+      rejectAllPending(signal.reason);
+      ws.close();
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
 
     const send = (method: string, params: Record<string, unknown> = {}): Promise<unknown> =>
       new Promise((resolveSend, rejectSend) => {
@@ -349,6 +385,123 @@ export function ensureOutputDirectory(dir: string, fs = { existsSync, mkdirSync 
   }
 }
 
+function waitForExit(closed: Promise<void>, ms: number): Promise<boolean> {
+  return new Promise((resolveWait) => {
+    const timer = setTimeout(() => resolveWait(false), ms);
+    closed.then(() => {
+      clearTimeout(timer);
+      resolveWait(true);
+    });
+  });
+}
+
+export function killBrowserTree(
+  pid: number,
+  platform = process.platform,
+  kill = process.kill,
+  runCommand = spawnSync,
+): boolean {
+  if (platform === 'win32') {
+    const taskkill = win32.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe');
+    return (
+      runCommand(taskkill, ['/PID', String(pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true,
+        timeout: 1000,
+      }).status === 0
+    );
+  }
+  try {
+    kill(-pid, 'SIGKILL');
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ESRCH'; // The entire group already exited.
+  }
+}
+
+async function stopBrowser(child: ChildProcess, closed: Promise<void>): Promise<boolean> {
+  let treeStopped = true;
+  try {
+    if (child.exitCode === null && child.signalCode === null) {
+      // Windows SIGTERM terminates only the leader. Stop the tree while its PID is still live.
+      if (process.platform === 'win32' && child.pid) treeStopped = killBrowserTree(child.pid);
+      if (process.platform !== 'win32' || !child.pid || !treeStopped) child.kill('SIGTERM');
+      if (!(await waitForExit(closed, 4000))) {
+        child.kill('SIGKILL');
+        treeStopped = (await waitForExit(closed, 1000)) && treeStopped;
+      }
+    }
+    // The browser can exit before a helper finishes writing to its profile.
+    if (process.platform !== 'win32' && child.pid) return killBrowserTree(child.pid) && treeStopped;
+    return treeStopped;
+  } catch {
+    return false;
+  } finally {
+    child.unref();
+  }
+}
+
+interface ProfileCleanupOptions {
+  signals?: Pick<NodeJS.EventEmitter, 'on' | 'off'>;
+  makeDir?: (prefix: string) => string;
+  removeDir?: typeof rmSync;
+  warn?: (message: string) => void;
+}
+
+export async function withTemporaryBrowserProfile(
+  launch: (dir: string) => ChildProcess,
+  extract: (signal: AbortSignal) => Promise<void>,
+  {
+    signals = process,
+    makeDir = mkdtempSync,
+    removeDir = rmSync,
+    warn = (message: string) => process.stderr.write(message),
+  }: ProfileCleanupOptions = {},
+): Promise<void> {
+  const dir = makeDir(join(tmpdir(), 'arc1-cookie-extract-'));
+  const interrupt = new AbortController();
+  const onInterrupt = () => interrupt.abort(new Error('Cookie extraction interrupted by SIGINT.'));
+  const onTerminate = () => interrupt.abort(new Error('Cookie extraction interrupted by SIGTERM.'));
+  const onHangup = () => interrupt.abort(new Error('Cookie extraction interrupted by SIGHUP.'));
+  signals.on('SIGHUP', onHangup);
+  signals.on('SIGINT', onInterrupt);
+  signals.on('SIGTERM', onTerminate);
+  let stopped = true;
+  try {
+    const child = launch(dir);
+    const onError = (error: Error) => interrupt.abort(error);
+    child.on('error', onError);
+    const closed = new Promise<void>((resolveExit) => {
+      child.once('close', () => {
+        resolveExit();
+        interrupt.abort(new Error('Browser closed during cookie extraction.'));
+      });
+    });
+    try {
+      await extract(interrupt.signal);
+    } catch (error) {
+      interrupt.signal.throwIfAborted();
+      throw error;
+    } finally {
+      stopped = await stopBrowser(child, closed);
+      child.off('error', onError);
+    }
+  } finally {
+    try {
+      removeDir(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      if (!stopped) warn(`Warning: could not confirm browser exit. Close it and delete ${dir} if it reappears.\n`);
+    } catch {
+      warn(
+        `Warning: could not remove temporary browser profile ${dir}. Close the browser and delete this directory.\n`,
+      );
+    } finally {
+      signals.off('SIGHUP', onHangup);
+      signals.off('SIGINT', onInterrupt);
+      signals.off('SIGTERM', onTerminate);
+    }
+  }
+}
+
 export async function run(argv: string[] = process.argv.slice(2)): Promise<void> {
   loadDotEnv();
   const scriptArgs = parseScriptArgs(argv);
@@ -367,32 +520,31 @@ export async function run(argv: string[] = process.argv.slice(2)): Promise<void>
   await maybePromptConfirmation(plan.yes);
 
   const port = 9222;
-  const profileDir = mkdtempSync(join(tmpdir(), 'arc1-cookie-extract-'));
-  const browserProcess = startBrowser(plan.browserBinary, plan.browser, plan.url, port, profileDir);
+  await withTemporaryBrowserProfile(
+    (dir) => startBrowser(plan.browserBinary, plan.browser, plan.url, port, dir),
+    async (signal) => {
+      const wsUrl = await waitForDebuggerWebSocketUrl(port, signal);
+      process.stderr.write(
+        `Browser started (${plan.browser}). Complete login for ${plan.origin}, then press Enter to capture cookies.\n`,
+      );
+      await waitForEnter('', signal);
 
-  try {
-    const wsUrl = await waitForDebuggerWebSocketUrl(port);
-    process.stderr.write(
-      `Browser started (${plan.browser}). Complete login for ${plan.origin}, then press Enter to capture cookies.\n`,
-    );
-    await waitForEnter('');
+      const cookies = await fetchCookiesViaCdp(wsUrl, plan.origin, signal);
+      signal.throwIfAborted();
+      if (cookies.length === 0) {
+        throw new Error(`No cookies were returned for ${plan.origin}. Ensure you are logged in and try again.`);
+      }
 
-    const cookies = await fetchCookiesViaCdp(wsUrl, plan.origin);
-    if (cookies.length === 0) {
-      throw new Error(`No cookies were returned for ${plan.origin}. Ensure you are logged in and try again.`);
-    }
+      const cookieFileContent = toNetscapeCookieFile(cookies);
+      ensureOutputDirectory(dirname(plan.outputPath));
+      writeFileSync(plan.outputPath, cookieFileContent, { encoding: 'utf-8', mode: 0o600 });
+      chmodSync(plan.outputPath, 0o600);
 
-    const cookieFileContent = toNetscapeCookieFile(cookies);
-    ensureOutputDirectory(dirname(plan.outputPath));
-    writeFileSync(plan.outputPath, cookieFileContent, { encoding: 'utf-8', mode: 0o600 });
-    chmodSync(plan.outputPath, 0o600);
-
-    process.stderr.write(
-      `Cookies written to ${plan.outputPath} with mode 0600. Use with: SAP_COOKIE_FILE=${plan.outputPath} SAP_URL=${plan.url} arc-1. Rotate regularly — cookies expire.\n`,
-    );
-  } finally {
-    browserProcess.kill('SIGTERM');
-  }
+      process.stderr.write(
+        `Cookies written to ${plan.outputPath} with mode 0600. Use with: SAP_COOKIE_FILE=${plan.outputPath} SAP_URL=${plan.url} arc-1. Rotate regularly — cookies expire.\n`,
+      );
+    },
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
