@@ -1399,10 +1399,16 @@ export async function runPreWriteSyntaxCheck(
 const DDIC_POST_SAVE_CHECK_TYPES = new Set(['TABL', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'SRVB', 'DDLX']);
 
 /** Run a syntax check on the inactive version and format the errors for appending to an
- *  error message. Returns '' on any failure or when no errors are reported. */
-export async function inactiveSyntaxDiagnostic(client: AdtClient, type: string, name: string): Promise<string> {
+ *  error message. Returns '' on any failure or when no errors are reported. Pass the resolved
+ *  `objectUrl` for a bare TABL: the generic URL is /ddic/tables/, which SAP rejects for structures. */
+export async function inactiveSyntaxDiagnostic(
+  client: AdtClient,
+  type: string,
+  name: string,
+  objectUrl?: string,
+): Promise<string> {
   try {
-    const checkResult = await syntaxCheck(client.http, client.safety, objectUrlForType(type, name), {
+    const checkResult = await syntaxCheck(client.http, client.safety, objectUrl ?? objectUrlForType(type, name), {
       version: 'inactive',
     });
     if (!checkResult.checked || !checkResult.hasErrors) return '';
