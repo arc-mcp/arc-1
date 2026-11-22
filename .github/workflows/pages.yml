@@ -26,6 +26,8 @@ concurrency:
 
 jobs:
   build:
+    # Forks normally have Pages disabled, so deploy-pages fails there. Skipping this job also skips deploy.
+    if: ${{ github.repository == 'arc-mcp/arc-1' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

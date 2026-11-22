@@ -9,6 +9,7 @@ const STATUS_CHECK = /\b(?:always|cancelled|failure|success)\s*\(/i;
 it.each([
   ['release', 'release-please'],
   ['docker', 'build'],
+  ['pages', 'build'],
 ])('runs every %s job only upstream, including manual dispatch', (workflow, root) => {
   const { jobs } = parse(
     readFileSync(join(import.meta.dirname, `../../../.github/workflows/${workflow}.yml`), 'utf8'),
