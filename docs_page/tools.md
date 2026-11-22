@@ -685,7 +685,7 @@ keep their separate behavior.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit`, `add_unit`, `edit_content` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` replaces one FORM or MODULE in a PROG/INCL; `add_unit` inserts a new one; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes one part of a CLAS/PROG/FUGR text pool — see [Text elements](#text-elements). |
+| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit`, `add_unit`, `edit_content` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, `edit_text_symbols`, or `generate` (see [RAP service generator](#rap-service-generator)). `edit_unit` replaces one FORM or MODULE in a PROG/INCL; `add_unit` inserts a new one; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes one part of a CLAS/PROG/FUGR text pool — see [Text elements](#text-elements). |
 | `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP`, `TABL/DT`, `TABL/DS`, `TABL/DTT` (update only), `DOMA`, `DTEL`, `ENQU`, `ENHO` (BAdI implementations), `SOD1`/`SOD2` (API packages and assignments, on-prem), `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT`/`RONT`/`NONT`/`TABL/DTI`/`SMBC` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `create`, `update`, `delete`, `edit_unit`, `add_unit`, and `edit_content`. For edits and activation, ARC-1 finds the group when SAP returns one unambiguous structural-include match. Ignored for other types. |
 | `rowType` | string | No | `TTYP` create/update: the row type — a built-in ABAP type (`STRING`, `I`, …) or a DDIC type name such as `BAPIRET2`. Required for create. An update without it keeps the stored row type where ARC-1 can; see [table type updates](#table-type-updates). |
@@ -711,6 +711,7 @@ keep their separate behavior.
 | `targetAlias` | string | No | For `scaffold_rap_handlers` and `generate_behavior_implementation`: optional RAP entity alias filter (scaffold only one alias/handler class) |
 | `activate` | boolean | No | For `generate_behavior_implementation`: when `true` (default), runs `SAPActivate` on the class after writing. When `false`, only the source is written. Activation failures matching the well-known `Local classes of CL_ABAP_BEHAVIOR_HANDLER…` stale-active coupling do **not** throw — they return `activation.success=false` with a guided recovery hint so the just-written CCDEF/CCIMP source remains useful. |
 | `dryRun` | boolean | No | For `generate_behavior_implementation`: when `true`, runs discovery + cross-validation + scaffold planning and returns the report **without** writing or activating. Use this to preview what would change. For SKTD/KTD `update`: runs the identical validation of `source` and `shortTexts` and reports which nodes would change and which keep their text, without a PUT. |
+| `generator` | string | No | For `generate`: `ui-service` (OData V4 UI service with Fiori preview) or `webapi-service` (OData V4 Web API). |
 | `description` | string | No | Object description for `create` (defaults to name if omitted, max 60 chars) |
 | `package` | string | No | Package for new objects (default `$TMP`) |
 | `transport` | string | No | Transport request number. For `update` and `delete`, if omitted ARC-1 auto-uses the correction number returned by the SAP lock (if any). Explicit value takes precedence. |
@@ -1279,6 +1280,43 @@ SAPWrite(action="generate_behavior_implementation", type="CLAS", name="ZBP_DM_PR
   - If the pre-flight check fails (older system, permissions), ARC-1 proceeds and lets SAP handle the error.
 
 **Note:** Not available by default (read-only mode). Enable with `SAP_ALLOW_WRITES=true` / `--allow-writes=true`. Write access is restricted to package `$TMP` by default; to write to other packages, set `SAP_ALLOWED_PACKAGES='$TMP,Z*'` (quote in shell so `$TMP` isn't expanded).
+
+### RAP service generator
+
+`SAPWrite(action="generate")` runs SAP's own RAP service generator (ADT's "Generate ABAP Repository
+Objects") on one database table and creates the whole stack in one call. `ui-service` creates CDS view
+entities, behavior definitions, behavior pool, draft table, metadata extension, service definition and
+binding (9 objects on SAP_BASIS 7.58; 14 on 8.16 and BTP, adding access controls, a projection behavior
+class and an SAP object type and node type). `webapi-service` creates the same without draft table and
+metadata extension (7 on 7.58, 12 on 8.16).
+
+```text
+SAPWrite(action="generate", generator="ui-service", type="TABL", name="ZTRAVEL", package="$TMP", dryRun=true)
+# Rename: keys as in the dry run's "input" (7.58 shown; 8.16/BTP use serviceBindingName)
+SAPWrite(action="generate", generator="ui-service", type="TABL", name="ZTRAVEL", package="$TMP",
+  source='{"businessService":{"serviceBinding":{"name":"ZUI_TRAVEL_BOOKING"}}}')
+```
+
+- **Dry run first.** `dryRun=true` runs every check and returns SAP's planned objects and the
+  effective input; nothing is created. The real run reads every planned object back and reports it as
+  `found`, `missing`, `wrong_package`, `wrong_transport` or `unknown`. ARC-1 never deletes anything.
+- **Renames** go in `source`: JSON with only the keys of the dry run's `input` you want to change.
+  Keys SAP did not propose, `metadata`, the table name and SAP's own bookkeeping (`sessionId`, `…Orgn`)
+  are refused.
+- **Safety.** Writes must be enabled and the package must be in `SAP_ALLOWED_PACKAGES`; both are
+  checked before any SAP request, dry runs included. Local packages (`$TMP`, `$`-packages, BTP `ZLOCAL`
+  subpackages) take no transport; a package that records changes needs an existing, modifiable
+  transport request (not a task) that passes `SAP_ALLOWED_TRANSPORTS`. The table must exist and have been
+  activated, SAP's validation must answer `OK`, SAP must plan every object as a creation, and every
+  planned object must be new. The run is sent once, never replayed or redirected; any answer other than
+  2xx is reported as a failure with the read-back. Block the action alone with
+  `SAP_DENY_ACTIONS=SAPWrite.generate`.
+- **Releases.** Verified on SAP_BASIS 7.58 and 8.16 and on BTP ABAP Environment; 7.50 has no
+  generators and gets a clear refusal. On 8.16 SAP proposes suffixed names when the default names
+  are taken, so a second run creates a second stack; on 7.58 SAP's validation refuses it.
+- **After the run,** publish the binding with `SAPActivate(action="publish_srvb")` and check it with
+  `SAPRead(type="SRVB", include="service_info")`. SAP also records a `G4BA` and a `SUSH` object that the
+  preview does not list; in a transportable package they travel with the request.
 
 ### Source preconditions
 

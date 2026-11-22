@@ -121,6 +121,8 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
     opType: OperationType.Update,
     featureGate: 'rap',
   },
+  // Runs SAP's RAP service generator: mass creation in one package; deniable on its own.
+  'SAPWrite.generate': { scope: 'write', opType: OperationType.Create },
 
   // ── SAPActivate ──────────────────────────────────────────────────
   SAPActivate: { scope: 'write', opType: OperationType.Activate },

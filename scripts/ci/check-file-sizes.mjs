@@ -28,7 +28,7 @@ const BUDGETS = {
   // write.ts is now a thin SAPWrite orchestrator (prologue + ctx + action dispatch) after the
   // Stage D split into src/handlers/write/{create,update-delete,class-surgery,rap}.ts. The action
   // submodules ride the default src budget; keep this tight so the dispatcher can't reabsorb them.
-  'src/handlers/write.ts': 305, // Includes dispatch to the SOD1/SOD2 catalog writer.
+  'src/handlers/write.ts': 308, // Includes dispatch to the SOD1/SOD2 catalog writer and the generate action.
   // tools.ts holds every tool's JSON schema. The #520 description trim (write-mode tools/list
   // 87→66 KB to clear the Copilot-for-Eclipse gateway limit) shrank it; lowered to match. The
   // CLIENT-SAFETY size guard is scripts/ci/check-tool-schema-budget.ts — trim there before raising this.
@@ -43,8 +43,8 @@ const BUDGETS = {
   // +4: parent function group for SAPTransport check/history.
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
   // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
-  'src/handlers/tools.ts': 1798, // MSAG message deletion (#1248) and CTS request categories (#1047).
-  'src/handlers/schemas.ts': 1624, // MSAG deletion (#1248), CTS request categories (#1047), SRVB include allowlist.
+  'src/handlers/tools.ts': 1800, // MSAG message deletion (#1248), CTS request categories (#1047), SAPWrite generate.
+  'src/handlers/schemas.ts': 1629, // MSAG deletion (#1248), CTS request categories (#1047), SRVB include allowlist, generate.
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.

@@ -1507,8 +1507,8 @@ export class AdtHttpClient {
           headers: outbound,
           body,
           signal: requestSignal(options),
-          // Automatic redirects would create uncounted sends outside the caller's allowance.
-          ...(options?.attemptBudget ? { redirect: 'manual' as const } : {}),
+          // Automatic redirects would send outside the caller's allowance or replay a no-replay mutation.
+          ...(options?.attemptBudget || (options?.noReplay && method !== 'GET') ? { redirect: 'manual' as const } : {}),
           ...(dispatcher ? { dispatcher } : {}),
         },
         options?.attemptBudget,

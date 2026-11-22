@@ -125,7 +125,14 @@ export function multiTargetInvocationDecision(
 const EXCLUDED_GUIDANCE: ReadonlyArray<readonly [string, string]> = [
   ['; edit_content (also TABL) replaces one exact match and requires expectedSourceHash.', '.'],
   ['Required for edit_content; otherwise optional', 'Optional'],
+  ['Whole RAP OData service for an existing table: action="generate", dryRun=true first. ', ''],
+  [
+    " generate: SAP's generator builds a whole RAP OData service (CDS, BDEF, class, SRVD, SRVB) from a table: type=TABL, name, generator; always dryRun=true first and show the user; source=JSON renames.",
+    '',
+  ],
 ];
+
+const excludeGuidance = (text: string) => EXCLUDED_GUIDANCE.reduce((t, [from, to]) => t.replace(from, to), text);
 
 function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefinition | undefined {
   if (tool.name === 'SAPWrite' || tool.name === 'SAPActivate') {
@@ -135,6 +142,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
       preaudit: _preaudit,
       oldContent: _oldContent,
       newContent: _newContent,
+      generator: _generator,
       ...properties
     } = tool.inputSchema.properties as Record<string, Record<string, unknown>>;
     const pruned = Object.fromEntries(
@@ -143,7 +151,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
         typeof property.description === 'string'
           ? {
               ...property,
-              description: EXCLUDED_GUIDANCE.reduce((text, [from, to]) => text.replace(from, to), property.description),
+              description: excludeGuidance(property.description),
             }
           : property,
       ]),
@@ -152,7 +160,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
     return {
       ...tool,
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
-      description: `${tool.description} Pinned target: destination and server package/transport lists both apply.`,
+      description: `${excludeGuidance(tool.description)} Pinned target: destination and server package/transport lists both apply.`,
       inputSchema: {
         ...tool.inputSchema,
         properties: {

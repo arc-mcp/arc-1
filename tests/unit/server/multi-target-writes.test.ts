@@ -231,7 +231,7 @@ describe('pinned write policy composition', () => {
     expect(write.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: false });
     const single = getToolDefinitions(config);
     const singleWrite = single.find((t) => t.name === 'SAPWrite')!;
-    const excludedFields = new Set(['oldContent', 'newContent']);
+    const excludedFields = new Set(['oldContent', 'newContent', 'generator']);
     expect(Object.keys(write.inputSchema.properties as object)).toEqual(
       Object.keys(singleWrite.inputSchema.properties as object).filter((key) => !excludedFields.has(key)),
     );
@@ -240,8 +240,10 @@ describe('pinned write policy composition', () => {
         SHARED_PINNED_ACTIONS.has(`SAPWrite.${a}`),
       ),
     );
-    expect((singleWrite.inputSchema.properties as any).action.enum).toContain('edit_content');
-    expect(JSON.stringify(write)).not.toMatch(/edit_content|oldContent|newContent/);
+    expect((singleWrite.inputSchema.properties as any).action.enum).toEqual(
+      expect.arrayContaining(['edit_content', 'generate']),
+    );
+    expect(JSON.stringify(write)).not.toMatch(/edit_content|oldContent|newContent|\bgenerate\b|generator/);
     const activate = definitions.find((t) => t.name === 'SAPActivate')!;
     expect(activate.inputSchema.properties).not.toHaveProperty('preaudit');
     expect((activate.inputSchema.properties as any).action.enum).toEqual(['activate']);

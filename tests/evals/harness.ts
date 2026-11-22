@@ -112,16 +112,16 @@ export function scoreScenarioTrace(trace: LLMToolCall[], turns: LLMToolCall[][],
     };
   }
 
-  if (trace.length === 0) {
+  const firstCall = trace.find((call) => !scenario.preliminary?.some((p) => matchesExpectedToolCall(call, p)));
+  if (!firstCall) {
     return {
       toolSelectionScore: 0,
       parameterScore: 0,
-      explanation: 'LLM did not make any tool calls',
+      explanation: trace.length ? 'LLM made only preliminary calls' : 'LLM did not make any tool calls',
       tracePassed: false,
     };
   }
 
-  const firstCall = trace[0]!;
   const scoreFirstMatch = (expected: ExpectedToolCall, selection: number, label: string): TraceScore => ({
     toolSelectionScore: selection,
     parameterScore: scoreExpectedToolCallParameters(firstCall, expected),

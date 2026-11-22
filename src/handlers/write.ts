@@ -42,6 +42,7 @@ import {
 } from './write/class-surgery.js';
 import type { SapWriteContext } from './write/context.js';
 import { writeActionBatchCreate, writeActionCreate } from './write/create.js';
+import { writeActionGenerate } from './write/generate.js';
 import { writeActionGenerateBehaviorImplementation, writeActionScaffoldRapHandlers } from './write/rap.js';
 import { writeTableSettings } from './write/table-settings.js';
 import { writeUiad } from './write/uiad.js';
@@ -82,6 +83,8 @@ export async function handleSAPWrite(
   if (action !== 'batch_create' && (!type || !name)) {
     return errorResult('"type" and "name" are required for this action.');
   }
+  // Before any table resolution: generate refuses without a single SAP request when writes are off.
+  if (action === 'generate') return writeActionGenerate(client, args, config, cachingLayer, cacheSecurity);
 
   // TADIR uppercases names, but mixed-case URLs can miss the canonical lock (#293, ECC 423).
   // Reject mixed-case object names before mutation; batch_create validates each item separately.
@@ -299,7 +302,7 @@ export async function handleSAPWrite(
       return writeActionEditTextSymbols(ctx);
     default:
       return errorResult(
-        `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, edit_unit, add_unit, edit_content, batch_create, scaffold_rap_handlers, generate_behavior_implementation`,
+        `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, edit_unit, add_unit, edit_content, batch_create, scaffold_rap_handlers, generate_behavior_implementation, generate`,
       );
   }
 }

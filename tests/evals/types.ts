@@ -75,6 +75,8 @@ export interface EvalScenario {
   acceptable?: ExpectedToolCall[];
   /** Tools that must NOT be called — if called, score is 0 */
   forbidden?: string[];
+  /** Leading calls matching one of these (e.g. reading the input first) are skipped; the next call is scored. */
+  preliminary?: ExpectedToolCall[];
 
   /** This is a clarification-only case: the correct behavior is to make no ARC-1 tool call. */
   noFirstCall?: boolean;

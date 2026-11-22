@@ -608,6 +608,7 @@ export function getToolDefinitions(
               'scaffold_rap_handlers',
               'generate_behavior_implementation',
               'edit_text_symbols',
+              'generate',
             ],
             // This is where an LLM decides WHICH action to use, so every action gets a line —
             // especially the destructive and refusing ones, whose behaviour is not guessable.
@@ -626,7 +627,8 @@ export function getToolDefinitions(
               'scaffold_rap_handlers / generate_behavior_implementation: derive behavior-pool handlers from a BDEF (the latter is the equivalent of Eclipse\'s "Generate Behavior Implementation").' +
               (btp
                 ? ' edit_text_symbols: replace CLAS symbols (@MaxLength:NN\\nNNN=text; blank-line separated). Read first with SAPRead CLAS include=text_symbols; source="" clears the pool. Activates texts only.'
-                : ' edit_text_symbols: replace a CLAS/PROG/FUGR textpool part; read first, retain other entries. source="" clears it.'),
+                : ' edit_text_symbols: replace a CLAS/PROG/FUGR textpool part; read first, retain other entries. source="" clears it.') +
+              " generate: SAP's generator builds a whole RAP OData service (CDS, BDEF, class, SRVD, SRVB) from a table: type=TABL, name, generator; always dryRun=true first and show the user; source=JSON renames.",
           },
           type: {
             type: 'string',
@@ -637,9 +639,8 @@ export function getToolDefinitions(
           },
           name: {
             type: 'string',
-            description: btp
-              ? 'Object name.'
-              : 'Object name (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).',
+            // The action list lives in the action description; repeating it here cost wire bytes.
+            description: 'Object name.',
           },
           expectedSourceHash: {
             type: 'string',
@@ -725,6 +726,7 @@ export function getToolDefinitions(
             description:
               'For generate_behavior_implementation: when true, runs discovery + cross-validation + scaffold planning and returns the report without writing or activating. Use this to preview what would change. SKTD/KTD update: reports which nodes would change, writing nothing.',
           },
+          generator: { type: 'string', enum: ['ui-service', 'webapi-service'] }, // generate
           description: {
             type: 'string',
             description: 'Object description for create (default: name). Max 60 chars for most types.',
