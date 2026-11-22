@@ -72,6 +72,23 @@ platform-managed proxy path and is unaffected. For custom CA certificates, set
 `NODE_EXTRA_CA_CERTS=/path/to/ca.pem` (read by Node, not by ARC-1 directly). For Docker mounts of CA
 bundles, see [docker.md](docker.md#self-signed-or-internal-ca-certificates).
 
+#### Self-signed certificate or access by IP address without `SAP_INSECURE`
+
+1. Trust the certificate, or the CA that issued it: set `NODE_EXTRA_CA_CERTS` to its PEM file and
+   restart ARC-1.
+2. Use a host name that is in the certificate in `SAP_URL`. If it does not resolve, add a hosts entry
+   (Docker: `--add-host <name>:<ip>`).
+
+Chain, name and expiry stay checked. If the connection still fails, the error names the reason:
+
+| Error contains | Meaning |
+|---|---|
+| `DEPTH_ZERO_SELF_SIGNED_CERT` | The self-signed certificate is not trusted: check step 1. |
+| `UNABLE_TO_VERIFY_LEAF_SIGNATURE` / `SELF_SIGNED_CERT_IN_CHAIN` | The issuing CA or an intermediate certificate is not trusted: add it to the PEM file. |
+| `ERR_TLS_CERT_ALTNAME_INVALID` | The host or IP in `SAP_URL` is not in the certificate: check step 2. |
+
+With `ARC1_MINIMAL_ERRORS=true` (the default in HTTP mode) the client sees only the code.
+
 !!! danger "Avoid `SAP_INSECURE=true` outside isolated development"
     `SAP_INSECURE=true` disables all SAP TLS verification — it accepts *any* certificate (masking man-in-the-middle), not just self-signed ones, and ARC-1 logs nothing when it is on. The bundled `manifest.yml` / `mta.yaml` keep it `"false"`; use `NODE_EXTRA_CA_CERTS` for an internal CA instead of disabling verification.
 

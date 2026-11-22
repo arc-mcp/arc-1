@@ -241,6 +241,10 @@ reads the object's metadata and returns `checked:false` when SAP answers `404`: 
 program SAP would otherwise check the text as a standalone include without program attributes
 (fixed-point arithmetic off) and report false errors such as every `@` host variable. This does not activate or
 execute code. Results match the compatible `SAPDiagnose(action="syntax", type=..., name=...)` route.
+A `TABL` that is not at `/ddic/tables/` is checked at `/ddic/structures/`. SAP_BASIS 7.50/7.51 have
+no `/ddic/tables/` and list transparent tables there as structures, so where discovery does not
+advertise `/ddic/tables/`, only a repository-search `TABL/DS` hit is checked; anything else returns
+`checked:false` (a transparent table checked as a structure gets false errors).
 
 An empty native `<checkRunReports/>` response also means `checked:false`: SAP supplied no
 check evidence. The older message-only response format still supports an empty successful result.
@@ -713,7 +717,7 @@ keep their separate behavior.
 | `transport` | string | No | Transport request number. For `update` and `delete`, if omitted ARC-1 auto-uses the correction number returned by the SAP lock (if any). Explicit value takes precedence. |
 | `lintBeforeWrite` | boolean | No | Override server lint setting for this call (`false` to bypass pre-write lint) |
 | `preflightBeforeWrite` | boolean | No | Override deterministic RAP preflight checks for this call (`false` to bypass TABL/BDEF/DDLX/DDLS static checks) |
-| `checkBeforeWrite` | boolean | No | Override the server SAP-side pre-write syntax check. When true, diagnostics are appended but do not block the write; activation remains definitive. |
+| `checkBeforeWrite` | boolean | No | Override the server SAP-side pre-write syntax check. When true, diagnostics are appended but do not block the write; activation remains definitive. Covers source types including `TABL` DDL source, checked at the resolved table or structure URI. |
 | `dataType` | string | No | DOMA/DTEL: ABAP data type (`CHAR`, `NUMC`, `DEC`, ...) |
 | `length` | number | No | DOMA/DTEL: data type length |
 | `decimals` | number | No | DOMA/DTEL: decimal places |
@@ -1330,8 +1334,12 @@ SAPWrite(action="edit_unit", type="PROG", name="ZREPORT", unit="process_data",
          source="FORM process_data. ... ENDFORM.", expectedSourceHash=H)
 ```
 
-Supported types: `PROG`, `INCL`, `CLAS`, `INTF`, `FUNC`, `DDLS`, `DCLS`, `BDEF`, `SRVD`, `DDLX`.
-Supported actions: `update`, `edit_unit`, `add_unit`, `edit_content`, and the CLAS surgery actions. For class-local methods,
+Supported types: `PROG`, `INCL`, `CLAS`, `INTF`, `FUNC`, `DDLS`, `DCLS`, `BDEF`, `SRVD`, `DDLX`, `TABL`.
+Supported actions: `update`, `edit_unit`, `add_unit`, `edit_content`, and the CLAS surgery actions.
+`TABL` covers database tables and structures (`TABL/DT`, `TABL/DS`): the editable read hashes the DDL
+source at the same `/ddic/tables/` or `/ddic/structures/` resource that `SAPWrite` resolves for the
+update, so the read is refused where the write would be (transparent tables on systems without
+`/sap/bc/adt/ddic/tables/`, NW 7.50/7.51). For class-local methods,
 read the correct `include=implementations|testclasses|definitions|macros` and use that same include
 on the write (or the matching method prefix). The hash covers that entire include. For function-group
 includes pass the same `group`; FUNC can resolve its group or accept it explicitly. Unsupported
@@ -1346,7 +1354,7 @@ cannot be initialized by a guarded write; its read/precondition must succeed fir
 
 ### Replace a small piece of source text
 
-For on-prem programs and includes, read `format="editable"` first, then pass its `sourceHash`:
+For on-prem programs, includes and DDIC tables/structures (`TABL`), read `format="editable"` first, then pass its `sourceHash`:
 
 ```text
 SAPWrite(action="edit_content", type="PROG", name="ZREPORT",
@@ -1358,6 +1366,9 @@ The text must match exactly once. Use more surrounding text if it appears twice;
 `newContent=""` to delete it. ARC-1 checks the hash under the SAP lock, validates the resulting
 source, and saves it as a draft. If the source changed, re-read and prepare the edit again.
 Snippet line endings follow the source; bytes outside the match stay unchanged.
+For `TABL`, the resulting source also passes the same RAP preflight as a whole-source update
+(`preflightBeforeWrite=false` bypasses it). TABL `edit_content` is available wherever `edit_content`
+is (not with `SAP_SYSTEM_TYPE=btp`).
 
 For structural includes such as `LZGROUPTOP`, edits and activation can find the function group
 from SAP search. Supply `group` when search cannot verify the owner; U01-style function-module
@@ -1691,6 +1702,16 @@ text-element service are refused. Ordinary `edit_text_symbols` writes already re
 text-pool activation automatically.
 
 For failed `DDLS` activation, ARC-1 appends CDS dependency impact buckets and a concrete batch re-activation template derived from where-used results.
+
+For failed `TABL` activation (tables and structures, single, batch, and `SAPWrite batch_create`),
+SAP often reports only `Nametab for table … cannot be generated`. ARC-1 then checks the inactive
+draft at the object's own `/ddic/tables/` or `/ddic/structures/` URI and appends the messages that
+name the field, with line and column, skipping texts that object's activation already reported. The
+check only complements SAP's per-object status; it never changes it. If the check cannot run, the
+original activation error is returned with a short note. With `ARC1_MINIMAL_ERRORS=true` the check
+is skipped. Use `checkBeforeWrite=true` on `SAPWrite update` to see the same check on proposed TABL
+source before it is saved. `TTYP` and `DTEL` are not checked this way: their activation message
+already names the cause.
 
 On a target resolved as BTP, the exact English missing-inbound-service error for an OData
 V4 UI binding at version `0001` triggers one fresh active-metadata read. Explicit published

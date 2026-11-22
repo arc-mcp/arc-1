@@ -33,7 +33,7 @@ import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { type DataPreviewInput, validateDataPreviewInput } from './data-preview-input.js';
 import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
 import { dumpFilters, validateDumpFilterInputs } from './dump-filter-inputs.js';
-import { sourcePreconditionError } from './editable-source.js';
+import { sourcePreconditionError, supportsEditContent } from './editable-source.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES, KNOWN_BASE_TYPES } from './object-types.js';
 import { SAPQuerySchema, SAPQuerySchemaBtp } from './query-input.js';
@@ -526,7 +526,7 @@ function validateSapWriteInput(
   }
   if (input.action === 'edit_content') {
     const fail = (field: string, message: string) => ctx.addIssue({ code: 'custom', path: [field], message });
-    if (input.type !== 'PROG' && input.type !== 'INCL') fail('type', 'edit_content supports PROG or INCL only.');
+    if (!supportsEditContent(input.type ?? '')) fail('type', 'edit_content supports PROG, INCL or TABL only.');
     if (!input.oldContent) fail('oldContent', 'oldContent must be non-empty exact source text.');
     if (input.newContent === undefined)
       fail('newContent', 'newContent is required; an empty string deletes the matched text.');

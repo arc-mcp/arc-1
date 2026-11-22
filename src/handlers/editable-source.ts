@@ -1,8 +1,11 @@
 /** Explicit, uncached source snapshots for optimistic write preconditions. */
 import type { AdtClient } from '../adt/client.js';
+import { AdtSafetyError } from '../adt/errors.js';
 import { checkOperation, OperationType } from '../adt/safety.js';
 import { sourceHash } from '../adt/source-precondition.js';
+import { isTablesEndpointAvailable } from './feature-cache.js';
 import {
+  canonicalTablType,
   classIncludeUrl,
   functionGroupIncludeObjectUrl,
   functionModuleObjectUrl,
@@ -11,7 +14,10 @@ import {
 } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
-const TYPES = new Set(['PROG', 'INCL', 'CLAS', 'INTF', 'FUNC', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'DDLX']);
+const TYPES = new Set(['PROG', 'INCL', 'CLAS', 'INTF', 'FUNC', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'DDLX', 'TABL']);
+/** Types whose exact-text replacement (`edit_content`) is supported. TABL covers its slash forms. */
+const EDIT_CONTENT_TYPES = new Set(['PROG', 'INCL', 'TABL']);
+export const supportsEditContent = (type: string): boolean => EDIT_CONTENT_TYPES.has(canonicalTablType(type));
 const CLASS_EDITS = new Set([
   'edit_method',
   'edit_class_definition',
@@ -21,7 +27,8 @@ const CLASS_EDITS = new Set([
   'change_method_visibility',
 ]);
 
-export function sourcePreconditionError(type: string, action: string, hash: unknown): string | undefined {
+export function sourcePreconditionError(rawType: string, action: string, hash: unknown): string | undefined {
+  const type = canonicalTablType(rawType);
   if (hash === undefined)
     return action === 'edit_content'
       ? 'edit_content requires expectedSourceHash from SAPRead(format="editable").'
@@ -32,8 +39,8 @@ export function sourcePreconditionError(type: string, action: string, hash: unkn
     !TYPES.has(type) ||
     !(
       action === 'update' ||
-      ((action === 'edit_unit' || action === 'add_unit' || action === 'edit_content') &&
-        (type === 'PROG' || type === 'INCL')) ||
+      ((action === 'edit_unit' || action === 'add_unit') && (type === 'PROG' || type === 'INCL')) ||
+      (action === 'edit_content' && supportsEditContent(type)) ||
       (type === 'CLAS' && CLASS_EDITS.has(action))
     )
   ) {
@@ -50,7 +57,7 @@ export async function readEditableSource(
 ): Promise<ToolResult> {
   if (!name || !TYPES.has(type))
     return errorResult(
-      'format="editable" requires name and a text-source type: PROG, INCL, CLAS, INTF, FUNC, DDLS, DCLS, BDEF, SRVD or DDLX.',
+      'format="editable" requires name and a text-source type: PROG, INCL, CLAS, INTF, FUNC, DDLS, DCLS, BDEF, SRVD, DDLX or TABL.',
     );
   if (args.action || args.version || args.method || args.grep || args.includeSignature || args.expand_includes) {
     return errorResult(
@@ -67,6 +74,16 @@ export async function readEditableSource(
     url = `${functionModuleObjectUrl(group, name)}/source/main`;
   } else if (type === 'INCL' && String(args.group ?? '').trim()) {
     url = `${functionGroupIncludeObjectUrl(String(args.group), name)}/source/main`;
+  } else if (type === 'TABL') {
+    // Hash the exact resource a guarded SAPWrite re-reads under its lock: the write resolver
+    // (repository search + discovery) picks /tables/ or /structures/ and refuses transparent
+    // tables on systems without /sap/bc/adt/ddic/tables/ (NW 7.50/7.51, issue #285).
+    try {
+      url = `${await client.resolveTablObjectUrlForWrite(name, { tablesEndpointAvailable: isTablesEndpointAvailable() })}/source/main`;
+    } catch (err) {
+      if (err instanceof AdtSafetyError) return errorResult(err.message);
+      throw err;
+    }
   } else {
     url = include ? classIncludeUrl(name, include) : sourceUrlForType(type, name);
   }

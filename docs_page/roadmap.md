@@ -90,6 +90,7 @@ sequence.
 | [SEC-22](#sec-22) | SBOMs for the Docker image, MCPB bundle and executables | P3 | S | Revisit on trigger | Security |
 | [SEC-19](#sec-19) | Registered agent identity and downstream tool scopes | P2 | L | Needs research | Auth / Security |
 | [SEC-23](#sec-23) | Local SAML bearer: wider validation | P2 | M | Experimental | Auth / Security |
+| [SEC-24](#sec-24) | Certificate pinning for direct SAP connections | P3 | M | Revisit on trigger | Security |
 | [COMPAT-22](#compat-22) | Integration Suite remote MCP discovery and cross-user validation | P2 | M | Needs research | Compatibility |
 | [COMPAT-23](#compat-23) | Shared reader for function-group object URIs | P2 | M | Ready | Compatibility |
 | [COMPAT-24](#compat-24) | Uniform not-found for reads of deleted objects | P3 | S | Needs research | Compatibility |
@@ -645,6 +646,30 @@ available for an end-to-end test, or another S/4HANA release needs qualification
 session reuse must remain tied to a verified user and credential lifetime, account for expiry
 and revocation, and never cross users or fall back to `SAP_USER`.
 
+<a id="sec-24"></a>
+### SEC-24 — Certificate pinning for direct SAP connections
+
+- **Priority / effort / status:** P3 / M / Revisit on trigger
+- **Category:** Security
+
+**Idea.** An `SAP_TLS_PINNED_SHA256` setting that accepts exactly one SAP certificate by its SHA-256
+fingerprint, requested in [#1272](https://github.com/arc-mcp/arc-1/issues/1272) for self-signed systems
+reached by IP address.
+
+**Why it remains.** The documented path covers that case without code: trust the exported certificate
+with `NODE_EXTRA_CA_CERTS` and reach the system under a name in the certificate
+([configuration reference](configuration-reference.md#self-signed-certificate-or-access-by-ip-address-without-sap_insecure)).
+Local probes with undici 8.12.4 on Node 22 found two traps for an implementation:
+
+- `checkServerIdentity` is not called for a self-signed or untrusted certificate. With
+  `rejectUnauthorized: false` plus a `checkServerIdentity` that returns an error, a request still
+  went through with HTTP 200. The pin must be checked in a custom undici connector after the handshake.
+- On a resumed TLS session `getPeerCertificate()` returns no certificate. The connector needs
+  `maxCachedSessions: 0` and must treat a missing certificate as a mismatch.
+
+**Resume when.** Users report that neither a trusted certificate nor a hosts entry is possible in
+their environment.
+
 <a id="compat-22"></a>
 ### COMPAT-22 — Integration Suite remote MCP discovery and cross-user validation
 
@@ -1155,6 +1180,8 @@ hidden raw-HTTP scheduling. [Plan](https://github.com/arc-mcp/arc-1/blob/main/do
 **Remaining gap.** [#1011](https://github.com/arc-mcp/arc-1/pull/1011) verified a readable advertised
 DOMA log on 758. Saved logs have no verified latest-attempt correlation. Two model evaluations
 misinterpreted historical evidence despite explicit caveats; other types/releases remain unqualified.
+A failed `TABL` activation now appends SAP's check of the inactive draft (field, line, column; verified
+on 7.54), and `TTYP`/`DTEL` activation already names the cause, so the log is not needed for those cases.
 
 **Resume with.** A concrete historical-log workflow that preserves uncertainty, or independent
 native correlation evidence. Keep the experiment deferred and never label saved messages as proof
