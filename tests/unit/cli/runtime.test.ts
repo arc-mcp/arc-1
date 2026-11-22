@@ -3,11 +3,15 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import type { AdtClient } from '../../../src/adt/client.js';
 import { type CliDependencies, main } from '../../../src/cli.js';
+import { getToolRegistry } from '../../../src/handlers/dispatch.js';
+import { defineTool } from '../../../src/public/index.js';
 import { CLI_CONFIG_OPTION_SPECS, resolveConfig } from '../../../src/server/config.js';
 import { appendIdeLinks } from '../../../src/server/ide-links.js';
 import { logger } from '../../../src/server/logger.js';
+import { registerPluginTool } from '../../../src/server/plugin-loader.js';
 import type { StartupAuthPreflightResult } from '../../../src/server/server.js';
 import type { ServerConfig } from '../../../src/server/types.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -58,6 +62,34 @@ afterEach(() => {
 });
 
 describe('CLI runtime', () => {
+  it('advertises plugin tools only when their names are allowed and the tool mode supports them', async () => {
+    const name = 'Custom_CliPreview';
+    registerPluginTool(
+      getToolRegistry(),
+      'demo',
+      defineTool({
+        name,
+        description: 'preview',
+        schema: z.object({}),
+        policy: { scope: 'read', opType: 'R' },
+        handler: async () => successfulToolResult(),
+      }),
+    );
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await main(['tools'], directDependencies(resolved()))).toBe(0);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(name));
+
+    for (const overrides of [{ denyActions: [name] }, { toolMode: 'hyperfocused' as const }]) {
+      log.mockClear();
+      expect(await main(['tools'], directDependencies(resolved(overrides)))).toBe(0);
+      expect(log).not.toHaveBeenCalledWith(expect.stringContaining(name));
+    }
+
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await main(['tools'], directDependencies(resolved({ denyActions: ['Custom_CliPrevew'] })))).toBe(2);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining(`Loaded plugin tools: ${name}.`));
+  });
+
   it.each(['TABL', 'TABL/DS', 'CLAS', 'DDLS'])('keeps flat %s exports free of extension context', async (type) => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const dispatch = vi.fn(async (_client, _config, _tool, args) => {

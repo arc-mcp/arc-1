@@ -314,11 +314,10 @@ above: ambiguous failures require inspection before another execution.
     - **Bake into an immutable artifact.** Ship plugins inside the reviewed deploy image / app bits,
       under the same change control as the rest of the server (see [Deploying](#deploying-extensions-btp-cloud-foundry-docker)).
 
-An extension tool must pass the **user's scope** check (their MCP role/profile). Calls through the
-provided `ctx` APIs also enforce the applicable server opt-ins and use the selected SAP identity,
-including per-user identity for PP calls. These are the extension-specific gates below: built-in
-`SAP_DENY_ACTIONS` rules do not support custom tools, and the package allowlist does not cover raw
-OData/ICF writes. SAP still enforces the selected user's authorizations.
+An extension tool must pass the **user's scope** check (their MCP role/profile) and the server's
+`SAP_DENY_ACTIONS` check. Calls through the provided `ctx` APIs enforce the applicable server
+opt-ins and use the selected SAP identity, including per-user identity for PP calls. The package
+allowlist does not cover raw OData/ICF writes. SAP still enforces the selected user's authorizations.
 
 `ctx.client` exposes an explicit set of plain-read methods. Internal session factories,
 metadata/text writers, SQL methods and client internals are absent at runtime and in the public
@@ -345,7 +344,11 @@ Key points:
 - **`custom` scopes are not supported.** Reuse the 7 built-in scopes — XSUAA scopes are deploy-time
   static (`xs-security.json`), so reuse maps cleanly to existing roles. See
   [Authorization & Roles](authorization.md).
-- **Disable extensions through configuration.** Remove the path from `ARC1_PLUGINS` and restart to unload it (clear the setting to unload all plugins). `SAP_DENY_ACTIONS` accepts built-in tool names only; `Custom_*` rules fail startup validation.
+- **Disable a plugin tool by name.** Add its exact name, such as `Custom_LaunchReport`, to
+  `SAP_DENY_ACTIONS` to hide it from tool listings and block direct calls. Use the whole,
+  case-sensitive name without an action suffix or wildcard. ARC-1 checks each rule after loading
+  plugins and refuses startup if the tool is missing. To unload a plugin, remove its path from
+  `ARC1_PLUGINS` and remove any deny rules for its tools before restarting.
 - **Code execution is opt-in + default off.** `ctx.run.classRun` and `ctx.run.programRun` require
   `SAP_ALLOW_PLUGIN_EXECUTE=true` **and** `SAP_ALLOW_WRITES=true` **and** a `write`-scoped tool (see
   [Executing ABAP](#executing-abap-classes-and-reports)).

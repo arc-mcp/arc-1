@@ -37,7 +37,7 @@ import { VERSION } from '../version.js';
 import { logAuthSummary } from './auth-summary.js';
 import { API_KEY_PROFILES } from './config.js';
 import { generateRequestId } from './context.js';
-import { isActionDenied } from './deny-actions.js';
+import { isActionDenied, validatePluginDenyActions } from './deny-actions.js';
 import { canonicalDestinationUrl, opaqueDestinationValue } from './destination-discovery.js';
 import {
   type DestinationRegistry,
@@ -1128,6 +1128,7 @@ export async function createAndStartServer(
   if (config.plugins?.length) {
     await loadPlugins(config.plugins, getToolRegistry());
   }
+  validatePluginDenyActions(config.denyActions, getToolRegistry().list());
 
   // Add file sink if configured
   if (config.logFile) {

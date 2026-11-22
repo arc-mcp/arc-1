@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   API_KEY_PROFILES,
@@ -43,6 +46,27 @@ describe('parseArgs', () => {
     expect(config.schemaNullableOptionals).toBe('auto');
     expect(config.multiTargetAllowBasicAuth).toBe(false);
     expect(config.verbose).toBe(false);
+  });
+
+  it('accepts exact plugin deny names from the environment and CLI with normal precedence', () => {
+    process.env.SAP_DENY_ACTIONS = 'SAPWrite.delete,Custom_LaunchReport';
+    expect(parseArgs([]).denyActions).toEqual(['SAPWrite.delete', 'Custom_LaunchReport']);
+    expect(parseArgs(['--deny-actions', 'Custom_OtherTool']).denyActions).toEqual(['Custom_OtherTool']);
+  });
+
+  it('accepts plugin deny names from a JSON file through either config source', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'arc1-deny-config-'));
+    const file = join(dir, 'deny.json');
+    const patterns = ['SAPWrite.delete', 'Custom_LaunchReport'];
+    try {
+      writeFileSync(file, JSON.stringify(patterns));
+      process.env.SAP_DENY_ACTIONS = file;
+      expect(parseArgs([]).denyActions).toEqual(patterns);
+      delete process.env.SAP_DENY_ACTIONS;
+      expect(parseArgs(['--deny-actions', file]).denyActions).toEqual(patterns);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('parses the default-off multi-target Basic authentication option and warns when it is inert', () => {

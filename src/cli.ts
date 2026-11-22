@@ -43,6 +43,7 @@ import type { LintResult } from './lint/lint.js';
 import { sanitizeArgs } from './server/audit.js';
 import { assertNoRemovedCliFlags, CLI_CONFIG_OPTION_SPECS, resolveConfig } from './server/config.js';
 import { generateRequestId } from './server/context.js';
+import { isActionDenied, validatePluginDenyActions } from './server/deny-actions.js';
 import { initLogger, logger } from './server/logger.js';
 import { loadPlugins } from './server/plugin-loader.js';
 import {
@@ -376,11 +377,11 @@ function createRuntime(argv: readonly string[], state: CliExecutionState, overri
   };
 
   const loadConfiguredPlugins = async (config: ServerConfig): Promise<void> => {
-    if (!runtimeState.pluginsLoaded) {
-      runtimeState.pluginsLoaded = config.plugins?.length
-        ? loadPlugins(config.plugins, getToolRegistry()).then(() => undefined)
-        : Promise.resolve();
-    }
+    runtimeState.pluginsLoaded ??= (async () => {
+      const registry = getToolRegistry();
+      if (config.plugins?.length) await loadPlugins(config.plugins, registry);
+      validatePluginDenyActions(config.denyActions, registry.list());
+    })();
     await runtimeState.pluginsLoaded;
   };
 
@@ -448,7 +449,10 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
       const pluginDefs = getToolRegistry()
         .list()
         .flatMap((entry) =>
-          entry.source === 'plugin' && entry.listing
+          entry.source === 'plugin' &&
+          entry.listing &&
+          config.toolMode !== 'hyperfocused' &&
+          !isActionDenied(entry.name, undefined, config.denyActions)
             ? [
                 {
                   name: entry.name,

@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { isActionDenied, parseDenyActions, validateDenyActions } from '../../../src/server/deny-actions.js';
+import {
+  isActionDenied,
+  parseDenyActions,
+  validateDenyActions,
+  validatePluginDenyActions,
+} from '../../../src/server/deny-actions.js';
 
 describe('parseDenyActions', () => {
   it('parses inline CSV with multiple patterns', () => {
@@ -104,6 +109,20 @@ describe('validateDenyActions', () => {
     expect(() => validateDenyActions(['SAPManage.flp_*', 'SAPTransport.*'])).not.toThrow();
   });
 
+  it('accepts exact plugin names alone and with built-in patterns before plugins load', () => {
+    expect(() => validateDenyActions(['Custom_Foo'])).not.toThrow();
+    expect(() => validateDenyActions(['SAPWrite.delete', 'Custom_Foo-2_bar', 'SAPManage.flp_*'])).not.toThrow();
+  });
+
+  it.each([
+    ['Custom_Foo.bar', 'Action suffixes'],
+    ['Custom_*', 'Wildcards'],
+    ['Custom_Fo*', 'Wildcards'],
+    ['Custom_', 'Custom_ must be followed'],
+  ])('rejects %s with a plugin-specific error', (pattern, message) => {
+    expect(() => validateDenyActions([pattern])).toThrow(message);
+  });
+
   it('rejects cross-tool wildcards', () => {
     expect(() => validateDenyActions(['*.delete'])).toThrow(/cross-tool wildcards are not supported/);
   });
@@ -130,6 +149,24 @@ describe('validateDenyActions', () => {
   });
 });
 
+describe('validatePluginDenyActions', () => {
+  const entries = [
+    { source: 'plugin', name: 'Custom_Zebra' },
+    { source: 'builtin', name: 'SAPWrite' },
+    { source: 'plugin', name: 'Custom_Foo' },
+  ] as const;
+
+  it('accepts known plugin names and leaves built-in patterns to config validation', () => {
+    expect(() => validatePluginDenyActions(['SAPWrite.delete', 'Custom_Foo'], entries)).not.toThrow();
+  });
+
+  it('lists the loaded plugin tools when a name does not match exactly', () => {
+    expect(() => validatePluginDenyActions(['Custom_foo'], entries)).toThrow(
+      "unknown plugin tool 'Custom_foo'. Loaded plugin tools: Custom_Foo, Custom_Zebra.",
+    );
+  });
+});
+
 describe('isActionDenied', () => {
   it('returns false for empty pattern list', () => {
     expect(isActionDenied('SAPWrite', 'delete', [])).toBe(false);
@@ -150,6 +187,12 @@ describe('isActionDenied', () => {
     expect(isActionDenied('SAPWrite', 'create', ['SAPWrite'])).toBe(true);
     expect(isActionDenied('SAPWrite', 'delete', ['SAPWrite'])).toBe(true);
     expect(isActionDenied('SAPManage', 'create_package', ['SAPWrite'])).toBe(false);
+  });
+
+  it('matches only the exact plugin tool name', () => {
+    expect(isActionDenied('Custom_Foo', undefined, ['Custom_Foo'])).toBe(true);
+    expect(isActionDenied('Custom_Foo-2', undefined, ['Custom_Foo'])).toBe(false);
+    expect(isActionDenied('Custom_foo', undefined, ['Custom_Foo'])).toBe(false);
   });
 
   it('tool.* pattern matches all actions of that tool', () => {

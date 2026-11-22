@@ -1,5 +1,7 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import type { AdtClient } from '../../../src/adt/client.js';
@@ -7,8 +9,10 @@ import { DataResultScope, DEFAULT_DATA_PREVIEW_RESPONSE_BYTES } from '../../../s
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { getToolRegistry, handleToolCall } from '../../../src/handlers/dispatch.js';
 import { defineTool } from '../../../src/public/index.js';
+import { logger } from '../../../src/server/logger.js';
 import { registerPluginTool } from '../../../src/server/plugin-loader.js';
-import type { ServerConfig } from '../../../src/server/types.js';
+import { createServer } from '../../../src/server/server.js';
+import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 
 // FEAT-61 PR3 end-to-end (handler level): a plugin tool registered into the registry must dispatch
 // through handleToolCall, be scope-gated by its declared policy (registry fallback), and an
@@ -63,7 +67,57 @@ describe('plugin dispatch through handleToolCall (FEAT-61 PR3)', () => {
     expect(res.content[0].text).toMatch(/Unknown tool/);
   });
 
-  it('refuses a registered plugin tool in hyperfocused mode (not just hidden from tools/list)', async () => {
+  it('hides a denied plugin tool and audits a direct MCP call without running its handler', async () => {
+    const handler = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'ran' }] }));
+    const denied = 'Custom_PdLaunchReport';
+    const allowed = 'Custom_PdLaunchReportPreview';
+    for (const name of [denied, allowed] as const) {
+      registerPluginTool(
+        getToolRegistry(),
+        'demo',
+        defineTool({
+          name,
+          description: 'launch report',
+          schema: z.object({}),
+          policy: { scope: 'read', opType: 'R' },
+          handler,
+        }),
+      );
+    }
+
+    const server = createServer({ ...DEFAULT_CONFIG, denyActions: ['SAPWrite.delete', denied] });
+    const client = new Client({ name: 'plugin-deny-test', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const audit = vi.spyOn(logger, 'emitAudit').mockImplementation(() => {});
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      const { tools } = await client.listTools();
+      expect(tools.map((tool) => tool.name)).toContain(allowed);
+      expect(tools.map((tool) => tool.name)).not.toContain(denied);
+
+      const result = await client.callTool({ name: denied, arguments: {} });
+      expect(result).toMatchObject({
+        isError: true,
+        content: [{ type: 'text', text: `Action '${denied}' is denied by server policy (SAP_DENY_ACTIONS).` }],
+      });
+      expect(handler).not.toHaveBeenCalled();
+      expect(audit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'safety_blocked',
+          level: 'warn',
+          operation: denied,
+          reason: 'Action denied by SAP_DENY_ACTIONS',
+        }),
+      );
+    } finally {
+      audit.mockRestore();
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('refuses direct calls to registered plugins in hyperfocused and multi-target mode', async () => {
     registerPluginTool(
       getToolRegistry(),
       'demo',
@@ -80,5 +134,10 @@ describe('plugin dispatch through handleToolCall (FEAT-61 PR3)', () => {
     const res = await handleToolCall(fakeClient, hyperfocused, 'Custom_PdHf', { msg: 'x' }, auth(['read']));
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/Unknown tool/);
+
+    const multiTarget = { ...config, targetId: 'test-target' };
+    const targetResult = await handleToolCall(fakeClient, multiTarget, 'Custom_PdHf', { msg: 'x' }, auth(['read']));
+    expect(targetResult.isError).toBe(true);
+    expect(targetResult.content[0].text).toMatch(/not enabled for this multi-target connection/);
   });
 });

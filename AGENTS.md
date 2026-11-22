@@ -105,7 +105,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_BLOCKED_DATA_SOURCES` | Experimental exact-name data-source blocklist (default empty/off). Narrows, never enables; strict SQL subset + live CDS/replacement lineage; fails closed. Adds SAP metadata calls, no cache |
 | `SAP_ALLOW_TRANSPORT_WRITES` / `SAP_ALLOW_GIT_WRITES` | Transport / git mutations (each ALSO needs `SAP_ALLOW_WRITES`) |
 | `SAP_ALLOWED_PACKAGES` | Write allowlist (default `$TMP`): exact, `Z*`, `ZFOO/**` subtree, `*`. Enforced fail-closed on every mutation incl. activation, against the object's REAL package |
-| `SAP_DENY_ACTIONS` | Per-action denial: `Tool`, `Tool.action`, `Tool.glob*` — see docs_page/authorization.md |
+| `SAP_DENY_ACTIONS` | Deny `Tool`, `Tool.action`, `Tool.glob*`, or exact plugin `Custom_<name>` — see docs_page/authorization.md |
 | `ARC1_API_KEYS` | `key:profile` pairs (viewer…admin); profile ∩ server ceiling |
 | `SAP_OIDC_ISSUER` / `SAP_OIDC_AUDIENCE` | OIDC JWT validation |
 | `ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS` | Optional DCR return-address allowlist (globs); also narrows existing client_ids |
