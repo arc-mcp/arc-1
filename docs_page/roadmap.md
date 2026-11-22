@@ -127,6 +127,7 @@ sequence.
 | [FEAT-88](#feat-88) | Application-log discovery and wider qualification | P3 | M | Needs research | Data access |
 | [FEAT-89](#feat-89) | Additional typed data-cluster use cases | P3 | M | Needs research | Data access |
 | [FEAT-95](#feat-95) | Retire the TABLE_CONTENTS sqlFilter | P3 | S | Needs research | Data access |
+| [FEAT-98](#feat-98) | Native CDS preview route | P3 | S | Revisit on trigger | Data access |
 | [FEAT-90](#feat-90) | Historical transport scope beyond source | P2 | M | Needs research | Developer workflow |
 | [FEAT-36](#feat-36) | Type information | P3 | S | Blocked | Code intelligence |
 | [FEAT-79](#feat-79) | DDIC-aware dependency context | P2 | M | Needs research | Code intelligence |
@@ -1318,7 +1319,7 @@ current-user identity, and bounded output; no RFC or executed ABAP fallback in c
 The tested 758 and 816 systems refuse these bodies with "Only SELECT statement is allowed";
 ARC-1 points callers to `TABLE_QUERY` `where`. The documented 750 test system returns 404 for both data-preview
 collections, so it cannot settle compatibility on other 750 systems. The DDIC
-preview does accept a full `SELECT`, but on 816 it runs whatever table that statement names and
+preview does accept a full `SELECT`, but on 758 and 816 it runs whatever table that statement names and
 ignores `ddicEntityName`, so wrapping the condition into a `SELECT` would turn TABLE_CONTENTS into
 free SQL outside the data-source analyzer and the `allowFreeSQL` gate.
 
@@ -1326,6 +1327,28 @@ free SQL outside the data-source analyzer and the `allowFreeSQL` gate.
 body. Any retained support needs evidence that the body cannot select another table or bypass the
 free-SQL gate. Check the SELECT prefix guard with Unicode case folding too. Do not build a
 `SELECT` from caller text for the DDIC preview.
+
+<a id="feat-98"></a>
+### FEAT-98 — Native CDS preview route
+
+- **Priority / effort / status:** P3 / S / Revisit on trigger
+- **Category:** Data access
+
+**Idea.** Read CDS entity data through `/sap/bc/adt/datapreview/cds` for SAP users granted that route
+but not `/datapreview/freestyle` ([#1194](https://github.com/arc-mcp/arc-1/issues/1194)). Closed draft
+[#1198](https://github.com/arc-mcp/arc-1/pull/1198) added `SAPRead type=CDS_PREVIEW` for active DDLS
+without parameters: it resolves the CDS entity, builds the SELECT itself and keeps the data-preview gates
+and blocklist. Parameters and association paths would extend it.
+
+**Why it remains.** The route grants nothing narrower. On SAP_BASIS 758 and 816, `/cds` and `/ddic` run any
+SELECT body, whatever `ddlSourceName` or `ddicEntityName` names. On 758, `/cds` and `/freestyle` both run it
+through `CL_ADT_DP_OPEN_SQL_HANDLER`, which checks authorization for every table or view the SELECT reads,
+and `TABLE_QUERY` returned the same rows and DCL filtering. Granting `/freestyle` with
+`SAP_ALLOW_FREE_SQL=false` covers the same reads.
+
+**Resume when.** An authorization trace of a restricted user shows `/cds` returning rows that `/freestyle`
+refuses for the same SELECT, or SAP limits the `/cds` SQL body to the view in `ddlSourceName`. Start from
+the closed PR's branch.
 
 <a id="feat-36"></a>
 ### FEAT-36 — Type information
