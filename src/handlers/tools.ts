@@ -616,7 +616,7 @@ export function getToolDefinitions(
               'edit_method: replace a single method body — the token-cheap path for class edits. ' +
               (btp
                 ? ''
-                : 'PROG/INCL: edit_unit replaces a FORM/MODULE; add_unit appends one; edit_content replaces one exact match and requires expectedSourceHash. ') +
+                : 'PROG/INCL: edit_unit replaces a FORM/MODULE; add_unit appends one; edit_content (also TABL) replaces one exact match and requires expectedSourceHash. ') +
               'batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. ' +
               'Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; ' +
               'add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); ' +
