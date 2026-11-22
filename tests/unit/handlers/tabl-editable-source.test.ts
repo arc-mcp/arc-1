@@ -33,7 +33,7 @@ function backend(options: { subtype?: 'TABL/DS' | 'TABL/DT'; drift?: boolean } =
         `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:uri="${objectPath}" adtcore:type="${subtype}" adtcore:name="ZGUARD_S"/></adtcore:objectReferences>`,
       );
     }
-    if (method === 'POST' && url.searchParams.get('_action') === 'LOCK') {
+    if (method === 'POST' && url.searchParams.get('_action') === 'LOCK' && url.pathname === objectPath) {
       // A concurrent SE11/ADT edit that lands between the editable read and the guarded write.
       if (options.drift) state.source = initial.replace('matnr : matnr;', 'matnr : matnr;\n  werks : werks_d;');
       state.locked = true;
@@ -55,6 +55,8 @@ function backend(options: { subtype?: 'TABL/DS' | 'TABL/DT'; drift?: boolean } =
       );
     }
     if (method === 'PUT' && url.pathname === `${objectPath}/source/main`) {
+      // SAP refuses a source PUT without the active lock handle of the resolved object.
+      if (!state.locked || url.searchParams.get('lockHandle') !== 'L1') return respond(423, 'not locked');
       state.source = String(init?.body);
       return respond(200);
     }
@@ -247,6 +249,20 @@ it('runs the RAP preflight on the edit_content result: abap.quan without a unit 
   expect(lockedReads(state)).toHaveLength(1);
   expect(puts(state)).toHaveLength(0);
   expect(state.calls.some((c) => c.url.searchParams.get('_action') === 'UNLOCK')).toBe(true);
+  expect(state.locked).toBe(false);
+  expect(state.source).toBe(initial);
+});
+
+it('refuses a TABL edit_content that would leave no source, writes nothing and releases the lock', async () => {
+  const state = backend();
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+    ...quanEdit,
+    oldContent: initial,
+    newContent: '',
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]!.text).toContain('without source; no write was made');
+  expect(puts(state)).toHaveLength(0);
   expect(state.locked).toBe(false);
   expect(state.source).toBe(initial);
 });

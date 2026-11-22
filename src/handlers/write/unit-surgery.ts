@@ -65,6 +65,10 @@ export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult>
           ? insertUnit(currentSource, name, unit, source, abaplintVersion)
           : spliceUnit(currentSource, name, unit, source, abaplintVersion);
       if (!spliced.success) return errorResult(spliced.error ?? `Failed to splice unit "${unit}" in ${name}.`);
+      // Same rule as a whole-source TABL update: never PUT an empty definition.
+      if (type === 'TABL' && !spliced.newSource.trim()) {
+        return errorResult(`edit_content would leave TABL ${name} without source; no write was made.`);
+      }
 
       // Same deterministic preflight as a whole-source update, on the complete resulting source.
       const preflight = runRapPreflightValidation(
