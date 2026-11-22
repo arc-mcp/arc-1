@@ -1328,8 +1328,10 @@ export function runPreWriteLint(
 }
 
 /** Types that carry source code that SAP's /checkruns endpoint can meaningfully compile.
- *  Metadata-write types (DOMA/DTEL/TABL/MSAG/DEVC/SKTD) have no /source/main artifact. */
+ *  Metadata-write types (DOMA/DTEL/MSAG/DEVC/SKTD) have no /source/main artifact. TABL (DDL
+ *  source) is checked at the URL the write path resolved (/ddic/tables/ or /ddic/structures/). */
 const SYNTAX_CHECKABLE_TYPES = new Set([
+  'TABL',
   'PROG',
   'CLAS',
   'INTF',
@@ -1361,7 +1363,8 @@ export async function runPreWriteSyntaxCheck(
 ): Promise<string> {
   const enabled = perCallOverride ?? config.checkBeforeWrite;
   if (!enabled || !source) return '';
-  if (!SYNTAX_CHECKABLE_TYPES.has(type.toUpperCase())) return '';
+  const checkType = canonicalTablType(type.toUpperCase());
+  if (!SYNTAX_CHECKABLE_TYPES.has(checkType)) return '';
 
   try {
     const result = await syntaxCheck(
