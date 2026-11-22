@@ -124,7 +124,9 @@ describe('validateDenyActions', () => {
   });
 
   it('rejects cross-tool wildcards', () => {
-    expect(() => validateDenyActions(['*.delete'])).toThrow(/cross-tool wildcards are not supported/);
+    expect(() => validateDenyActions(['*.delete'])).toThrow(
+      /cross-tool wildcards are not supported.*Custom_LaunchReport/,
+    );
   });
 
   it('rejects unknown tools', () => {
@@ -136,7 +138,7 @@ describe('validateDenyActions', () => {
   });
 
   it('rejects invalid grammar (lowercase-start)', () => {
-    expect(() => validateDenyActions(['sapwrite.delete'])).toThrow(/invalid pattern/);
+    expect(() => validateDenyActions(['sapwrite.delete'])).toThrow(/invalid pattern.*Custom_LaunchReport/);
   });
 
   it('lists valid tools in the error message', () => {

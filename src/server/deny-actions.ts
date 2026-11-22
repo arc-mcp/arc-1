@@ -85,6 +85,8 @@ const CROSS_TOOL_WILDCARD_RE = /^\*/;
 const PLUGIN_PREFIX = 'Custom_';
 const PLUGIN_TOOL_RE = /^Custom_[A-Za-z0-9_-]+$/;
 
+const VALID_FORMS = "Use 'Tool', 'Tool.action', 'Tool.glob*', or an exact plugin name such as 'Custom_LaunchReport'.";
+
 /**
  * Validate the grammar and check built-in patterns against ACTION_POLICY.
  * Plugin names are checked against the registry after loading.
@@ -93,10 +95,7 @@ const PLUGIN_TOOL_RE = /^Custom_[A-Za-z0-9_-]+$/;
 export function validateDenyActions(patterns: string[]): void {
   for (const pattern of patterns) {
     if (CROSS_TOOL_WILDCARD_RE.test(pattern)) {
-      throw new Error(
-        `SAP_DENY_ACTIONS: cross-tool wildcards are not supported ('${pattern}'). ` +
-          `Use tool-qualified patterns: 'Tool', 'Tool.action', or 'Tool.glob*'.`,
-      );
+      throw new Error(`SAP_DENY_ACTIONS: cross-tool wildcards are not supported ('${pattern}'). ${VALID_FORMS}`);
     }
     if (pattern.startsWith(PLUGIN_PREFIX)) {
       const label = `SAP_DENY_ACTIONS: invalid plugin tool pattern '${pattern}'.`;
@@ -112,11 +111,7 @@ export function validateDenyActions(patterns: string[]): void {
       continue;
     }
     if (!PATTERN_RE.test(pattern)) {
-      throw new Error(
-        `SAP_DENY_ACTIONS: invalid pattern '${pattern}'. ` +
-          `Valid forms: 'Tool' (e.g., SAPWrite), 'Tool.action' (e.g., SAPWrite.delete), ` +
-          `or 'Tool.glob*' (e.g., SAPManage.flp_*).`,
-      );
+      throw new Error(`SAP_DENY_ACTIONS: invalid pattern '${pattern}'. ${VALID_FORMS}`);
     }
 
     const [tool, action] = pattern.split('.');

@@ -474,8 +474,8 @@ Use it for rules like "developers can write, but cannot delete".
 | `Tool.glob*` | Glob inside one tool | `SAPManage.flp_*` |
 | `Custom_<name>` | Deny a whole plugin tool by its exact name | `Custom_LaunchReport` |
 
-Plugin tool names are case-sensitive. After the configured plugins load, ARC-1 checks that each
-denied plugin tool name is registered and refuses startup if the tool is missing. Use the exact
+A plugin deny rule matches `^Custom_[A-Za-z0-9_-]+$` and is case-sensitive. After the configured
+plugins load, ARC-1 checks that each denied tool name is registered and refuses startup if the tool is missing. Use the exact
 name without an action suffix or wildcard. Cross-tool wildcards such as `*.delete` are also rejected.
 
 ```bash

@@ -192,7 +192,8 @@ volume trade-offs), point the developer at the **Deploying extensions** section 
 
 ## Gotchas (learned the hard way)
 
-- **`Custom_` namespace is mandatory** and collisions **fail server start** (fail-fast).
+- **`Custom_` namespace is mandatory** and collisions **fail server start** (fail-fast). Use one
+  or more ASCII letters, digits, underscores, or hyphens after the prefix so admins can deny the tool by name.
 - **`ctx.http` reads freely (GET/HEAD); writes (`post`/`put`/`delete`) hit only NON-ADT paths** and
   only when the admin sets `SAP_ALLOW_PLUGIN_RAW_WRITES=true` (+ `SAP_ALLOW_WRITES=true`) and the tool
   declares `scope:'write'`. Writes to `/sap/bc/adt/…` object paths are **always refused** (package
@@ -233,7 +234,8 @@ volume trade-offs), point the developer at the **Deploying extensions** section 
 - **Unit-test the handler** with `createMockToolContext` from `arc-1/public/testing` (records
   `ctx.http`/`ctx.run.classRun`/`ctx.run.programRun` calls, returns configured output — no live SAP
   needed).
-- **Admin kill switch:** `SAP_DENY_ACTIONS=Custom_*` (all) or `Custom_Foo` (one) removes plugin tools.
+- **Disable a plugin tool.** Set `SAP_DENY_ACTIONS=Custom_Foo` to deny that exact, case-sensitive
+  name. To unload all plugins, clear `ARC1_PLUGINS` and remove their deny entries before restarting.
 
 ## Deploy (when they ask)
 

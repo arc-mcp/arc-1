@@ -346,8 +346,10 @@ Key points:
   [Authorization & Roles](authorization.md).
 - **Disable a plugin tool by name.** Add its exact name, such as `Custom_LaunchReport`, to
   `SAP_DENY_ACTIONS` to hide it from tool listings and block direct calls. Use the whole,
-  case-sensitive name without an action suffix or wildcard. ARC-1 checks each rule after loading
-  plugins and refuses startup if the tool is missing. To unload a plugin, remove its path from
+  case-sensitive name. After `Custom_`, deny rules accept one or more ASCII letters, digits,
+  underscores, or hyphens. ARC-1 checks each rule after loading plugins and refuses startup if the
+  tool is missing. For an existing tool with other characters in its name, rename the tool to use
+  this rule or unload its plugin. To unload a plugin, remove its path from
   `ARC1_PLUGINS` and remove any deny rules for its tools before restarting.
 - **Code execution is opt-in + default off.** `ctx.run.classRun` and `ctx.run.programRun` require
   `SAP_ALLOW_PLUGIN_EXECUTE=true` **and** `SAP_ALLOW_WRITES=true` **and** a `write`-scoped tool (see
