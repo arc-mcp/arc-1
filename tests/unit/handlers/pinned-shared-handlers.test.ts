@@ -277,7 +277,12 @@ describe('pinned PROG writes through the single-target handler', () => {
   });
 
   it('decides every SAPWrite/SAPActivate policy action explicitly', () => {
-    const notAdmitted = new Set(['SAPActivate.publish_srvb', 'SAPActivate.unpublish_srvb', 'SAPWrite.edit_content']);
+    const notAdmitted = new Set([
+      'SAPActivate.publish_srvb',
+      'SAPActivate.unpublish_srvb',
+      'SAPWrite.edit_content',
+      'SAPWrite.generate',
+    ]);
     for (const key of Object.keys(ACTION_POLICY).filter((k) => /^SAP(?:Write|Activate)\./.test(k)))
       expect(SHARED_PINNED_ACTIONS.has(key) !== notAdmitted.has(key), key).toBe(true);
   });

@@ -20,6 +20,7 @@ import { SCENARIOS as APPLICATION_LOG } from './application-log.js';
 import { SCENARIOS as CONTEXT_DEPS } from './context-deps.js';
 import { SCENARIOS as CONTEXT_IMPACT } from './context-impact.js';
 import { SCENARIOS as DIAGNOSE } from './diagnose.js';
+import { SCENARIOS as GENERATE } from './generate.js';
 import { SCENARIOS as LINT } from './lint.js';
 import { SCENARIOS as MANAGE } from './manage.js';
 import { SCENARIOS as NAVIGATE } from './navigate.js';
@@ -42,6 +43,7 @@ export const SCENARIO_FILES: Record<string, EvalScenario[]> = {
   'context-deps': CONTEXT_DEPS,
   'context-impact': CONTEXT_IMPACT,
   diagnose: DIAGNOSE,
+  generate: GENERATE,
   lint: LINT,
   manage: MANAGE,
   navigate: NAVIGATE,

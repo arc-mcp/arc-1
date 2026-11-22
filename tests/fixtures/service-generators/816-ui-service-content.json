@@ -1,0 +1,44 @@
+{
+  "metadata": {
+    "package": "$TMP"
+  },
+  "general": {
+    "referencedObjectName": "ZTRAVEL",
+    "namespace": "Z",
+    "projectName": "ZTRAVEL",
+    "sessionId": "SID0000000000000000000000000001"
+  },
+  "businessObject": {
+    "dataModelEntity": {
+      "entityName": "ZR_ZTRAVEL",
+      "entityNameOrgn": "ZR_ZTRAVEL"
+    },
+    "behavior": {
+      "implementationClassName": "ZBP_R_ZTRAVEL",
+      "implementationClassNameOrgn": "ZBP_R_ZTRAVEL",
+      "draftTable": "ZZTRAVEL_D",
+      "draftTableOrgn": "ZZTRAVEL_D"
+    }
+  },
+  "serviceProjection": {
+    "projectionEntity": {
+      "entityName": "ZC_ZTRAVEL",
+      "entityNameOrgn": "ZC_ZTRAVEL"
+    },
+    "projectionBehavior": {
+      "implementationClassName": "ZBP_C_ZTRAVEL",
+      "implementationClassNameOrgn": "ZBP_C_ZTRAVEL"
+    }
+  },
+  "businessService": {
+    "serviceDefinition": {
+      "serviceDefinitionName": "ZUI_ZTRAVEL_O4",
+      "serviceDefinitionNameOrgn": "ZUI_ZTRAVEL_O4"
+    },
+    "serviceBinding": {
+      "serviceBindingName": "ZUI_ZTRAVEL_O4",
+      "serviceBindingNameOrgn": "ZUI_ZTRAVEL_O4",
+      "bindingType": "v4Ui"
+    }
+  }
+}

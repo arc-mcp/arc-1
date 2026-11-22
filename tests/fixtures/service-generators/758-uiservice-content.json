@@ -1,0 +1,29 @@
+{
+  "metadata": {},
+  "general": {
+    "referenceObjectName": "ZTRAVEL",
+    "description": "ZTRAVEL"
+  },
+  "businessObject": {
+    "dataModelEntity": {
+      "cdsName": "ZR_ZTRAVEL"
+    },
+    "behavior": {
+      "implementationType": "Managed",
+      "implementationClass": "ZBP_ZTRAVEL",
+      "draftTable": "ZZTRAVEL_D"
+    }
+  },
+  "serviceProjection": {
+    "name": "ZC_ZTRAVEL"
+  },
+  "businessService": {
+    "serviceDefinition": {
+      "name": "ZUI_ZTRAVEL_O4"
+    },
+    "serviceBinding": {
+      "name": "ZUI_ZTRAVEL_O4",
+      "bindingType": "OData V4 - UI"
+    }
+  }
+}

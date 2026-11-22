@@ -1,0 +1,372 @@
+<?xml version="1.0" encoding="utf-8"?><massOperation:group massOperation:name="Service Artifacts" xmlns:massOperation="http://www.sap.com/adt/massoperation"><massOperation:group massOperation:name="Business Service Layer"><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@EndUserText.label : 'Service Definition for ZC_ZTRAVEL'
+@ObjectModel.leadingEntity.name : 'ZC_ZTRAVEL'
+define service ZUI_ZTRAVEL_O4 provider contracts odata_v4_ui  { 
+  expose ZC_ZTRAVEL ;
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/srvd/sources/zui_ztravel_o4" adtcore:type="SRVD/SRV" adtcore:name="ZUI_ZTRAVEL_O4" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/businessservices/bindings/zui_ztravel_o4" adtcore:type="SRVB/SVB" adtcore:name="ZUI_ZTRAVEL_O4" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object></massOperation:group><massOperation:group massOperation:name="SAP Object Type"><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="application/json" xmlns:adtcore="http://www.sap.com/adt/core">{
+ "formatVersion":"1",
+ "header":
+ {
+  "description":"SAP Object Node Type ZZTRAVEL",
+  "originalLanguage":"en"
+ },
+ "name":"ZZTRAVEL",
+ "sapObjectType":"ZZTRAVEL",
+ "rootNode":true
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/businessobjects/nontnot/zztravel" adtcore:type="NONT/NOT" adtcore:name="ZZTRAVEL" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="application/json" xmlns:adtcore="http://www.sap.com/adt/core">{
+ "formatVersion":"1",
+ "header":
+ {
+  "description":"SAP Object Type ZZTRAVEL",
+  "originalLanguage":"en"
+ },
+ "typeCategory":"businessObject",
+ "name":"ZZTRAVEL"
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/businessobjects/rontrot/zztravel" adtcore:type="RONT/ROT" adtcore:name="ZZTRAVEL" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object></massOperation:group><massOperation:group massOperation:name="Business Object Projection Layer"><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@Metadata.allowExtensions: true
+@Metadata.ignorePropagatedAnnotations: true
+@Endusertext: {
+  Label: '###GENERATED Core Data Service Entity'
+}
+@Objectmodel: {
+  Sapobjectnodetype.Name: 'ZZTRAVEL'
+}
+@AccessControl.authorizationCheck: #MANDATORY
+define root view entity ZC_ZTRAVEL
+  provider contract TRANSACTIONAL_QUERY
+  as projection on ZR_ZTRAVEL
+{
+  key Carrid,
+  key Connid,
+  key Fldate,
+  @Semantics: {
+    Amount.Currencycode: 'Currency'
+  }
+  Price,
+  @Consumption: {
+    Valuehelpdefinition: [ {
+      Entity.Element: 'Currency', 
+      Entity.Name: 'I_CurrencyStdVH', 
+      Useforvalidation: true
+    } ]
+  }
+  Currency,
+  Planetype,
+  Seatsmax,
+  Seatsocc,
+  @Semantics: {
+    Amount.Currencycode: 'Currency'
+  }
+  Paymentsum,
+  SeatsmaxB,
+  SeatsoccB,
+  SeatsmaxF,
+  SeatsoccF
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zc_ztravel" adtcore:type="DDLS/DF" adtcore:name="ZC_ZTRAVEL" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@Metadata.layer: #CORE
+@UI.headerInfo.title.type: #STANDARD
+@UI.headerInfo.title.value: 'Carrid'
+@UI.headerInfo.description.type: #STANDARD
+@UI.headerInfo.description.value: 'Carrid'
+annotate view ZC_ZTRAVEL with
+{
+  @UI.facet: [ {
+    label: 'General Information', 
+    id: 'GeneralInfo', 
+    purpose: #STANDARD, 
+    position: 10 , 
+    type: #IDENTIFICATION_REFERENCE
+  } ]
+  @UI.identification: [ {
+    position: 10 
+  } ]
+  @UI.lineItem: [ {
+    position: 10 
+  } ]
+  @UI.selectionField: [ {
+    position: 10 
+  } ]
+  Carrid;
+  
+  @UI.identification: [ {
+    position: 20 
+  } ]
+  @UI.lineItem: [ {
+    position: 20 
+  } ]
+  @UI.selectionField: [ {
+    position: 20 
+  } ]
+  Connid;
+  
+  @UI.identification: [ {
+    position: 30 
+  } ]
+  @UI.lineItem: [ {
+    position: 30 
+  } ]
+  @UI.selectionField: [ {
+    position: 30 
+  } ]
+  Fldate;
+  
+  @UI.identification: [ {
+    position: 40 
+  } ]
+  @UI.lineItem: [ {
+    position: 40 
+  } ]
+  @UI.selectionField: [ {
+    position: 40 
+  } ]
+  Price;
+  
+  @UI.identification: [ {
+    position: 50 
+  } ]
+  @UI.lineItem: [ {
+    position: 50 
+  } ]
+  @UI.selectionField: [ {
+    position: 50 
+  } ]
+  Planetype;
+  
+  @UI.identification: [ {
+    position: 60 
+  } ]
+  @UI.lineItem: [ {
+    position: 60 
+  } ]
+  @UI.selectionField: [ {
+    position: 60 
+  } ]
+  Seatsmax;
+  
+  @UI.identification: [ {
+    position: 70 
+  } ]
+  @UI.lineItem: [ {
+    position: 70 
+  } ]
+  @UI.selectionField: [ {
+    position: 70 
+  } ]
+  Seatsocc;
+  
+  @UI.identification: [ {
+    position: 80 
+  } ]
+  @UI.lineItem: [ {
+    position: 80 
+  } ]
+  @UI.selectionField: [ {
+    position: 80 
+  } ]
+  Paymentsum;
+  
+  @UI.identification: [ {
+    position: 90 
+  } ]
+  @UI.lineItem: [ {
+    position: 90 
+  } ]
+  @UI.selectionField: [ {
+    position: 90 
+  } ]
+  SeatsmaxB;
+  
+  @UI.identification: [ {
+    position: 100 
+  } ]
+  @UI.lineItem: [ {
+    position: 100 
+  } ]
+  @UI.selectionField: [ {
+    position: 100 
+  } ]
+  SeatsoccB;
+  
+  @UI.identification: [ {
+    position: 110 
+  } ]
+  @UI.lineItem: [ {
+    position: 110 
+  } ]
+  @UI.selectionField: [ {
+    position: 110 
+  } ]
+  SeatsmaxF;
+  
+  @UI.identification: [ {
+    position: 120 
+  } ]
+  @UI.lineItem: [ {
+    position: 120 
+  } ]
+  @UI.selectionField: [ {
+    position: 120 
+  } ]
+  SeatsoccF;
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/ddlx/sources/zc_ztravel" adtcore:type="DDLX/EX" adtcore:name="ZC_ZTRAVEL" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">projection implementation in class ZBP_C_ZTRAVEL unique;
+strict ( 2 );
+extensible;
+use draft;
+use side effects;
+define behavior for ZC_ZTRAVEL alias ZcSflight
+extensible
+{
+  use create;
+  use update;
+  use delete;
+
+  use action Edit;
+  use action Activate;
+  use action Discard;
+  use action Resume;
+  use action Prepare;
+
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/bo/behaviordefinitions/zc_ztravel" adtcore:type="BDEF/BDO" adtcore:name="ZC_ZTRAVEL" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="application/json" xmlns:adtcore="http://www.sap.com/adt/core">class ZBP_C_ZTRAVEL definition
+public
+abstract
+final
+for behavior of ZC_ZTRAVEL . 
+
+public section.
+
+protected section.
+
+private section.
+
+endclass.
+
+
+
+class ZBP_C_ZTRAVEL implementation.
+
+endclass.</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/oo/classes/zbp_c_ztravel" adtcore:type="CLAS/OC" adtcore:name="ZBP_C_ZTRAVEL" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@EndUserText.label: 'ZC_ZTRAVEL'
+@MappingRole: true
+define role  ZC_ZTRAVEL {
+grant select on ZC_ZTRAVEL 
+where inheriting conditions from entity ZR_ZTRAVEL  default true;
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/acm/dcl/sources/zc_ztravel" adtcore:type="DCLS/DL" adtcore:name="ZC_ZTRAVEL" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object></massOperation:group><massOperation:group massOperation:name="Business Object Layer"><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@AccessControl.authorizationCheck: #MANDATORY
+@Metadata.allowExtensions: true
+@ObjectModel.sapObjectNodeType.name: 'ZZTRAVEL'
+@EndUserText.label: '###GENERATED Core Data Service Entity'
+define root view entity ZR_ZTRAVEL
+  as select from ZTRAVEL
+{
+  key carrid as Carrid,
+  key connid as Connid,
+  key fldate as Fldate,
+  @Semantics.amount.currencyCode: 'Currency'
+  price as Price,
+  @Consumption.valueHelpDefinition: [ {
+    entity.name: 'I_CurrencyStdVH', 
+    entity.element: 'Currency', 
+    useForValidation: true
+  } ]
+  currency as Currency,
+  planetype as Planetype,
+  seatsmax as Seatsmax,
+  seatsocc as Seatsocc,
+  @Semantics.amount.currencyCode: 'Currency'
+  paymentsum as Paymentsum,
+  seatsmax_b as SeatsmaxB,
+  seatsocc_b as SeatsoccB,
+  seatsmax_f as SeatsmaxF,
+  seatsocc_f as SeatsoccF
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zr_ztravel" adtcore:type="DDLS/DF" adtcore:name="ZR_ZTRAVEL" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">managed implementation in class ZBP_R_ZTRAVEL unique;
+strict ( 2 );
+with draft;
+extensible;
+define behavior for ZR_ZTRAVEL alias ZrSflight
+persistent table ZTRAVEL
+extensible
+draft table ZZTRAVEL_D
+lock master
+authorization master( global )
+{
+  field ( mandatory : create )
+   Carrid,
+   Connid,
+   Fldate;
+  
+  field ( readonly : update )
+   Carrid,
+   Connid,
+   Fldate;
+  
+  
+  create;
+  update;
+  delete;
+
+  draft action Activate optimized;
+  draft action Discard;
+  draft action Edit;
+  draft action Resume;
+  draft determine action Prepare;
+
+  mapping for ZTRAVEL corresponding extensible
+  {
+    Carrid = carrid;
+    Connid = connid;
+    Fldate = fldate;
+    Price = price;
+    Currency = currency;
+    Planetype = planetype;
+    Seatsmax = seatsmax;
+    Seatsocc = seatsocc;
+    Paymentsum = paymentsum;
+    SeatsmaxB = seatsmax_b;
+    SeatsoccB = seatsocc_b;
+    SeatsmaxF = seatsmax_f;
+    SeatsoccF = seatsocc_f;
+  }
+
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/bo/behaviordefinitions/zr_ztravel" adtcore:type="BDEF/BDO" adtcore:name="ZR_ZTRAVEL" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="application/json" xmlns:adtcore="http://www.sap.com/adt/core">class ZBP_R_ZTRAVEL definition
+public
+abstract
+final
+for behavior of ZR_ZTRAVEL . 
+
+public section.
+
+protected section.
+
+private section.
+
+endclass.
+
+
+
+class ZBP_R_ZTRAVEL implementation.
+
+endclass.</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/oo/classes/zbp_r_ztravel" adtcore:type="CLAS/OC" adtcore:name="ZBP_R_ZTRAVEL" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@EndUserText.label: 'ZR_ZTRAVEL'
+@MappingRole: true
+define role  ZR_ZTRAVEL {
+grant select on ZR_ZTRAVEL 
+ where true;
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/acm/dcl/sources/zr_ztravel" adtcore:type="DCLS/DL" adtcore:name="ZR_ZTRAVEL" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object></massOperation:group><massOperation:group massOperation:name="Data Base Model Layer"><massOperation:object><massOperation:property massOperation:key="Operation">CREATE</massOperation:property><massOperation:codeSnippet><adtcore:content adtcore:type="plain/text" xmlns:adtcore="http://www.sap.com/adt/core">@EndUserText.label : 'Draft Database Table for ZZTRAVEL_D'
+@AbapCatalog.enhancement.category : #EXTENSIBLE_ANY
+@AbapCatalog.tableCategory : #TRANSPARENT
+@AbapCatalog.deliveryClass : #A
+@AbapCatalog.dataMaintenance : #RESTRICTED
+define table zztravel_d {
+
+  key mandt  : mandt not null;
+  key carrid : s_carr_id not null;
+  key connid : s_conn_id not null;
+  key fldate : s_date not null;
+  @Semantics.amount.currencyCode : 'zztravel_d.currency'
+  price      : s_price;
+  currency   : s_currcode;
+  planetype  : s_planetye;
+  seatsmax   : s_seatsmax;
+  seatsocc   : s_seatsocc;
+  @Semantics.amount.currencyCode : 'zztravel_d.currency'
+  paymentsum : s_sum;
+  seatsmaxb  : s_smax_b;
+  seatsoccb  : s_socc_b;
+  seatsmaxf  : s_smax_f;
+  seatsoccf  : s_socc_f;
+  "%admin"   : include sych_bdl_draft_admin_inc;
+}</adtcore:content></massOperation:codeSnippet><massOperation:objectReference adtcore:uri="/sap/bc/adt/ddic/tables/zztravel_d" adtcore:type="TABL/DT" adtcore:name="ZZTRAVEL_D" xmlns:adtcore="http://www.sap.com/adt/core"/></massOperation:object></massOperation:group></massOperation:group>
