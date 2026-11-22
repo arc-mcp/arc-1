@@ -435,10 +435,10 @@ function buildBaseErrorMessage(
       return `${message}\n\nHint: The SAP request was cancelled. Submitted work may continue in SAP; check its state before retrying.`;
     }
     // Low-level causes can name hosts, IPs and certificates; minimal mode keeps only their code.
-    const code = err.lowLevelCause?.code;
+    const code = err.causeCode;
     const shown =
       config.minimalErrors && err.cause
-        ? `ADT network error${code ? ` (${code})` : ''}. Details are hidden because ARC1_MINIMAL_ERRORS=true; use the request ID to correlate server-side audit logs.`
+        ? `ADT network error${code ? ` (${code})` : ''}. The full reason is hidden because ARC1_MINIMAL_ERRORS=true.`
         : message;
     if (tool === 'SAPRead' && String(args.type ?? '').toUpperCase() === 'SYSTEM') {
       return (

@@ -81,7 +81,7 @@ A self-signed SAP certificate, or an `SAP_URL` that uses an IP address, does not
    certificate itself; otherwise the issuing CA) as PEM, check its fingerprint with the SAP Basis team,
    and set `NODE_EXTRA_CA_CERTS` to that file. Node reads it only at process start, so restart ARC-1.
 2. **Use a name from the certificate.** `SAP_URL` must use a host name the certificate lists (its
-   subject alternative names). If that name does not resolve to the system, add a hosts entry
+   subject alternative names, or its common name when it has none). If that name does not resolve to the system, add a hosts entry
    (Docker: `--add-host <name>:<ip>`) and set `SAP_URL=https://<name>:<port>`.
 
 Node still checks the chain, the name and the expiry date this way; `SAP_INSECURE=true` checks none of
@@ -90,12 +90,14 @@ them. When a connection fails, ARC-1 appends Node's reason to the error, for exa
 | Error text contains | Meaning |
 |---------------------|---------|
 | `DEPTH_ZERO_SELF_SIGNED_CERT: self-signed certificate` | Node does not trust the certificate: step 1 is missing or points to the wrong file. |
+| `UNABLE_TO_VERIFY_LEAF_SIGNATURE` / `SELF_SIGNED_CERT_IN_CHAIN` | The certificate comes from a CA that Node does not trust: export that CA for step 1. |
 | `ERR_TLS_CERT_ALTNAME_INVALID: Hostname/IP does not match certificate's altnames` | The certificate is trusted, but the host in `SAP_URL` is not in it: step 2 is missing. |
 | `ECONNREFUSED` / `ENOTFOUND` | Not a certificate problem: nothing listens on that port, or the host name does not resolve. |
 
-With `ARC1_MINIMAL_ERRORS=true` the client sees only the code (for example
-`ADT network error (ERR_TLS_CERT_ALTNAME_INVALID)`), because the full reason can name hosts, IP
-addresses and certificates.
+With `ARC1_MINIMAL_ERRORS=true` (the default in HTTP mode) the client sees only the code, for example
+`ADT network error (ERR_TLS_CERT_ALTNAME_INVALID)`, because the full reason can name hosts, IP
+addresses and certificates. Audit events record only the length of an error text, so to see the full
+reason run one call with `arc1-cli call` or over stdio, where minimal errors are off by default.
 
 !!! danger "Avoid `SAP_INSECURE=true` outside isolated development"
     `SAP_INSECURE=true` disables all SAP TLS verification — it accepts *any* certificate (masking man-in-the-middle), not just self-signed ones; ARC-1 only prints one startup warning when it is on. The bundled `manifest.yml` / `mta.yaml` keep it `"false"`; use `NODE_EXTRA_CA_CERTS` for an internal CA instead of disabling verification.

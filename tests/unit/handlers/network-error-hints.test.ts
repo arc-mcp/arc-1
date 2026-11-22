@@ -162,8 +162,11 @@ describe('network error cause (#1272)', () => {
     expect(text).toContain('Cannot reach the SAP system');
     expect(text).not.toMatch(/10\.1\.2\.3|sap\.internal|altnames|fetch failed/);
 
+    // undici's proxy Client.request rejects with the coded error itself, not under `fetch failed`.
     mockFetch.mockRejectedValue(coded('ECONNREFUSED', 'connect ECONNREFUSED 10.9.9.9:20003'));
-    expect(await read(true)).not.toContain('10.9.9.9');
+    const proxyText = await read(true);
+    expect(proxyText).toContain('ADT network error (ECONNREFUSED).');
+    expect(proxyText).not.toContain('10.9.9.9');
   });
 });
 

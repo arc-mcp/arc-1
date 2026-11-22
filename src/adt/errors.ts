@@ -1122,6 +1122,11 @@ export class AdtNetworkError extends AdtError {
     const message = inner.message || first?.message || '';
     return code || message ? { code, message } : undefined;
   }
+
+  /** Safe-to-show error code; undici's proxy `Client.request` throws the coded error directly. */
+  get causeCode(): string | undefined {
+    return this.lowLevelCause?.code ?? errorCode(this.cause);
+  }
 }
 
 function errorCode(err: unknown): string | undefined {
