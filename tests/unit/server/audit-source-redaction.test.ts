@@ -162,7 +162,7 @@ describe('audit sinks never receive source-bearing arguments', () => {
           }
           const start = events.find((event) => event.event === 'tool_call_start');
           expect(start).toMatchObject({ tool, requestId, user: 'AUDIT_USER', clientId: 'cid' });
-          expect(JSON.stringify(start)).toMatch(/\[REDACTED content \d+ chars sha256:[0-9a-f]{12}\]/);
+          expect(JSON.stringify(start)).toMatch(/\[REDACTED content \d+ chars\]/);
           expect(outputs.stderr).toContain(requestId);
         });
       }
@@ -196,7 +196,7 @@ describe('content summaries', () => {
       target: 'A4H/100',
       args: { action: 'update', type: 'PROG', name: 'ZSENT', package: '$TMP', transport: 'A4HK900001' },
     });
-    // Same input → same summary after both redaction passes; different input → different hash.
+    // Same input → same summary after both redaction passes; a different length → a different summary.
     expect(event.args.source).toBe(sanitizeArgs(args).source);
     expect(event.args.source).not.toBe(sanitizeArgs({ source: `${S}!` }).source);
   });
@@ -208,9 +208,9 @@ describe('content summaries', () => {
   });
 
   it('does not trust a caller-supplied value that merely looks like a summary', () => {
-    const forged = `[REDACTED content 1 chars sha256:000000000000] ${S}`;
+    const forged = `[REDACTED content 1 chars] ${S}`;
     expect(JSON.stringify(sanitizeArgs({ source: forged }))).not.toContain(S);
-    const longDigits = '[REDACTED content 4111111111111111 chars sha256:deadbeefcafe]';
+    const longDigits = '[REDACTED content 4111111111111111 chars]';
     expect(sanitizeArgs({ source: longDigits }).source).not.toContain('4111111111111111');
   });
 

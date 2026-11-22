@@ -83,9 +83,11 @@ describe('Audit Events', () => {
       expect((result.description as string).length).toBeLessThan(300);
     });
 
-    it('replaces source values with a length and hash summary instead of truncating them', () => {
-      const result = sanitizeArgs({ source: 'A'.repeat(600) });
-      expect(result.source).toMatch(/^\[REDACTED content 600 chars sha256:[0-9a-f]{12}\]$/);
+    it('replaces source values with a length summary and no digest', () => {
+      const result = sanitizeArgs({ source: 'A'.repeat(600), newContent: 'secret123' });
+      expect(result.source).toBe('[REDACTED content 600 chars]');
+      // No hash of the value: a log reader must not be able to confirm a guess.
+      expect(result.newContent).toBe('[REDACTED content 9 chars]');
     });
 
     it('bounds adversarial escape normalization work before redaction', () => {

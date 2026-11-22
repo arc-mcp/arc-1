@@ -8,7 +8,6 @@
  * including nested HTTP requests and auth events.
  */
 
-import { createHash } from 'node:crypto';
 import type { LogLevel } from './logger.js';
 
 /** Base shape for all audit events */
@@ -450,8 +449,8 @@ const CONTENT_KEYS = new Set([
 ]);
 /** SAPSearch tadir_lookup `source` routing enum (drives sql-scope escalation), not content. */
 const SOURCE_ROUTING_VALUES = new Set(['adt', 'db', 'both']);
-// ponytail: a caller can still forge one well-formed summary (≤9 digits + 12 hex); no source fits in it.
-const CONTENT_SUMMARY_PATTERN = /^\[REDACTED content \d{1,9} chars sha256:[0-9a-f]{12}\]$/;
+// ponytail: a caller can still forge one well-formed summary (≤9 digits); no source fits in it.
+const CONTENT_SUMMARY_PATTERN = /^\[REDACTED content \d{1,9} chars\]$/;
 const REDACTION_LIMIT_MARKER = '[TRUNCATED: redaction budget exceeded]';
 const MAX_REDACTION_DEPTH = 16;
 const MAX_REDACTION_ENTRIES = 512;
@@ -647,8 +646,8 @@ function summarizeContent(key: string, value: unknown): unknown {
   } catch {
     return '[REDACTED content]';
   }
-  const digest = createHash('sha256').update(text).digest('hex').slice(0, 12);
-  return `[REDACTED content ${text.length} chars sha256:${digest}]`;
+  // Length only: an unkeyed digest would let a log reader confirm a guessed short value (CodeQL #80).
+  return `[REDACTED content ${text.length} chars]`;
 }
 
 /** Long-text keys and phrases are business data, including on requests rejected before validation. */

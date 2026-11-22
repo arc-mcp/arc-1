@@ -350,7 +350,7 @@ tool call. See [setup](btp-cloud-foundry-deployment.md#optional-btp-audit-log-si
 
 | Event | Description |
 |-------|-------------|
-| `tool_call_start` | Tool name and centrally redacted arguments. Source and content arguments (`source`, `content`, `oldContent`, `newContent`, `proposalUserContent`, `fixedValues`, `messages`, `shortTexts`, `parameters`, at any depth incl. `batch_create` objects) are replaced by `[REDACTED content <n> chars sha256:<12 hex>]` for correlation, never logged. SQL text and filters are still logged, truncated. |
+| `tool_call_start` | Tool name and centrally redacted arguments. Source and content arguments (`source`, `content`, `oldContent`, `newContent`, `proposalUserContent`, `fixedValues`, `messages`, `shortTexts`, `parameters`, at any depth incl. `batch_create` objects) are replaced by `[REDACTED content <n> chars]`, never logged and never hashed (a digest would let a log reader confirm a guessed short value). SQL text and filters are still logged, truncated. |
 | `tool_call_end` | Tool, duration, success/error status, error class, and result size/preview after central redaction. |
 | `http_request` | SAP HTTP method, ADT path, status, and duration. Optional debug bodies/headers are centrally redacted; authentication response bodies are never logged. |
 | `data_response_limited` | A successful or retry response crossed the configured data-preview byte ceiling. Includes tool, limit/observed bytes, endpoint family, queue wait, request ID, and selected target/identity when applicable; never SQL or response bodies. |
