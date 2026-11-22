@@ -6,7 +6,7 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
-const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
+const { resetCachedFeatures, setCachedDiscovery } = await import('../../../src/handlers/feature-cache.js');
 const fixture = readFileSync(new URL('../../fixtures/xml/syntax-check-nw750.xml', import.meta.url), 'utf8');
 const reader = { token: 'test', clientId: 'reader', scopes: ['read'] };
 const client = () => new AdtClient({ baseUrl: 'https://sap.example', safety: defaultSafetyConfig() });
@@ -16,13 +16,19 @@ beforeEach(() => {
   mockFetch.mockReset();
 });
 
-function respond(tableStatus: number, structureStatus = 200) {
+// 7.50 search appends a localized suffix to the name; the resolver strips it.
+const searchXml = (type: string, name: string) =>
+  `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/x/y" adtcore:type="${type}" adtcore:name="${name} (Structure)"/></adtcore:objectReferences>`;
+
+function respond(tableStatus: number, structureStatus = 200, searchType = 'TABL/DS', check = fixture) {
   mockFetch.mockImplementation(async (url, options) => {
     if (options?.method === 'HEAD') return mockResponse(200, '', { 'x-csrf-token': 't' });
     if (options?.method === 'POST') {
       expect(String(url)).toContain('/checkruns');
-      return mockResponse(200, fixture);
+      return mockResponse(200, check);
     }
+    if (String(url).includes('/informationsystem/search'))
+      return mockResponse(200, searchXml(searchType, new URL(String(url)).searchParams.get('query') ?? ''));
     expect(options?.method).toBe('GET');
     expect(String(url)).toMatch(/\/ddic\/(tables|structures)\//);
     return mockResponse(String(url).includes('/tables/') ? tableStatus : structureStatus, '');
@@ -86,4 +92,35 @@ it('encodes namespace names and rechecks routing on each call', async () => {
   expect(mockFetch.mock.calls.find(([, o]) => o?.method === 'POST')![1]?.body).toContain(
     'adtcore:uri="/sap/bc/adt/ddic/structures/%2FNS%2FSTRUCT"',
   );
+});
+
+const posts = () => mockFetch.mock.calls.filter(([, o]) => o?.method === 'POST');
+const searches = () => mockFetch.mock.calls.filter(([url]) => String(url).includes('/informationsystem/search'));
+
+it('refuses a transparent table served as a structure where /ddic/tables/ is absent (7.50)', async () => {
+  respond(404, 200, 'TABL/DT');
+  const result = JSON.parse((await check('SAPRead', 'TABL')).content[0].text);
+  expect(result).toMatchObject({ checked: false, hasErrors: true });
+  expect(result.statusText).toContain('not confirmed as a structure');
+  expect(posts()).toHaveLength(0);
+});
+
+it('skips the subtype search when discovery advertises /ddic/tables/', async () => {
+  setCachedDiscovery(new Map([['/sap/bc/adt/ddic/tables', ['application/xml']]]));
+  respond(404, 200, 'TABL/DT');
+  expect(JSON.parse((await check('SAPRead', 'TABL')).content[0].text)).toMatchObject({ checked: true });
+  expect(searches()).toHaveLength(0);
+  expect(posts()[0]![1]?.body).toContain('adtcore:uri="/sap/bc/adt/ddic/structures/BAPIRET2"');
+});
+
+it('suggests version="inactive" only for a default-version stored check SAP did not process', async () => {
+  const unprocessed =
+    '<chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:status="notProcessed" chkrun:statusText="Error while importing object BAPIRET2 from the database"/></chkrun:checkRunReports>';
+  const text = async (options: Record<string, unknown>) => {
+    respond(404, 200, 'TABL/DS', unprocessed);
+    return JSON.parse((await check('SAPRead', 'TABL', options)).content[0].text).messages[0].text as string;
+  };
+  expect(await text({})).toContain('re-run with version="inactive"');
+  expect(await text({ version: 'active' })).not.toContain('version="inactive"');
+  expect(await text({ source: 'define structure bapiret2 {}' })).not.toContain('version="inactive"');
 });

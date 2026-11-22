@@ -1,8 +1,9 @@
 import type { AdtClient } from '../adt/client.js';
 import { syntaxCheck } from '../adt/devtools.js';
-import { AdtApiError } from '../adt/errors.js';
+import { AdtApiError, AdtSafetyError } from '../adt/errors.js';
 import { syntaxCheckBatch } from '../adt/syntax-batch.js';
 import type { SyntaxCheckResult } from '../adt/types.js';
+import { isTablesEndpointAvailable } from './feature-cache.js';
 import { functionModuleObjectUrl, normalizeObjectType, objectUrlForType } from './object-types.js';
 import { type ToolResult, textResult, toolJson } from './shared.js';
 
@@ -56,6 +57,14 @@ export async function handleSyntaxCheck(client: AdtClient, args: Record<string, 
   if (type === 'TABL' && absent) {
     objectUrl = objectUrlForType('TABL/DS', name);
     absent = await isConfirmedAbsent(client, objectUrl);
+    // 7.50/7.51 have no /ddic/tables/ and serve transparent tables there as TABL/DS; a check reports false errors.
+    if (!absent && isTablesEndpointAvailable() !== true && (await notConfirmedStructure(client, name))) {
+      return notChecked(
+        { hasErrors: false, messages: [], checked: false },
+        `TABL ${name} is not confirmed as a structure, and a transparent table has no ADT source check without /sap/bc/adt/ddic/tables/ (SAP_BASIS 7.50/7.51)`,
+        'Check transparent tables in SE11 on this release.',
+      );
+    }
   }
   // SAP does not refuse unsaved text for every absent object: for a PROG it checks the text as a
   // standalone include (`/programs/includes/<name>?context=/programs/programs/<name>`) with default
@@ -79,8 +88,25 @@ export async function handleSyntaxCheck(client: AdtClient, args: Record<string, 
   );
   // Fail closed: SAP checked nothing (object does not exist yet) → never report "clean", or
   // callers read hasErrors:false as "SAP will accept this source".
-  if (!result.checked) return notChecked(result, result.statusText);
+  if (!result.checked) {
+    // A never-activated object has no active version to check.
+    const advice =
+      !version && content === undefined
+        ? `${DEFAULT_ADVICE} If it was never activated, re-run with version="inactive".`
+        : undefined;
+    return notChecked(result, result.statusText, advice);
+  }
   return textResult(toolJson(result));
+}
+
+/** Search-first resolver: refuses a TABL/DT, or a subtype it cannot confirm, where /ddic/tables/ may be absent. */
+async function notConfirmedStructure(client: AdtClient, name: string): Promise<boolean> {
+  try {
+    await client.resolveTablObjectUrlForWrite(name, { tablesEndpointAvailable: false });
+    return false;
+  } catch (err) {
+    return err instanceof AdtSafetyError;
+  }
 }
 
 /** Only a 404 establishes absence; any other probe failure leaves the verdict to SAP's own check report. */
@@ -93,11 +119,10 @@ async function isConfirmedAbsent(client: AdtClient, objectUrl: string): Promise<
   }
 }
 
-function notChecked(
-  result: SyntaxCheckResult,
-  statusText: string | undefined,
-  advice = 'Verify the object type and name; create the object only if it does not exist (SAPWrite action="create"), then re-run the syntax check.',
-): ToolResult {
+const DEFAULT_ADVICE =
+  'Verify the object type and name; create the object only if it does not exist (SAPWrite action="create"), then re-run the syntax check.';
+
+function notChecked(result: SyntaxCheckResult, statusText: string | undefined, advice = DEFAULT_ADVICE): ToolResult {
   return textResult(
     toolJson({
       ...result,
