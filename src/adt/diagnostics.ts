@@ -1209,6 +1209,9 @@ export async function probeODataPerformance(
   };
 }
 
+// `..%2F` remains allowed: the URL is host-locked and data-gated. SAP did not decode `%2F` into a
+// path separator on 7.58/8.16 (first-segment 404, 2026-11-22). Rejecting `%2F` would break
+// legitimate OData keys containing an encoded slash.
 function assertODataPerfUrl(url: string): void {
   const rawPath = url.split(/[?#]/, 1)[0] ?? '';
   let parsed: URL;
