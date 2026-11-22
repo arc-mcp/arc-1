@@ -429,6 +429,11 @@ describe('TABL activation diagnostics', () => {
   });
 
   describe('check response evidence', () => {
+    it('adds nothing for an empty 200 body', async () => {
+      route({ check: () => mockResponse(200, '', { 'x-csrf-token': 'T' }) });
+      await expect(tablActivationDiagnostic(createClient(), structUrl, [])).resolves.toBe('');
+    });
+
     it('returns nothing new for a processed report with zero messages', async () => {
       route({
         check: () =>
