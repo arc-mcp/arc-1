@@ -22,6 +22,59 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
+## 1.11.0 — security fix, RAP service generator and more object types (2026-11-22)
+
+Upgrade for the security fix. On XSUAA deployments plan one fresh MCP sign-in per user, rename
+`totalRows` in `SAPQuery` consumers and refresh your MCP client's tool list.
+
+### Security and upgrade actions
+
+| Change | Impact | Action |
+|---|---|---|
+| Security fix ([692b8d4](https://github.com/arc-mcp/arc-1/commit/692b8d46c2fa905e6488456f587bf3f26f25065c), GHSA-r7hv-jxhp-8xh8) | A crafted `SAPDiagnose` dump or trace `id` could address other ADT paths on the SAP system. Ids are now encoded as one path segment and dot segments are refused. | Upgrade. |
+| XSUAA OAuth proxy ([#1228](https://github.com/arc-mcp/arc-1/pull/1228), [#1243](https://github.com/arc-mcp/arc-1/pull/1243)) | Refresh tokens are bound to the issuing client; previously issued ones are rejected. | Upgrade every instance before resuming OAuth traffic. See [the migration](updating.md#xsuaa-auth-121-refresh-token-migration). |
+| SQL results ([#1225](https://github.com/arc-mcp/arc-1/pull/1225)) | Free SQL returns at most `maxRows` rows. `totalRows` is now `sapReportedTotalRows`, a diagnostic value; `rowLimitReached` reports a reached cap. | Rename the field in consumers. |
+| Audit logs ([#1246](https://github.com/arc-mcp/arc-1/pull/1246), [#1280](https://github.com/arc-mcp/arc-1/pull/1280)) | Source text and similar content arguments appear in every audit sink as length only. Refusals at the multi-target HTTP edge write an `mcp_route_denied` event. | Adjust log queries that matched argument excerpts. |
+| AMDP probe ([#1222](https://github.com/arc-mcp/arc-1/pull/1222)) | `SAPManage` feature output no longer contains `amdp`; AMDP reads and writes are unchanged. | Remove `SAP_FEATURE_AMDP` and `--feature-amdp`; they are ignored with a warning. |
+
+Details: [v1.11.0 upgrade notes](updating.md#v1110-renamed-result-field-and-audit-content).
+
+### New
+
+| Change | Impact | Action |
+|---|---|---|
+| RAP service generator ([#1279](https://github.com/arc-mcp/arc-1/pull/1279)) | `SAPWrite action="generate"` runs SAP's own generator on a table and creates a complete UI or Web API service in one call. Not on SAP_BASIS 7.50. | Run with `dryRun=true` first. See [RAP service generator](tools.md#rap-service-generator). |
+| More object types ([#1131](https://github.com/arc-mcp/arc-1/pull/1131), [#1130](https://github.com/arc-mcp/arc-1/issues/1130), [#1128](https://github.com/arc-mcp/arc-1/pull/1128), [#1127](https://github.com/arc-mcp/arc-1/issues/1127), [#1154](https://github.com/arc-mcp/arc-1/pull/1154)) | Read and write API packages and assignments (`SOD1`, `SOD2`, on-premise), SAP object types and node types (`RONT`, `NONT`); write `SMBC`. | Activate the `RONT` before its root `NONT`. |
+| Source edits ([#1223](https://github.com/arc-mcp/arc-1/pull/1223), [#1275](https://github.com/arc-mcp/arc-1/pull/1275)) | `SAPWrite action="edit_content"` replaces one exact text match in a `PROG`, `INCL` or `TABL`. Tables and structures support `format="editable"` reads and `expectedSourceHash`. | Read with `format="editable"` first and pass its hash. Denying `SAPWrite.update` does not deny `edit_content`. |
+| Service bindings ([#1199](https://github.com/arc-mcp/arc-1/pull/1199), [#1270](https://github.com/arc-mcp/arc-1/pull/1270)) | `SAPRead type="SRVB" include="service_info"` returns OData versions, publication state, URL and entity sets. Other `include` values are refused. | none |
+| Transports and logs ([#1268](https://github.com/arc-mcp/arc-1/pull/1268), [#1047](https://github.com/arc-mcp/arc-1/issues/1047), [#1250](https://github.com/arc-mcp/arc-1/pull/1250)) | `SAPTransport create` accepts `requestType="W"` for Customizing requests (not on 7.50). `SAPQuery application_log` filters by severity. | none |
+| Pinned multi-target writes ([#1226](https://github.com/arc-mcp/arc-1/pull/1226), [3fef4d4](https://github.com/arc-mcp/arc-1/commit/3fef4d4ab660daf4c441fba58f4d42ead7880161)) | Pinned principal-propagation routes serve `SAPWrite` and activation through the single-target handlers, no longer class and interface source only. | Review [pinned writes](multi-target-writes.md) before granting write access. |
+| Access control ([#1244](https://github.com/arc-mcp/arc-1/pull/1244), [#1283](https://github.com/arc-mcp/arc-1/pull/1283), [#1234](https://github.com/arc-mcp/arc-1/pull/1234)) | Optional client-IP allowlist on SAP BTP Cloud Foundry. `SAP_DENY_ACTIONS` denies a plugin tool by its exact `Custom_<name>`. Experimental per-user SAP identity without BTP through a local SAML bearer issuer. | All off by default. See the [allowlist limits](security-guide.md#client-ip-allowlist-sap-btp-cloud-foundry-opt-in), [extensions](extensions.md) and [local SSO](local-sso-experimental.md). |
+
+### Fixes
+
+| Change | Impact | Action |
+|---|---|---|
+| Package allowlist ([#1259](https://github.com/arc-mcp/arc-1/pull/1259), [#1257](https://github.com/arc-mcp/arc-1/issues/1257)) | Subtree rules such as `ZFOO/**` follow the object's super-package chain. Writes that took a minute or more under broad rules take under a second. | none |
+| Discovery ([#1258](https://github.com/arc-mcp/arc-1/pull/1258), [#1256](https://github.com/arc-mcp/arc-1/issues/1256), [#1265](https://github.com/arc-mcp/arc-1/pull/1265), [#1260](https://github.com/arc-mcp/arc-1/issues/1260), [#1271](https://github.com/arc-mcp/arc-1/pull/1271)) | Server-driven types and table settings are no longer refused when the caller's discovery differs from the startup user's or SAP omits media types. Communication targets (`COTA`) are readable on SAP BTP. | none |
+| Message classes ([#1229](https://github.com/arc-mcp/arc-1/pull/1229), [#1233](https://github.com/arc-mcp/arc-1/pull/1233), [#1255](https://github.com/arc-mcp/arc-1/pull/1255), [#1254](https://github.com/arc-mcp/arc-1/issues/1254), [#1267](https://github.com/arc-mcp/arc-1/pull/1267), [#1269](https://github.com/arc-mcp/arc-1/pull/1269)) | `batch_create` stores the supplied messages and no longer fails on SAP BTP. Invalid names and message numbers are refused before SAP is called. `deleteMessages` removes single messages on update. | none |
+| Clearer errors ([#1276](https://github.com/arc-mcp/arc-1/pull/1276), [#1277](https://github.com/arc-mcp/arc-1/pull/1277), [#1272](https://github.com/arc-mcp/arc-1/issues/1272), [#1278](https://github.com/arc-mcp/arc-1/pull/1278), [#1249](https://github.com/arc-mcp/arc-1/pull/1249), [#1264](https://github.com/arc-mcp/arc-1/pull/1264), [#1262](https://github.com/arc-mcp/arc-1/issues/1262), [#1266](https://github.com/arc-mcp/arc-1/pull/1266), [#1261](https://github.com/arc-mcp/arc-1/issues/1261)) | A failed table activation names the field with line and column. A failed SAP connection shows its cause, for example `ERR_TLS_CERT_ALTNAME_INVALID`. Clearer answers for 7.50 table syntax checks and not-found repeats, `FUGR` reads by function module name and unsupported `batch_create` types. | On 7.50, wait 60 seconds before re-reading a just-created object. |
+| Cookie extraction ([#1284](https://github.com/arc-mcp/arc-1/pull/1284)) | `arc1-cli extract-cookies` finds the browser on Linux, accepts a cookie file in a Windows drive root and deletes its temporary browser profile. | none |
+
+**New configuration**
+
+- `ARC1_ALLOWED_CLIENT_IPS` / `--allowed-client-ips` — default empty (off).
+- `SAP_PP_SAML_*` — experimental local SAML bearer issuer; inactive until configured.
+- `SAP_DENY_ACTIONS` — also accepts `Custom_<name>`; startup fails if that plugin tool is not loaded.
+
+**Tool-surface changes**
+
+- `SAPWrite`: actions `generate` (with `generator`) and `edit_content`; types `SOD1`, `SOD2`, `SMBC`, `RONT`, `NONT`; `expectedSourceHash` for `TABL`; `deleteMessages` on MSAG update.
+- `SAPRead`: types `SOD1`, `SOD2`, `RONT`, `NONT`; `include="service_info"` on `SRVB`; `format="editable"` on `TABL`.
+- `SAPActivate`: types `RONT`, `NONT`.
+- `SAPTransport`: `requestType` (`K`, `W`) on `create`.
+- `SAPQuery`: `applicationLog.severities`, `sapReportedTotalRows`, `rowLimitReached`.
+
 ## 1.10.1 — more reliable SAP reads and edits (2026-11-07)
 
 No new configuration is required. This patch improves existing SAP reads and edits.

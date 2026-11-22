@@ -15,6 +15,21 @@ sign-in and token refresh. Deployments without the XSUAA OAuth proxy are unaffec
 
 See the [xsuaa-auth 1.2.1 upgrade notes](https://github.com/arc-mcp/xsuaa-auth/releases/tag/v1.2.1).
 
+## v1.11.0 — renamed result field and audit content
+
+- **`SAPQuery` result field.** The optional `totalRows` of a free-SQL result is now
+  `sapReportedTotalRows`. It is SAP's diagnostic count, not the size of the result. Use
+  `rowsReturned` for the number of rows and the new `rowLimitReached` to see whether `maxRows`
+  cut the result. Update every consumer that reads `totalRows`.
+- **Audit events.** Arguments that carry content (`source`, `content`, `oldContent`,
+  `newContent`, `proposalUserContent`, `fixedValues`, `messages`, `shortTexts`, `parameters`)
+  are written to every audit sink as `[REDACTED content <n> chars]`. Tool, action, type, name,
+  package, transport, user and request ID are unchanged. Adjust log queries or alerts that
+  matched argument excerpts.
+- **AMDP feature setting.** `SAP_FEATURE_AMDP` and `--feature-amdp` are accepted and ignored
+  with one warning. Remove them from your configuration.
+- **XSUAA OAuth proxy.** See the refresh-token migration above.
+
 ## v1.10.0 — HTTP request validation
 
 MCP POST requests must contain JSON with `Content-Type: application/json`.
