@@ -351,9 +351,7 @@ export async function handleSAPActivate(
     // only for objects whose activation returned no error details, to avoid duplicating messages.
     const objectsNeedingSyntaxCheck = objects.filter((_o, i) => batchStatuses[i].status !== 'error');
     const diagnostics = await Promise.all(
-      objectsNeedingSyntaxCheck.map((o) =>
-        inactiveSyntaxDiagnostic(client, o.type, o.name, o.type === 'TABL' ? o.url : undefined),
-      ),
+      objectsNeedingSyntaxCheck.map((o) => inactiveSyntaxDiagnostic(client, o.type, o.name)),
     );
     const combinedDiag = diagnostics
       .map((d, i) => (d ? `\n[${objectsNeedingSyntaxCheck[i].name}]${d}` : ''))
@@ -454,9 +452,7 @@ export async function handleSAPActivate(
   // especially useful when SAP returned <ioc:inactiveObjects> with no <msg> detail.
   // Skip when activation already returned error details to avoid duplicating the same messages.
   const hasActivationErrors = result.details.some((d) => d.severity === 'error');
-  const syntaxDetail = hasActivationErrors
-    ? ''
-    : await inactiveSyntaxDiagnostic(client, type, name, type === 'TABL' ? objectUrl : undefined);
+  const syntaxDetail = hasActivationErrors ? '' : await inactiveSyntaxDiagnostic(client, type, name);
   let activationError = `Activation failed for ${type} ${name}.\n${formatActivationMessages(result)}${syntaxDetail}`;
   if (type === 'DDLS') {
     activationError += `\n\n${await buildCdsActivationDependencyHint(client, name, objectUrl)}`;

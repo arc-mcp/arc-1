@@ -157,27 +157,4 @@ it('suggests version="inactive" only for a default-version stored check SAP did 
   expect(await text({})).toContain('re-run with version="inactive"');
   expect(await text({ version: 'active' })).not.toContain('version="inactive"');
   expect(await text({ source: 'define structure bapiret2 {}' })).not.toContain('version="inactive"');
-  respond(404, 404, 'TABL/DS', unprocessed);
-  const missing = JSON.parse((await check('SAPRead', 'TABL')).content[0].text).messages[0].text as string;
-  expect(missing).not.toContain('version="inactive"');
-});
-
-it('does not suggest version="inactive" for an object whose metadata is absent', async () => {
-  mockFetch.mockImplementation(async (_url, options) => {
-    if (options?.method === 'HEAD') return mockResponse(200, '', { 'x-csrf-token': 't' });
-    if (options?.method === 'POST')
-      return mockResponse(
-        200,
-        '<chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:status="notProcessed" chkrun:statusText="Resource CLASS ZCL_GONE does not exist."/></chkrun:checkRunReports>',
-      );
-    return mockResponse(404, '');
-  });
-  const result = await handleToolCall(
-    client(),
-    DEFAULT_CONFIG,
-    'SAPRead',
-    { type: 'SYNTAX', objectType: 'CLAS', name: 'ZCL_GONE' },
-    reader,
-  );
-  expect(JSON.parse(result.content[0].text).messages[0].text).not.toContain('version="inactive"');
 });

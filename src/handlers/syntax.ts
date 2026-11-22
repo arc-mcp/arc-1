@@ -96,9 +96,9 @@ export async function handleSyntaxCheck(client: AdtClient, args: Record<string, 
   // Fail closed: SAP checked nothing (object does not exist yet) → never report "clean", or
   // callers read hasErrors:false as "SAP will accept this source".
   if (!result.checked) {
-    // A never-activated object has no active version to check; advise that only when it provably exists.
+    // A never-activated object has no active version to check.
     const advice =
-      !version && content === undefined && (await objectExists(client, objectUrl))
+      !version && content === undefined
         ? `${DEFAULT_ADVICE} If it was never activated, re-run with version="inactive".`
         : undefined;
     return notChecked(result, result.statusText, advice);
@@ -110,15 +110,6 @@ export async function handleSyntaxCheck(client: AdtClient, args: Record<string, 
 async function isConfirmedStructure(client: AdtClient, name: string): Promise<boolean> {
   try {
     return (await searchTablSubtype(client, name)) === 'TABL/DS';
-  } catch {
-    return false;
-  }
-}
-
-async function objectExists(client: AdtClient, objectUrl: string): Promise<boolean> {
-  try {
-    await client.getObjectMetadata(objectUrl);
-    return true;
   } catch {
     return false;
   }
