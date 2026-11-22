@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { win32 } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
 import {
   cookieMatchesHost,
+  ensureOutputDirectory,
   formatNetscapeCookieLine,
   parseServerArgs,
   planExtraction,
@@ -76,5 +78,28 @@ describe('extract-sap-cookies planExtraction', () => {
         platform: process.platform,
       }),
     ).toThrow('SAP_PP_ENABLED=true');
+  });
+});
+
+describe('ensureOutputDirectory', () => {
+  it.each([win32.dirname('C:\\cookies.txt'), 'D:\\', '\\\\server\\share\\'])(
+    'never calls mkdir on the Windows root %s, even when an existence check would fail',
+    (root) => {
+      const fs = { existsSync: vi.fn(() => false), mkdirSync: vi.fn() };
+      ensureOutputDirectory(root, fs, win32);
+      expect(fs.mkdirSync).not.toHaveBeenCalled();
+    },
+  );
+
+  it('creates missing nested parents recursively', () => {
+    const fs = { existsSync: vi.fn(() => false), mkdirSync: vi.fn() };
+    ensureOutputDirectory('missing/nested', fs);
+    expect(fs.mkdirSync).toHaveBeenCalledWith('missing/nested', { recursive: true });
+  });
+
+  it('skips existing non-root directories', () => {
+    const fs = { existsSync: vi.fn(() => true), mkdirSync: vi.fn() };
+    ensureOutputDirectory('existing', fs);
+    expect(fs.mkdirSync).not.toHaveBeenCalled();
   });
 });

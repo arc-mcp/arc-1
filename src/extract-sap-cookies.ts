@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, parse, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
 import { config as loadDotEnv } from 'dotenv';
@@ -342,6 +342,13 @@ export function planExtraction(input: ExtractionPlanInput): ExtractionPlan {
   };
 }
 
+export function ensureOutputDirectory(dir: string, fs = { existsSync, mkdirSync }, path = { parse }): void {
+  // Recursive mkdir can fail with EPERM on an existing Windows drive or share root.
+  if (path.parse(dir).root !== dir && !fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
+
 export async function run(argv: string[] = process.argv.slice(2)): Promise<void> {
   loadDotEnv();
   const scriptArgs = parseScriptArgs(argv);
@@ -376,7 +383,7 @@ export async function run(argv: string[] = process.argv.slice(2)): Promise<void>
     }
 
     const cookieFileContent = toNetscapeCookieFile(cookies);
-    mkdirSync(dirname(plan.outputPath), { recursive: true });
+    ensureOutputDirectory(dirname(plan.outputPath));
     writeFileSync(plan.outputPath, cookieFileContent, { encoding: 'utf-8', mode: 0o600 });
     chmodSync(plan.outputPath, 0o600);
 
