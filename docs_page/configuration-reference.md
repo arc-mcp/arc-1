@@ -74,25 +74,27 @@ bundles, see [docker.md](docker.md#self-signed-or-internal-ca-certificates).
 
 #### Self-signed certificate or access by IP address without `SAP_INSECURE`
 
-A self-signed SAP certificate, or an `SAP_URL` that uses an IP address, does not need
-`SAP_INSECURE=true`. Two steps, no ARC-1 setting:
+For a direct SAP connection, Node verifies both the certificate chain and the identity in `SAP_URL`.
 
-1. **Trust the certificate.** Export the certificate SAP presents (for a self-signed certificate, the
-   certificate itself; otherwise the issuing CA) as PEM, check its fingerprint with the SAP Basis team,
-   and set `NODE_EXTRA_CA_CERTS` to that file. Node reads it only at process start, so restart ARC-1.
-2. **Use a name from the certificate.** `SAP_URL` must use a host name the certificate lists (its
-   subject alternative names, or its common name when it has none). If that name does not resolve to the system, add a hosts entry
-   (Docker: `--add-host <name>:<ip>`) and set `SAP_URL=https://<name>:<port>`.
+1. **Trust the issuer.** For an internal CA, obtain the trusted root from the SAP Basis team and
+   configure the SAP endpoint to serve its intermediate certificates. For a self-signed leaf,
+   obtain that certificate and confirm its fingerprint with Basis. Set `NODE_EXTRA_CA_CERTS` to
+   the PEM file in the environment that starts ARC-1. Restart the process after changing it.
+   A chain that Node already trusts needs no extra CA.
+2. **Match the address.** Use a DNS name listed in the certificate. Node can also match the common
+   name when the certificate has no DNS subject alternative name. An IP address in `SAP_URL` needs
+   a matching IP subject alternative name. If the certified DNS name does not resolve, map it to
+   the SAP address in the hosts file or with Docker's `--add-host <name>:<ip>`.
 
-Node still checks the chain, the name and the expiry date this way; `SAP_INSECURE=true` checks none of
-them. When a connection fails, ARC-1 appends Node's reason to the error, for example:
+Certificate chain, name and expiry checks stay active. A failed tool call can report these reasons.
 
 | Error text contains | Meaning |
 |---------------------|---------|
-| `DEPTH_ZERO_SELF_SIGNED_CERT: self-signed certificate` | Node does not trust the certificate: step 1 is missing or points to the wrong file. |
-| `UNABLE_TO_VERIFY_LEAF_SIGNATURE` / `SELF_SIGNED_CERT_IN_CHAIN` | The certificate comes from a CA that Node does not trust: export that CA for step 1. |
-| `ERR_TLS_CERT_ALTNAME_INVALID: Hostname/IP does not match certificate's altnames` | The certificate is trusted, but the host in `SAP_URL` is not in it: step 2 is missing. |
-| `ECONNREFUSED` / `ENOTFOUND` | Not a certificate problem: nothing listens on that port, or the host name does not resolve. |
+| `DEPTH_ZERO_SELF_SIGNED_CERT: self-signed certificate` | The endpoint presented a self-signed leaf that Node does not trust. Check the PEM file and restart ARC-1. |
+| `UNABLE_TO_VERIFY_LEAF_SIGNATURE` | Node could not verify the leaf signature. Check for a missing intermediate on the server and confirm that Node trusts the root. |
+| `SELF_SIGNED_CERT_IN_CHAIN` | The chain ends at a self-signed certificate that Node does not trust. Confirm the root with Basis. |
+| `ERR_TLS_CERT_ALTNAME_INVALID` | The host or IP in `SAP_URL` does not match the certificate. Check step 2. |
+| `ECONNREFUSED` / `ENOTFOUND` | The connection was refused, or DNS lookup failed, respectively. |
 
 With `ARC1_MINIMAL_ERRORS=true` (the default in HTTP mode) the client sees only the code, for example
 `ADT network error (ERR_TLS_CERT_ALTNAME_INVALID)`, because the full reason can name hosts, IP

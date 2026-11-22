@@ -593,7 +593,7 @@ The caller gets `403` with the body `{"error":"Forbidden"}`. The log gets one
 
 - Use HTTPS for the SAP connection (`SAP_URL=https://...`) whenever possible.
 - Avoid `--insecure` / `SAP_INSECURE=true` in production. If SAP uses an internal CA, configure it at the OS/Node.js level (`NODE_EXTRA_CA_CERTS` environment variable).
-- A self-signed certificate or an IP-address `SAP_URL` does not need `SAP_INSECURE` either: trust the exported certificate with `NODE_EXTRA_CA_CERTS` and reach the system under a name the certificate lists (hosts entry or Docker `--add-host`). An error with `DEPTH_ZERO_SELF_SIGNED_CERT` means the certificate is not trusted yet; `ERR_TLS_CERT_ALTNAME_INVALID` means the host in `SAP_URL` is not in the certificate. See [configuration reference](configuration-reference.md#self-signed-certificate-or-access-by-ip-address-without-sap_insecure).
+- For a self-signed leaf, verify its fingerprint with Basis and set `NODE_EXTRA_CA_CERTS` before starting ARC-1. Use a certified DNS name or an IP address listed in an IP subject alternative name. A hosts entry or Docker's `--add-host` can map the certified DNS name to the SAP address. See the [configuration reference](configuration-reference.md#self-signed-certificate-or-access-by-ip-address-without-sap_insecure).
 - BTP on-premise deployments route through Cloud Connector; BTP ABAP Environment deployments use HTTPS directly to the ABAP Environment endpoint through the Destination service.
 
 ---
