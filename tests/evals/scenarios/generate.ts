@@ -81,7 +81,11 @@ const common: Pick<
   mockOnly: true,
   mockToolExecutor: executor,
   maxToolCalls: 4,
-  preliminary: [{ tool: 'SAPRead' }, { tool: 'SAPSearch' }],
+  preliminary: [
+    { tool: 'SAPRead' },
+    { tool: 'SAPSearch' },
+    ...['get', 'list', 'check'].map((action) => ({ tool: 'SAPTransport', requiredArgs: { action } })),
+  ],
   requireFullParameters: true,
 };
 

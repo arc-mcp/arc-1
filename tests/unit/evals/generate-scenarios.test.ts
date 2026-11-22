@@ -18,6 +18,7 @@ describe('generate eval scoring', () => {
   it('allows reading first, then scores the first generate call', () => {
     expect(passes([read, dry({ dryRun: true })])).toBe(true);
     expect(passes([dry({ dryRun: 'true' })])).toBe(true);
+    expect(passes([call('SAPTransport', { action: 'get', id: 'A4HK900123' }), dry({ dryRun: true })])).toBe(true);
   });
 
   it('fails reads only, a real run first, or another SAPWrite action', () => {
