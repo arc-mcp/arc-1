@@ -241,6 +241,10 @@ reads the object's metadata and returns `checked:false` when SAP answers `404`: 
 program SAP would otherwise check the text as a standalone include without program attributes
 (fixed-point arithmetic off) and report false errors such as every `@` host variable. This does not activate or
 execute code. Results match the compatible `SAPDiagnose(action="syntax", type=..., name=...)` route.
+A `TABL` that is not at `/ddic/tables/` is checked at `/ddic/structures/`. SAP_BASIS 7.50/7.51 have
+no `/ddic/tables/` and list transparent tables there as structures, so where discovery does not
+advertise `/ddic/tables/`, ARC-1 first confirms a structure through repository search and returns
+`checked:false` for a transparent table (checking it as a structure reports false errors).
 
 An empty native `<checkRunReports/>` response also means `checked:false`: SAP supplied no
 check evidence. The older message-only response format still supports an empty successful result.
