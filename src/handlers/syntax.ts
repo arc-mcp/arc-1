@@ -2,6 +2,7 @@ import type { AdtClient } from '../adt/client.js';
 import { syntaxCheck } from '../adt/devtools.js';
 import { AdtApiError } from '../adt/errors.js';
 import { syntaxCheckBatch } from '../adt/syntax-batch.js';
+import { searchTablSubtype } from '../adt/tabl-subtype.js';
 import type { SyntaxCheckResult } from '../adt/types.js';
 import { isTablesEndpointAvailable } from './feature-cache.js';
 import { functionModuleObjectUrl, normalizeObjectType, objectUrlForType } from './object-types.js';
@@ -108,7 +109,7 @@ export async function handleSyntaxCheck(client: AdtClient, args: Record<string, 
 /** Only a repository-search TABL/DS hit confirms a structure; no probe, no route cache. Errors fail closed. */
 async function isConfirmedStructure(client: AdtClient, name: string): Promise<boolean> {
   try {
-    return (await client.searchTablSubtype(name)) === 'TABL/DS';
+    return (await searchTablSubtype(client, name)) === 'TABL/DS';
   } catch {
     return false;
   }

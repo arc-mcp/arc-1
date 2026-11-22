@@ -35,6 +35,7 @@ import { canonicalRevisionSourcePath } from './path-safety.js';
 import { clampUrlLimit } from './result-limits.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
+import { searchTablSubtype } from './tabl-subtype.js';
 import {
   buildTableQuerySql,
   clampPreviewRows,
@@ -828,24 +829,6 @@ export class AdtClient {
    *
    *  Never cached: SAP can replace a structure with a table between calls of a long-lived
    *  client, and a remembered /structures/ route would skip the refusal above. */
-  /** TABL subtype (`TABL/DT`, `TABL/DS`) from repository search; undefined when no exact TABL hit.
-   *  Uncached and probe-free. Throws when the search fails. */
-  async searchTablSubtype(name: string): Promise<string | undefined> {
-    const upper = name.toUpperCase();
-    const results = await this.searchObject(name, 5);
-    // NPL 7.50 appends a localized suffix to adtcore:name ("T000 (Database Table)",
-    // "BAPIRET2 (Structure)"), so strip parenthesized text before matching. A4H
-    // and modern releases return just the bare name; both forms must work.
-    // Only TABL hits count: a same-named program must not hide the table's subtype.
-    const match = results.find((r) => {
-      const bare = String(r.objectName ?? '')
-        .replace(/\s*\(.*$/, '')
-        .toUpperCase();
-      return bare === upper && String(r.objectType ?? '').startsWith('TABL');
-    });
-    return match?.objectType;
-  }
-
   async resolveTablObjectUrlForWrite(
     name: string,
     options: { tablesEndpointAvailable?: boolean } = {},
@@ -853,7 +836,7 @@ export class AdtClient {
     const upper = name.toUpperCase();
     let actualType: string | undefined;
     try {
-      actualType = await this.searchTablSubtype(name);
+      actualType = await searchTablSubtype(this, name);
     } catch {
       // Subtype stays unknown; step 3 decides whether the fresh probe alone is trustworthy.
     }
