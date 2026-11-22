@@ -16,10 +16,6 @@ import { syntaxCheck } from '../adt/devtools.js';
 import type { SyntaxMessage } from '../adt/types.js';
 import { activationDetailMatchesObject } from './activation-results.js';
 
-export const TABL_CHECK_BEFORE_WRITE_HINT =
-  'Tip: on on-premise systems, SAPWrite action="update" with checkBeforeWrite=true (or SAP_CHECK_BEFORE_WRITE=true) ' +
-  "runs SAP's DDIC check on proposed TABL source before it is saved.";
-
 const CHECK_UNAVAILABLE_NOTE =
   'Note: the DDIC check of the inactive draft could not run, so only the activation messages above are available.';
 
@@ -49,7 +45,7 @@ export function activationTextsForObject(
 
 /** Check the inactive TABL draft at `objectUrl` after a failed activation. Returns the error
  *  messages this object's activation did not already report (with line and column), a short note
- *  when the check is unavailable, unprocessed or returns no report, or '' when it adds nothing.
+ *  when the check is unavailable or unprocessed, or '' when it adds nothing.
  *  The same text at different positions is kept; exact repeats are dropped. Never throws.
  *  `inline` renders one line for batch summaries, which join entries with commas. */
 export async function tablActivationDiagnostic(
@@ -61,7 +57,7 @@ export async function tablActivationDiagnostic(
   const separator = format === 'inline' ? ' — ' : '\n';
   let result: Awaited<ReturnType<typeof syntaxCheck>>;
   try {
-    result = await syntaxCheck(client.http, client.safety, objectUrl, { version: 'inactive', requireReport: true });
+    result = await syntaxCheck(client.http, client.safety, objectUrl, { version: 'inactive' });
   } catch {
     return `${separator}${CHECK_UNAVAILABLE_NOTE}`;
   }

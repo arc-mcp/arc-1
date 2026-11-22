@@ -1329,10 +1329,7 @@ export function runPreWriteLint(
 
 /** Types that carry source code that SAP's /checkruns endpoint can meaningfully compile.
  *  Metadata-write types (DOMA/DTEL/MSAG/DEVC/SKTD) have no /source/main artifact. TABL (DDL
- *  source) is checked at the URL the write path resolved (/ddic/tables/ or /ddic/structures/),
- *  only when the system is configured or detected as on-premise (verified there, not on BTP). */
-const TABL_CHECK_SKIPPED_NOTE =
-  'checkBeforeWrite was skipped for TABL: the DDIC source check runs only on systems configured or detected as on-premise.';
+ *  source) is checked at the URL the write path resolved (/ddic/tables/ or /ddic/structures/). */
 const SYNTAX_CHECKABLE_TYPES = new Set([
   'TABL',
   'PROG',
@@ -1368,12 +1365,6 @@ export async function runPreWriteSyntaxCheck(
   if (!enabled || !source) return '';
   const checkType = canonicalTablType(type.toUpperCase());
   if (!SYNTAX_CHECKABLE_TYPES.has(checkType)) return '';
-  if (checkType === 'TABL') {
-    // Resolved features apply a configured type over detection; BTP or an inconclusive `auto` skips only this check.
-    const systemType =
-      getCachedFeatures()?.systemType ?? (config.systemType !== 'auto' ? config.systemType : undefined);
-    if (systemType !== 'onprem') return TABL_CHECK_SKIPPED_NOTE;
-  }
 
   try {
     const result = await syntaxCheck(

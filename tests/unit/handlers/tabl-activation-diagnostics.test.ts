@@ -10,10 +10,8 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
-const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
-const { tablActivationDiagnostic, TABL_CHECK_BEFORE_WRITE_HINT } = await import(
-  '../../../src/handlers/tabl-activation-diagnostics.js'
-);
+const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
+const { tablActivationDiagnostic } = await import('../../../src/handlers/tabl-activation-diagnostics.js');
 
 const STRUCT = 'ZSJ_IT_TABL_S2';
 const TABLE = 'ZSJ_IT_TABL_T2';
@@ -100,7 +98,6 @@ describe('TABL activation diagnostics', () => {
       expect(text).toContain(
         '[line 5, column 14] Field BAD_FIELD: Component type or domain used not active or does not exist',
       );
-      expect(text).toContain(TABL_CHECK_BEFORE_WRITE_HINT);
       const [checkBody] = checkCalls();
       expect(checkBody).toContain(`adtcore:uri="${structUrl}"`);
       expect(checkBody).toContain('chkrun:version="inactive"');
@@ -200,7 +197,6 @@ describe('TABL activation diagnostics', () => {
     expect(result.isError).toBe(true);
     expect(text).toContain(`[${STRUCT}]\nDDIC check of the inactive draft:`);
     expect(text).toContain('[line 5, column 14] Field BAD_FIELD');
-    expect(text).toContain(TABL_CHECK_BEFORE_WRITE_HINT);
     expect(checkCalls()[0]).toContain(`adtcore:uri="${structUrl}"`);
   });
 
@@ -224,7 +220,6 @@ describe('TABL activation diagnostics', () => {
       expect(text).toMatch(
         /was not activated — DDIC check of the inactive draft: \[line 5, column 14\] Field BAD_FIELD[^\n]*; \[line 3, column 17\]/,
       );
-      expect(text).toContain(TABL_CHECK_BEFORE_WRITE_HINT);
       expect(checkCalls()[0]).toContain(`adtcore:uri="${structUrl}"`);
     });
 
@@ -434,13 +429,6 @@ describe('TABL activation diagnostics', () => {
   });
 
   describe('check response evidence', () => {
-    it('treats an empty 200 body as unavailable', async () => {
-      route({ check: () => mockResponse(200, '', { 'x-csrf-token': 'T' }) });
-      await expect(tablActivationDiagnostic(createClient(), structUrl, [])).resolves.toContain(
-        'Note: the DDIC check of the inactive draft could not run',
-      );
-    });
-
     it('returns nothing new for a processed report with zero messages', async () => {
       route({
         check: () =>
@@ -463,21 +451,6 @@ describe('TABL activation diagnostics', () => {
       await expect(tablActivationDiagnostic(createClient(), structUrl, [])).resolves.toBe(
         '\nDDIC check of the inactive draft:\n- [line 7, column 3] Legacy field error',
       );
-    });
-
-    it('SAPActivate keeps the activation error and adds the note for an empty check body', async () => {
-      route({
-        searchType: { [STRUCT]: 'TABL/DS' },
-        activation: () => activationFailureXml(STRUCT, structUrl),
-        check: () => mockResponse(200, '', { 'x-csrf-token': 'T' }),
-      });
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
-        type: 'TABL',
-        name: STRUCT,
-      });
-      const text = result.content[0]?.text ?? '';
-      expect(text).toContain(`TABL ${STRUCT} was not activated`);
-      expect(text).toContain('Note: the DDIC check of the inactive draft could not run');
     });
   });
 
@@ -503,9 +476,10 @@ describe('TABL activation diagnostics', () => {
         check: () => mockResponse(200, checkReportXml(structUrl), { 'x-csrf-token': 'T' }),
       });
 
-    it('checks proposed source at the resolved URL on a configured on-premise system', async () => {
+    it('checks proposed source at the resolved URL', async () => {
       routeUpdate();
-      const result = await update({ ...DEFAULT_CONFIG, systemType: 'onprem' });
+      // Default systemType=auto with no detection: TABL is checked like every other source type.
+      const result = await update(DEFAULT_CONFIG);
       const text = result.content[0]?.text ?? '';
       expect(text).toContain(`Successfully updated TABL ${STRUCT}`);
       expect(text).toContain('Server syntax check errors');
@@ -514,30 +488,6 @@ describe('TABL activation diagnostics', () => {
       expect(checkBody).toContain(`adtcore:uri="${structUrl}"`);
       expect(checkBody).toContain(`chkrun:uri="${structUrl}/source/main"`);
       expect(checkBody).toContain(Buffer.from(source, 'utf-8').toString('base64'));
-      expect(sourcePuts()).toHaveLength(1);
-    });
-
-    it('checks when detection confirmed on-premise under systemType=auto', async () => {
-      routeUpdate();
-      setCachedFeatures({ systemType: 'onprem' });
-      const result = await update({ ...DEFAULT_CONFIG, systemType: 'auto' });
-      expect(result.content[0]?.text).toContain('Line 5:14: Field BAD_FIELD');
-      expect(checkCalls()).toHaveLength(1);
-      expect(sourcePuts()).toHaveLength(1);
-    });
-
-    it.each([
-      ['BTP', { systemType: 'btp' }],
-      ['inconclusive auto', { systemType: 'auto' }],
-    ] as const)('skips only the check on %s and still writes', async (_label, overrides) => {
-      routeUpdate();
-      const result = await update({ ...DEFAULT_CONFIG, ...overrides });
-      const text = result.content[0]?.text ?? '';
-      expect(result.isError).toBeUndefined();
-      expect(text).toContain(`Successfully updated TABL ${STRUCT}`);
-      expect(text).toContain('checkBeforeWrite was skipped for TABL');
-      expect(text).not.toContain('BAD_FIELD');
-      expect(checkCalls()).toHaveLength(0);
       expect(sourcePuts()).toHaveLength(1);
     });
   });

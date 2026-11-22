@@ -712,7 +712,7 @@ keep their separate behavior.
 | `transport` | string | No | Transport request number. For `update` and `delete`, if omitted ARC-1 auto-uses the correction number returned by the SAP lock (if any). Explicit value takes precedence. |
 | `lintBeforeWrite` | boolean | No | Override server lint setting for this call (`false` to bypass pre-write lint) |
 | `preflightBeforeWrite` | boolean | No | Override deterministic RAP preflight checks for this call (`false` to bypass TABL/BDEF/DDLX/DDLS static checks) |
-| `checkBeforeWrite` | boolean | No | Override the server SAP-side pre-write syntax check. When true, diagnostics are appended but do not block the write; activation remains definitive. Covers source types including `TABL` DDL source, checked at the resolved table or structure URI only when the system is configured or detected as on-premise (skipped with a note otherwise). |
+| `checkBeforeWrite` | boolean | No | Override the server SAP-side pre-write syntax check. When true, diagnostics are appended but do not block the write; activation remains definitive. Covers source types including `TABL` DDL source, checked at the resolved table or structure URI. |
 | `dataType` | string | No | DOMA/DTEL: ABAP data type (`CHAR`, `NUMC`, `DEC`, ...) |
 | `length` | number | No | DOMA/DTEL: data type length |
 | `decimals` | number | No | DOMA/DTEL: decimal places |
@@ -1661,11 +1661,11 @@ For failed `TABL` activation (tables and structures, single, batch, and `SAPWrit
 SAP often reports only `Nametab for table … cannot be generated`. ARC-1 then checks the inactive
 draft at the object's own `/ddic/tables/` or `/ddic/structures/` URI and appends the messages that
 name the field, with line and column, skipping texts that object's activation already reported. The
-check only complements SAP's per-object status; it never changes it. If the check cannot run or
-returns no report, the original activation error is returned with a short note. With
-`ARC1_MINIMAL_ERRORS=true` the check is skipped. On on-premise systems, use `checkBeforeWrite=true`
-on `SAPWrite update` to see the same check on proposed TABL source before it is saved. `TTYP` and
-`DTEL` are not checked this way: their activation message already names the cause.
+check only complements SAP's per-object status; it never changes it. If the check cannot run, the
+original activation error is returned with a short note. With `ARC1_MINIMAL_ERRORS=true` the check
+is skipped. Use `checkBeforeWrite=true` on `SAPWrite update` to see the same check on proposed TABL
+source before it is saved. `TTYP` and `DTEL` are not checked this way: their activation message
+already names the cause.
 
 On a target resolved as BTP, the exact English missing-inbound-service error for an OData
 V4 UI binding at version `0001` triggers one fresh active-metadata read. Explicit published

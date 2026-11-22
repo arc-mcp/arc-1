@@ -49,11 +49,7 @@ import {
   sourceUrlForType,
 } from '../object-types.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
-import {
-  activationTextsForObject,
-  TABL_CHECK_BEFORE_WRITE_HINT,
-  tablActivationDiagnostic,
-} from '../tabl-activation-diagnostics.js';
+import { activationTextsForObject, tablActivationDiagnostic } from '../tabl-activation-diagnostics.js';
 import {
   buildCreateXml,
   createContentTypeForType,
@@ -1281,7 +1277,6 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
   // Skipped under minimal errors, where batchFailureMessage hides SAP diagnostics anyway.
   async function tablDiagnostic(type: string, objectUrl: string, activationTexts: string[]): Promise<string> {
     if (config.minimalErrors || canonicalTablType(type) !== 'TABL') return '';
-    if (!warnings.includes(TABL_CHECK_BEFORE_WRITE_HINT)) warnings.push(TABL_CHECK_BEFORE_WRITE_HINT);
     return tablActivationDiagnostic(client, objectUrl, activationTexts, 'inline');
   }
 

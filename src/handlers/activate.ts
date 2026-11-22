@@ -29,11 +29,7 @@ import { resolveIncludeGroupForMutation } from './include-group.js';
 import { functionGroupIncludeObjectUrl, normalizeObjectType, objectUrlForType } from './object-types.js';
 import { inspectServiceBindingPublishFailure } from './publish-failure.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
-import {
-  activationTextsForObject,
-  TABL_CHECK_BEFORE_WRITE_HINT,
-  tablActivationDiagnostic,
-} from './tabl-activation-diagnostics.js';
+import { activationTextsForObject, tablActivationDiagnostic } from './tabl-activation-diagnostics.js';
 import {
   enforceAllowedPackageForObjectUrl,
   inactiveSyntaxDiagnostic,
@@ -372,11 +368,7 @@ export async function handleSAPActivate(
       .map((d, i) => (d ? `\n[${objectsNeedingSyntaxCheck[i].name}]${d}` : ''))
       .filter(Boolean)
       .join('');
-    const tablHint =
-      tablDiagnostics && objects.some((o) => o.type === 'TABL') ? `\n\n${TABL_CHECK_BEFORE_WRITE_HINT}` : '';
-    return errorResult(
-      `Batch activation failed for: ${names}.${statusDetails}${globalMessages}${combinedDiag}${tablHint}`,
-    );
+    return errorResult(`Batch activation failed for: ${names}.${statusDetails}${globalMessages}${combinedDiag}`);
   }
 
   // Single activation (existing behavior). For TABL we use the write-path
@@ -479,7 +471,7 @@ export async function handleSAPActivate(
     type === 'TABL'
       ? minimalErrors
         ? ''
-        : `${await tablActivationDiagnostic(client, objectUrl, activationTextsForObject(result, objectUrl))}\n\n${TABL_CHECK_BEFORE_WRITE_HINT}`
+        : await tablActivationDiagnostic(client, objectUrl, activationTextsForObject(result, objectUrl))
       : hasActivationErrors
         ? ''
         : await inactiveSyntaxDiagnostic(client, type, name);
