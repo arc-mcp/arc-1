@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import { AdtApiError } from './errors.js';
 import { type FeedFilter, prepareDumpFilterQuery } from './feed-schema.js';
 import type { AdtHttpClient } from './http.js';
-import { assertCanonicalHostRelativeAdtPath } from './path-safety.js';
+import { assertCanonicalHostRelativeAdtPath, encodeAdtIdSegment } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type {
   DumpChapter,
@@ -296,7 +296,7 @@ export async function listDumps(
 export async function getDump(http: AdtHttpClient, safety: SafetyConfig, dumpId: string): Promise<DumpDetail> {
   checkOperation(safety, OperationType.Read, 'GetDump');
 
-  const safeId = normalizeAdtPathSegment(dumpId);
+  const safeId = encodeAdtIdSegment(dumpId);
 
   // Fetch XML metadata and formatted text in parallel
   const [xmlResp, textResp] = await Promise.all([
@@ -309,18 +309,6 @@ export async function getDump(http: AdtHttpClient, safety: SafetyConfig, dumpId:
   ]);
 
   return parseDumpDetail(xmlResp.body, textResp.body, dumpId);
-}
-
-/**
- * Idempotently URL-encode a dump ID. If the value already contains a `%`
- * sequence we treat it as already-encoded (the listing endpoint emits
- * `%20` for spaces); otherwise we encode it once. Trims surrounding
- * whitespace which would otherwise be encoded as `%20` and break lookup.
- */
-function normalizeAdtPathSegment(value: string): string {
-  const trimmed = String(value ?? '').trim();
-  if (!trimmed) return '';
-  return trimmed.includes('%') ? trimmed : encodeURIComponent(trimmed);
 }
 
 // ─── System Messages + Gateway Errors ──────────────────────────────
@@ -424,7 +412,7 @@ export async function getTraceHitlist(
 ): Promise<TraceHitlistEntry[]> {
   checkOperation(safety, OperationType.Read, 'GetTraceHitlist');
 
-  const safeTraceId = normalizeAdtPathSegment(traceId);
+  const safeTraceId = encodeAdtIdSegment(traceId);
   const resp = await http.get(`/sap/bc/adt/runtime/traces/abaptraces/${safeTraceId}/hitlist`, {
     Accept: 'application/xml',
   });
@@ -444,7 +432,7 @@ export async function getTraceStatements(
 ): Promise<TraceStatement[]> {
   checkOperation(safety, OperationType.Read, 'GetTraceStatements');
 
-  const safeTraceId = normalizeAdtPathSegment(traceId);
+  const safeTraceId = encodeAdtIdSegment(traceId);
   const resp = await http.get(`/sap/bc/adt/runtime/traces/abaptraces/${safeTraceId}/statements`, {
     Accept: 'application/xml',
   });
@@ -464,7 +452,7 @@ export async function getTraceDbAccesses(
 ): Promise<TraceDbAccess[]> {
   checkOperation(safety, OperationType.Read, 'GetTraceDbAccesses');
 
-  const safeTraceId = normalizeAdtPathSegment(traceId);
+  const safeTraceId = encodeAdtIdSegment(traceId);
   const resp = await http.get(`/sap/bc/adt/runtime/traces/abaptraces/${safeTraceId}/dbAccesses`, {
     Accept: 'application/xml',
   });

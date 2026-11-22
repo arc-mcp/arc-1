@@ -105,3 +105,31 @@ export function assertCanonicalHostRelativeAdtPath(rawPath: string, requiredPref
   }
   return canonical;
 }
+
+/**
+ * URL-encode a dump or trace ID as exactly one path segment, idempotently.
+ *
+ * The listing endpoints emit IDs that are already percent-encoded (`%20` for spaces), while a
+ * caller may also paste a raw ID. Decode once, then encode once: an encoded ID round-trips
+ * unchanged, a raw one is encoded, and nothing the caller sends can add a path segment or a query.
+ * An earlier version passed any value containing `%` through untouched, so an ID such as
+ * `%20/../../../sap/opu/odata/…?x=` left the dump path and read another resource on the host.
+ *
+ * Surrounding whitespace is trimmed; it would otherwise be encoded as `%20` and break the lookup.
+ */
+export function encodeAdtIdSegment(value: string): string {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return '';
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(trimmed);
+  } catch {
+    // A literal `%` that is not an escape: the value is raw, encode it as it stands.
+    decoded = trimmed;
+  }
+  // encodeURIComponent leaves dots alone, and the URL parser resolves a `.`/`..` segment.
+  if (decoded === '.' || decoded === '..') {
+    throw new Error(`Refusing "${value}": not a valid dump or trace id.`);
+  }
+  return encodeURIComponent(decoded);
+}
