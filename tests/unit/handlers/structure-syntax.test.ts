@@ -20,7 +20,13 @@ beforeEach(() => {
 const searchXml = (type: string, name: string) =>
   `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/x/y" adtcore:type="${type}" adtcore:name="${name} (Structure)"/></adtcore:objectReferences>`;
 
-function respond(tableStatus: number, structureStatus = 200, searchType = 'TABL/DS', check = fixture) {
+function respond(
+  tableStatus: number,
+  structureStatus = 200,
+  searchType = 'TABL/DS',
+  check = fixture,
+  searchStatus = 200,
+) {
   mockFetch.mockImplementation(async (url, options) => {
     if (options?.method === 'HEAD') return mockResponse(200, '', { 'x-csrf-token': 't' });
     if (options?.method === 'POST') {
@@ -28,7 +34,7 @@ function respond(tableStatus: number, structureStatus = 200, searchType = 'TABL/
       return mockResponse(200, check);
     }
     if (String(url).includes('/informationsystem/search'))
-      return mockResponse(200, searchXml(searchType, new URL(String(url)).searchParams.get('query') ?? ''));
+      return mockResponse(searchStatus, searchXml(searchType, new URL(String(url)).searchParams.get('query') ?? ''));
     expect(options?.method).toBe('GET');
     expect(String(url)).toMatch(/\/ddic\/(tables|structures)\//);
     return mockResponse(String(url).includes('/tables/') ? tableStatus : structureStatus, '');
@@ -105,6 +111,27 @@ it('refuses a transparent table served as a structure where /ddic/tables/ is abs
   expect(posts()).toHaveLength(0);
 });
 
+it('refuses when the search fails and only the structure fallback answers (7.50, discovery loaded)', async () => {
+  setCachedDiscovery(new Map([['/sap/bc/adt/oo/classes', ['application/xml']]]));
+  respond(404, 200, 'TABL/DS', fixture, 500);
+  const result = JSON.parse((await check('SAPRead', 'TABL')).content[0].text);
+  expect(result).toMatchObject({ checked: false });
+  expect(result.statusText).toContain('(SAP_BASIS 7.50/7.51)');
+  expect(posts()).toHaveLength(0);
+});
+
+it('fails closed with a discovery hint when the re-probe errors and discovery is not loaded', async () => {
+  respond(404, 200, 'TABL/DS', fixture, 500);
+  const before = mockFetch.getMockImplementation()!;
+  let tableProbes = 0; // the first /tables/ probe 404s; the resolver's re-probe fails
+  mockFetch.mockImplementation(async (url, options) =>
+    String(url).includes('/ddic/tables/') && ++tableProbes > 1 ? mockResponse(500, '') : before(url, options),
+  );
+  const result = JSON.parse((await check('SAPRead', 'TABL')).content[0].text);
+  expect(result.statusText).toContain('discovery is not loaded');
+  expect(posts()).toHaveLength(0);
+});
+
 it('skips the subtype search when discovery advertises /ddic/tables/', async () => {
   setCachedDiscovery(new Map([['/sap/bc/adt/ddic/tables', ['application/xml']]]));
   respond(404, 200, 'TABL/DT');
@@ -123,4 +150,7 @@ it('suggests version="inactive" only for a default-version stored check SAP did 
   expect(await text({})).toContain('re-run with version="inactive"');
   expect(await text({ version: 'active' })).not.toContain('version="inactive"');
   expect(await text({ source: 'define structure bapiret2 {}' })).not.toContain('version="inactive"');
+  respond(404, 404, 'TABL/DS', unprocessed);
+  const missing = JSON.parse((await check('SAPRead', 'TABL')).content[0].text).messages[0].text as string;
+  expect(missing).not.toContain('version="inactive"');
 });

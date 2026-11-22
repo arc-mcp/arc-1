@@ -1,6 +1,6 @@
 import type { AdtClient } from '../adt/client.js';
 import { syntaxCheck } from '../adt/devtools.js';
-import { AdtApiError, AdtSafetyError } from '../adt/errors.js';
+import { AdtApiError } from '../adt/errors.js';
 import { syntaxCheckBatch } from '../adt/syntax-batch.js';
 import type { SyntaxCheckResult } from '../adt/types.js';
 import { isTablesEndpointAvailable } from './feature-cache.js';
@@ -58,11 +58,16 @@ export async function handleSyntaxCheck(client: AdtClient, args: Record<string, 
     objectUrl = objectUrlForType('TABL/DS', name);
     absent = await isConfirmedAbsent(client, objectUrl);
     // 7.50/7.51 have no /ddic/tables/ and serve transparent tables there as TABL/DS; a check reports false errors.
-    if (!absent && isTablesEndpointAvailable() !== true && (await notConfirmedStructure(client, name))) {
+    const tablesEndpoint = isTablesEndpointAvailable();
+    if (!absent && tablesEndpoint !== true && !(await isConfirmedStructure(client, name, objectUrl))) {
       return notChecked(
         { hasErrors: false, messages: [], checked: false },
-        `TABL ${name} is not confirmed as a structure, and a transparent table has no ADT source check without /sap/bc/adt/ddic/tables/ (SAP_BASIS 7.50/7.51)`,
-        'Check transparent tables in SE11 on this release.',
+        tablesEndpoint === false
+          ? `TABL ${name} is not confirmed as a structure, and a transparent table has no ADT source check without /sap/bc/adt/ddic/tables/ (SAP_BASIS 7.50/7.51)`
+          : `TABL ${name} is not confirmed as a structure, and ADT discovery is not loaded, so a system without /sap/bc/adt/ddic/tables/ (7.50/7.51) cannot be ruled out`,
+        tablesEndpoint === false
+          ? 'Check transparent tables in SE11 on this release.'
+          : 'Retry the check; if it persists, verify repository search access for this user.',
       );
     }
   }
@@ -91,7 +96,7 @@ export async function handleSyntaxCheck(client: AdtClient, args: Record<string, 
   if (!result.checked) {
     // A never-activated object has no active version to check.
     const advice =
-      !version && content === undefined
+      !version && content === undefined && !absent
         ? `${DEFAULT_ADVICE} If it was never activated, re-run with version="inactive".`
         : undefined;
     return notChecked(result, result.statusText, advice);
@@ -99,13 +104,12 @@ export async function handleSyntaxCheck(client: AdtClient, args: Record<string, 
   return textResult(toolJson(result));
 }
 
-/** Search-first resolver: refuses a TABL/DT, or a subtype it cannot confirm, where /ddic/tables/ may be absent. */
-async function notConfirmedStructure(client: AdtClient, name: string): Promise<boolean> {
+/** Search-first resolver: only its /ddic/structures/ answer confirms a structure; any error fails closed. */
+async function isConfirmedStructure(client: AdtClient, name: string, structUrl: string): Promise<boolean> {
   try {
-    await client.resolveTablObjectUrlForWrite(name, { tablesEndpointAvailable: false });
+    return (await client.resolveTablObjectUrlForWrite(name, { tablesEndpointAvailable: false })) === structUrl;
+  } catch {
     return false;
-  } catch (err) {
-    return err instanceof AdtSafetyError;
   }
 }
 
