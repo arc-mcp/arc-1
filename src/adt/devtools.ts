@@ -60,6 +60,8 @@ export async function syntaxCheck(
     artifactContentType?: 'application/json' | 'application/vnd.sap.adt.blues.v1+xml; charset=utf-8';
     /** Defaults to `<objectUrl>/source/main`; metadata-only objects (SOD1/SOD2) check the object URI itself. */
     artifactUri?: string;
+    /** Treat a response with neither a check report nor a message (e.g. an empty 200 body) as unchecked. */
+    requireReport?: boolean;
   },
   requestOptions?: AdtRequestOptions,
 ): Promise<SyntaxCheckResult> {
@@ -110,7 +112,19 @@ export async function syntaxCheck(
     requestOptions,
   );
 
-  return parseSyntaxCheckResult(resp.body);
+  const result = parseSyntaxCheckResult(resp.body);
+  if (options?.requireReport && result.checked && result.messages.length === 0 && !hasCheckReport(resp.body)) {
+    return { ...result, checked: false, statusText: 'SAP returned no syntax-check report or messages.' };
+  }
+  return result;
+}
+
+function hasCheckReport(xml: string): boolean {
+  try {
+    return findDeepNodes(parseXml(xml), 'checkReport').length > 0;
+  } catch {
+    return false;
+  }
 }
 
 export interface PrettyPrinterSettings {

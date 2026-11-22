@@ -257,7 +257,7 @@ and [its contract](docs/plans/xsuaa-target-authorization.md); [ADR-0011](docs/ad
 | Test skip reason | `tests/helpers/skip-policy.ts`, `tests/e2e/helpers.ts`, `docs/integration-test-skips.md`, `scripts/ci/summarize-skips.mjs` — keep all four in sync |
 | Live ADT type probe | `scripts/probe-adt-types.ts` (`npm run probe`), `src/probe/`, `tests/unit/probe/replay.test.ts` |
 | CDS impact classifier | `src/adt/cds-impact.ts`, `src/adt/codeintel.ts`, tests |
-| Inactive syntax check / post-save check | `src/adt/devtools.ts`, `src/handlers/write-helpers.ts` (`tryPostSaveSyntaxCheck`) |
+| Inactive syntax check / post-save check | `src/adt/devtools.ts`, `src/handlers/write-helpers.ts` (`tryPostSaveSyntaxCheck`), `src/handlers/tabl-activation-diagnostics.ts` — failed TABL activation checks the resolved `/tables/` or `/structures/` draft even after errors |
 | Procedural edits (`edit_unit` / `add_unit` / `edit_content`) | `src/context/{unit-surgery,content-splice}.ts`, `src/handlers/write/unit-surgery.ts` — PROG/INCL only; `edit_content` requires a fresh hash and unique exact match; lock before read; `add_unit` appends at physical EOF without moving INCLUDEs; incomplete MODULEs are refused. |
 | Method-level surgery | `src/context/method-surgery.ts` — `<localclass>~<method>` specifiers; ambiguous bare names error |
 | Program text-pool activation (`REPT` / `PROG/PX`, #940) | `src/handlers/{object-types,activate}.ts`, `src/adt/text-elements.ts` — use the pool URI and its packageRef. Evidence and limitations: `docs/research/abap-types/types/rept.md`. |

@@ -50,6 +50,11 @@ import {
 } from '../object-types.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
 import {
+  activationTextsForObject,
+  TABL_CHECK_BEFORE_WRITE_HINT,
+  tablActivationDiagnostic,
+} from '../tabl-activation-diagnostics.js';
+import {
   buildCreateXml,
   createContentTypeForType,
   DOMA_WRITE_UNAVAILABLE_HINT,
@@ -1243,10 +1248,16 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         const outcome = await activate(client.http, client.safety, plan.objectUrl, { name: plan.name });
         if (!outcome.success) {
           entry.activation = 'failed';
+          // Preaudit can add other objects: only this entry's details, among the messages shown, de-duplicate.
+          const diagnostic = await tablDiagnostic(
+            plan.type,
+            plan.objectUrl,
+            activationTextsForObject(outcome, plan.objectUrl, outcome.messages),
+          );
           failBatchEntry(
             entry,
             phase,
-            `activation failed: ${batchFailureMessage(outcome.messages.join('; '), config.minimalErrors)}`,
+            `activation failed: ${batchFailureMessage(`${outcome.messages.join('; ')}${diagnostic}`, config.minimalErrors)}`,
           );
           break;
         }
@@ -1264,6 +1275,14 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         // Cache bookkeeping must not replace the batch's recorded persistence outcomes.
       }
     }
+  }
+
+  // A failed TABL activation names no field or line; SAP's check of the inactive draft does.
+  // Skipped under minimal errors, where batchFailureMessage hides SAP diagnostics anyway.
+  async function tablDiagnostic(type: string, objectUrl: string, activationTexts: string[]): Promise<string> {
+    if (config.minimalErrors || canonicalTablType(type) !== 'TABL') return '';
+    if (!warnings.includes(TABL_CHECK_BEFORE_WRITE_HINT)) warnings.push(TABL_CHECK_BEFORE_WRITE_HINT);
+    return tablActivationDiagnostic(client, objectUrl, activationTexts, 'inline');
   }
 
   if (activateAtEnd && writtenPlans.length > 0) {
@@ -1297,9 +1316,15 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           (detail) => detail.severity === 'error' && activationDetailMatchesObject(detail.uri, plan.objectUrl),
         );
         plan.result.activation = errors.length ? 'failed' : 'unknown';
+        // De-duplicate only against the errors this entry displays; status stays SAP's attribution.
+        const diagnostic = await tablDiagnostic(
+          plan.type,
+          plan.objectUrl,
+          errors.map((detail) => detail.text),
+        );
         const message = errors.length
-          ? batchFailureMessage(errors.map((detail) => detail.text).join('; '), config.minimalErrors)
-          : 'Activation remains unknown: batch activation failed without an object-specific error.';
+          ? batchFailureMessage(`${errors.map((detail) => detail.text).join('; ')}${diagnostic}`, config.minimalErrors)
+          : `Activation remains unknown: batch activation failed without an object-specific error.${diagnostic}`;
         failBatchEntry(plan.result, 'activate', message);
       }
     } catch (err) {

@@ -30,6 +30,11 @@ import { functionGroupIncludeObjectUrl, normalizeObjectType, objectUrlForType } 
 import { inspectServiceBindingPublishFailure } from './publish-failure.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
 import {
+  activationTextsForObject,
+  TABL_CHECK_BEFORE_WRITE_HINT,
+  tablActivationDiagnostic,
+} from './tabl-activation-diagnostics.js';
+import {
   enforceAllowedPackageForObjectUrl,
   inactiveSyntaxDiagnostic,
   SERVICEBINDING_V2_ACCEPT,
@@ -110,6 +115,7 @@ export async function handleSAPActivate(
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
   ppEnabled: boolean,
+  minimalErrors = false,
 ): Promise<ToolResult> {
   const action = String(args.action ?? 'activate');
   const name = String(args.name ?? '');
@@ -349,15 +355,28 @@ export async function handleSAPActivate(
     }
     // On batch failure enrich with per-object inactive-version syntax errors —
     // only for objects whose activation returned no error details, to avoid duplicating messages.
-    const objectsNeedingSyntaxCheck = objects.filter((_o, i) => batchStatuses[i].status !== 'error');
+    // TABL always runs the check on its resolved URL: its activation errors omit the field and line.
+    // Each TABL is de-duplicated only against its own activation details. Minimal errors skip it.
+    const tablDiagnostics = !minimalErrors;
+    const objectsNeedingSyntaxCheck = objects.filter((o, i) =>
+      o.type === 'TABL' ? tablDiagnostics : batchStatuses[i].status !== 'error',
+    );
     const diagnostics = await Promise.all(
-      objectsNeedingSyntaxCheck.map((o) => inactiveSyntaxDiagnostic(client, o.type, o.name)),
+      objectsNeedingSyntaxCheck.map((o) =>
+        o.type === 'TABL'
+          ? tablActivationDiagnostic(client, o.url, activationTextsForObject(result, o.url))
+          : inactiveSyntaxDiagnostic(client, o.type, o.name),
+      ),
     );
     const combinedDiag = diagnostics
       .map((d, i) => (d ? `\n[${objectsNeedingSyntaxCheck[i].name}]${d}` : ''))
       .filter(Boolean)
       .join('');
-    return errorResult(`Batch activation failed for: ${names}.${statusDetails}${globalMessages}${combinedDiag}`);
+    const tablHint =
+      tablDiagnostics && objects.some((o) => o.type === 'TABL') ? `\n\n${TABL_CHECK_BEFORE_WRITE_HINT}` : '';
+    return errorResult(
+      `Batch activation failed for: ${names}.${statusDetails}${globalMessages}${combinedDiag}${tablHint}`,
+    );
   }
 
   // Single activation (existing behavior). For TABL we use the write-path
@@ -452,7 +471,18 @@ export async function handleSAPActivate(
   // especially useful when SAP returned <ioc:inactiveObjects> with no <msg> detail.
   // Skip when activation already returned error details to avoid duplicating the same messages.
   const hasActivationErrors = result.details.some((d) => d.severity === 'error');
-  const syntaxDetail = hasActivationErrors ? '' : await inactiveSyntaxDiagnostic(client, type, name);
+  // TABL activation errors omit the field and line, so its draft check runs even after errors,
+  // on the resolved /tables/ or /structures/ URL (the generic URL 404s for structures).
+  // Minimal errors hide SAP diagnostics, so the extra TABL check is skipped there. Preaudit can
+  // add other objects to the response; only this object's own details may de-duplicate.
+  const syntaxDetail =
+    type === 'TABL'
+      ? minimalErrors
+        ? ''
+        : `${await tablActivationDiagnostic(client, objectUrl, activationTextsForObject(result, objectUrl))}\n\n${TABL_CHECK_BEFORE_WRITE_HINT}`
+      : hasActivationErrors
+        ? ''
+        : await inactiveSyntaxDiagnostic(client, type, name);
   let activationError = `Activation failed for ${type} ${name}.\n${formatActivationMessages(result)}${syntaxDetail}`;
   if (type === 'DDLS') {
     activationError += `\n\n${await buildCdsActivationDependencyHint(client, name, objectUrl)}`;

@@ -717,7 +717,14 @@ export function getToolRegistry(): ToolRegistry {
   reg('SAPQuery', (ctx) => handleSAPQuery(ctx.client, ctx.args, ctx.config.minimalErrors));
   reg('SAPWrite', (ctx) => handleSAPWrite(ctx.client, ctx.args, ctx.config, ctx.cache, ctx.cacheSecurity));
   reg('SAPActivate', (ctx) =>
-    handleSAPActivate(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity, ctx.config.ppEnabled),
+    handleSAPActivate(
+      ctx.client,
+      ctx.args,
+      ctx.cache,
+      ctx.cacheSecurity,
+      ctx.config.ppEnabled,
+      ctx.config.minimalErrors,
+    ),
   );
   reg('SAPNavigate', async (ctx) =>
     ctx.args.action === 'relations'

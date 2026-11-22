@@ -1129,6 +1129,8 @@ hidden raw-HTTP scheduling. [Plan](https://github.com/arc-mcp/arc-1/blob/main/do
 **Remaining gap.** [#1011](https://github.com/arc-mcp/arc-1/pull/1011) verified a readable advertised
 DOMA log on 758. Saved logs have no verified latest-attempt correlation. Two model evaluations
 misinterpreted historical evidence despite explicit caveats; other types/releases remain unqualified.
+A failed `TABL` activation now appends SAP's check of the inactive draft (field, line, column; verified
+on 7.54), and `TTYP`/`DTEL` activation already names the cause, so the log is not needed for those cases.
 
 **Resume with.** A concrete historical-log workflow that preserves uncertainty, or independent
 native correlation evidence. Keep the experiment deferred and never label saved messages as proof
