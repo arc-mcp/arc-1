@@ -74,36 +74,23 @@ bundles, see [docker.md](docker.md#self-signed-or-internal-ca-certificates).
 
 #### Self-signed certificate or access by IP address without `SAP_INSECURE`
 
-For a direct SAP connection, Node verifies both the certificate chain and the identity in `SAP_URL`.
+1. Trust the certificate, or the CA that issued it: set `NODE_EXTRA_CA_CERTS` to its PEM file and
+   restart ARC-1.
+2. Use a host name that is in the certificate in `SAP_URL`. If it does not resolve, add a hosts entry
+   (Docker: `--add-host <name>:<ip>`).
 
-1. **Trust the issuer.** For an internal CA, obtain the trusted root from the SAP Basis team and
-   configure the SAP endpoint to serve its intermediate certificates. If the endpoint cannot be
-   changed, put the intermediate and the root into the same PEM file. For a self-signed leaf,
-   obtain that certificate and confirm its fingerprint with Basis. Set `NODE_EXTRA_CA_CERTS` to
-   the PEM file in the environment that starts ARC-1. Restart the process after changing it.
-   A chain that Node already trusts needs no extra CA.
-2. **Match the address.** Use a DNS name listed in the certificate. Node can also match the common
-   name when the certificate has no DNS subject alternative name. An IP address in `SAP_URL` needs
-   a matching IP subject alternative name. If the certified DNS name does not resolve, map it to
-   the SAP address in the hosts file or with Docker's `--add-host <name>:<ip>`.
+Chain, name and expiry stay checked. If the connection still fails, the error names the reason:
 
-Certificate chain, name and expiry checks stay active. A failed tool call can report these reasons.
+| Error contains | Meaning |
+|---|---|
+| `DEPTH_ZERO_SELF_SIGNED_CERT` | The self-signed certificate is not trusted: check step 1. |
+| `UNABLE_TO_VERIFY_LEAF_SIGNATURE` / `SELF_SIGNED_CERT_IN_CHAIN` | The issuing CA or an intermediate certificate is not trusted: add it to the PEM file. |
+| `ERR_TLS_CERT_ALTNAME_INVALID` | The host or IP in `SAP_URL` is not in the certificate: check step 2. |
 
-| Error text contains | Meaning |
-|---------------------|---------|
-| `DEPTH_ZERO_SELF_SIGNED_CERT: self-signed certificate` | The endpoint presented a self-signed leaf that Node does not trust. Check the PEM file and restart ARC-1. |
-| `UNABLE_TO_VERIFY_LEAF_SIGNATURE` | Node could not verify the leaf signature. Check for a missing intermediate on the server (or add it to the PEM file) and confirm that Node trusts the root. |
-| `SELF_SIGNED_CERT_IN_CHAIN` | The chain ends at a self-signed certificate that Node does not trust. Confirm the root with Basis. |
-| `ERR_TLS_CERT_ALTNAME_INVALID` | The host or IP in `SAP_URL` does not match the certificate. Check step 2. |
-| `ECONNREFUSED` / `ENOTFOUND` | The connection was refused, or DNS lookup failed, respectively. |
-
-With `ARC1_MINIMAL_ERRORS=true` (the default in HTTP mode) the client sees only the code, for example
-`ADT network error (ERR_TLS_CERT_ALTNAME_INVALID)`, because the full reason can name hosts, IP
-addresses and certificates. Audit events record only the length of an error text, so to see the full
-reason run one call with `arc1-cli call` or over stdio, where minimal errors are off by default.
+With `ARC1_MINIMAL_ERRORS=true` (the default in HTTP mode) the client sees only the code.
 
 !!! danger "Avoid `SAP_INSECURE=true` outside isolated development"
-    `SAP_INSECURE=true` disables all SAP TLS verification — it accepts *any* certificate (masking man-in-the-middle), not just self-signed ones; ARC-1 only prints one startup warning when it is on. The bundled `manifest.yml` / `mta.yaml` keep it `"false"`; use `NODE_EXTRA_CA_CERTS` for an internal CA instead of disabling verification.
+    `SAP_INSECURE=true` disables all SAP TLS verification — it accepts *any* certificate (masking man-in-the-middle), not just self-signed ones, and ARC-1 logs nothing when it is on. The bundled `manifest.yml` / `mta.yaml` keep it `"false"`; use `NODE_EXTRA_CA_CERTS` for an internal CA instead of disabling verification.
 
 !!! warning "Treat data-preview gzip as a reviewed WAF exception"
     A bare 403 does not prove a WAF block; a rejected CSRF/session pair can produce the same generic status. Confirm the matched gateway rule in its audit log, and prefer a rule exclusion narrowed to the exact authenticated ADT route, method, variable, and rule. `SAP_GZIP_DATAPREVIEW_BODY=true` is the fallback when that infrastructure cannot be changed promptly: it deliberately changes the wire representation and can prevent a raw-byte body scanner from seeing the SQL/filter text. It does not alter ARC-1's `SAP_ALLOW_DATA_PREVIEW`, `SAP_ALLOW_FREE_SQL`, user-scope, or SAP-authorization checks. Startup logs expose the resolved gzip state and warn if both data-preview gates make it unreachable.

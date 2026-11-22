@@ -1518,8 +1518,21 @@ export class AdtHttpClient {
   }
 
   /**
-   * Send the full target URL as the request path to the BTP Connectivity proxy.
-   * Cloud Connector rejects undici ProxyAgent's CONNECT tunnel for HTTP targets (405).
+   * Execute an HTTP request through the BTP connectivity proxy using standard
+   * HTTP proxy protocol (RFC 7230).
+   *
+   * Standard HTTP proxying sends the full URL as the request path:
+   *   GET http://target:port/path HTTP/1.1
+   *   Host: target:port
+   *   Proxy-Authorization: Bearer <token>
+   *
+   * This is different from CONNECT tunneling (which undici 8.x ProxyAgent uses).
+   * The BTP connectivity proxy (Cloud Connector) only supports standard proxying
+   * for HTTP targets, returning 405 Method Not Allowed for CONNECT requests.
+   *
+   * Uses undici.Client connected to the proxy host. The Client sends requests
+   * to the proxy, and by setting the `path` to the full target URL, the proxy
+   * forwards it to the Cloud Connector → on-premise SAP system.
    */
   private async doProxyRequest(
     url: string,
@@ -1570,23 +1583,17 @@ export class AdtHttpClient {
     try {
       const signal = requestSignal(options);
       options?.attemptBudget?.consume();
-      const resp = await client
-        .request({
-          method: method as Dispatcher.HttpMethod,
-          // Full URL as path — standard HTTP proxy protocol
-          path: url,
-          headers: proxyHeaders,
-          body: body ?? undefined,
-          signal,
-          // A reused client's first request must not determine later requests' parser timeouts.
-          // The per-request abort signal still enforces fetchTimeoutMs and the caller deadline.
-          ...(options?.fetchTimeoutMs === undefined ? {} : { headersTimeout: 0, bodyTimeout: 0 }),
-        })
-        .catch((cause: unknown) => {
-          // Match fetch's error boundary so partial results that embed err.message cannot expose proxy addresses.
-          if (cause instanceof Error && (cause.name === 'AbortError' || cause.name === 'TimeoutError')) throw cause;
-          throw new TypeError('fetch failed', { cause });
-        });
+      const resp = await client.request({
+        method: method as Dispatcher.HttpMethod,
+        // Full URL as path — standard HTTP proxy protocol
+        path: url,
+        headers: proxyHeaders,
+        body: body ?? undefined,
+        signal,
+        // A reused client's first request must not determine later requests' parser timeouts.
+        // The per-request abort signal still enforces fetchTimeoutMs and the caller deadline.
+        ...(options?.fetchTimeoutMs === undefined ? {} : { headersTimeout: 0, bodyTimeout: 0 }),
+      });
 
       const isNullBodyStatus = resp.statusCode === 204 || resp.statusCode === 205 || resp.statusCode === 304;
       responseOwnsClient =

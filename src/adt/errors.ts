@@ -1122,13 +1122,6 @@ export class AdtNetworkError extends AdtError {
     const message = inner.message || first?.message || '';
     return code || message ? { code, message } : undefined;
   }
-
-  /** Only symbolic transport codes belong in minimal client messages. */
-  get causeCode(): string | undefined {
-    if (this.isTimeout || this.isCancelled) return undefined;
-    const code = this.lowLevelCause?.code ?? errorCode(this.cause);
-    return code && /^[A-Z][A-Z0-9_]{0,63}$/.test(code) ? code : undefined;
-  }
 }
 
 function errorCode(err: unknown): string | undefined {

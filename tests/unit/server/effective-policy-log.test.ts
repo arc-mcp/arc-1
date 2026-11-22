@@ -11,20 +11,11 @@ function makeConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
 }
 
 describe('logEffectivePolicy', () => {
-  it.each([true, false])('reports both plugin switches in the structured log (execute=%s)', (execute) => {
+  it('emits structured log with safety fields and data-preview gzip state', () => {
     const logger = new Logger('text', 'info');
     const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
 
-    logEffectivePolicy(
-      makeConfig({
-        allowWrites: true,
-        allowPluginExecute: execute,
-        allowPluginRawWrites: !execute,
-        allowedPackages: ['Z*'],
-      }),
-      {},
-      logger,
-    );
+    logEffectivePolicy(makeConfig({ allowWrites: true, allowedPackages: ['Z*'] }), {}, logger);
 
     // Structured log
     expect(infoSpy).toHaveBeenCalledWith(
@@ -35,8 +26,8 @@ describe('logEffectivePolicy', () => {
         allowFreeSQL: false,
         allowTransportWrites: false,
         allowGitWrites: false,
-        allowPluginExecute: execute,
-        allowPluginRawWrites: !execute,
+        allowPluginExecute: false,
+        allowPluginRawWrites: false,
         gzipDataPreviewBody: false,
         // Exact names never reach ordinary startup logs; count + fingerprint do.
         blockedDataSourcesEnabled: false,
@@ -49,7 +40,7 @@ describe('logEffectivePolicy', () => {
     );
   });
 
-  it.each([true, false])('emits human-readable YES/NO values (plugin execute=%s)', (execute) => {
+  it('emits human-readable one-liner with YES/NO values', () => {
     const logger = new Logger('text', 'info');
     const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
 
@@ -60,8 +51,7 @@ describe('logEffectivePolicy', () => {
         gzipDataPreviewBody: true,
         blockedDataSources: ['USR02'],
         allowTransportWrites: true,
-        allowPluginExecute: execute,
-        allowPluginRawWrites: !execute,
+        allowPluginExecute: true,
         allowedPackages: ['$TMP', 'Z*'],
       }),
       {},
@@ -76,8 +66,8 @@ describe('logEffectivePolicy', () => {
     expect(humanLine).toContain('sql=NO');
     expect(humanLine).toContain('transports=YES');
     expect(humanLine).toContain('git=NO');
-    expect(humanLine).toContain(execute ? 'pluginExecute=YES' : 'pluginExecute=NO');
-    expect(humanLine).toContain(execute ? 'pluginRawWrites=NO' : 'pluginRawWrites=YES');
+    expect(humanLine).toContain('pluginExecute=YES');
+    expect(humanLine).toContain('pluginRawWrites=NO');
     expect(humanLine).toContain('gzipDataPreview=YES');
     expect(humanLine).toContain('blockedDataSources=1');
 
@@ -96,8 +86,6 @@ describe('logEffectivePolicy', () => {
 
     const sources: Record<string, ConfigSource> = {
       allowWrites: { env: 'SAP_ALLOW_WRITES' },
-      allowPluginExecute: { env: 'SAP_ALLOW_PLUGIN_EXECUTE' },
-      allowPluginRawWrites: { env: 'SAP_ALLOW_PLUGIN_RAW_WRITES' },
       gzipDataPreviewBody: { env: 'SAP_GZIP_DATAPREVIEW_BODY' },
       blockedDataSources: { env: 'SAP_BLOCKED_DATA_SOURCES' },
       allowedPackages: 'default',
@@ -110,8 +98,6 @@ describe('logEffectivePolicy', () => {
       'effective-policy sources',
       expect.objectContaining({
         allowWrites: 'env SAP_ALLOW_WRITES',
-        allowPluginExecute: 'env SAP_ALLOW_PLUGIN_EXECUTE',
-        allowPluginRawWrites: 'env SAP_ALLOW_PLUGIN_RAW_WRITES',
         gzipDataPreviewBody: 'env SAP_GZIP_DATAPREVIEW_BODY',
         blockedDataSources: 'env SAP_BLOCKED_DATA_SOURCES',
         allowedPackages: 'default',
