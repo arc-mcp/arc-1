@@ -26,6 +26,8 @@ describe('logEffectivePolicy', () => {
         allowFreeSQL: false,
         allowTransportWrites: false,
         allowGitWrites: false,
+        allowPluginExecute: false,
+        allowPluginRawWrites: false,
         gzipDataPreviewBody: false,
         // Exact names never reach ordinary startup logs; count + fingerprint do.
         blockedDataSourcesEnabled: false,
@@ -49,6 +51,7 @@ describe('logEffectivePolicy', () => {
         gzipDataPreviewBody: true,
         blockedDataSources: ['USR02'],
         allowTransportWrites: true,
+        allowPluginExecute: true,
         allowedPackages: ['$TMP', 'Z*'],
       }),
       {},
@@ -63,6 +66,8 @@ describe('logEffectivePolicy', () => {
     expect(humanLine).toContain('sql=NO');
     expect(humanLine).toContain('transports=YES');
     expect(humanLine).toContain('git=NO');
+    expect(humanLine).toContain('pluginExecute=YES');
+    expect(humanLine).toContain('pluginRawWrites=NO');
     expect(humanLine).toContain('gzipDataPreview=YES');
     expect(humanLine).toContain('blockedDataSources=1');
 

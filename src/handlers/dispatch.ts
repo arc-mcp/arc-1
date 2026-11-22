@@ -161,7 +161,8 @@ function formatErrorForLLM(
   config: ServerConfig,
   isSamlBearer: boolean,
 ): string {
-  const base = buildBaseErrorMessage(err, message, tool, args, config, isSamlBearer);
+  const shown = err instanceof AdtNetworkError ? networkClientMessage(err, config.minimalErrors) : message;
+  const base = buildBaseErrorMessage(err, shown, tool, args, config, isSamlBearer);
   // Handler-attached remediation hints (e.g., CDS delete blocker list) always
   // appear last so the message reads "what happened → diagnostics → how to fix".
   if (err instanceof AdtError && err.extraHint && !base.includes(err.extraHint)) {
@@ -447,6 +448,16 @@ function buildBaseErrorMessage(
   }
 
   return message;
+}
+
+/** Append undici's reason (`fetch failed (CODE: message)`); minimal mode keeps only the code, as it can name hosts. */
+function networkClientMessage(err: AdtNetworkError, minimal: boolean): string {
+  const cause = err.lowLevelCause;
+  if (!cause || err.isTimeout || err.isCancelled) return err.message;
+  if (minimal) {
+    return `ADT network error${cause.code ? ` (${cause.code})` : ''}. The full reason is hidden because ARC1_MINIMAL_ERRORS=true.`;
+  }
+  return `${err.message} (${cause.code && cause.message ? `${cause.code}: ${cause.message}` : cause.code || cause.message})`;
 }
 
 function formatMinimalAdtError(err: AdtApiError): string {

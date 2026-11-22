@@ -1111,6 +1111,22 @@ export class AdtNetworkError extends AdtError {
   get isCancelled(): boolean {
     return this.cause?.name === 'AbortError';
   }
+
+  /** undici's reason one level below `fetch failed`; its text can name hosts, IPs and certificates. */
+  get lowLevelCause(): { code?: string; message: string } | undefined {
+    const inner = this.cause?.cause;
+    if (!(inner instanceof Error)) return undefined;
+    // Dual-stack connects reject with an AggregateError whose own message is empty.
+    const first = inner instanceof AggregateError ? inner.errors.find((e) => e instanceof Error) : undefined;
+    const code = errorCode(inner) ?? errorCode(first);
+    const message = inner.message || first?.message || '';
+    return code || message ? { code, message } : undefined;
+  }
+}
+
+function errorCode(err: unknown): string | undefined {
+  const code = (err as { code?: unknown } | undefined)?.code;
+  return typeof code === 'string' && code ? code : undefined;
 }
 
 /** Safety system blocked the operation */
