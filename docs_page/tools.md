@@ -1301,13 +1301,16 @@ SAPWrite(action="generate", generator="ui-service", type="TABL", name="ZTRAVEL",
   effective input; nothing is created. The real run reads every planned object back and reports it as
   `found`, `missing`, `wrong_package`, `wrong_transport` or `unknown`. ARC-1 never deletes anything.
 - **Renames** go in `source`: JSON with only the keys of the dry run's `input` you want to change.
-  Keys SAP did not propose, `metadata` and the table name are refused.
+  Keys SAP did not propose, `metadata`, the table name and SAP's own bookkeeping (`sessionId`, `…Orgn`)
+  are refused.
 - **Safety.** Writes must be enabled and the package must be in `SAP_ALLOWED_PACKAGES`; both are
   checked before any SAP request, dry runs included. Local packages (`$TMP`, `$`-packages, BTP `ZLOCAL`
   subpackages) take no transport; a package that records changes needs an existing, modifiable
-  transport request (not a task) that passes `SAP_ALLOWED_TRANSPORTS`. The table must exist, SAP's
-  validation must answer `OK`, and every planned object must be new. The run is sent once and never
-  replayed. Block the action alone with `SAP_DENY_ACTIONS=SAPWrite.generate`.
+  transport request (not a task) that passes `SAP_ALLOWED_TRANSPORTS`. The table must exist and have been
+  activated, SAP's validation must answer `OK`, SAP must plan every object as a creation, and every
+  planned object must be new. The run is sent once, never replayed or redirected; any answer other than
+  2xx is reported as a failure with the read-back. Block the action alone with
+  `SAP_DENY_ACTIONS=SAPWrite.generate`.
 - **Releases.** Verified on SAP_BASIS 7.58 and 8.16 and on BTP ABAP Environment; 7.50 has no
   generators and gets a clear refusal. On 8.16 SAP proposes suffixed names when the default names
   are taken, so a second run creates a second stack; on 7.58 SAP's validation refuses it.

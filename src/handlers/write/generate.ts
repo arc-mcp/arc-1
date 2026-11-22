@@ -64,6 +64,11 @@ async function checkTarget(client: AdtClient, table: string, packageName: string
   // Asks about a new object: asked about the table, SAP reports the request that holds the table (#1202).
   const newObject = `/sap/bc/adt/ddic/ddl/sources/zr_${encodeURIComponent(table.toLowerCase())}`;
   const info = await getTransportInfo(client.http, client.safety, newObject, packageName, 'I');
+  // Only a complete answer (RESULT=S on 7.58, 8.16, BTP) may let a run go without a request.
+  if (info.result !== 'S') {
+    const said = info.messages.map((m) => m.text).filter(Boolean);
+    return `SAP's transport check for package ${packageName} was inconclusive${said.length ? `: ${said.join(' ')}` : ''}.`;
+  }
   if (info.isLocal || !info.recording)
     return transport ? `Package ${packageName} is local and takes no transport.` : undefined;
   if (!transport) {
@@ -118,7 +123,11 @@ export async function writeActionGenerate(
   const transport = upper(args.transport) || undefined;
   const dryRun = args.dryRun === true;
   if (!generator) return errorResult('"generator" is required: "ui-service" or "webapi-service".');
-  if (args.type !== 'TABL') return errorResult('action="generate" starts from a database table: pass type="TABL".');
+  if (args.type !== 'TABL') {
+    return errorResult(
+      'action="generate" needs type="TABL" and the name of an active database table (not a structure, view or CDS entity).',
+    );
+  }
   if (packageName.startsWith('$') && transport) return errorResult(`Package ${packageName} takes no transport.`);
   let overrides: unknown;
   try {
@@ -152,8 +161,18 @@ export async function writeActionGenerate(
     );
   }
   // Checked after the feed: 7.50 has neither generators nor /ddic/tables. 7.58 previews a stack for a missing table.
-  if (!(await exists(client, tableUri(table))))
-    return errorResult(`Table ${table} does not exist (pass a database table).`);
+  const tableMetadata = await readOrMissing(client, tableUri(table));
+  if (tableMetadata === undefined) {
+    return errorResult(
+      `${table} is not a database table: pass the name of an active database table (not a structure, view or CDS entity).`,
+    );
+  }
+  // Never activated: version "new" (7.58, 8.16). 7.58 then plans a stack anyway; 8.16 validation dumps (HTTP 500).
+  if (/\badtcore:version="new"/.test(tableMetadata)) {
+    return errorResult(
+      `Table ${table} was never activated. Activate it first: SAPActivate type="TABL" name="${table}".`,
+    );
+  }
 
   // 3.–4. Proposal + overrides, SAP's validation, preview.
   const proposal = await proposeInput(client.http, client.safety, gen, table, packageName);
@@ -180,17 +199,29 @@ export async function writeActionGenerate(
   const objects = planned.map(({ type, name }) => ({ type, name }));
 
   // 5. Every planned object must be new (exact GET of SAP's own URI): neither the preview nor (on 8.16) validation reliably says so.
-  const notCreate = planned.filter((o) => o.operation && o.operation !== 'CREATE');
-  const existing: PlannedObject[] = [];
-  for (const object of planned) if (await exists(client, object.uri)) existing.push(object);
-  if (notCreate.length || existing.length) {
+  // Both captured preview formats name the operation; anything but CREATE (or none) is refused.
+  const notCreate = planned.filter((o) => o.operation !== 'CREATE');
+  if (notCreate.length) {
     return errorResult(
       toolJson({
         ...report,
         valid: false,
-        existing: [...notCreate, ...existing].map(({ type, name }) => ({ type, name })),
+        notCreate: notCreate.map(({ type, name, operation }) => ({ type, name, operation: operation || 'none' })),
         input,
-        next: 'These objects already exist or would be changed. Rename them through source, or delete them first.',
+        next: "SAP's preview does not plan to create these objects, and ARC-1 only creates new ones. Rename them through source.",
+      }),
+    );
+  }
+  const existing: PlannedObject[] = [];
+  for (const object of planned) if (await exists(client, object.uri)) existing.push(object);
+  if (existing.length) {
+    return errorResult(
+      toolJson({
+        ...report,
+        valid: false,
+        existing: existing.map(({ type, name }) => ({ type, name })),
+        input,
+        next: 'These objects already exist. Rename them through source, or delete them first.',
       }),
     );
   }

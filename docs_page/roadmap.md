@@ -1083,9 +1083,9 @@ independently; do not infer their create subtype or source format from the famil
 
 **Idea.** Extend `SAPWrite(action="generate")` to SAP's maintenance-object generator `smbc`, which builds a Fiori table-maintenance app (SMBC, TOBJ, draft tables, CDS views, access controls, behaviors, service) for a customizing table.
 
-**Why it remains.** The first version covers only the two RAP service generators. Closed PR [#1122](https://github.com/arc-mcp/arc-1/pull/1122) ran `smbc` on SAP_BASIS 8.16 (24 objects, 34 s) and found that a run without `corrNr` landed on another open request of the user, that the transport object appears as `<name>T` in TADIR, that the run adds `SUSH`, `STOB` and `G4BA` objects the preview omits, and that the input has an `overwriteExistingObjects` flag. On 7.58 the generator lives under `/sap/bc/adt/bct/generators/smbc` with other media types and was never run.
+**Why it remains.** The first version covers only the two RAP service generators. Closed PR [#1122](https://github.com/arc-mcp/arc-1/pull/1122) ran `smbc` on SAP_BASIS 8.16 (24 objects, 34 s) and found that a run without `corrNr` landed on another open request of the user, that the transport object appears as `<name>T` in TADIR, that the run adds `SUSH`, `STOB` and `G4BA` objects the preview omits, and that the input has an `overwriteExistingObjects` flag. On 8.16 that flag also decides SAP's own existence check, and SAP's error path tries to delete the generated app before failing (`CL_MBC_GENERATOR`), so a partial failure behaves differently from the RAP service generators. On 7.58 the generator lives under `/sap/bc/adt/bct/generators/smbc` with other media types and was never run.
 
-**Resume with.** Capture a 7.58 run, add `smbc` to the generator table in `src/adt/service-generator.ts` with its own path root, keep `overwriteExistingObjects=false`, and extend the read-back for the `T` suffix. Evidence: [research note](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-22-rap-service-generators.md).
+**Resume with.** Capture a 7.58 run on a disposable customizing table, add `smbc` to the generator table in `src/adt/service-generator.ts` with its own path root, pin `overwriteExistingObjects=false`, extend the read-back for the `T` suffix and the extra `STOB` objects, and test a partial failure and SAP's cleanup before enabling it. Evidence: [research note](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-11-22-rap-service-generators.md).
 
 <a id="feat-102"></a>
 ### FEAT-102 — Generator listing and further SAP generators
@@ -1095,9 +1095,9 @@ independently; do not infer their create subtype or source format from the famil
 
 **Idea.** List the generators a system offers (for example `SAPRead type="GENERATORS"`) and run further ones, such as the CSN, analytics or extension-field generators SAP_BASIS 8.16 lists.
 
-**Why it remains.** 8.16 lists ten generators with `fetchAllGenerators=true`; 7.58 lists none without a referenced object. #1122's listing returned about 14,000 characters on 8.16, mostly media types and long descriptions, and each generator has its own input contract. A model can only use a generator ARC-1 has verified, so a listing alone helps little.
+**Why it remains.** 8.16 lists ten generators with `fetchAllGenerators=true`; 7.58 lists none without a referenced object. #1122's listing returned about 14,000 characters on 8.16, mostly media types and long descriptions, and each generator has its own input contract. A model can only use a generator ARC-1 has verified, so a listing alone helps little. SAP's own MCP server offers a generic list/schema/run trio (`abap_objects_generator_*`) for its broad catalog; ARC-1 supports two stable choices and keeps the action small.
 
-**Resume with.** A concrete use case for one more generator, a compact listing (id, title, applicable object types), and captured responses for that generator on the releases it ships with.
+**Resume with.** A concrete use case for one more generator, a compact listing (id, title, applicable object types, whether ARC-1 can run it), captured responses for that generator on the releases it ships with, and an eval showing the listing helps a model more than a sentence in the tool description.
 
 <a id="feat-78"></a>
 ### FEAT-78 — Table type access type and keys

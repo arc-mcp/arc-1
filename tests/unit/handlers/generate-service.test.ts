@@ -27,7 +27,8 @@ interface Sap {
   preview?: string;
   transport?: string; // CTS document for GET /transportrequests/<id>
   local?: boolean; // SAP's transport check reports the package as local
-  tableMissing?: boolean;
+  table?: 'missing' | 'never-activated';
+  ctsResult?: string;
 }
 
 function sap(opts: Sap = {}) {
@@ -72,11 +73,14 @@ function sap(opts: Sap = {}) {
         ? mockResponse(404, 'not found')
         : ok(`<x adtcore:name="${object.name}"><adtcore:packageRef adtcore:name="${pkg}"/></x>`);
     }
-    if (path === '/sap/bc/adt/ddic/tables/ztravel') return mockResponse(opts.tableMissing ? 404 : 200, '<table/>');
+    if (path === '/sap/bc/adt/ddic/tables/ztravel') {
+      if (opts.table === 'missing') return mockResponse(404, 'not found');
+      return ok(`<blue:blueSource adtcore:version="${opts.table === 'never-activated' ? 'new' : 'active'}"/>`);
+    }
     if (path.startsWith('/sap/bc/adt/packages/')) return ok('<pak:package/>');
     if (path === '/sap/bc/adt/cts/transportchecks') {
       return ok(
-        `<asx:abap><asx:values><DATA><DLVUNIT>${opts.local ? 'LOCAL' : 'HOME'}</DLVUNIT><RECORDING>${opts.local ? '' : 'X'}</RECORDING></DATA></asx:values></asx:abap>`,
+        `<asx:abap><asx:values><DATA><DLVUNIT>${opts.local ? 'ZLOCAL' : 'HOME'}</DLVUNIT><RECORDING>${opts.local ? '' : 'X'}</RECORDING><RESULT>${opts.ctsResult ?? 'S'}</RESULT></DATA></asx:values></asx:abap>`,
       );
     }
     if (path.startsWith('/sap/bc/adt/cts/transportrequests/')) return ok(opts.transport ?? '<tm:root/>');
@@ -196,6 +200,7 @@ describe('SAPWrite action="generate"', () => {
     ],
     ['the table name', { general: { referenceObjectName: 'ZOTHER' } }, 'names the table'],
     ['a changed shape', { businessObject: 'x' }, 'shape'],
+    ['an "input" wrapper', { input: { general: {} } }, 'remove the outer "input" key'],
   ])('refuses %s in source before validation', async (_label, overrides, message) => {
     const s = sap();
     const result = await generate({ dryRun: true, source: JSON.stringify(overrides) });
@@ -246,12 +251,54 @@ describe('SAPWrite action="generate"', () => {
     expect(result.content[0].text).toContain('"state":"wrong_package"');
   });
 
-  it('refuses a missing table before any generator endpoint (7.58 would preview one)', async () => {
-    const s = sap({ tableMissing: true });
+  it.each([
+    ['a missing table or structure (7.58 would preview one)', 'missing', 'ZTRAVEL is not a database table'],
+    ['a never-activated table (8.16 validation dumps)', 'never-activated', 'Activate it first'],
+  ] as const)('refuses %s before any generator endpoint', async (_label, table, message) => {
+    const s = sap({ table });
     const result = await generate({ dryRun: true });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('Table ZTRAVEL does not exist');
+    expect(result.content[0].text).toContain(message);
     expect(s.calls.some((c) => c.path.includes('/generators/'))).toBe(false);
+  });
+
+  it.each([307, 308])(
+    'never reports a run answered with HTTP %s as success, even when every object exists',
+    async (status) => {
+      const s = sap({ runStatus: status });
+      const result = await generate({});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(`status ${status} at`);
+      expect(result.content[0].text).toContain('"state":"found"');
+      expect(s.posts().filter((c) => c.path === RELEASES['758'].root)).toHaveLength(1);
+    },
+  );
+
+  it("keeps SAP's 8.16 bookkeeping: an unchanged sessionId passes, a changed one is refused", async () => {
+    const s = sap({ release: '816' });
+    const same = await generate({
+      dryRun: true,
+      source: '{"general":{"sessionId":"SID0000000000000000000000000001"}}',
+    });
+    expect(same.isError).toBeUndefined();
+    const changed = await generate({ dryRun: true, source: '{"general":{"sessionId":"OLD"}}' });
+    expect(changed.content[0].text).toContain('"general.sessionId" is SAP\'s own');
+    const orgn = await generate({
+      dryRun: true,
+      source: '{"businessObject":{"dataModelEntity":{"entityNameOrgn":"ZX"}}}',
+    });
+    expect(orgn.content[0].text).toContain('"businessObject.dataModelEntity.entityNameOrgn" is SAP\'s own');
+    expect(s.posts().filter((c) => c.path.endsWith('/validation'))).toHaveLength(1);
+  });
+
+  it('refuses a preview object without CREATE as its operation', async () => {
+    const preview = fixture('758-uiservice-preview.xml').replace(' adtcore:description="CREATE"', '');
+    const s = sap({ preview });
+    const result = await generate({});
+    expect(json(result.content[0].text).notCreate).toEqual([
+      { type: 'DDLS/DF', name: 'ZR_ZTRAVEL', operation: 'none' },
+    ]);
+    expect(s.ran()).toBe(false);
   });
 
   it('says so when the system has no generator framework (7.50)', async () => {
@@ -320,6 +367,13 @@ describe('SAPWrite action="generate"', () => {
       const s = sap();
       const result = await generate({ package: 'ZPKG', dryRun: true });
       expect(result.content[0].text).toContain('"transport" is required for package ZPKG');
+      expect(s.calls.some((c) => c.path.includes('/generators'))).toBe(false);
+    });
+
+    it('refuses an inconclusive transport check instead of skipping the request', async () => {
+      const s = sap({ local: true, ctsResult: '' });
+      const result = await generate({ package: 'ZLOCAL_SUB', dryRun: true });
+      expect(result.content[0].text).toContain('was inconclusive');
       expect(s.calls.some((c) => c.path.includes('/generators'))).toBe(false);
     });
 

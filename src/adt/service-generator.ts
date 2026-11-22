@@ -13,7 +13,7 @@
  * docs/research/2026-11-22-rap-service-generators.md.
  */
 import { postCreate } from './create-request.js';
-import { AdtError, AdtSafetyError } from './errors.js';
+import { AdtApiError, AdtError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { canonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
@@ -225,14 +225,24 @@ export async function runGenerator(
 ): Promise<void> {
   checkOperation(safety, OperationType.Create, 'RunGenerator');
   const { path, mediaType } = gen.endpoints.generator;
-  await postCreate(
+  const url = withQuery(path, { referencedObject: tableUri(table), corrNr: transport });
+  const resp = await postCreate(
     http,
-    withQuery(path, { referencedObject: tableUri(table), corrNr: transport }),
+    url,
     JSON.stringify(input),
     gen.endpoints.content.mediaType,
     { Accept: mediaType },
-    { fetchTimeoutMs: RUN_TIMEOUT_MS, noReplay: true },
+    {
+      fetchTimeoutMs: RUN_TIMEOUT_MS,
+      noReplay: true,
+    },
   );
+  // Redirects are not followed (noReplay) and reach here as 3xx: not proof that SAP ran the generator.
+  if (resp.statusCode < 200 || resp.statusCode > 299) {
+    throw new AdtApiError(`HTTP ${resp.statusCode}: SAP did not confirm the run.`, resp.statusCode, url, undefined, {
+      plainText: true,
+    });
+  }
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -240,6 +250,7 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 
 // The field naming the table (7.58 / 8.16); SAP's validation does not check it against referencedObject.
 const TABLE_NAME_KEYS = ['referenceObjectName', 'referencedObjectName'];
+const isSapOwned = (key: string) => key === 'sessionId' || key.endsWith('Orgn');
 
 /**
  * Merge caller overrides into SAP's proposal. Only keys SAP proposed, with the same shape (objects
@@ -257,13 +268,18 @@ export function applyOverrides(
     const proposed = proposal[key];
     if (at === 'metadata') throw new AdtSafetyError('metadata is set by ARC-1 from "package"; remove it from source.');
     if (!Object.hasOwn(proposal, key)) {
-      throw new AdtSafetyError(`source key "${at}" is not in SAP's proposal; use the keys shown in dryRun "input".`);
+      const fix = at === 'input' ? 'remove the outer "input" key' : 'use the keys shown in dryRun "input"';
+      throw new AdtSafetyError(`source key "${at}" is not in SAP's proposal; ${fix}.`);
     }
     if (isObject(proposed) !== isObject(value) || Array.isArray(proposed) || Array.isArray(value)) {
       throw new AdtSafetyError(`source key "${at}" must keep the shape of SAP's proposal.`);
     }
     if (TABLE_NAME_KEYS.includes(key) && String(value).toUpperCase() !== String(proposed).toUpperCase()) {
       throw new AdtSafetyError(`source key "${at}" names the table; pass another table as "name" instead.`);
+    }
+    // 8.16 bookkeeping: sessionId ties the calls together, …Orgn keeps the proposed name SAP renames from.
+    if (isSapOwned(key) && value !== proposed) {
+      throw new AdtSafetyError(`source key "${at}" is SAP's own; send only the names you change.`);
     }
     merged[key] = isObject(proposed) ? applyOverrides(proposed, value as Record<string, unknown>, at) : value;
   }
