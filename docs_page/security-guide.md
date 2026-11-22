@@ -407,7 +407,7 @@ The following files and values must never be committed to version control:
 | SAP passwords (`SAP_PASSWORD`) | Inject via environment variable, secrets manager, or `cf set-env`. |
 | API keys (`ARC1_API_KEYS`) | Store in a secrets manager (Vault, AWS Secrets Manager, Azure Key Vault). |
 | BTP service keys (`SAP_BTP_SERVICE_KEY`) | Use only for local BTP ABAP service-key OAuth or for creating BTP destinations. Prefer mounted files over inline JSON when local automation needs it. |
-| Cookie files (`cookies.txt`) | Listed in `.gitignore`. Ephemeral by nature. |
+| Cookie files (`cookies.txt`) | Listed in `.gitignore`. The extractor deletes its temporary browser profile. The exported file stays on disk (mode `0600` on POSIX). Restrict access and delete it when finished. |
 | XSUAA/Destination service credentials (`VCAP_SERVICES`) | Inject through BTP service bindings or a secrets manager; never commit copied service credentials. |
 
 In containerized deployments, prefer mounted secrets (Kubernetes Secrets, CF user-provided services) over environment variables, as environment variables may appear in process listings or crash dumps.

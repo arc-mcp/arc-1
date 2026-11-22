@@ -1,10 +1,24 @@
-import { describe, expect, it } from 'vitest';
+import { ChildProcess } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { delimiter, join, win32 } from 'node:path';
+import { PassThrough } from 'node:stream';
+import { setTimeout as delay } from 'node:timers/promises';
+import { describe, expect, it, vi } from 'vitest';
 import {
   cookieMatchesHost,
+  ensureOutputDirectory,
+  existsOnPath,
+  fetchCookiesViaCdp,
   formatNetscapeCookieLine,
+  killBrowserTree,
   parseServerArgs,
   planExtraction,
   toNetscapeCookieFile,
+  waitForDebuggerWebSocketUrl,
+  waitForEnter,
+  withTemporaryBrowserProfile,
 } from '../../src/extract-sap-cookies.js';
 
 describe('extract-sap-cookies pure helpers', () => {
@@ -76,5 +90,249 @@ describe('extract-sap-cookies planExtraction', () => {
         platform: process.platform,
       }),
     ).toThrow('SAP_PP_ENABLED=true');
+  });
+});
+
+describe('existsOnPath', () => {
+  it('finds an executable file on PATH without spawning a shell builtin', () => {
+    const root = mkdtempSync(join(tmpdir(), 'arc1-path-test-'));
+    try {
+      const empty = join(root, 'empty');
+      const bin = join(root, 'bin');
+      mkdirSync(empty);
+      mkdirSync(bin);
+      writeFileSync(join(bin, 'google-chrome'), '#!/bin/sh\n');
+      chmodSync(join(bin, 'google-chrome'), 0o755);
+      mkdirSync(join(bin, 'chromium')); // a directory with the candidate's name is not a browser
+
+      const env = { PATH: ['', empty, bin].join(delimiter) };
+      expect(existsOnPath('google-chrome', env)).toBe(true);
+      expect(existsOnPath('chromium', env)).toBe(false);
+      expect(existsOnPath('firefox', env)).toBe(false);
+      expect(existsOnPath('google-chrome', {})).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('skips a file that is not executable', () => {
+    const fs = {
+      statSync: vi.fn(() => ({ isFile: () => true })),
+      accessSync: vi.fn(() => {
+        throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+      }),
+    };
+    expect(existsOnPath('google-chrome', { PATH: '/usr/bin' }, fs as never)).toBe(false);
+    expect(fs.accessSync).toHaveBeenCalledOnce();
+  });
+});
+
+describe('ensureOutputDirectory', () => {
+  it.each([win32.dirname('C:\\cookies.txt'), 'D:\\', '\\\\server\\share\\'])(
+    'never calls mkdir on the Windows root %s, even when an existence check would fail',
+    (root) => {
+      const fs = { existsSync: vi.fn(() => false), mkdirSync: vi.fn() };
+      ensureOutputDirectory(root, fs, win32);
+      expect(fs.mkdirSync).not.toHaveBeenCalled();
+    },
+  );
+
+  it('creates missing nested parents recursively', () => {
+    const fs = { existsSync: vi.fn(() => false), mkdirSync: vi.fn() };
+    ensureOutputDirectory('missing/nested', fs);
+    expect(fs.mkdirSync).toHaveBeenCalledWith('missing/nested', { recursive: true });
+  });
+
+  it('skips existing non-root directories', () => {
+    const fs = { existsSync: vi.fn(() => true), mkdirSync: vi.fn() };
+    ensureOutputDirectory('existing', fs);
+    expect(fs.mkdirSync).not.toHaveBeenCalled();
+  });
+});
+
+describe('temporary browser profile lifecycle', () => {
+  const dir = '/tmp/arc1-cookie-extract-test';
+  function setup() {
+    const child = new ChildProcess();
+    const signals = new EventEmitter();
+    const removeDir = vi.fn();
+    const warn = vi.fn();
+    const kill = vi.spyOn(child, 'kill').mockImplementation(() => {
+      queueMicrotask(() => child.emit('close', 0, null));
+      return true;
+    });
+    const run = (extract: (signal: AbortSignal) => Promise<void>, launch = (_dir: string) => child) =>
+      withTemporaryBrowserProfile(launch, extract, { signals, makeDir: () => dir, removeDir, warn });
+    return { child, signals, removeDir, warn, kill, run };
+  }
+
+  it('waits for browser shutdown before removing the profile after success', async () => {
+    const { child, run, kill, removeDir, signals } = setup();
+    const closed = vi.fn();
+    child.once('close', closed);
+    const launch = vi.fn(() => child);
+    await run(async () => {}, launch);
+    expect(launch).toHaveBeenCalledWith(dir);
+    expect(kill).toHaveBeenCalledWith('SIGTERM');
+    expect(closed).toHaveBeenCalledBefore(removeDir);
+    expect(removeDir).toHaveBeenCalledExactlyOnceWith(dir, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
+    expect(signals.eventNames()).toEqual([]);
+  });
+
+  it('cleans up and preserves an extraction error', async () => {
+    const { run, removeDir } = setup();
+    const original = new Error('write failed');
+    await expect(
+      run(async () => {
+        throw original;
+      }),
+    ).rejects.toBe(original);
+    expect(removeDir).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['SIGINT', 'SIGTERM', 'SIGHUP'])('interrupts login and cleans up on %s', async (event) => {
+    const { run, signals, kill, removeDir } = setup();
+    const pending = run((signal) => delay(60_000, undefined, { signal }));
+    signals.emit(event);
+    await expect(pending).rejects.toThrow(event);
+    expect(kill).toHaveBeenCalledWith('SIGTERM');
+    expect(removeDir).toHaveBeenCalledTimes(1);
+    expect(signals.eventNames()).toEqual([]);
+  });
+
+  it.each([false, true])(
+    'warns once without changing the outcome after rm fails (capture failed: %s)',
+    async (failed) => {
+      const { run, removeDir, warn, signals } = setup();
+      removeDir.mockImplementation(() => {
+        throw new Error('EPERM');
+      });
+      const original = new Error('capture failed');
+      const pending = run(async () => {
+        if (failed) throw original;
+      });
+      if (failed) await expect(pending).rejects.toBe(original);
+      else await expect(pending).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(dir));
+      expect(warn.mock.calls[0][0]).toMatch(/delete/i);
+      expect(signals.eventNames()).toEqual([]);
+    },
+  );
+
+  it('cleans up if launch throws or the child emits a spawn error', async () => {
+    const { child, run, removeDir, signals } = setup();
+    const original = new Error('could not launch browser');
+    await expect(
+      run(
+        async () => {},
+        () => {
+          throw original;
+        },
+      ),
+    ).rejects.toBe(original);
+    const pending = run(
+      (signal) =>
+        new Promise<void>((_resolve, reject) =>
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true }),
+        ),
+    );
+    child.emit('error', original);
+    child.emit('close', -2, null);
+    await expect(pending).rejects.toBe(original);
+    expect(removeDir).toHaveBeenCalledTimes(2);
+    expect(signals.eventNames()).toEqual([]);
+  });
+
+  it('bounds the wait when the browser ignores termination', async () => {
+    vi.useFakeTimers();
+    try {
+      const { run, kill, removeDir, warn } = setup();
+      kill.mockImplementation(() => true);
+      const pending = run(async () => {});
+      await vi.advanceTimersByTimeAsync(3999);
+      expect(removeDir).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1001);
+      await pending;
+      expect(kill.mock.calls).toEqual([['SIGTERM'], ['SIGKILL']]);
+      expect(removeDir).toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('browser shutdown and interactive input', () => {
+  it.each(['Ctrl+C', 'EOF'])('interrupts a real readline question on %s', async (action) => {
+    const input = Object.assign(new PassThrough(), { isTTY: true, setRawMode: vi.fn() });
+    const output = Object.assign(new PassThrough(), { isTTY: true });
+    const result = waitForEnter('', new AbortController().signal, input, output);
+    if (action === 'Ctrl+C') input.write('\x03');
+    else input.end();
+    await expect(result).rejects.toThrow(action === 'Ctrl+C' ? 'Ctrl+C' : 'Input closed');
+    expect(input.setRawMode).toHaveBeenLastCalledWith(false);
+  });
+
+  it('expires the debugger startup deadline even when fetch never responds', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url, { signal }: { signal: AbortSignal }) => delay(60_000, undefined, { signal })),
+    );
+    try {
+      await expect(waitForDebuggerWebSocketUrl(9222, new AbortController().signal, 20)).rejects.toThrow('Timed out');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each(['timeout', 'signal'])('closes an unresponsive debugger connection on %s', async (reason) => {
+    const close = vi.fn();
+    vi.stubGlobal(
+      'WebSocket',
+      class {
+        close = close;
+      },
+    );
+    try {
+      const interrupt = new AbortController();
+      const capture = fetchCookiesViaCdp('ws://127.0.0.1', 'http://127.0.0.1', interrupt.signal, 25);
+      if (reason === 'signal') interrupt.abort(new Error('SIGTERM'));
+      await expect(capture).rejects.toThrow(reason === 'signal' ? 'SIGTERM' : /timeout/i);
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('terminates only the process group started for this browser on POSIX', () => {
+    const kill = vi.fn(() => true as const);
+    expect(killBrowserTree(4321, 'linux', kill)).toBe(true);
+    expect(kill).toHaveBeenCalledExactlyOnceWith(-4321, 'SIGKILL');
+    kill.mockImplementation(() => {
+      throw Object.assign(new Error(), { code: 'ESRCH' });
+    });
+    expect(killBrowserTree(4321, 'darwin', kill)).toBe(true);
+    kill.mockImplementation(() => {
+      throw Object.assign(new Error(), { code: 'EPERM' });
+    });
+    expect(killBrowserTree(4321, 'darwin', kill)).toBe(false);
+  });
+
+  it('stops the Windows browser tree by PID and reports taskkill failure', () => {
+    const command = vi.fn().mockReturnValueOnce({ status: 0 }).mockReturnValueOnce({ status: 1 });
+    const kill = vi.fn();
+    expect(killBrowserTree(4321, 'win32', kill, command)).toBe(true);
+    expect(command).toHaveBeenCalledWith(
+      expect.stringMatching(/System32\\taskkill\.exe$/i),
+      ['/PID', '4321', '/T', '/F'],
+      { stdio: 'ignore', windowsHide: true, timeout: 1000 },
+    );
+    expect(killBrowserTree(4321, 'win32', kill, command)).toBe(false);
+    expect(kill).not.toHaveBeenCalled();
   });
 });

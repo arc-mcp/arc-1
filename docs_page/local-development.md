@@ -414,7 +414,7 @@ Full model and per-user scope handling: [authorization.md](authorization.md). Pr
 
 Some corporate on-prem SAP systems return an HTML login page on `/sap/bc/adt/` instead of accepting Basic Auth — typically when SAML2 / SPNEGO / X.509 / Kerberos SSO is enforced. You're expected to authenticate through a browser.
 
-For a single-developer local loop, the included extractor scrapes your existing SAP session cookies from Chrome and writes them to a file ARC-1 can reuse:
+For a single-developer local loop, the included extractor opens a temporary browser profile for your SAP login and writes the session cookies to a file ARC-1 can reuse:
 
 ```bash
 npm run extract-sap-cookies -- --url https://your-sap-host:44300
@@ -425,7 +425,8 @@ What it does:
 1. Launches Chrome with remote-debugging enabled (CDP).
 2. You complete your normal SSO login in the browser window (IdP redirect, MFA, whatever your corp flow is).
 3. Return to the terminal and press Enter. The script then reads the SAP session cookies (`SAP_SESSIONID_*`, `MYSAPSSO2`, `sap-usercontext`) out of Chrome.
-4. Writes them to `cookies.txt` with mode `0600`.
+4. Writes them to `cookies.txt` with mode `0600` on POSIX systems.
+5. Stops the browser and deletes the temporary profile after each run, including on error, Ctrl+C, or terminal hangup. If shutdown or deletion cannot be confirmed, a warning on stderr gives the path. Close the browser and delete that directory yourself because it can hold live SAP and identity-provider session cookies.
 
 Then point ARC-1 at the cookie file:
 
