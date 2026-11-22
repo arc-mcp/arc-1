@@ -260,79 +260,31 @@ it('lets preflightBeforeWrite=false bypass the edit_content preflight', async ()
   expect(state.locked).toBe(false);
 });
 
-it('refuses TABL edit_content on a detected BTP system (SAP_SYSTEM_TYPE=auto) without SAP contact', async () => {
-  setCachedFeatures({ ...featuresOff(), systemType: 'btp', abapRelease: '816' });
-  backend();
-  const result = await handleToolCall(createClient(), { ...config, systemType: 'auto' as const }, 'SAPWrite', {
-    ...quanEdit,
-    newContent: 'matnr : matnr;\n  maktx : maktx;',
-  });
-  expect(result.isError).toBe(true);
-  expect(result.content[0]!.text).toContain('needs a confirmed on-prem system');
-  expect(mockFetch).not.toHaveBeenCalled();
-});
-
-it('keeps the guarded TABL update working on a detected BTP system (SAP_SYSTEM_TYPE=auto)', async () => {
-  setCachedFeatures({ ...featuresOff(), systemType: 'btp', abapRelease: '816' });
-  const state = backend();
-  const next = initial.replace('matnr : matnr;', 'matnr : matnr;\n  maktx : maktx;');
-  const result = await handleToolCall(createClient(), { ...config, systemType: 'auto' as const }, 'SAPWrite', {
-    action: 'update',
-    type: 'TABL',
-    name: 'ZGUARD_S',
-    source: next,
-    expectedSourceHash: hash(initial),
-  });
-  expect(result.isError, result.content[0]!.text).toBeUndefined();
-  expect(state.source).toBe(next);
-  expect(lockedReads(state)).toHaveLength(1);
-  expect(state.locked).toBe(false);
-});
-
-const autoConfig = { ...config, systemType: 'auto' as const };
 const tablEdit = { ...quanEdit, newContent: 'matnr : matnr;\n  maktx : maktx;' };
 
-it('refuses TABL edit_content while platform detection is pending or inconclusive, before the TABL lookup', async () => {
-  backend();
-  const result = await handleToolCall(createClient(), autoConfig, 'SAPWrite', tablEdit);
-  expect(result.isError).toBe(true);
-  expect(result.content[0]!.text).toContain('needs a confirmed on-prem system');
-  expect(result.content[0]!.text).toContain('expectedSourceHash');
-  expect(mockFetch).not.toHaveBeenCalled();
-});
-
-it('keeps the guarded TABL update working while platform detection is inconclusive', async () => {
+it('runs TABL edit_content under SAP_SYSTEM_TYPE=auto before the system type is detected', async () => {
   const state = backend();
-  const next = initial.replace('matnr : matnr;', 'matnr : matnr;\n  maktx : maktx;');
-  const result = await handleToolCall(createClient(), autoConfig, 'SAPWrite', {
-    action: 'update',
-    type: 'TABL',
-    name: 'ZGUARD_S',
-    source: next,
-    expectedSourceHash: hash(initial),
-  });
-  expect(result.isError, result.content[0]!.text).toBeUndefined();
-  expect(state.source).toBe(next);
-});
-
-it('allows TABL edit_content under SAP_SYSTEM_TYPE=auto once on-prem is detected', async () => {
-  setCachedFeatures({ ...featuresOff(), systemType: 'onprem', abapRelease: '754' });
-  const state = backend();
-  const result = await handleToolCall(createClient(), autoConfig, 'SAPWrite', tablEdit);
+  const result = await handleToolCall(createClient(), { ...config, systemType: 'auto' as const }, 'SAPWrite', tablEdit);
   expect(result.isError, result.content[0]!.text).toBeUndefined();
   expect(puts(state)).toHaveLength(1);
   expect(state.locked).toBe(false);
 });
 
+it('rejects edit_content under SAP_SYSTEM_TYPE=btp without SAP contact', async () => {
+  backend();
+  const result = await handleToolCall(createClient(), { ...config, systemType: 'btp' as const }, 'SAPWrite', tablEdit);
+  expect(result.isError).toBe(true);
+  expect(mockFetch).not.toHaveBeenCalled();
+});
+
 it.each([
-  { systemType: 'onprem', detected: undefined, actionListed: true, tablListed: true },
-  { systemType: 'auto', detected: 'onprem', actionListed: true, tablListed: true },
-  { systemType: 'auto', detected: undefined, actionListed: true, tablListed: false },
-  { systemType: 'auto', detected: 'btp', actionListed: true, tablListed: false },
-  { systemType: 'btp', detected: 'btp', actionListed: false, tablListed: false },
+  { systemType: 'onprem', detected: undefined, listed: true },
+  { systemType: 'auto', detected: undefined, listed: true },
+  { systemType: 'auto', detected: 'btp', listed: true },
+  { systemType: 'btp', detected: 'btp', listed: false },
 ] as const)(
-  'lists TABL edit_content only when it can run: %j',
-  async ({ systemType, detected, actionListed, tablListed }) => {
+  'lists edit_content (naming TABL) everywhere except SAP_SYSTEM_TYPE=btp: %j',
+  async ({ systemType, detected, listed }) => {
     const { getToolDefinitions } = await import('../../../src/handlers/tools.js');
     const tools = getToolDefinitions(
       { ...config, ...FULL, systemType },
@@ -340,7 +292,7 @@ it.each([
       detected ? { ...featuresOff(), systemType: detected } : undefined,
     );
     const action = (tools.find((t) => t.name === 'SAPWrite')!.inputSchema.properties as Record<string, any>).action;
-    expect((action.enum as string[]).includes('edit_content')).toBe(actionListed);
-    expect(String(action.description).includes('edit_content also accepts TABL.')).toBe(tablListed);
+    expect((action.enum as string[]).includes('edit_content')).toBe(listed);
+    expect(String(action.description).includes('edit_content (also TABL)')).toBe(listed);
   },
 );

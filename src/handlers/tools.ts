@@ -18,7 +18,7 @@ import { SAPDIAGNOSE_ADDITIONAL_INPUTS } from './diagnose-fields.js';
 import { dumpFiltersJson } from './dump-filter-inputs.js';
 import * as FuncProcessing from './function-processing.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
-import { CLASS_WRITE_INCLUDES, tablEditContentAvailable } from './object-types.js';
+import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import { createQueryDefinition } from './query-tool.js';
 import { addLiveRelationsDefinition } from './relation-tool.js';
 import {
@@ -26,7 +26,7 @@ import {
   TABLE_TYPE_DIMENSION_TOOL_PROPERTIES,
   TABLE_TYPE_TOOL_PROPERTIES,
 } from './table-type-fields.js';
-import { proceduralEditGuidance, SAPWRITE_DESC_BTP, SAPWRITE_DESC_ONPREM } from './tool-descriptions.js';
+import { SAPWRITE_DESC_BTP, SAPWRITE_DESC_ONPREM } from './tool-descriptions.js';
 import {
   ATC_BATCH_TYPES_BTP,
   isGitToolVisible,
@@ -616,7 +616,7 @@ export function getToolDefinitions(
               'edit_method: replace a single method body — the token-cheap path for class edits. ' +
               (btp
                 ? ''
-                : proceduralEditGuidance(tablEditContentAvailable(config.systemType, resolvedFeatures?.systemType))) +
+                : 'PROG/INCL: edit_unit replaces a FORM/MODULE; add_unit appends one; edit_content (also TABL) replaces one exact match and requires expectedSourceHash. ') +
               'batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. ' +
               'Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; ' +
               'add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); ' +

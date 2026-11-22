@@ -63,11 +63,3 @@ const SAPWRITE_MINIMAL_PAYLOAD_GUIDE =
 // does not belong where a model is deciding which tool to pick.
 export const SAPWRITE_DESC_ONPREM = SAPWRITE_LEAD + SAPWRITE_BODY_ONPREM + SAPWRITE_MINIMAL_PAYLOAD_GUIDE;
 export const SAPWRITE_DESC_BTP = SAPWRITE_LEAD + SAPWRITE_BODY_BTP + SAPWRITE_MINIMAL_PAYLOAD_GUIDE;
-
-/** On-prem SAPWrite action guidance for PROG/INCL edits; TABL edit_content only where it can run. */
-export function proceduralEditGuidance(tablEditContent: boolean): string {
-  return (
-    'PROG/INCL: edit_unit replaces a FORM/MODULE; add_unit appends one; edit_content replaces one exact match and requires expectedSourceHash. ' +
-    (tablEditContent ? 'edit_content also accepts TABL. ' : '')
-  );
-}

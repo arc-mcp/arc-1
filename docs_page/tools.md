@@ -1328,10 +1328,8 @@ The text must match exactly once. Use more surrounding text if it appears twice;
 source, and saves it as a draft. If the source changed, re-read and prepare the edit again.
 Snippet line endings follow the source; bytes outside the match stay unchanged.
 For `TABL`, the resulting source also passes the same RAP preflight as a whole-source update
-(`preflightBeforeWrite=false` bypasses it). TABL `edit_content` needs a
-confirmed on-prem system: `SAP_SYSTEM_TYPE=onprem`, or `auto` once detection has found on-prem.
-Otherwise (BTP, or detection pending or inconclusive) the tool description does not offer it and a
-call is refused before any SAP request; use `action="update"` with `expectedSourceHash` instead.
+(`preflightBeforeWrite=false` bypasses it). TABL `edit_content` is available wherever `edit_content`
+is (not with `SAP_SYSTEM_TYPE=btp`).
 
 For structural includes such as `LZGROUPTOP`, edits and activation can find the function group
 from SAP search. Supply `group` when search cannot verify the owner; U01-style function-module

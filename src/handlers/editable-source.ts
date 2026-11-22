@@ -3,8 +3,7 @@ import type { AdtClient } from '../adt/client.js';
 import { AdtSafetyError } from '../adt/errors.js';
 import { checkOperation, OperationType } from '../adt/safety.js';
 import { sourceHash } from '../adt/source-precondition.js';
-import type { ServerConfig } from '../server/types.js';
-import { getCachedFeatures, isTablesEndpointAvailable } from './feature-cache.js';
+import { isTablesEndpointAvailable } from './feature-cache.js';
 import {
   canonicalTablType,
   classIncludeUrl,
@@ -12,7 +11,6 @@ import {
   functionModuleObjectUrl,
   normalizeClassWriteInclude,
   sourceUrlForType,
-  tablEditContentAvailable,
 } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
@@ -49,26 +47,6 @@ export function sourcePreconditionError(rawType: string, action: string, hash: u
     return 'expectedSourceHash supports text-source update and class/procedural surgery only; it cannot guard metadata, server-driven objects, creation or deletion.';
   }
   return undefined;
-}
-
-/**
- * TABL edit_content runs only where on-prem is configured or detected. The listing follows the same
- * rule; an unknown platform (detection pending or inconclusive) is refused before the TABL lookup.
- */
-function editContentPlatformError(action: string, type: string, config: ServerConfig): string | undefined {
-  if (action !== 'edit_content' || canonicalTablType(type) !== 'TABL') return undefined;
-  if (tablEditContentAvailable(config.systemType, getCachedFeatures()?.systemType)) return undefined;
-  return 'edit_content for TABL needs a confirmed on-prem system (this one is BTP or not yet identified). Use SAPWrite action="update" with the full source and expectedSourceHash from SAPRead(format="editable").';
-}
-
-/** SAPWrite prologue: hash preconditions, then the edit_content platform limit. */
-export function writeSourceRefusal(
-  type: string,
-  action: string,
-  hash: unknown,
-  config: ServerConfig,
-): string | undefined {
-  return sourcePreconditionError(type, action, hash) ?? editContentPlatformError(action, type, config);
 }
 
 export async function readEditableSource(

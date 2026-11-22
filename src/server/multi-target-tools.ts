@@ -123,8 +123,7 @@ export function multiTargetInvocationDecision(
 // ponytail: the JSON schema has no per-action property map, so the guidance of excluded actions is listed here;
 // the pinned-surface test fails when tools.ts wording drifts.
 const EXCLUDED_GUIDANCE: ReadonlyArray<readonly [string, string]> = [
-  ['; edit_content replaces one exact match and requires expectedSourceHash.', '.'],
-  ['edit_content also accepts TABL. ', ''],
+  ['; edit_content (also TABL) replaces one exact match and requires expectedSourceHash.', '.'],
   ['Required for edit_content; otherwise optional', 'Optional'],
 ];
 
