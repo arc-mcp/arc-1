@@ -10,6 +10,7 @@ jobs:
   # better-sqlite3 has no Node.js prebuilds — it always compiles via node-gyp,
   # which crashes under QEMU arm64 emulation (signal 4: Illegal instruction).
   build:
+    if: ${{ github.repository == 'arc-mcp/arc-1' }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
