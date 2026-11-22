@@ -15,6 +15,21 @@ sign-in and token refresh. Deployments without the XSUAA OAuth proxy are unaffec
 
 See the [xsuaa-auth 1.2.1 upgrade notes](https://github.com/arc-mcp/xsuaa-auth/releases/tag/v1.2.1).
 
+## v1.11.0 — renamed result field and audit content
+
+- **`SAPQuery` result field.** The optional `totalRows` of a free-SQL result is now
+  `sapReportedTotalRows`. It is SAP's diagnostic count, not the size of the result. Use
+  `rowsReturned` for the number of rows and the new `rowLimitReached` to see whether `maxRows`
+  cut the result. Update every consumer that reads `totalRows`.
+- **Audit events.** Arguments that carry content (`source`, `content`, `oldContent`,
+  `newContent`, `proposalUserContent`, `fixedValues`, `messages`, `shortTexts`, `parameters`)
+  are written to every audit sink as `[REDACTED content <n> chars]`. Tool, action, type, name,
+  package, transport, user and request ID are unchanged. Adjust log queries or alerts that
+  matched argument excerpts.
+- **AMDP feature setting.** `SAP_FEATURE_AMDP` and `--feature-amdp` are accepted and ignored
+  with one warning. Remove them from your configuration.
+- **XSUAA OAuth proxy.** See the refresh-token migration above.
+
 ## v1.10.0 — HTTP request validation
 
 MCP POST requests must contain JSON with `Content-Type: application/json`.
@@ -231,7 +246,7 @@ See the full [Authorization & Roles](authorization.md) doc for the complete mode
 ## Before you update
 
 1. **Check what changed** — start with the annotated [Release Notes](release-notes.md): every release with its impact and the action it needs (usually none). The raw [CHANGELOG.md](https://github.com/arc-mcp/arc-1/blob/main/CHANGELOG.md) and the [Releases page](https://github.com/arc-mcp/arc-1/releases) list every merged PR.
-2. **Pin to a version** — in production, use exact version tags (for example `:1.10.1`), never `:latest`. Prevents surprise upgrades. <!-- x-release-please-version -->
+2. **Pin to a version** — in production, use exact version tags (for example `:1.11.0`), never `:latest`. Prevents surprise upgrades. <!-- x-release-please-version -->
 3. **Test first** — update a dev/staging instance before production. Verify MCP clients still connect and tools work as expected.
 4. **Read the startup auth line after upgrade** — a drift-free instance will log the same `auth: MCP=[...] SAP=[...]` summary before and after. If it's different, the upgrade changed something you didn't expect.
 
@@ -247,10 +262,10 @@ Use `@latest` to follow npm’s current latest tag. An unqualified `npx arc-1` c
 npx arc-1@latest
 
 # Pinned
-npx arc-1@1.10.1
+npx arc-1@1.11.0
 
 # Global install
-npm install -g arc-1@1.10.1
+npm install -g arc-1@1.11.0
 ```
 <!-- x-release-please-end -->
 
@@ -264,7 +279,7 @@ If you pin in MCP client config, update the `args`:
 
 <!-- x-release-please-start-version -->
 ```json
-{ "command": "npx", "args": ["-y", "arc-1@1.10.1"] }
+{ "command": "npx", "args": ["-y", "arc-1@1.11.0"] }
 ```
 <!-- x-release-please-end -->
 
@@ -275,7 +290,7 @@ If you pin in MCP client config, update the `args`:
 <!-- x-release-please-start-version -->
 ```bash
 # 1. Pull the new image
-docker pull ghcr.io/arc-mcp/arc-1:1.10.1
+docker pull ghcr.io/arc-mcp/arc-1:1.11.0
 
 # 2. Stop & remove the running container
 docker stop arc1 && docker rm arc1
@@ -283,7 +298,7 @@ docker stop arc1 && docker rm arc1
 # 3. Start with the new image (same env vars / config)
 docker run -d --name arc1 -p 8080:8080 \
   --env-file .env \
-  ghcr.io/arc-mcp/arc-1:1.10.1
+  ghcr.io/arc-mcp/arc-1:1.11.0
 
 # 4. Verify
 docker logs arc1 | head -20
