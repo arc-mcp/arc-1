@@ -120,15 +120,22 @@ it('refuses when the search fails and only the structure fallback answers (7.50,
   expect(posts()).toHaveLength(0);
 });
 
-it('fails closed with a discovery hint when the re-probe errors and discovery is not loaded', async () => {
+it('fails closed with a discovery hint, without re-probing or caching a route, when the search fails', async () => {
+  const current = client();
   respond(404, 200, 'TABL/DS', fixture, 500);
-  const before = mockFetch.getMockImplementation()!;
-  let tableProbes = 0; // the first /tables/ probe 404s; the resolver's re-probe fails
-  mockFetch.mockImplementation(async (url, options) =>
-    String(url).includes('/ddic/tables/') && ++tableProbes > 1 ? mockResponse(500, '') : before(url, options),
-  );
-  const result = JSON.parse((await check('SAPRead', 'TABL')).content[0].text);
+  const result = JSON.parse((await check('SAPRead', 'TABL', {}, current)).content[0].text);
   expect(result.statusText).toContain('discovery is not loaded');
+  expect(posts()).toHaveLength(0);
+  // Only the handler's own two metadata probes; a later read must still ask SAP.
+  const ddicGets = () => mockFetch.mock.calls.filter(([url]) => /\/ddic\/(tables|structures)\//.test(String(url)));
+  expect(ddicGets()).toHaveLength(2);
+  await current.resolveTablObjectUrl('BAPIRET2');
+  expect(ddicGets().length).toBeGreaterThan(2);
+});
+
+it('does not run a stored check when both TABL roots are absent', async () => {
+  respond(404, 404, 'TABL/DS', '');
+  expect(JSON.parse((await check('SAPRead', 'TABL')).content[0].text)).toMatchObject({ checked: false });
   expect(posts()).toHaveLength(0);
 });
 
@@ -153,4 +160,24 @@ it('suggests version="inactive" only for a default-version stored check SAP did 
   respond(404, 404, 'TABL/DS', unprocessed);
   const missing = JSON.parse((await check('SAPRead', 'TABL')).content[0].text).messages[0].text as string;
   expect(missing).not.toContain('version="inactive"');
+});
+
+it('does not suggest version="inactive" for an object whose metadata is absent', async () => {
+  mockFetch.mockImplementation(async (_url, options) => {
+    if (options?.method === 'HEAD') return mockResponse(200, '', { 'x-csrf-token': 't' });
+    if (options?.method === 'POST')
+      return mockResponse(
+        200,
+        '<chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:status="notProcessed" chkrun:statusText="Resource CLASS ZCL_GONE does not exist."/></chkrun:checkRunReports>',
+      );
+    return mockResponse(404, '');
+  });
+  const result = await handleToolCall(
+    client(),
+    DEFAULT_CONFIG,
+    'SAPRead',
+    { type: 'SYNTAX', objectType: 'CLAS', name: 'ZCL_GONE' },
+    reader,
+  );
+  expect(JSON.parse(result.content[0].text).messages[0].text).not.toContain('version="inactive"');
 });

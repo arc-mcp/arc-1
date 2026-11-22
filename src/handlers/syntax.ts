@@ -59,7 +59,7 @@ export async function handleSyntaxCheck(client: AdtClient, args: Record<string, 
     absent = await isConfirmedAbsent(client, objectUrl);
     // 7.50/7.51 have no /ddic/tables/ and serve transparent tables there as TABL/DS; a check reports false errors.
     const tablesEndpoint = isTablesEndpointAvailable();
-    if (!absent && tablesEndpoint !== true && !(await isConfirmedStructure(client, name, objectUrl))) {
+    if (!absent && tablesEndpoint !== true && !(await isConfirmedStructure(client, name))) {
       return notChecked(
         { hasErrors: false, messages: [], checked: false },
         tablesEndpoint === false
@@ -76,7 +76,8 @@ export async function handleSyntaxCheck(client: AdtClient, args: Record<string, 
   // program attributes — fixed-point arithmetic off — and reports `processed`. Every `@` host
   // variable then fails, and the result reads like a real verdict. Confirm the object exists first
   // (version-less metadata = SAP's developer view, so an inactive-only object still counts).
-  if (content !== undefined && absent) {
+  // A stored TABL check after two 404s has nothing to check; an empty SAP reply must not read as clean.
+  if ((content !== undefined || type === 'TABL') && absent) {
     return notChecked(
       { hasErrors: false, messages: [], checked: false },
       `${type} ${name} was not found at ${objectUrl}`,
@@ -94,9 +95,9 @@ export async function handleSyntaxCheck(client: AdtClient, args: Record<string, 
   // Fail closed: SAP checked nothing (object does not exist yet) → never report "clean", or
   // callers read hasErrors:false as "SAP will accept this source".
   if (!result.checked) {
-    // A never-activated object has no active version to check.
+    // A never-activated object has no active version to check; advise that only when it provably exists.
     const advice =
-      !version && content === undefined && !absent
+      !version && content === undefined && (await objectExists(client, objectUrl))
         ? `${DEFAULT_ADVICE} If it was never activated, re-run with version="inactive".`
         : undefined;
     return notChecked(result, result.statusText, advice);
@@ -104,10 +105,19 @@ export async function handleSyntaxCheck(client: AdtClient, args: Record<string, 
   return textResult(toolJson(result));
 }
 
-/** Search-first resolver: only its /ddic/structures/ answer confirms a structure; any error fails closed. */
-async function isConfirmedStructure(client: AdtClient, name: string, structUrl: string): Promise<boolean> {
+/** Only a repository-search TABL/DS hit confirms a structure; no probe, no route cache. Errors fail closed. */
+async function isConfirmedStructure(client: AdtClient, name: string): Promise<boolean> {
   try {
-    return (await client.resolveTablObjectUrlForWrite(name, { tablesEndpointAvailable: false })) === structUrl;
+    return (await client.searchTablSubtype(name)) === 'TABL/DS';
+  } catch {
+    return false;
+  }
+}
+
+async function objectExists(client: AdtClient, objectUrl: string): Promise<boolean> {
+  try {
+    await client.getObjectMetadata(objectUrl);
+    return true;
   } catch {
     return false;
   }
