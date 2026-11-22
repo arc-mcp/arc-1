@@ -77,7 +77,8 @@ bundles, see [docker.md](docker.md#self-signed-or-internal-ca-certificates).
 For a direct SAP connection, Node verifies both the certificate chain and the identity in `SAP_URL`.
 
 1. **Trust the issuer.** For an internal CA, obtain the trusted root from the SAP Basis team and
-   configure the SAP endpoint to serve its intermediate certificates. For a self-signed leaf,
+   configure the SAP endpoint to serve its intermediate certificates. If the endpoint cannot be
+   changed, put the intermediate and the root into the same PEM file. For a self-signed leaf,
    obtain that certificate and confirm its fingerprint with Basis. Set `NODE_EXTRA_CA_CERTS` to
    the PEM file in the environment that starts ARC-1. Restart the process after changing it.
    A chain that Node already trusts needs no extra CA.
@@ -91,7 +92,7 @@ Certificate chain, name and expiry checks stay active. A failed tool call can re
 | Error text contains | Meaning |
 |---------------------|---------|
 | `DEPTH_ZERO_SELF_SIGNED_CERT: self-signed certificate` | The endpoint presented a self-signed leaf that Node does not trust. Check the PEM file and restart ARC-1. |
-| `UNABLE_TO_VERIFY_LEAF_SIGNATURE` | Node could not verify the leaf signature. Check for a missing intermediate on the server and confirm that Node trusts the root. |
+| `UNABLE_TO_VERIFY_LEAF_SIGNATURE` | Node could not verify the leaf signature. Check for a missing intermediate on the server (or add it to the PEM file) and confirm that Node trusts the root. |
 | `SELF_SIGNED_CERT_IN_CHAIN` | The chain ends at a self-signed certificate that Node does not trust. Confirm the root with Basis. |
 | `ERR_TLS_CERT_ALTNAME_INVALID` | The host or IP in `SAP_URL` does not match the certificate. Check step 2. |
 | `ECONNREFUSED` / `ENOTFOUND` | The connection was refused, or DNS lookup failed, respectively. |
