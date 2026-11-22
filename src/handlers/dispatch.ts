@@ -434,19 +434,33 @@ function buildBaseErrorMessage(
     if (err.isCancelled) {
       return `${message}\n\nHint: The SAP request was cancelled. Submitted work may continue in SAP; check its state before retrying.`;
     }
+    // Low-level causes can name hosts, IPs and certificates; minimal mode keeps only their code.
+    const code = err.lowLevelCause?.code;
+    const shown =
+      config.minimalErrors && err.cause
+        ? `ADT network error${code ? ` (${code})` : ''}. Details are hidden because ARC1_MINIMAL_ERRORS=true; use the request ID to correlate server-side audit logs.`
+        : message;
     if (tool === 'SAPRead' && String(args.type ?? '').toUpperCase() === 'SYSTEM') {
       return (
-        `${message}\n\nHint: Connectivity probe failed. Fix connectivity first, then retry ` +
+        `${shown}\n\nHint: Connectivity probe failed. Fix connectivity first, then retry ` +
         'SAPRead(type="SYSTEM") before running any batch or parallel tool calls.'
       );
     }
     return (
-      `${message}\n\nHint: Cannot reach the SAP system. Run SAPRead(type="SYSTEM") once as a connectivity ` +
+      `${shown}\n\nHint: Cannot reach the SAP system. Run SAPRead(type="SYSTEM") once as a connectivity ` +
       'probe before retrying batch/parallel calls.'
     );
   }
 
   return message;
+}
+
+/** `ADT network error: fetch failed (CODE: reason)` so a certificate problem is distinguishable from a down host. */
+function withNetworkCause(err: AdtNetworkError): string {
+  const cause = err.lowLevelCause;
+  if (!cause) return err.message;
+  const detail = cause.code && cause.message ? `${cause.code}: ${cause.message}` : cause.code || cause.message;
+  return `${err.message} (${detail})`;
 }
 
 function formatMinimalAdtError(err: AdtApiError): string {
@@ -1230,7 +1244,8 @@ export async function handleToolCall(
             // Best-effort cleanup must not replace the creation error or prevent its audit event.
           }
         }
-        const message = err instanceof Error ? err.message : String(err);
+        const message =
+          err instanceof AdtNetworkError ? withNetworkCause(err) : err instanceof Error ? err.message : String(err);
         const auditErrorMessage =
           err instanceof AdtApiError && (err.statusCode === 401 || err.statusCode === 403)
             ? `SAP HTTP ${err.statusCode} authentication/authorization failure (response details suppressed)`

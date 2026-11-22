@@ -97,6 +97,76 @@ describe('network error guidance', () => {
   });
 });
 
+describe('network error cause (#1272)', () => {
+  const fetchFailed = (cause?: unknown) => new TypeError('fetch failed', cause === undefined ? undefined : { cause });
+  const coded = (code: string, message: string) => Object.assign(new Error(message), { code });
+  const read = async (minimalErrors = false) => {
+    const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPRead', {
+      type: 'PROG',
+      name: 'ZTEST',
+    });
+    expect(result.isError).toBe(true);
+    return result.content[0]?.text ?? '';
+  };
+
+  it.each([
+    [
+      coded('DEPTH_ZERO_SELF_SIGNED_CERT', 'self-signed certificate'),
+      'ADT network error: fetch failed (DEPTH_ZERO_SELF_SIGNED_CERT: self-signed certificate)',
+    ],
+    [
+      coded('ENOTFOUND', 'getaddrinfo ENOTFOUND sap.example'),
+      'ADT network error: fetch failed (ENOTFOUND: getaddrinfo ENOTFOUND sap.example)',
+    ],
+    [
+      Object.assign(new AggregateError([coded('ECONNREFUSED', 'connect ECONNREFUSED ::1:443')], ''), {
+        code: 'ECONNREFUSED',
+      }),
+      'ADT network error: fetch failed (ECONNREFUSED: connect ECONNREFUSED ::1:443)',
+    ],
+    [
+      new AggregateError([coded('ECONNREFUSED', 'connect ECONNREFUSED 127.0.0.1:443')], ''),
+      'ADT network error: fetch failed (ECONNREFUSED: connect ECONNREFUSED 127.0.0.1:443)',
+    ],
+    [new Error('other side closed'), 'ADT network error: fetch failed (other side closed)'],
+  ])('appends the low-level cause once (%#)', async (cause, expected) => {
+    mockFetch.mockRejectedValue(fetchFailed(cause));
+    const text = await read();
+    expect(text.split('\n')[0]).toBe(expected);
+    expect(text).toContain('Cannot reach the SAP system');
+  });
+
+  it('keeps the message unchanged without a cause', async () => {
+    mockFetch.mockRejectedValue(fetchFailed());
+    expect((await read()).split('\n')[0]).toBe('ADT network error: fetch failed');
+  });
+
+  it('keeps timeouts unchanged', async () => {
+    mockFetch.mockRejectedValue(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+    const text = await read();
+    expect(text.split('\n')[0]).toBe('ADT network error: The operation was aborted due to timeout');
+    expect(text).toContain('exceeded its client time limit');
+  });
+
+  it('shows only the code under ARC1_MINIMAL_ERRORS', async () => {
+    mockFetch.mockRejectedValue(
+      fetchFailed(
+        coded(
+          'ERR_TLS_CERT_ALTNAME_INVALID',
+          "Hostname/IP does not match certificate's altnames: IP: 10.1.2.3 is not in the cert's list: sap.internal",
+        ),
+      ),
+    );
+    const text = await read(true);
+    expect(text).toContain('ADT network error (ERR_TLS_CERT_ALTNAME_INVALID).');
+    expect(text).toContain('Cannot reach the SAP system');
+    expect(text).not.toMatch(/10\.1\.2\.3|sap\.internal|altnames|fetch failed/);
+
+    mockFetch.mockRejectedValue(coded('ECONNREFUSED', 'connect ECONNREFUSED 10.9.9.9:20003'));
+    expect(await read(true)).not.toContain('10.9.9.9');
+  });
+});
+
 // SAP 7.50 sends a 404 without sap-cache-control and its ICM repeats it for 60 seconds;
 // 7.58 and 8.16 send "+0" (#1261).
 it.each([

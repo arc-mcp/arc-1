@@ -21,6 +21,8 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
     allowFreeSQL: config.allowFreeSQL,
     allowTransportWrites: config.allowTransportWrites,
     allowGitWrites: config.allowGitWrites,
+    allowPluginExecute: config.allowPluginExecute,
+    allowPluginRawWrites: config.allowPluginRawWrites,
     gzipDataPreviewBody: config.gzipDataPreviewBody,
     // Exact names are NOT logged. They are not credentials, but a curated list of an
     // organisation's sensitive tables is a reconnaissance aid for anyone with log access. Count plus
@@ -44,6 +46,7 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
     `effective safety: writes=${yn(config.allowWrites)} data=${yn(config.allowDataPreview)} ` +
     `sql=${yn(config.allowFreeSQL)} packages=[${config.allowedPackages.join(',')}] ` +
     `transports=${yn(config.allowTransportWrites)} git=${yn(config.allowGitWrites)} ` +
+    `pluginExecute=${yn(config.allowPluginExecute)} pluginRawWrites=${yn(config.allowPluginRawWrites)} ` +
     `gzipDataPreview=${yn(config.gzipDataPreviewBody)} ` +
     `blockedDataSources=${config.blockedDataSources.length}` +
     `${config.blockedDataSources.length > 0 ? `/${shortPolicyFingerprint(config.blockedDataSources)}` : ''} ` +
@@ -66,6 +69,8 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
     'allowFreeSQL',
     'allowTransportWrites',
     'allowGitWrites',
+    'allowPluginExecute',
+    'allowPluginRawWrites',
     'gzipDataPreviewBody',
     'blockedDataSources',
     'allowedPackages',
