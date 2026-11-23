@@ -723,13 +723,10 @@ The lockfile now resolves `node-forge` to **1.4.3**, which includes the
 The temporary `GHSA-86w9-cpqp-85rv` risk exception has been removed from `audit-ci.json`.
 High/critical advisories, including a reintroduction of that advisory, and audit failures fail the CI job.
 
-`audit-ci.json` temporarily accepts only
-[`GHSA-fc5q-39xc-vjpf`](https://github.com/advisories/GHSA-fc5q-39xc-vjpf), a ReDoS advisory that
-covers every `picomatch` release through 4.0.7 and has no patched version as of 17 November 2026.
-`picomatch` is reachable only through development tooling (`lint-staged`, `vitest`, `vite`); it is
-not in the production dependency graph or the published package, and its glob patterns come from
-this repository's own configuration. The exception expires automatically at **00:00 Europe/Berlin
-on 15 December 2026**; remove it as soon as a fixed release is available. Other advisories still fail.
+The temporary `picomatch` exception has also been removed:
+[`GHSA-fc5q-39xc-vjpf`](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) was withdrawn on
+18 November 2026 because it was not a security issue. There are no advisory exceptions in
+`audit-ci.json`; high/critical findings and audit failures remain blocking.
 
 Run `npm run audit:ci` and `npm run audit:ci -- --directory btp/approuter` to reproduce the PR
 checks. Both audit production and development dependencies with the existing optional dependency
