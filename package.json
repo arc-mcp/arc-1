@@ -129,7 +129,7 @@
     "on-headers": "^1.1.0",
     "rate-limiter-flexible": "^11.4.1",
     "undici": "^8.12.4",
-    "xml-crypto": "^6.1.2",
+    "xml-crypto": "^6.4.0",
     "zod": "^4.6.7"
   },
   "overrides": {
