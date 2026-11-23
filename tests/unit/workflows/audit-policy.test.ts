@@ -93,9 +93,23 @@ describe('dependency audit gate', () => {
     await expect(audit({ error: { code: 'ENOAUDIT', summary: 'Registry unavailable' } })).rejects.toThrow('ENOAUDIT');
   });
 
-  it('allowlists only the dev-only picomatch advisory, with an expiry', () => {
-    const allowlist = CONFIG.allowlist as Array<Record<string, { active: boolean; expiry: string }>>;
-    expect(allowlist.flatMap((entry) => Object.keys(entry))).toEqual(['GHSA-fc5q-39xc-vjpf']);
-    expect(Date.parse(allowlist[0]['GHSA-fc5q-39xc-vjpf'].expiry)).toBeLessThan(Date.parse('2027-01-01'));
+  it('does not bypass a reported picomatch finding through the retired exception', async () => {
+    // Synthetic report: the real advisory is withdrawn, but its old exception must not bypass the gate.
+    await expect(
+      audit({
+        auditReportVersion: 2,
+        vulnerabilities: {
+          picomatch: {
+            name: 'picomatch',
+            severity: 'high',
+            isDirect: false,
+            via: [advisory('GHSA-fc5q-39xc-vjpf', 'picomatch')],
+            effects: [],
+            nodes: ['node_modules/picomatch'],
+          },
+        },
+        metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high: 1, critical: 0, total: 1 } },
+      }),
+    ).rejects.toThrow('Failed security audit');
   });
 });
