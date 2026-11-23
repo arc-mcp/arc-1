@@ -149,7 +149,7 @@
     "@types/node": "^22.20.5",
     "@types/on-headers": "^1.0.4",
     "@types/supertest": "^7.2.1",
-    "@vitest/coverage-v8": "^5.1.0",
+    "@vitest/coverage-v8": "^5.1.1",
     "@xmldom/xmldom": "^0.9.12",
     "audit-ci": "7.1.0",
     "esbuild": "^0.28.1",
