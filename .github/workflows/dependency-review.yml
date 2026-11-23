@@ -26,7 +26,7 @@ jobs:
           persist-credentials: false
 
       - name: Check introduced vulnerabilities
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
         with:
           fail-on-severity: high
           # The default is runtime only. Build tools run in CI and can poison the artifact.
@@ -42,7 +42,7 @@ jobs:
           persist-credentials: false
 
       - name: Check license policy
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
         with:
           vulnerability-check: false
           # Block copyleft licenses that would contaminate the MIT-
