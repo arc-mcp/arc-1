@@ -3,14 +3,5 @@
   "package-manager": "npm",
   "extra-args": [
     "--omit=optional"
-  ],
-  "allowlist": [
-    {
-      "GHSA-fc5q-39xc-vjpf": {
-        "active": true,
-        "expiry": "2026-12-15T00:00:00+01:00",
-        "notes": "Temporary acceptance of the picomatch ReDoS advisory, widened on 17 November 2026 to all versions through 4.0.7 with no patched release. picomatch is reachable only through development tooling (lint-staged, vitest, vite, tinyglobby) and is absent from the production dependency graph and the published package; its glob patterns come from this repository's own configuration. Upgrade and remove the exception when a fixed picomatch is released (micromatch/picomatch#194); review before 15 December 2026."
-      }
-    }
   ]
 }
