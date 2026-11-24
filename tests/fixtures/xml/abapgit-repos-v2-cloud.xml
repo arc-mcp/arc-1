@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Captured live and redacted: GET /sap/bc/adt/abapgit/repos with Accept: application/abapgit.adt.repos.v2+xml
+     on SAP S/4HANA Cloud Public Edition (SAP_BASIS 920 SP 0006), 2026-11-24, HTTP 200.
+     The root element and the atom:link directly under it are the raw response. The two repository rows were
+     read back through a DOM serializer, so the attribute order inside their atom:link elements may differ
+     from the wire; element names, namespaces, attribute names, rel/type values and element order are as
+     received. Keys, packages, URLs, branch names, users, e-mail addresses, timestamps and the 32-character
+     ids in the status/log links are placeholders. Line breaks and indentation were added, and the list is
+     cut to two rows, one for each link set that system returned: seven links, and five for a repository
+     with status S (Linked) and no deserialization data. The root atom:link is not emitted by the
+     open-source ZABAPGIT_ST_REPOS transformation (abapGit/ADT_Backend); the Eclipse client models it
+     (abapGit/ADT_Frontend, org.abapgit.adt.backend/model/abapgitrepositories.ecore). -->
+<abapgitrepo:repositories xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repositories">
+  <atom:link rel="http://www.sap.com/adt/abapgit/relations/folderlogic" xmlns:atom="http://www.w3.org/2005/Atom"/>
+  <abapgitrepo:repository>
+    <abapgitrepo:key>000000000001</abapgitrepo:key>
+    <abapgitrepo:package>/NS/EXAMPLE</abapgitrepo:package>
+    <abapgitrepo:folderLogic>FULL</abapgitrepo:folderLogic>
+    <abapgitrepo:url>https://github.com/example/abap-cloud-sample.git</abapgitrepo:url>
+    <abapgitrepo:branchName>refs/heads/main</abapgitrepo:branchName>
+    <abapgitrepo:createdBy>DEVELOPER</abapgitrepo:createdBy>
+    <abapgitrepo:createdEmail>developer@example.com</abapgitrepo:createdEmail>
+    <abapgitrepo:createdAt>20260101120000.123456</abapgitrepo:createdAt>
+    <abapgitrepo:deserializedBy>DEVELOPER</abapgitrepo:deserializedBy>
+    <abapgitrepo:deserializedEmail>developer@example.com</abapgitrepo:deserializedEmail>
+    <abapgitrepo:deserializedAt>20260101120500.123456</abapgitrepo:deserializedAt>
+    <abapgitrepo:status>E</abapgitrepo:status>
+    <abapgitrepo:statusText>Pushed with errors</abapgitrepo:statusText>
+    <atom:link xmlns:atom="http://www.w3.org/2005/Atom" href="/sap/bc/adt/abapgit/repos/000000000001/pull" rel="http://www.sap.com/adt/abapgit/relations/pull" type="pull_link"/>
+    <atom:link xmlns:atom="http://www.w3.org/2005/Atom" href="/sap/bc/adt/abapgit/repos/000000000001/pull/modifiedobjects" rel="http://www.sap.com/adt/abapgit/relations/pull/modifiedobjects" type="modifiedobjects_link"/>
+    <atom:link xmlns:atom="http://www.w3.org/2005/Atom" href="/sap/bc/adt/abapgit/repos/000000000001/stage" rel="http://www.sap.com/adt/abapgit/relations/stage" type="stage_link"/>
+    <atom:link xmlns:atom="http://www.w3.org/2005/Atom" href="/sap/bc/adt/abapgit/repos/000000000001/push" rel="http://www.sap.com/adt/abapgit/relations/push" type="push_link"/>
+    <atom:link xmlns:atom="http://www.w3.org/2005/Atom" href="/sap/bc/adt/abapgit/repos/000000000001/checks" rel="http://www.sap.com/adt/abapgit/relations/check" type="check_link"/>
+    <atom:link xmlns:atom="http://www.w3.org/2005/Atom" href="/sap/bc/adt/abapgit/repos/000000000001/status/0123456789ABCDEF0123456789ABCDEF" rel="http://www.sap.com/adt/abapgit/relations/status" type="status_link"/>
+    <atom:link xmlns:atom="http://www.w3.org/2005/Atom" href="/sap/bc/adt/abapgit/repos/000000000001/log/0123456789ABCDEF0123456789ABCDEF" rel="http://www.sap.com/adt/abapgit/relations/log" type="log_link"/>
+  </abapgitrepo:repository>
+  <abapgitrepo:repository>
+    <abapgitrepo:key>000000000002</abapgitrepo:key>
+    <abapgitrepo:package>/NS/EXAMPLE_LINKED</abapgitrepo:package>
+    <abapgitrepo:folderLogic>FULL</abapgitrepo:folderLogic>
+    <abapgitrepo:url>https://github.com/example/abap-cloud-linked.git</abapgitrepo:url>
+    <abapgitrepo:branchName>refs/heads/main</abapgitrepo:branchName>
+    <abapgitrepo:createdBy>DEVELOPER</abapgitrepo:createdBy>
+    <abapgitrepo:createdEmail>developer@example.com</abapgitrepo:createdEmail>
+    <abapgitrepo:createdAt>20260102090000.123456</abapgitrepo:createdAt>
+    <abapgitrepo:deserializedBy/>
+    <abapgitrepo:deserializedEmail/>
+    <abapgitrepo:deserializedAt>0.0</abapgitrepo:deserializedAt>
+    <abapgitrepo:status>S</abapgitrepo:status>
+    <abapgitrepo:statusText>Linked</abapgitrepo:statusText>
+    <atom:link xmlns:atom="http://www.w3.org/2005/Atom" href="/sap/bc/adt/abapgit/repos/000000000002/pull" rel="http://www.sap.com/adt/abapgit/relations/pull" type="pull_link"/>
+    <atom:link xmlns:atom="http://www.w3.org/2005/Atom" href="/sap/bc/adt/abapgit/repos/000000000002/pull/modifiedobjects" rel="http://www.sap.com/adt/abapgit/relations/pull/modifiedobjects" type="modifiedobjects_link"/>
+    <atom:link xmlns:atom="http://www.w3.org/2005/Atom" href="/sap/bc/adt/abapgit/repos/000000000002/stage" rel="http://www.sap.com/adt/abapgit/relations/stage" type="stage_link"/>
+    <atom:link xmlns:atom="http://www.w3.org/2005/Atom" href="/sap/bc/adt/abapgit/repos/000000000002/push" rel="http://www.sap.com/adt/abapgit/relations/push" type="push_link"/>
+    <atom:link xmlns:atom="http://www.w3.org/2005/Atom" href="/sap/bc/adt/abapgit/repos/000000000002/checks" rel="http://www.sap.com/adt/abapgit/relations/check" type="check_link"/>
+  </abapgitrepo:repository>
+</abapgitrepo:repositories>

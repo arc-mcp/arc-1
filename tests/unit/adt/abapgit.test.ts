@@ -65,6 +65,107 @@ describe('abapGit client helpers', () => {
     expect(repos[0]?.links.some((link) => link.href.endsWith('/checks'))).toBe(true);
   });
 
+  it('parseAbapGitRepos keeps the on-premise repository list unchanged, field by field', () => {
+    const link = (key: string, rel: string, action: string, type?: string) => ({
+      rel: `http://www.sap.com/adt/abapgit/relations/${rel}`,
+      href: `/sap/bc/adt/abapgit/repos/${key}/${action}`,
+      type,
+      title: undefined,
+    });
+
+    expect(parseAbapGitRepos(loadFixture('abapgit-repos-v2.xml'))).toStrictEqual([
+      {
+        key: '000000000001',
+        package: '$TUTORIALS',
+        url: 'https://github.com/example/tutorials',
+        branchName: 'refs/heads/master',
+        selectedBranch: undefined,
+        deserializedBy: undefined,
+        createdBy: 'DEVELOPER',
+        createdAt: '20200130121100.563083',
+        dotAbapGit: undefined,
+        links: [
+          link('000000000001', 'pull', 'pull'),
+          link('000000000001', 'stage', 'stage', 'stage_link'),
+          link('000000000001', 'push', 'push', 'push_link'),
+          link('000000000001', 'check', 'checks', 'check_link'),
+        ],
+      },
+      {
+        key: '000000000006',
+        package: '/DMO/FLIGHT',
+        url: 'https://github.com/SAP/abap-platform-refscen-flight',
+        branchName: 'refs/heads/main',
+        selectedBranch: undefined,
+        deserializedBy: 'DEVELOPER',
+        createdBy: 'DEVELOPER',
+        createdAt: '20200130123138.446028',
+        dotAbapGit: undefined,
+        links: [
+          link('000000000006', 'pull', 'pull'),
+          link('000000000006', 'stage', 'stage'),
+          link('000000000006', 'push', 'push'),
+          link('000000000006', 'check', 'checks'),
+        ],
+      },
+    ]);
+  });
+
+  it('parseAbapGitRepos accepts the atom:link that S/4HANA Cloud Public Edition puts directly under the list root', () => {
+    const repos = parseAbapGitRepos(loadFixture('abapgit-repos-v2-cloud.xml'));
+    expect(repos).toHaveLength(2);
+    expect(repos[0]).toMatchObject({
+      key: '000000000001',
+      package: '/NS/EXAMPLE',
+      url: 'https://github.com/example/abap-cloud-sample.git',
+      branchName: 'refs/heads/main',
+      createdBy: 'DEVELOPER',
+      createdAt: '20260101120000.123456',
+      deserializedBy: 'DEVELOPER',
+    });
+    // The root link describes the list, not a repository: it must not leak into a repository's links.
+    expect(repos[0]?.links.map((link) => link.type)).toEqual([
+      'pull_link',
+      'modifiedobjects_link',
+      'stage_link',
+      'push_link',
+      'check_link',
+      'status_link',
+      'log_link',
+    ]);
+    expect(repos[0]?.links.some((link) => link.rel.endsWith('/folderlogic'))).toBe(false);
+
+    // A repository that is linked but was never deserialized has no status and log links.
+    expect(repos[1]).toMatchObject({
+      key: '000000000002',
+      package: '/NS/EXAMPLE_LINKED',
+      url: 'https://github.com/example/abap-cloud-linked.git',
+      branchName: 'refs/heads/main',
+    });
+    expect(repos[1]?.deserializedBy).toBeUndefined();
+    expect(repos[1]?.links.map((link) => link.type)).toEqual([
+      'pull_link',
+      'modifiedobjects_link',
+      'stage_link',
+      'push_link',
+      'check_link',
+    ]);
+
+    // A system without repositories still answers with the root link alone.
+    expect(parseAbapGitRepos('<repositories><link rel="folderlogic"/></repositories>')).toEqual([]);
+  });
+
+  it('parseAbapGitRepos accepts a root link only as an attribute-only element', () => {
+    expect(() => parseAbapGitRepos('<repositories><link>FAILED</link></repositories>')).toThrow(/invalid <link>/);
+    expect(() => parseAbapGitRepos('<repositories><link/></repositories>')).toThrow(/invalid <link>/);
+    expect(() => parseAbapGitRepos('<repositories><link rel="x">FAILED</link></repositories>')).toThrow(
+      /unexpected child elements/,
+    );
+    expect(() => parseAbapGitRepos('<repositories><link rel="x"><error>FAILED</error></link></repositories>')).toThrow(
+      /unexpected child elements/,
+    );
+  });
+
   it('parseAbapGitExternalInfo parses access mode and branches', () => {
     const info = parseAbapGitExternalInfo(loadFixture('abapgit-external-info.xml'));
     expect(info.accessMode).toBe('PUBLIC');
@@ -209,6 +310,12 @@ describe('abapGit client helpers', () => {
     expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/abapgit/repos', {
       Accept: 'application/abapgit.adt.repos.v2+xml',
     });
+  });
+
+  it('listRepos reads the S/4HANA Cloud Public Edition repository list', async () => {
+    const http = mockHttp(loadFixture('abapgit-repos-v2-cloud.xml'));
+    const repos = await listRepos(http, gitSafety);
+    expect(repos.map((repo) => repo.key)).toEqual(['000000000001', '000000000002']);
   });
 
   it('getExternalInfo uses the externalRepo namespace (capital R) in request payload', async () => {
