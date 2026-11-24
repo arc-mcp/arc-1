@@ -227,6 +227,10 @@ Safety system (read-only, op filter, pkg filter, SQL blocking, transport gating,
 
 | Date | Change | Relevant? | Action for ARC-1 | Status |
 |------|--------|-----------|-------------------|--------|
+| 2026-10-19 | `e7f2ff9` in-app **Microsoft Entra sign-in gate** (feature-flagged, #17; Azure Easy Auth abandoned) + refreshed Azure deployment guide | Low | ALREADY-HAVE: OIDC JWT (Entra), XSUAA and API keys coexist | — |
+| 2026-10-19 | `1c1ef66` `/health` exposes app + **runtime dependency versions** (#15) | No | ARC-1 `/health` returns version/startedAt/pid only; listing dependency versions on an unauthenticated endpoint helps attackers match CVEs — deliberately not | — |
+| 2026-10-19 | `8b55463` fix process crash on `POST /oauth/authorize` with a bad `redirect_uri` (#16); Dependabot alerts cleared (#14) | Low | ALREADY-HAVE: redirect policy tested (`tests/unit/server/oauth-redirect-policy.test.ts`); Dependabot | — |
+| 2026-07-03 | 500-wrapped errors classified + raw SAP response capture (#9); `abap_edit_method` CRLF match and elicitation hang fix (#10) | Low | ALREADY-HAVE error classification; ARC-1 never elicits inside a lock | — |
 | 2026-06-22 | `afc1b66` self-correcting **"Unknown column"** hint on abap_table/abap_query; `df255e1` `abap_get_class_include` (read class-local includes / RAP behavior handlers); `baa4488` wire up BspHandlers | **High / No** | (1) **Unknown-column hint = GAP (High)**: ARC-1 self-corrects unknown *tables* (`query.ts:180`) but not unknown *columns* — add valid-column enrichment on error. (2) class-local include read = **ALREADY-HAVE** (`getClassInclude`, `read.ts include=`). (3) BSP: ARC-1 *reads* BSP (`listBspApps`) but BSP *write*/upload is a PARTIAL gap. | ✅ **DONE (col hint, PR #502)** |
 | 2026-06-15 | `ef70b9e` transport/lock/write resilience from prod error-log analysis | No | **ALREADY-HAVE**: ARC-1's lock/transport/write path is already robust — try-finally unlock, CSRF refresh-on-403, 415/406 negotiation retry, 423 handling, stateful session + semaphore (`crud.ts`, `http.ts`). | Done |
 | 2026-05-15 | `4cfd841` **pre-release inactive-objects check** + auto-package lookup on create | **High / No** | **Pre-release inactive check = GAP (High, S)** — cleanest win: ARC-1 has the primitive (`getInactiveObjects`/`InactiveListCache`) but the transport `release`/`release_recursive` path never consults it. Wire it in to warn/block. Auto-package lookup: ARC-1 deliberately defaults `$TMP` + allowlist (no action). | ✅ **DONE (inactive check, PR #501)** |
@@ -271,4 +275,4 @@ albanleong/abap-mcpb packages dassian-adt as an **MCPB** (MCP Bundle) for Claude
 
 **Risk:** If Dassian adds safety controls and BTP support, the gap narrows significantly. Monitor closely.
 
-_Last updated: 2026-06-24 (deep scan — 11 commits May–Jun resumed after the April sprint; private→public toggle explains 33★→5★, not a loss of interest). Net new gaps: pre-release inactive-objects check (High, S — primitive exists), unknown-column self-correcting hint (High, M), TTYP create (Med, M); ToC bundling needs a focused verify (tool advertises K/W/T but impl looks K-only). Already-have: class-local include reads, transport/lock/write resilience, output cap+compress._
+_Last updated: 2026-11-24 (infra-focused scan: 11 commits Jul–Oct 2026, Azure/Entra hardening). Net: no new infra gap._

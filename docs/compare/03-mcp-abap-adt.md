@@ -95,8 +95,11 @@ Everything beyond read-only: write ops, activation, transport, code intelligence
 
 | Date | Change | Relevant? | Action for ARC-1 | Status |
 |------|--------|-----------|-------------------|--------|
+| 2026-09-06 | `d6b32ed` harden SAP TLS and migrate stdio to **MCP SDK 2** | Low | TLS: ARC-1 verifies by default (`SAP_INSECURE` is opt-in; pinning parked as SEC-24). SDK 2: see ADR-0006 | Watch |
+| 2026-08-19 | response pagination with byte-safe validation (host output-size errors) | Low | ALREADY-HAVE: bounded responses, line ranges, data-preview byte cap | — |
+| 2026-07-07 | v1.2.0 — GetTable 7.50 fallback, RAP BDEF/SRVD tools, data preview, npm + MCP registry; Streamable HTTP + `/healthz` added 07-02 and **reverted** 07-06 | No | ALREADY-HAVE | — |
 | 2025-09-09 | URL encoding fix for parameters | Yes | Verify ARC-1 encodes all params | Done |
-| 2025-02-19 | GetTransaction added | Maybe | Consider adding transaction lookup | TODO |
+| 2025-02-19 | GetTransaction added | Maybe | Consider adding transaction lookup | Done (`SAPRead type=TRAN`, on-prem) |
 | | | | | |
 
-_Last updated: 2026-03-30_
+_Last updated: 2026-11-24 (revived Jul–Oct 2026, still read-only and stdio-only; no infra gap)_

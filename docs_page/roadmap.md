@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-11-13
+**Last reviewed:** 2026-11-24
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -91,6 +91,8 @@ sequence.
 | [SEC-19](#sec-19) | Registered agent identity and downstream tool scopes | P2 | L | Needs research | Auth / Security |
 | [SEC-23](#sec-23) | Local SAML bearer: wider validation | P2 | M | Experimental | Auth / Security |
 | [SEC-24](#sec-24) | Certificate pinning for direct SAP connections | P3 | M | Revisit on trigger | Security |
+| [SEC-25](#sec-25) | Expected SAP target pin (system, client, user) | P3 | S | Needs research | Security |
+| [SEC-26](#sec-26) | Fuzz SAP response parsers | P3 | S | Needs research | Security |
 | [COMPAT-22](#compat-22) | Integration Suite remote MCP discovery and cross-user validation | P2 | M | Needs research | Compatibility |
 | [COMPAT-23](#compat-23) | Shared reader for function-group object URIs | P2 | M | Ready | Compatibility |
 | [COMPAT-24](#compat-24) | Uniform not-found for reads of deleted objects | P3 | S | Needs research | Compatibility |
@@ -670,6 +672,45 @@ Local probes with undici 8.12.4 on Node 22 found two traps for an implementation
 
 **Resume when.** Users report that neither a trusted certificate nor a hosts entry is possible in
 their environment.
+
+<a id="sec-25"></a>
+### SEC-25 — Expected SAP target pin (system, client, user)
+
+- **Priority / effort / status:** P3 / S / Needs research
+- **Category:** Security
+
+**Idea.** Optional settings that state which SAP system ID, client and (for shared Basic) user a
+single-target instance must reach. ARC-1 checks them on the first successful SAP response and
+refuses every tool call on a mismatch. vibing-steampunk ships this as `--expect` (v2.60.0,
+[compare notes](https://github.com/arc-mcp/arc-1/blob/main/docs/compare/01-vibing-steampunk.md)).
+
+**Why it remains.** Single-target mode trusts `SAP_URL`/destination as configured. `ARC1_IDE_SYSTEM_ID`
+and `ARC1_SYSTEM_LABEL` are labels, not checks, so a mistyped host, a copied `.mtaext` or a
+destination repointed to another system is not detected. Multi-target already requires real
+`sap-sysid`/`sap-client` properties, but does not compare them with the reached system either.
+
+**Resume with.** Find a cheap, read-only source of SID/client/user that works on 7.50, 7.58, 8.16
+and BTP without free SQL (the `systeminformation` endpoint is not used yet). Define behavior for
+per-user PP (check SID/client only), cache the result per transport, and fail closed with an error
+that names the expected and reached values without exposing secrets.
+
+<a id="sec-26"></a>
+### SEC-26 — Fuzz SAP response parsers
+
+- **Priority / effort / status:** P3 / S / Needs research
+- **Category:** Security
+
+**Idea.** Property-based or fuzz tests for the parsers that read SAP responses: `src/adt/xml-parser.ts`,
+feed/dump parsers, error-text extraction and bounded-response handling. vibing-steampunk's fuzzing
+found three unbounded allocations in its decoders (v2.59.0).
+
+**Why it remains.** ARC-1's parser tests use fixtures from real systems. A malformed or hostile body
+from a compromised or misconfigured SAP system (or a proxy in front of it) is not exercised, apart
+from the data-preview byte limit.
+
+**Resume with.** Pick a small, maintained library (for example fast-check), bound each run so CI
+time stays flat, start with the XML error and feed parsers, and turn every finding into a fixed
+regression fixture.
 
 <a id="compat-22"></a>
 ### COMPAT-22 — Integration Suite remote MCP discovery and cross-user validation

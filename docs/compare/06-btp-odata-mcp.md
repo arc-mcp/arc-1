@@ -135,9 +135,10 @@ This project is **complementary, not competitive**. It operates in a completely 
 
 | Date | Change | Relevant? | Action | Status |
 |------|--------|-----------|--------|--------|
+| 2026-05-22 | OData V4 (community PR #20): Edm key typing, BaseType inheritance, **dual destinations** | Low | ARC-1 already has design-time + PP destinations (`SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION`); OData V4 entity access is outside ADT scope | — |
 | 2026-01-16 | Fix deploy path | No | -- | -- |
-| 2025-11-04 | Copilot Studio support | Yes | Review Copilot Studio adjustments | TODO |
+| 2025-11-04 | Copilot Studio support | Yes | Review Copilot Studio adjustments | Done (ARC-1 supports Copilot Studio) |
 | 2025-11-02 | 3-level progressive discovery refactor | Low | Pattern reference only | -- |
 | | | | | |
 
-_Last updated: 2026-03-30_
+_Last updated: 2026-11-24 (two commits since March; low activity)_
