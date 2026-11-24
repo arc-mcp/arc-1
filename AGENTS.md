@@ -217,11 +217,11 @@ File-level map: `docs/dev-guide.md` (Codebase structure — file level).
 ## Key Files for Common Tasks
 
 **Before you answer, plan or edit anything that depends on how one feature behaves, search
-`docs/dev-guide.md` by the affected tool action, object type or filename and read the matching rows** —
-e.g. `grep -n -i 'TTYP' docs/dev-guide.md` (likewise `edit_method`, `ST05`, `abapGit`, `traceparent`).
-That table holds the per-feature files and live-verified gotchas; they are not repeated here and cannot
-be derived from the code. Skip this only for cross-cutting tasks and simple file lookups, which the
-table below covers. For opt-in target authorization read
+`docs/dev-guide.md` by the affected tool action, object type or filename and read the whole matching
+entry** (its `###` heading to the next) — e.g. `grep -n -i 'TTYP' docs/dev-guide.md` (likewise
+`edit_method`, `ST05`, `abapGit`, `traceparent`). The entries hold the per-feature files and
+live-verified gotchas; they are not repeated here and cannot be derived from the code. Skip this only
+for cross-cutting tasks and simple file lookups, which the table below covers. For opt-in target authorization read
 [ADR-0008](docs/adr/0008-opt-in-xsuaa-target-authorization.md) and
 [its contract](docs/plans/xsuaa-target-authorization.md); [ADR-0011](docs/adr/0011-broader-pinned-pp-mutations.md) defines pinned writes.
 
