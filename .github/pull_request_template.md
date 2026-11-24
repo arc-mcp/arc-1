@@ -1,11 +1,13 @@
 <!-- Use a conventional title (fix:, feat:, docs:, chore:, …) and keep the PR to one coherent
-change. Fill the relevant fields; use N/A with a reason for the rest. Redact credentials,
+change. Keep it a draft until it is ready for review. Small PRs need the least rework: the ones
+that merged almost unchanged added about 170 lines (median). Fill the relevant fields; use N/A with a reason for the rest. Redact credentials,
 tokens, cookies, private keys, and customer data from all examples and test evidence. -->
 
 ## Change
 
 - Problem and resulting behavior:
-- Related issue(s), dependent PRs, or required package versions:
+- Related issue(s), dependent PRs, or required package versions: <!-- A feature (new tool action, object
+  type, config option, auth path) needs an issue where the scope was agreed first: see CONTRIBUTING.md. -->
 - Reproducer or example (before → after):
 
 <!-- For SAP API changes, link the contract evidence: SAP documentation, discovery results,
@@ -56,3 +58,12 @@ the overview and details in this PR. Preserve links to closed PRs for unfinished
 List the affected IDs and changes below, or write "No roadmap impact" after checking. -->
 
 - [ ] Checked the [idea roadmap](https://github.com/arc-mcp/arc-1/blob/main/docs_page/roadmap.md) and updated it where needed.
+
+## Before requesting review
+
+<!-- Points not covered by the sections above that maintainers often had to change on contributed PRs
+(AGENTS.md, "Contributing a Change"). Tick what applies; documentation-only PRs can skip the last one. -->
+
+- [ ] No option, environment variable, retry, hint or release workaround beyond what the issue needs.
+- [ ] `docs_page/tools.md` and related pages are updated where documented behavior changed.
+- [ ] `npm run check:sizes` and the tool-definition snapshot test pass.
