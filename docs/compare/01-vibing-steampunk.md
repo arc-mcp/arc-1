@@ -158,6 +158,8 @@ mcp-go v0.17.0, Cobra, Viper, go-sqlite3, godotenv, yaml.v3, Gopher-Lua, WebSock
 
 | Feature | Priority | Effort | Notes |
 |---------|----------|--------|-------|
+| **Expected-target pin** (`--expect`: SID, client, user checked after logon; v2.60.0) | Medium | S | Infra safety against a mistyped URL or a target swapped behind a router → [SEC-25](../../docs_page/roadmap.md#sec-25) |
+| **Fuzzed SAP decoders/parsers** (CI; found 3 unbounded allocations, v2.59.0) | Low | S | Hardening for ARC-1's XML/feed parsers → [SEC-26](../../docs_page/roadmap.md#sec-26) |
 | **Native ABAP parser/linter** (Go port, 8 rules) | Low | N/A | ARC-1 uses @abaplint/core (same source) |
 | **ABAP debugger** (8 tools) | Low | 5d | Requires ZADT_VSP deployment |
 | **AMDP/HANA debugger** (7 tools) | Low | 5d | Requires WebSocket + ZADT_VSP |
@@ -195,6 +197,12 @@ mcp-go v0.17.0, Cobra, Viper, go-sqlite3, godotenv, yaml.v3, Gopher-Lua, WebSock
 
 | Date | Upstream Change | Relevant? | Decision | Status |
 |------|----------------|-----------|----------|--------|
+| 2026-11-16 | v2.62.0–v2.62.1 — read-only HANA dumper (`vsp hana dump`, `osd-hana-dump` sidecar): ABAP sources and repository rows straight from the HANA SQL port, no ABAP logon; TLS flags | No | Reading the database directly bypasses SAP's own authorization — outside ARC-1's ADT-only, centrally gated model | — |
+| 2026-10-09 | v2.61.0 — **SNC/Kerberos SSO** through `sapnwrfc.dll` (ADT over RFC, Windows only); **`transport_cmd`**: every ADT request through a helper process's stdin/stdout, the helper doing its own signing/auth | Low (infra) | No action: RFC belongs in extensions ([ADR-0009](../adr/0009-abap-execution-and-rfc-belong-in-extensions.md)). `transport_cmd` is niche; outbound proxying is already parked as COMPAT-06 | — |
+| 2026-10-02 | v2.59.1–v2.60.0 — **`--expect` pins SAP system, client and user** (checked after logon); releases built by CI on tag push with checksums; leak scan at pre-push and in CI; LTS line `release/2.59`; decoder **fuzzing** (found 3 unbounded allocations); shuffled tests + `-race` | **Med** (infra) | **GAP** expected-target pin → [SEC-25](../../docs_page/roadmap.md#sec-25). **GAP** parser fuzzing → [SEC-26](../../docs_page/roadmap.md#sec-26). ALREADY-HAVE: CI-built releases (release-please, npm provenance, SBOM, image signing), GitHub secret scanning + push protection. LTS line: no demand | Open (roadmap) |
+| 2026-10-01 | v2.59.0 — upload a released transport to the import queue (never import), transport of copies, report as background job, offline abapGit zip import | Low | Import queue is a Basis/STMS step; execution belongs in extensions (ADR-0009) | — |
+| 2026-08-25 | v2.53.0–v2.57.0 — connection check = CSRF fetch (expired SSO arrives as a logon page under 200); headers kept across redirects, `icmenosession` reset, guard against a proxy dropping the context id | Low | ALREADY-HAVE logon-page detection (`src/adt/http.ts`). Redirect/context-id guards: re-check only if a proxy deployment reports lost sessions | — |
+| 2026-08-20 | v2.40.0–v2.58.0 — debugger (DAP, AMDP), dump/applog post-mortem, cluster tables, SMW0 files (tool features, outside this infra scan) | No (infra) | Debugger/execution not planned (ADR-0009); applog/cluster already parked as FEAT-88/FEAT-89 | — |
 | 2026-04-24 | **Issue #124: SAP API Policy and direct ADT access** | **Strategic** | **Assessment corrected 2026-10-21:** FAQ Q56 supports conditional custom MCP; Q33 requires ADT-channel clarification for ARC-1. Follow ref. 137800; BTP/developer framing does not supply permission. Upstream state not rechecked. | [Eval](vibing-steampunk/evaluations/issue-124-sap-api-policy-v42026.md) |
 | 2026-04-23 | Issue #123: GetRevisions 404 for INTF/DDLS (vsp uses wrong URL `oo/interfaces/{name}/includes/main/versions`) | Medium | Verify — ARC-1's path is `/source/main/versions` for INTF (likely correct). Run integration test against a4h to confirm. | — |
 | 2026-04-21 | Issue #110: Lock-handle regression on S/4HANA 758 (vsp v2.32→v2.36) | Medium | Cross-check whenever ARC-1 touches crud.ts — withStatefulSession should already cover it. | — |
@@ -229,4 +237,4 @@ mcp-go v0.17.0, Cobra, Viper, go-sqlite3, godotenv, yaml.v3, Gopher-Lua, WebSock
 
 > **Detailed commit-level tracking**: See [`docs/compare/vibing-steampunk/`](vibing-steampunk/) for per-commit and per-issue evaluations.
 
-_Last updated: 2026-04-27_
+_Last updated: 2026-11-24 (infra-focused scan v2.38.1 → v2.62.1: ~23 releases). Net: 2 infra GAPs → SEC-25 (expected-target pin) and SEC-26 (parser fuzzing); SNC/RFC and direct HANA reads stay out of scope._

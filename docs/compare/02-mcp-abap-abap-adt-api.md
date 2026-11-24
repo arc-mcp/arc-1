@@ -122,6 +122,9 @@ HTTP Streamable, OIDC/JWT auth, BTP support, principal propagation, API key auth
 
 | Date | Change | Relevant? | Action for ARC-1 | Status |
 |------|--------|-----------|-------------------|--------|
+| 2026-09-16 | `cdf71ee` restore bounded ADT workflows and **MCP SDK v2** support (community PR #23) | Low | ARC-1 stays on SDK v1 under [ADR-0006 (MCP legacy era)](../adr/0006-mcp-legacy-era-until-triggers.md); first competitor on SDK 2 — re-check the ADR's triggers on the next scan | Watch |
+| 2026-07-10 | npm publishing, MCP registry `server.json`, Smithery removed | No | ARC-1 already publishes npm + MCP registry | — |
+| 2026-07-02 | logs to stderr, response-bloat fix + source pagination, source cache, stateful session restored before lock operations | No | ALREADY-HAVE (stderr-only logging, line-range reads, ETag cache, `withStatefulSession`) | — |
 | 2025-02-27 | MCP wrapper: last commit | N/A | Wrapper appears abandoned | — |
 
 **Note**: The underlying `abap-adt-api` library (not the MCP wrapper) is actively maintained:
@@ -138,4 +141,4 @@ HTTP Streamable, OIDC/JWT auth, BTP support, principal propagation, API key auth
 
 > **Detailed tracking**: See [`docs/compare/abap-adt-api/`](abap-adt-api/) for per-commit and per-issue evaluations of the underlying library.
 
-_Last updated: 2026-04-27_
+_Last updated: 2026-11-24 (wrapper revived Jul–Sep 2026 by community PRs; no infra gap)_

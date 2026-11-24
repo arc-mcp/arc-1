@@ -2,7 +2,7 @@
 
 A comprehensive comparison of all SAP ADT/MCP projects against ARC-1.
 
-_Last updated: 2026-07-17._
+_Last updated: 2026-11-24 (infra-focused scan)._
 
 ## Legend
 - ✅ = Supported
@@ -21,9 +21,10 @@ _Last updated: 2026-07-17._
 | ADT client | Custom (undici/fetch) | Eclipse ADT (embedded, 2.9M LOC) | Custom (Go) | abap-adt-api | Custom (axios) | Custom (aiohttp) | Custom (axios) | SAP Cloud SDK | abap-adt-api | Custom (requests) |
 | npm package | ✅ `arc-1` | ❌ (VSIX) | ❌ (binary) | ❌ | ❌ | ❌ | ✅ `@mcp-abap-adt/core` | ❌ | ❌ (MCPB) | N/A (Python, git install) |
 | Docker image | ✅ ghcr.io | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Standalone executable (no runtime install) | ✅ (unsigned Node SEA per release; signing → OPS-07) | N/A (VSIX) | ✅ (Go binaries, CI-built + checksums) | ❌ | ❌ | ❌ | ✅ (v17.1.0 portable; RFC SDK supplied by user) | ❌ | ❌ | ❌ |
 | Stars | — | N/A (closed source) | 295 | 125 | 103 | 35 | 43 | 120 | 37 | 79 |
-| Active development | ✅ | ✅ SAP official (v1.0.0, GA Q2 2026) | ✅ Stable (v2.38.1; commits quiet since 2026-04-15, issues active #105–#124) | ❌ Dormant (Feb 2025) | ❌ Dormant | ⚠️ Stale (Mar 2026) | ✅ Very (v6.5.1, 6 releases in 9 days; open issue #77 FM-update parameter loss) | ⚠️ Dormant (Jan 2026) | ✅ Stable (53 tools, no commits since Apr 14) | ✅ Very (since 2018) |
-| Release count | — | N/A (VS Code extension) | 32+ | — | — | — | 95+ (5 months) | — | rolling | rolling "latest" |
+| Active development | ✅ | ✅ SAP official (v1.0.0, GA Q2 2026) | ✅ Very (v2.62.1, 2026-11-16; ~23 releases since Aug) | ⚠️ Revived (community PRs Jul–Sep 2026, MCP SDK 2) | ⚠️ Revived (v1.2.0 Jul 2026; SDK 2 + TLS hardening Sep) | ❌ Deprecated (2026-10-13 → Modernization Agents for SAP ABAP on AWS) | ✅ Very (v24.1.1, 2026-11-20; ~50 releases since Jun) | ⚠️ Low (OData V4 PR merged May 2026) | ✅ (Azure/Entra hardening Oct 2026) | ✅ Very (since 2018) |
+| Release count | — | N/A (VS Code extension) | 60+ | — | — | — | 150+ | — | rolling | rolling "latest" |
 | NPM monthly downloads | — | N/A | N/A | — | — | — | 3,625 | — | N/A | N/A |
 
 ## 2. MCP Transport
@@ -42,13 +43,14 @@ _Last updated: 2026-07-17._
 | Basic Auth | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
 | Cookie-based | ✅ | ✅ (Eclipse session) | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ (requests.Session) |
 | API Key (MCP) | ✅ | ✅ (static bearer token, localhost) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | N/A |
-| OIDC/JWT (MCP) | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| OIDC/JWT (MCP) | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ⚠️ (feature-flagged in-app Entra sign-in gate, Oct 2026) | ❌ |
 | XSUAA OAuth | ✅ | ✅ (BTP ABAP via Eclipse auth) | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ (Apr 2026) | ❌ |
 | BTP Service Key | ✅ | ✅ (ABAP Cloud project) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Principal Propagation | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ (X.509) | ✅ | ✅ | ❌ | ❌ |
 | MCP OAuth 2.0 per-user | ✅ (XSUAA OAuth proxy with auth-code/PKCE + stateless DCR; per-user SAP identity when paired with PP/Destination) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (Apr 2026) | ❌ |
-| SAML | ❌ | ✅ (reentrance ticket) | ✅ (v2.39.0+, PR #97) | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| SAML | ⚠️ (experimental local SAML bearer issuer → SAP, single-target; SEC-23) | ✅ (reentrance ticket) | ✅ (v2.39.0+, PR #97) | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | X.509 Certificates | ❌ | ⚠️ (Eclipse-supported) | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Kerberos / SNC SSO | ❌ (RFC belongs in extensions, ADR-0009) | ⚠️ (Eclipse-supported) | ✅ (v2.61.0, Windows, via NW RFC SDK) | ❌ | ❌ | ❌ | ⚠️ (cert/Kerberos partial) | ❌ | ❌ | ❌ |
 | Device Flow (OIDC) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Browser login page | ❌ | ✅ (reentrance ticket) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
 | Auth providers total | 4 | Eclipse stack (Basic/SSO/X.509/BTP) | 2 | 1 | 1 | 5+ | 9 | 2 | 4 | 1 (Basic) |
@@ -72,6 +74,7 @@ _Last updated: 2026-07-17._
 | Layered rate limiting | ✅ (3 layers: per-IP edge + per-user MCP quota + server-wide SAP semaphore) | ❌ | ❌ | ❌ | ❌ | ⚠️ (API Gateway-side only) | ❌ | ❌ | ❌ | N/A |
 | `Retry-After` honoring (429/503) | ✅ (RFC 7231, clamped 60 s, audit records source) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | DNS-rebinding protection (Host-header allowlist) | ❌ (gap → SEC-14) | ⚠️ (localhost + static bearer) | ❌ | ❌ | ❌ | ❌ | ✅ (v7.2.0) | ❌ | ❌ | ❌ |
+| Expected-target pin (SID/client/user checked after logon) | ❌ (gap → SEC-25) | not audited | ✅ (`--expect`, v2.60.0) | not audited | not audited | not audited | not audited | not audited | not audited | not audited |
 
 ### 4.1 Supply-Chain Security (SEC-11, Tier 1)
 
@@ -79,8 +82,8 @@ Where the rest of §4 covers *runtime* guardrails, this sub-table covers *build-
 
 | Control | ARC-1 | SAP ABAP MCP | vibing-steampunk | mcp-abap-abap-adt-api | mcp-abap-adt (mario) | AWS Accelerator | fr0ster | btp-odata-mcp | dassian-adt / abap-mcpb | sapcli |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Dependabot (or equivalent) | ✅ | N/A (closed src) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `npm audit` PR gate | ✅ | N/A (closed src) | N/A (Go) | ❌ | ❌ | N/A (Python) | ❌ | ❌ | ❌ | N/A (Python) |
+| Dependabot (or equivalent) | ✅ | N/A (closed src) | ❌ | ❌ | ❌ | ❌ | ✅ (Dependabot PRs since Oct 2026) | ❌ | ✅ (alerts cleared Oct 2026) | ❌ |
+| `npm audit` PR gate | ✅ | N/A (closed src) | N/A (Go) | ❌ | ❌ | N/A (Python) | ✅ (CI since v8.12.0) | ❌ | ❌ | N/A (Python) |
 | GitHub Dependency Review | ✅ | N/A (closed src) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | CodeQL / SAST in CI | ✅ | N/A (closed src) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Container image scanning | ✅ (Trivy) | N/A (closed src) | — | — | — | ⚠️ (AWS-side) | — | — | — | — |
@@ -88,6 +91,8 @@ Where the rest of §4 covers *runtime* guardrails, this sub-table covers *build-
 | Third-party action SHA pinning | ✅ | N/A (closed src) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | npm package provenance | ✅ | N/A (closed src) | N/A (Go) | ❌ | ❌ | N/A (Python) | ❌ | ❌ | ❌ | N/A (Python) |
 | CycloneDX release SBOM (npm production graph) | ✅ | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited |
+| Secret/leak scanning | ✅ (GitHub secret scanning + push protection) | N/A (closed src) | ✅ (pre-push + CI, v2.59.0) | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited |
+| Parser fuzzing in CI | ❌ (gap → SEC-26) | N/A (closed src) | ✅ (decoders/parsers, v2.59.0) | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited | not re-audited |
 | `SECURITY.md` policy | ✅ | N/A (closed src) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Private Vulnerability Reporting | ✅ | ⚠️ (SAP PSRT) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
@@ -249,7 +254,7 @@ The npm-graph CycloneDX quick win is now shipped. Remaining Tier 2 work (image/M
 | CLI mode (non-MCP) | ⚠️ (generic `call`/`tools` entry points + 6 ergonomic shortcuts; 9 of 12 MCP tools lack shortcuts or expose fewer knobs than the Zod schema — tracked as [FEAT-60](../../docs_page/roadmap.md#feat-60-cliserver-alignment-shortcut-parity-with-mcp-tool-schemas) + PR [#179](https://github.com/arc-mcp/arc-1/pull/179)) | ❌ (VS Code only) | ✅ (28 commands) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (28+ commands, primary mode) |
 | Health endpoint | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ (v4.3.0) | ❌ | ✅ | ❌ |
 | RFC connectivity | ❌ | ✅ (bundles JCo) | ❌ | ❌ | ❌ | ❌ | ✅ (sap-rfc-lite) | ❌ | ❌ | ✅ (PyRFC, optional) |
-| MCPB one-click install | ❌ | ❌ (VSIX marketplace) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| MCPB one-click install | ✅ (`.mcpb` attached to each GitHub Release) | ❌ (VSIX marketplace) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | Lock registry / recovery | ❌ | ⚠️ (Eclipse locks) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Batch HTTP operations | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (multipart/mixed) | ❌ | ❌ | ❌ |
 | RAG-optimized tool descriptions | ⚠️ (intent-based tool blurbs; compact 12-tool surface) | ✅ (heavily agent-engineered: USE WHEN/WORKFLOW/CRITICAL) | ❌ | ❌ | ❌ | ❌ | ✅ (v4.4.0; v6.2.0 extended to per-object-type context for 13 types — PR #66) | ❌ | ❌ | ❌ |
@@ -272,7 +277,7 @@ The npm-graph CycloneDX quick win is now shipped. Remaining Tier 2 work (image/M
 |--------|-------|---|-----------------|----------------------|---------------------|-----------------|---------|---------------|------------------------|--------|
 | Unit tests | 4,101 passing (810 Vitest suites; local Node 22 run, 2026-06-26) | N/A (closed source) | 222 | 0 | 0 | 0 | Yes (Jest) | 0 | 163 | ~90 files (unittest) |
 | Integration tests | ✅ (on-prem CI + BTP scheduled smoke) | N/A | ✅ | ❌ | 13 (live SAP) | ❌ | ✅ | ❌ | ⚠️ scaffold | ✅ (shell scripts) |
-| CI/CD | ✅ (release-please + reliability telemetry) | N/A (SAP internal) | ✅ (GoReleaser) | ❌ | ❌ | ❌ | ⚠️ (Husky + lint-staged) | ❌ | ❌ | ✅ (GitHub Actions + codecov) |
+| CI/CD | ✅ (release-please + reliability telemetry) | N/A (SAP internal) | ✅ (CI-built tag releases, checksums, -race, shuffled tests) | ❌ | ❌ | ❌ | ✅ (CI type-check + `release:verify`) | ❌ | ❌ | ✅ (GitHub Actions + codecov) |
 | Input validation | Zod v4 | Eclipse/Java | Custom | Untyped | Untyped | Pydantic | Zod v4 | Zod | Manual | argparse |
 | Linter | Biome | N/A | — | — | — | — | Biome | — | — | pylint + flake8 + mypy |
 
@@ -280,7 +285,19 @@ The npm-graph CycloneDX quick win is now shipped. Remaining Tier 2 work (image/M
 
 ## Priority Action Items
 
-> All prioritized items with evaluation details are maintained in the [roadmap](../../docs_page/roadmap.md#prioritized-execution-order). The feature matrix tables above are the source of truth for _what exists_; the roadmap is the source of truth for _what to build next and why_.
+> All prioritized items with evaluation details are maintained in the [roadmap](../../docs_page/roadmap.md). The feature matrix tables above are the source of truth for _what exists_; the roadmap is the source of truth for _what to build next and why_.
+
+**Infra scan 2026-11-24** (deployment, auth, transport, CI/release, packaging, security, observability):
+
+| Item | Signal | Roadmap | Priority |
+|---|---|---|---|
+| Expected-target pin (SID/client/user) | vibing-steampunk v2.60.0 `--expect` | [SEC-25](../../docs_page/roadmap.md#sec-25) (new) | P3 |
+| Fuzz SAP response parsers | vibing-steampunk v2.59.0 (3 unbounded allocations found) | [SEC-26](../../docs_page/roadmap.md#sec-26) (new) | P3 |
+| DNS-rebinding / Host-header hardening | fr0ster v7.2.0; still the only competitor with it | [SEC-14](../../docs_page/roadmap.md#sec-14) (unchanged) | P3 |
+| Signed executables | fr0ster v17.1.0 and vsp also ship executables — neither signs | [OPS-07](../../docs_page/roadmap.md#ops-07) (unchanged) | P3 |
+| MCP SDK v2 | mario-andreschak wrappers migrated (Sep 2026) | ADR-0006 triggers — re-check next scan | Watch |
+
+No infra item is urgent: ARC-1 still leads on BTP/CF deployment, XSUAA/OIDC/PP, layered rate limiting, audit sinks and supply-chain controls. AWS Accelerator is deprecated.
 
 ---
 
@@ -436,6 +453,7 @@ The following items were incorrectly marked in the previous version and have sin
 
 | Date | Update |
 |------|--------|
+| 2026-11-24 | Infra-focused scan of all seven tracked projects: added standalone-executable, Kerberos/SNC, expected-target-pin, secret-scan and parser-fuzzing rows; marked AWS Accelerator deprecated; refreshed activity; ARC-1 SAML ⚠️ (experimental bearer issuer) and MCPB ✅. New roadmap items SEC-25, SEC-26. |
 | 2026-06-26 | ARC-1 column re-audited against the repo: added `SAPContext(action="structure", type="TABL")` include/append context, corrected UI5/Fiori BSP to partial read-only support, refreshed MCP OAuth/DCR, RAP preflight, dry-run scope, and test-count facts. |
 | 2026-06-24 | Deep fr0ster v7.2.1 + sapcli scan found the SEC-14 DNS-rebinding gap and a dual-signal CDS API-release-write gap. See the 2026-06-24 tracker rows above. |
 | 2026-06-05 | Added the "SAP ABAP MCP" column for SAP's official `SAPSE.adt-vscode` bundled ABAP MCP server: headless Eclipse/Equinox + Anthropic MCP Java SDK 1.0.1, localhost Streamable HTTP on port 2236, static bearer token, 14 built-in tools plus dynamic backend IDE Actions, ABAP Cloud/RAP-generation scope, disabled by default, part of Joule for Developers, GA Q2 2026. Detailed teardown: [J4D/02-sap-abap-mcp-server-vscode.md](J4D/02-sap-abap-mcp-server-vscode.md). |

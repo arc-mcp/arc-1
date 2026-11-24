@@ -111,6 +111,8 @@ Ephemeral X.509 certificates (5-minute RSA 2048-bit, signed by CA in Secrets Man
 
 ## Features This Project Has That ARC-1 Lacks
 
+> **2026-11-24:** the repository was deprecated on 2026-10-13; this table is kept as history and is no longer re-prioritized. Batch activation, multi-system support (experimental BTP), result-size bounds and ATC improvements have since landed in ARC-1.
+
 | Feature | Priority | Effort | Place in ARC-1 or mcp-sap-docs? |
 |---------|----------|--------|--------------------------------|
 | Ephemeral X.509 certificates for PP | Medium | 3d | ARC-1 -- if deploying in AWS environments |
@@ -134,8 +136,10 @@ stdio transport, code intelligence (find def/refs/completion), free-form SQL, ab
 
 | Date | Change | Relevant? | Action for ARC-1 | Status |
 |------|--------|-----------|-------------------|--------|
-| 2026-03-19 | transport_request parameter additions | Yes | Review transport request patterns | TODO |
-| 2026-03-10 | Batch activation improvements | Yes | Implement batch activate in ARC-1 | TODO |
+| 2026-10-13 | **Repository deprecated** — points to "Modernization Agents for SAP ABAP on AWS" | Strategic (Low) | Stop tracking gaps here; look at the new AWS offering on the next scan | Closed |
+| 2026-05-05 | Entra settings in the FastMCP OAuth integration; ephemeral certificate generation adjusted; later name-sanitization fix | No | ALREADY-HAVE OIDC (Entra) and principal propagation | — |
+| 2026-03-19 | transport_request parameter additions | Yes | Review transport request patterns | Closed (repo deprecated) |
+| 2026-03-10 | Batch activation improvements | Yes | Implement batch activate in ARC-1 | Done (`activateBatch`) |
 | | | | | |
 
-_Last updated: 2026-03-30_
+_Last updated: 2026-11-24 (repository deprecated 2026-10-13)_
