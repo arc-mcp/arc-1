@@ -111,17 +111,45 @@ describe('abapGit client helpers', () => {
     ]);
   });
 
-  it('parseAbapGitRepos accepts the atom:link that ABAP Cloud puts directly under the list root', () => {
+  it('parseAbapGitRepos accepts the atom:link that S/4HANA Cloud Public Edition puts directly under the list root', () => {
     const repos = parseAbapGitRepos(loadFixture('abapgit-repos-v2-cloud.xml'));
-    expect(repos).toHaveLength(1);
+    expect(repos).toHaveLength(2);
     expect(repos[0]).toMatchObject({
       key: '000000000001',
-      package: 'ZEXAMPLE',
-      url: 'https://github.com/example/abap-cloud-sample',
+      package: '/NS/EXAMPLE',
+      url: 'https://github.com/example/abap-cloud-sample.git',
       branchName: 'refs/heads/main',
+      createdBy: 'DEVELOPER',
+      createdAt: '20260101120000.123456',
+      deserializedBy: 'DEVELOPER',
     });
     // The root link describes the list, not a repository: it must not leak into a repository's links.
-    expect(repos[0]?.links.map((link) => link.type)).toEqual(['pull_link', 'stage_link', 'push_link', 'check_link']);
+    expect(repos[0]?.links.map((link) => link.type)).toEqual([
+      'pull_link',
+      'modifiedobjects_link',
+      'stage_link',
+      'push_link',
+      'check_link',
+      'status_link',
+      'log_link',
+    ]);
+    expect(repos[0]?.links.some((link) => link.rel.endsWith('/folderlogic'))).toBe(false);
+
+    // A repository that is linked but was never deserialized has no status and log links.
+    expect(repos[1]).toMatchObject({
+      key: '000000000002',
+      package: '/NS/EXAMPLE_LINKED',
+      url: 'https://github.com/example/abap-cloud-linked.git',
+      branchName: 'refs/heads/main',
+    });
+    expect(repos[1]?.deserializedBy).toBeUndefined();
+    expect(repos[1]?.links.map((link) => link.type)).toEqual([
+      'pull_link',
+      'modifiedobjects_link',
+      'stage_link',
+      'push_link',
+      'check_link',
+    ]);
 
     // A system without repositories still answers with the root link alone.
     expect(parseAbapGitRepos('<repositories><link rel="folderlogic"/></repositories>')).toEqual([]);
@@ -284,10 +312,10 @@ describe('abapGit client helpers', () => {
     });
   });
 
-  it('listRepos reads the ABAP Cloud repository list', async () => {
+  it('listRepos reads the S/4HANA Cloud Public Edition repository list', async () => {
     const http = mockHttp(loadFixture('abapgit-repos-v2-cloud.xml'));
     const repos = await listRepos(http, gitSafety);
-    expect(repos.map((repo) => repo.key)).toEqual(['000000000001']);
+    expect(repos.map((repo) => repo.key)).toEqual(['000000000001', '000000000002']);
   });
 
   it('getExternalInfo uses the externalRepo namespace (capital R) in request payload', async () => {

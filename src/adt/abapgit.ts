@@ -414,8 +414,9 @@ export function parseAbapGitRepos(xml: string): AbapGitRepo[] {
   const parsed = parseAbapGitXml(xml, 'repository-list');
   const root = rootNode(parsed, 'repositories');
   if (!root) throw unexpectedShape('repository-list', 'repositories');
-  // ABAP Cloud adds atom:link elements directly under the root (the folderlogic relation). They describe
-  // the list, not a repository; accept them only as attribute-only elements so error text cannot hide there.
+  // S/4HANA Cloud Public Edition puts an atom:link directly under the root (the folderlogic relation). It
+  // describes the list, not a repository; accept root links only as attribute-only elements so error text
+  // cannot hide there.
   assertKnownChildren(root, 'repository-list', ['repository', 'link']);
   for (const link of childNodes(root, 'link')) assertKnownChildren(link, 'repository-list', []);
   const repositories = childNodes(root, 'repository');
