@@ -125,20 +125,38 @@ never present mocks or skipped tests as live coverage. Documentation-only change
 
 ## Contributing a Change
 
-Read before opening a PR (most arrive from coding agents; these are the points review otherwise rewrites):
+What review most often had to add or change on contributed PRs and issues, most frequent first. PRs that
+merged with little rework added about 170 lines; ones above 1,000 were usually rebuilt by a maintainer.
 
-- **Issue first for features.** A new tool action, object type, config option or auth path needs an issue and a
-  maintainer go-ahead before code; search open PRs too, parallel implementations get folded into one. A bug fix
-  with a reproducer needs no prior agreement.
-- **One behavior per PR, the smallest version that solves the issue.** No options, flags, gates or config the
-  issue did not ask for; park the rest in the roadmap.
-- **State the SAP releases you tested and do not gate on the others.** A "confirmed on-premise"-style guard
-  refuses calls that work elsewhere; maintainers re-test on further releases before merging.
-- **Reuse the existing path** (XML parser, AFF source write, `withLockedMutation`, shared handlers), never a
-  parallel one. Bound output, and never report success SAP did not confirm.
-- **Usually declined for core:** auth code CI cannot exercise, shared SAP identities, ABAP execution or RFC
-  (principle 8). Propose an extension instead.
-- Maintainers may push commits to your branch; a superseding PR credits you as co-author.
+**Before writing code**
+
+- **Issue first for features.** A new tool action, object type, config option or auth path needs an issue
+  and a maintainer go-ahead; check open PRs, `main` and the roadmap, since parallel implementations get
+  folded into one. A bug fix with a reproducer needs no prior agreement.
+- **One behavior per PR**, opened as a draft while you still push. No option, environment variable, gate,
+  retry or hint the issue did not ask for.
+- **Reuse the existing path** (XML parser, AFF source write, `withLockedMutation`, shared handlers) and
+  extend the existing test file, never a parallel one.
+
+**In the PR**
+
+- **Tests for every edge you touch:** namespaced `/NS/…` names, cache hits, error paths, batch items.
+- **Docs match observed behavior:** update `docs_page/tools.md` and related pages; no release claim you
+  did not verify. State the SAP releases you tested and do not gate on the others.
+- **Validate input before any SAP request and fail closed.** Bound downloads and output. A multi-step
+  write reports what was created, what failed and what is unknown; never success SAP did not confirm.
+- **Run `npm run check:sizes` and the tool-definition snapshot test;** never reuse a roadmap ID.
+
+**Usually declined for core:** auth code CI cannot exercise, shared SAP identities, ABAP installed on the
+system, ABAP execution or RFC (principle 8), and features with no existing SAP API. Propose an extension.
+
+**Filing an issue** (also when an agent files it through the API): follow the form's fields; one problem
+per issue; the verbatim tool-call JSON and the verbatim error with HTTP status; the exact ARC-1 version
+(never "latest", reproduced on the latest release) and SAP_BASIS with SP level; whether the same call
+works via `arc1-cli call`, another MCP client or Eclipse ADT. For a feature, name the SAP API and the
+release where you saw it work.
+
+Maintainers may push commits to your branch; a superseding PR credits you as co-author.
 
 ## Roadmap Discipline
 

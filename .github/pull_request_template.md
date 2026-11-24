@@ -1,5 +1,6 @@
 <!-- Use a conventional title (fix:, feat:, docs:, chore:, …) and keep the PR to one coherent
-change. Fill the relevant fields; use N/A with a reason for the rest. Redact credentials,
+change. Open it as a draft while you are still pushing. PRs that merged with little rework added
+about 170 lines; ones above 1,000 lines were usually rebuilt by a maintainer. Fill the relevant fields; use N/A with a reason for the rest. Redact credentials,
 tokens, cookies, private keys, and customer data from all examples and test evidence. -->
 
 ## Change
@@ -57,3 +58,15 @@ the overview and details in this PR. Preserve links to closed PRs for unfinished
 List the affected IDs and changes below, or write "No roadmap impact" after checking. -->
 
 - [ ] Checked the [idea roadmap](https://github.com/arc-mcp/arc-1/blob/main/docs_page/roadmap.md) and updated it where needed.
+
+## Before requesting review
+
+<!-- These are the points maintainers most often had to add or change on contributed PRs
+(AGENTS.md, "Contributing a Change"). -->
+
+- [ ] A feature (new tool action, object type, config option, auth path) has an issue where the scope was agreed.
+- [ ] One behavior; no option, environment variable, gate, retry or hint the issue did not ask for.
+- [ ] Tests cover the edges this change touches (namespaced `/NS/…` names, cache hits, error paths, batch items) in the existing test files.
+- [ ] `docs_page/tools.md` and related pages match the observed behavior, with no release claims I did not verify.
+- [ ] Nothing reports success that SAP did not confirm; multi-step writes say what was created, what failed and what is unknown.
+- [ ] `npm run check:sizes` and the tool-definition snapshot test pass.

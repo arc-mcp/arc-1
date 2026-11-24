@@ -28,9 +28,11 @@ body:
            - the exact response/error: message, HTTP status code, and ADT URL if present
         3. Determine what you can about the environment; write "unknown" for anything you can't (do NOT guess):
            ARC-1 version, SAP system type, SAP_BASIS release, how ARC-1 is deployed, which MCP client this is, the ABAP object type involved.
-        4. Sanity-check first: ARC-1 is read-only and $TMP-only by default. If this is a write that failed, it may just need
-           SAP_ALLOW_WRITES=true and the target package added to SAP_ALLOWED_PACKAGES — if that's the likely cause, tell me that
-           instead of writing a bug report.
+        4. Sanity-check first, and tell me the result instead of guessing:
+           - Report ONE problem. If there are several, write one report each.
+           - State the exact ARC-1 version (never "latest") and whether the problem still occurs on the latest release.
+           - If you can, repeat the same call with `arc1-cli call`, or try the same operation in Eclipse ADT with the
+             same user. A failure in only one MCP client is usually that client's problem, not ARC-1's.
         5. Then output the filled-in fields below, ready for me to paste into the GitHub bug form:
 
         Version:
@@ -40,10 +42,12 @@ body:
         MCP client:
         Tool(s):
         Object type:
+        Where it fails (ARC-1 refuses before SAP / SAP HTTP error / wrong result / connection or login):
         What happened:
         Steps to reproduce (the exact call):
         Expected:
         Error / HTTP status / ADT response:
+        Cross-check (arc1-cli call, another client, Eclipse ADT):
         ```
         </details>
 
@@ -56,8 +60,8 @@ body:
           required: true
         - label: I checked the [documentation](https://docs.arc-1-mcp.com/) (quickstart, tool reference, configuration).
           required: false
-        - label: Writes failing? I confirmed `SAP_ALLOW_WRITES=true` and my target package is covered by `SAP_ALLOWED_PACKAGES` — ARC-1 is read-only and `$TMP`-only by default.
-          required: false
+        - label: This report is about one problem. (Several problems? Please file one issue each — bundled reports get closed half-solved.)
+          required: true
 
   - type: markdown
     attributes:
@@ -67,7 +71,7 @@ body:
     id: version
     attributes:
       label: ARC-1 version
-      description: "Run `arc1-cli --version`, or check the installed `arc-1` package version / Docker image tag."
+      description: "The exact number, not \"latest\": run `arc1-cli --version`, or check the installed `arc-1` package version / Docker image tag. If you can, reproduce on the latest release first — several reports were already fixed there."
       placeholder: "e.g. 0.9.17"
     validations:
       required: true
@@ -88,19 +92,11 @@ body:
       required: true
 
   - type: input
-    id: system-other
-    attributes:
-      label: Other SAP system — please specify
-      description: Only if you selected "Other / not sure" above.
-    validations:
-      required: false
-
-  - type: input
     id: sap-basis
     attributes:
       label: SAP_BASIS release
       description: "ARC-1 gates tools and behavior by release, so this matters a lot. Find it via System → Status in SAP GUI (component SAP_BASIS), or in ARC-1's startup log (the feature probe prints the detected release)."
-      placeholder: "e.g. 750, 758, 816, or 'ECC EHP8 / 740'"
+      placeholder: "e.g. 758 SP02, 750 SP25, 816, or 'ECC EHP8 / 740 SP20' — include the SP level"
     validations:
       required: true
 
@@ -117,14 +113,6 @@ body:
     validations:
       required: true
 
-  - type: input
-    id: deployment-other
-    attributes:
-      label: Other deployment — please specify
-      description: Only if you selected "Other" above.
-    validations:
-      required: false
-
   - type: dropdown
     id: client
     attributes:
@@ -139,15 +127,11 @@ body:
         - Microsoft Copilot Studio
         - Gemini CLI
         - Windsurf
+        - Codex
+        - Kilo Code
+        - Kiro
+        - Antigravity
         - Other / N/A
-    validations:
-      required: false
-
-  - type: input
-    id: client-other
-    attributes:
-      label: Other MCP client — please specify
-      description: Only if you selected "Other / N/A" above.
     validations:
       required: false
 
@@ -166,9 +150,31 @@ body:
     validations:
       required: false
 
+  - type: input
+    id: environment-details
+    attributes:
+      label: Other environment details
+      description: "Anything that applies: operating system, database (HANA, Oracle, …), and on BTP the destination type, whether ARC-1 and the SAP system are in the same subaccount, Cloud Connector, and principal propagation or a shared user."
+      placeholder: "e.g. Windows 11; BTP CF, PrincipalPropagation destination via Cloud Connector, same subaccount"
+    validations:
+      required: false
+
   - type: markdown
     attributes:
       value: "### What went wrong"
+
+  - type: dropdown
+    id: fails-where
+    attributes:
+      label: Where does it fail?
+      options:
+        - ARC-1 refuses the call before contacting SAP (validation, safety, lint)
+        - SAP answers with an HTTP error
+        - The call succeeds but the result is wrong or incomplete
+        - Connection, login or OAuth (before any tool call)
+        - Not sure
+    validations:
+      required: true
 
   - type: dropdown
     id: tool
@@ -241,7 +247,16 @@ body:
     id: error
     attributes:
       label: Exact error / HTTP status / ADT response
-      description: "Copy the full message, including the HTTP status code and ADT URL if present (e.g. `status 423 at /sap/bc/adt/...`)."
+      description: "Copy the full message verbatim, including the HTTP status code and ADT URL if present (e.g. `status 423 at /sap/bc/adt/...`). Write \"none\" if the call succeeded with a wrong result."
+    validations:
+      required: true
+
+  - type: input
+    id: cross-check
+    attributes:
+      label: Cross-check
+      description: "Does the same call work with `arc1-cli call`, from another MCP client, or as the same operation in Eclipse ADT with the same user? This separates ARC-1 bugs from client, setup and SAP-side causes."
+      placeholder: "e.g. fails in Eclipse Copilot, works with arc1-cli call / not checked"
     validations:
       required: false
 
@@ -253,6 +268,17 @@ body:
       render: shell
     validations:
       required: false
+
+  - type: dropdown
+    id: pr-plan
+    attributes:
+      label: Do you plan to open a PR for this?
+      description: Welcome. For anything beyond a small fix, please wait for a maintainer reply on the approach first — see CONTRIBUTING.md.
+      options:
+        - "No"
+        - "Yes"
+    validations:
+      required: true
 
   - type: markdown
     attributes:
