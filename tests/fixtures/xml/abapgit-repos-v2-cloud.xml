@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shape NOT captured live: GET /sap/bc/adt/abapgit/repos on ABAP Cloud, as far as public sources show it.
+     The repository row follows ZABAPGIT_ST_REPOS, like abapgit-repos-v2.xml. The atom:link directly under
+     the root is the ABAP Cloud addition. The open-source transformation in abapGit/ADT_Backend does not emit
+     it, so it is derived from the official Eclipse client instead (abapGit/ADT_Frontend): the model
+     org.abapgit.adt.backend/model/abapgitrepositories.ecore gives Repositories two children, repository and
+     atom:link, and AbapGitService.isFolderLogicSupportedWhileLink reads the folderlogic relation from the
+     root. Values are placeholders. Replace this file with a redacted live capture once one exists. -->
+<abapgitrepo:repositories xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repositories">
+  <atom:link rel="http://www.sap.com/adt/abapgit/relations/folderlogic" xmlns:atom="http://www.w3.org/2005/Atom"/>
+  <abapgitrepo:repository>
+    <abapgitrepo:key>000000000001</abapgitrepo:key>
+    <abapgitrepo:package>ZEXAMPLE</abapgitrepo:package>
+    <abapgitrepo:url>https://github.com/example/abap-cloud-sample</abapgitrepo:url>
+    <abapgitrepo:branchName>refs/heads/main</abapgitrepo:branchName>
+    <abapgitrepo:createdBy>DEVELOPER</abapgitrepo:createdBy>
+    <abapgitrepo:createdAt>20260101120000.0</abapgitrepo:createdAt>
+    <abapgitrepo:deserializedBy>DEVELOPER</abapgitrepo:deserializedBy>
+    <abapgitrepo:deserializedAt>20260101120500.0</abapgitrepo:deserializedAt>
+    <atom:link href="/sap/bc/adt/abapgit/repos/000000000001/pull" rel="http://www.sap.com/adt/abapgit/relations/pull" type="pull_link" xmlns:atom="http://www.w3.org/2005/Atom"/>
+    <atom:link href="/sap/bc/adt/abapgit/repos/000000000001/stage" rel="http://www.sap.com/adt/abapgit/relations/stage" type="stage_link" xmlns:atom="http://www.w3.org/2005/Atom"/>
+    <atom:link href="/sap/bc/adt/abapgit/repos/000000000001/push" rel="http://www.sap.com/adt/abapgit/relations/push" type="push_link" xmlns:atom="http://www.w3.org/2005/Atom"/>
+    <atom:link href="/sap/bc/adt/abapgit/repos/000000000001/checks" rel="http://www.sap.com/adt/abapgit/relations/check" type="check_link" xmlns:atom="http://www.w3.org/2005/Atom"/>
+  </abapgitrepo:repository>
+</abapgitrepo:repositories>
