@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // `expect`: case-insensitive patterns; the score is the share found in the answer. The first
-// pattern is the file, the rest the pitfall. The last two need detail that lives in the dev guide.
+// pattern is the file, the rest the pitfall. Most need the dev guide; the last two need its fine print.
 const QUESTIONS = [
   ['let SAPWrite edit the text symbols of a function group', ['text-elements', 'activat']],
   ['fix SAPTransport release hanging in SAP', ['transport\\.ts', 'inactive']],
@@ -36,6 +36,15 @@ const QUESTIONS = [
   ['annotate the release notes for the next release', ['release-notes\\.md', 'CHANGELOG']],
   ['an abapGit link call answers 406', ['abapgit\\.ts', 'Accept|transformation']],
   ['edit a class-local test class method with edit_method', ['class-surgery', 'ltc_|testclasses']],
+  // Everyday tasks that need nothing beyond AGENTS.md itself.
+  ['add a new safety config option', ['safety\\.ts', 'config\\.ts|types\\.ts']],
+  ['add a new audit event type', ['audit\\.ts', 'emitAudit|sinks']],
+  ['add a CLI sub-command', ['cli\\.ts', 'handleToolCall|Zod']],
+  ['require a scope for a new tool action', ['policy\\.ts', 'ACTION_POLICY']],
+  ['log a debug message from a handler', ['logger', 'stderr|stdout']],
+  ['add an instance field to AdtClient', ['client\\.ts', 'withSafety|#private']],
+  ['add an integration test that creates an SAP object', ['integration', 'generateUniqueName|requireOrSkip']],
+  ['bump the package version for a release', ['release-please|version\\.ts', 'by hand|never|feat|fix']],
   ['create a function-group include: which Content-Type does the POST need', ['fincludes\\.v2']],
   ['find the ADT-native reader for SQL trace records, for a follow-up', ['crosstrace']],
 ];

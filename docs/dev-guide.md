@@ -391,6 +391,53 @@ class using the configured direct test identity; it does not exercise PP routing
 | Plugin elicitation (`ctx.elicit`) / XSUAA / OIDC / DCR store | `src/server/plugin-loader.ts` (`buildMcpCapabilities` — only live elicitation path; core tools use the config safety ceiling, not interactive prompts) / `src/server/xsuaa.ts` / `src/server/http.ts` / DCR store + OAuth proxy in the `@arc-mcp/xsuaa-auth` dep (revocation = rotate `ARC1_DCR_SIGNING_SECRET` or rebind XSUAA; `KDF_LABEL` bump lives in the package) |
 | Layer B auth mechanism | `src/adt/http.ts` (`applyAuthHeader` — Basic / `samlAuthorization`→`Authorization`+`x-sap-security-session:create`), `src/server/server.ts` (`applyPerUserAuthTokens` sets PP creds incl. SAMLAssertion for S/4HC; `buildAdtConfig` perUser flag — strips shared creds). New Layer B field must also be mapped in `src/adt/client.ts` httpConfig + set only per-user |
 | Where-used CI / #1057 | `tests/integration/where-used-details.integration.test.ts`, `tests/unit/workflows/where-used-containment.test.ts`, `vitest.where-used-diagnostic.config.ts` — required native reads use the pinned E2E interface/class pair; fresh-activation diagnostics are separately non-blocking. Limits: `docs/dev-guide.md#where-used-ci-containment-1057`. |
+| SHLP partial metadata | `src/adt/search-help.ts`, `src/handlers/search-help*.ts`, read/context registry + schemas — active only; discovery presence is independent of Accept MIME entries |
+| Add ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/object-types.ts`, `tests/unit/handlers/slash-type-map.test.ts` — needs `docs/research/abap-types/types/<short>.md` evidence, verify live `<adtcore:type>` first (#218) |
+| SAPWrite TABL subtype routing (TABL/DT vs /DS, #285) | `src/handlers/object-types.ts`, `src/handlers/write-helpers.ts`, `src/handlers/write/create.ts`, `src/handlers/{schemas,tools}.ts` — reads collapse to bare `TABL` |
+| AUTH/FEATURE_TOGGLE/ENHO/VERSIONS/MSAG-style reads | `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/adt/types.ts`, `src/handlers/read.ts`, `src/handlers/{schemas,tools}.ts` |
+| OData-based read (non-ADT) / FLP ops | `src/adt/ui5-repository.ts` → `src/handlers/read.ts` / `src/adt/flp.ts` → `src/handlers/manage.ts` |
+| FUGR/FUNC write (#250) | `src/handlers/write.ts` + `write-helpers.ts` — FUNC bypasses `objectBasePath` (keep its throw); SAPGUI `*"…"*` blocks auto-stripped |
+| FUGR expanded read (`expand_includes`) | `src/adt/client.ts` (`getFunctionGroupExpanded`), `src/handlers/read.ts` — bodies live in nested LZ…U01 includes; dynpros NOT reachable via ADT; `grep` implies it and greps per include (`grepSourceBlocks`) |
+| FUNC structured parameters (#252) | `src/adt/fm-signature.ts`, `src/handlers/write/update-delete.ts`, `src/handlers/read.ts` — parameter-only updates read/splice under the lock; preserve the body after SAP’s empty-signature template comment |
+| CLAS include writes | `src/handlers/write/update-delete.ts`, `src/adt/crud.ts` (`safeUpdateClassInclude` POST-creates a missing include under the class lock) |
+| Package listing (`SAPRead type=DEVC`) | `src/adt/{client,package-contents,package-browser}.ts` — default indexed search; explicit `packageScope=direct` is bounded native browsing, never write-authorization evidence (details: dev-guide). |
+| Explicit syntax batches (`SAPDiagnose syntax objects[]`) | `src/adt/syntax-batch.ts`, `src/handlers/{syntax,schemas}.ts` — 1–20 stored CLAS/INTF/PROG/DDLS objects, no source collector; missing or ambiguous reports stay incomplete. [Plan](plans/2026-10-19-bounded-syntax-checks.md). |
+| RAP preflight / scaffolding / generate_behavior_implementation | `src/adt/rap-preflight.ts` + `src/handlers/write-helpers.ts` / `src/adt/rap-handlers.ts` + `src/handlers/write/rap.ts` (skeletons → CCIMP only, never CCDEF) / `src/adt/rap-generate.ts` |
+| ENQU (lock object) read/write (on-prem + BTP) | `src/adt/lock-object.ts`, `src/handlers/{read,write-helpers}.ts`, `src/handlers/write/create.ts` — `source` is the SAPRead JSON; a table change needs explicit `lockParameters` (details: dev-guide) |
+| Master language on create (#343) | `src/adt/ddic-xml.ts`, `src/handlers/write-helpers.ts`, `src/handlers/write/create.ts` — see docs/research/2026-06-04-issue-343-masterlanguage-on-create.md |
+| SAP error text (entity decoding) | `src/adt/errors.ts` (`findElements`), `src/adt/xml-entities.ts` — extracted text is decoded once, never decode it again; regexes on the raw `responseBody` still see `&amp; &lt; &gt;` |
+| Release-gated content-type fallback | `src/adt/crud.ts` (`CONTENT_TYPE_FALLBACKS` — narrow allowlist, 415-only retry) |
+| Live ADT type probe | `scripts/probe-adt-types.ts` (`npm run probe`), `src/probe/`, `tests/unit/probe/replay.test.ts` |
+| CDS impact classifier | `src/adt/cds-impact.ts`, `src/adt/codeintel.ts`, tests |
+| Inactive syntax check / post-save check | `src/adt/devtools.ts`, `src/handlers/write-helpers.ts` (`tryPostSaveSyntaxCheck`), `src/handlers/tabl-activation-diagnostics.ts` — failed TABL activation checks the resolved `/tables/` or `/structures/` draft even after errors |
+| Method-level surgery | `src/context/method-surgery.ts` — `<localclass>~<method>` specifiers; ambiguous bare names error |
+| Program text-pool activation (`REPT` / `PROG/PX`, #940) | `src/handlers/{object-types,activate}.ts`, `src/adt/text-elements.ts` — use the pool URI and its packageRef. Evidence and limitations: `docs/research/abap-types/types/rept.md`. |
+| SAPRead `grep` (#313) | `src/context/grep.ts`, `src/handlers/read.ts` — rejects `grep`+`method` together |
+| SAPRead `lineStart`/`lineEnd` (raw line-range read) | `src/context/line-range.ts`, `src/handlers/read.ts` — mutually exclusive with `grep`/`method`; 1-based inclusive, `lineEnd` clamped not errored |
+| edit_method for CCDEF/CCIMP includes | `src/handlers/write/class-surgery.ts`, `src/handlers/schemas.ts` — auto-detect `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses |
+| Class-section surgery (#303) | `src/adt/class-structure.ts`, `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/handlers/write/class-surgery.ts` — client-side refuse-diff before PUT |
+| SAPSearch tadir_lookup source variants | `src/handlers/search.ts`, `src/adt/client.ts`, `src/authz/policy.ts` — `db`/`both` escalate to sql scope |
+| SAPQuery freestyle SQL lines, hints + IN-list chunking | `src/handlers/{query,query-errors}.ts`, `src/adt/{client,table-query}.ts` — ADT cuts physical SQL lines at 255 characters (7.58/8.16); `fitFreestyleSqlLines` wraps at the shared freestyle POST boundary. |
+| batch_create preflight / `activateAtEnd` | `src/handlers/write/create.ts` + `write/batch-results.ts` — validate the whole batch before creation; preserve confirmed/unknown persistence and invalidate caches on partial failures. |
+| Extension client reads | `src/public/read-only-client.ts` + `src/server/safe-http-client.ts` — the explicit key list defines both type and runtime; never expose session factories, mutations or data/SQL methods as plain reads. |
+| Hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |
+| Native IDE navigation | `src/server/ide-{request,links}.ts`, `src/cli-ide.ts`, server instructions, config/types + dispatch — VS Code uses SAP ADT MCP; Eclipse SID comes from server config, never a route alias |
+| CI ATC/AUnit | `src/adt/ci-quality.ts`, `src/handlers/{diagnose-ci,diagnose-fields}.ts`, `src/cli-checks.ts` — verified package scope, harmless-only AUnit, incomplete evidence never passes. |
+| CDS test-case suggestions (8.16+) | `src/adt/devtools.ts`, `src/handlers/diagnose.ts` — discovery-gated, read-only |
+| Server-driven object reads and writes | `src/adt/{server-driven,object-schema}.ts`, `src/handlers/{read,write,write-helpers}.ts` — match each type’s advertised metadata and source media types. |
+| PrettyPrint / lint rules / pre-write hints | `src/handlers/lint.ts` + `src/adt/devtools.ts` / `src/lint/{lint,config-builder}.ts` + presets/ / `src/lint/pre-write-hints.ts` |
+| abaplint beyond its grammar ceiling (8xx) | `src/adt/features.ts` (`ABAPLINT_MAX_RELEASE`), `src/lint/config-builder.ts` — parser errors demoted to warnings when release > 758 |
+| Dependency / CDS-dep / contract / compressor | `src/context/{deps,cds-deps,contract,compressor,parse-cache}.ts` — parse memoization only AFTER authorized source retrieval; PP bypass stays mandatory |
+| Experimental live relations | `src/handlers/{live-relations,relation-input,relation-tool}.ts`, `src/adt/{repository-relations,relation-objects}.ts`, `src/context/relation-walk.ts` — automatic capability/deny-action projection, no result cache; docs_page/live-relations.md |
+| Experimental data-source blocklist | `src/adt/{data-source-name,sql-source-analyzer,data-source-policy,internal-data-operations}.ts` + `client.ts` — one canonicalizer for every policy input; blank=off but a stray comma fails startup (details: dev-guide) |
+| Dump feed filters | `src/adt/feed-schema.ts`, `src/handlers/dump-filter-inputs.ts`, `src/adt/diagnostics.ts` — discovery is optional; preserve the legacy unfiltered request shape. See `docs/dev-guide.md#dump-feed-filters`. |
+| Dependabot / npm-audit / container scanning / action pinning | `.github/dependabot.yml` / `.github/workflows/{test,dependency-review,docker,release,security-scan}.yml` — third-party actions SHA-pinned with trailing tag comment |
+| Local file → connected Codex SAPWrite (#777) | `bin/arc1-source.js`, `docs_page/codex-file-source.md`, `tests/unit/cli/source-file.test.ts` — verify received bytes before calling the host's connected tool; this helper never authenticates or connects to SAP. |
+| Activation batch ED064 recovery | `src/adt/devtools.ts` (`activateBatch`) — pure ED064 retried once as singles; mixed real errors must NOT retry |
+| Local SAML bearer issuer | `src/adt/saml-bearer.ts`, `src/server/saml-bearer-client.ts`, `docs_page/local-sso-experimental.md` — require an explicit administrator-controlled NameID claim; `email` additionally needs boolean `email_verified=true`. |
+| BTP auth / Destination Service | `src/adt/oauth.ts` (browser OAuth) + `src/server/server.ts` (`buildAdtConfig` per-user destination) + `@arc-mcp/xsuaa-auth` dep |
+| AFF schema / validation | `src/aff/schemas/` + `src/aff/validator.ts` / `src/handlers/write/create.ts` (create/batch_create paths) |
+| CI coverage / reliability reporting | `scripts/ci/coverage-summary.mjs`, `scripts/ci/collect-test-reliability.mjs`, `.github/workflows/test.yml` |
 
 ## Experimental data-source blocklist — developer map
 
@@ -588,3 +635,169 @@ Newer empty lists do not yet carry that caveat. Release reads retain caller canc
 failed reads leave the successful dump list intact.
 Tests: `tests/unit/{adt,handlers}/dump-list-window.test.ts`, `detectAbapRelease` in
 `tests/unit/adt/features.test.ts`.
+
+## Moved from AGENTS.md (2026-11-24)
+
+Verbatim sections that left the always-loaded file when it was cut to fit Codex's 32 KiB limit.
+
+### Deployment traps
+
+If the task is "deploy/install ARC-1 for a team", you are an operator, not a contributor — do not
+edit `src/`. Start at [docs_page/btp-overview.md](../docs_page/btp-overview.md) (pick the topology),
+then follow the canonical runbook
+[docs_page/btp-cloud-foundry-deployment.md](../docs_page/btp-cloud-foundry-deployment.md).
+Docker/npx/stdio instead: [docs_page/deployment.md](../docs_page/deployment.md).
+
+| Trap | Reality |
+|------|---------|
+| Putting BTP config in `.env` | On CF, config lives in `mta-overrides.mtaext` `properties:` (or `cf set-env`). The MTA build's `ignore:` list keeps `.env*` out of the archive (`.cfignore` is the analogous guard for a direct `cf push`, not a second MTAR filter), so values set only there never reach CF — against the target-free base that is a **healthy app with no SAP target** — see [docs_page/configuration-precedence.md](../docs_page/configuration-precedence.md) |
+| Deleting an `.mtaext` line to disable a feature | An extension can add or override a property, never remove one — write the explicit off-value (`SAP_FOO: "false"`); `cf unset-env` is undone by the next deploy |
+| Assuming MTA reuses pre-existing services | `arc1-destination`/`arc1-connectivity` are `managed-service` and are named after their RESOURCE, so a space with differently-named instances gets ADDITIONAL ones, not reuse. An extension cannot change a resource's `type`, only repoint it with `service-name:` — which leaves MTA owning that instance. Run `cf services` first; consequences and the reuse limits are in the [runbook preflight](../docs_page/btp-cloud-foundry-deployment.md) |
+| Assuming a first deploy | The runbook is greenfield; changes, upgrades, restart-vs-restage, and rollback are [docs_page/btp-administration.md](../docs_page/btp-administration.md) |
+| Raising data-result limits without resizing CF RAM | Treat `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES × ARC1_MAX_CONCURRENT_DATA_RESULTS` as one per-process admission envelope. Use the [BTP RAM sizing table](../docs_page/btp-administration.md#data-preview-ram-sizing), change `parameters.memory` and both limits together in `.mtaext`, then verify peak RSS at full configured data concurrency. `ARC1_MAX_CONCURRENT` is a separate SAP-pressure control, not a memory substitute. |
+| Trying to finish it alone | Cockpit destinations, XSUAA role collections, Cloud Connector, and SAP STRUST/CERTRULE/SU01 belong to other owners (runbook §2) — hand off with a specific evidence request instead of inventing CLI equivalents |
+
+### Configuration quick table
+
+| Variable / Flag | Description |
+|-----------------|-------------|
+| `SAP_USER_AGENT` / `--user-agent` | Outbound SAP HTTP identifier (default `arc-1/<version>`); printable ASCII, max 256 chars; never put secrets or user identities here |
+| `SAP_LANGUAGE` | Request language AND master language of created objects (default EN, #343) |
+| `SAP_INSECURE` | Skip TLS verification (default false) |
+| `SAP_GZIP_DATAPREVIEW_BODY` | Default-off WAF compatibility: gzip only non-empty POST bodies on exact `/datapreview/{freestyle,ddic}` collection paths; prefer a scoped gateway rule exclusion and require security approval |
+| `ARC1_PORT` / `ARC1_HTTP_ADDR` | HTTP port (8080) / full bind address |
+| `ARC1_SERVER_NAME` / `--server-name` | Server name advertised in the MCP handshake (default `arc-1`); use a unique value per direct-connect instance |
+| `ARC1_SYSTEM_LABEL` / `--system-label` | Optional model-facing single-target label (one normalized line, max 160 characters); prepended to server instructions for clients that hide the handshake name; ignored in multi-target mode |
+| `SAP_BLOCKED_DATA_SOURCES` | Experimental exact-name data-source blocklist (default empty/off). Narrows, never enables; strict SQL subset + live CDS/replacement lineage; fails closed. Adds SAP metadata calls, no cache |
+| `SAP_OIDC_ISSUER` / `SAP_OIDC_AUDIENCE` | OIDC JWT validation |
+| `ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS` | Optional DCR return-address allowlist (globs); also narrows existing client_ids |
+| `ARC1_OAUTH_DCR_TTL_SECONDS` | DCR client_id lifetime (default `0` = no expiry; positive opts into expiry, clamped 60s–90d) |
+| `ARC1_DCR_SIGNING_SECRET` | Dedicated HMAC secret so `cf deploy` doesn't invalidate cached client_ids |
+| `ARC1_ALLOWED_ORIGINS` | CORS allowlist for browser MCP clients (empty = CORS off) |
+| `ARC1_ALLOWED_CLIENT_IPS` | Default-off BTP CF-routed IP/CIDR allowlist on `x-cf-true-client-ip` (never XFF); `/health` exempt; refused when `VCAP_APPLICATION` is absent, but direct C2C callers can forge the header |
+| `ARC1_PUBLIC_URL` | Advertised OAuth-metadata URL when behind a reverse proxy |
+| `SAP_BTP_SERVICE_KEY[_FILE]` / `SAP_BTP_OAUTH_CALLBACK_PORT` | BTP ABAP service key / OAuth callback port |
+| `SAP_SYSTEM_TYPE` | `auto` (default), `btp`, `onprem` |
+| `SAP_ABAP_RELEASE` | SAP_BASIS release override for abaplint (e.g. 758, 816); probe wins |
+| `ARC1_IDE_LINKS` / `ARC1_IDE_SYSTEM_ID` | Eclipse links: `off` or `eclipse`; HTTP also needs per-request opt-in. Real SID comes from config (multi-target: destination `sap-sysid`). VS Code uses SAP ADT MCP; docs_page/ide-integration.md |
+| `ARC1_SCHEMA_NULLABLE_OPTIONALS` | `auto`/`off`/`on` for optional `SAPWrite` schema null unions; default `auto` emits portable plain schemas, `on` is explicit OpenAI/Azure strict-mode compatibility (#360/#520) |
+| `ARC1_PLUGINS` | FEAT-61 extensions: CSV of absolute LOCAL paths (`.js`/`.json`), NOT npm. Adds `Custom_*` tools (reads + gated non-ADT writes/execute) — docs_page/extensions.md |
+| `SAP_ALLOW_PLUGIN_EXECUTE` | Opt-in (default false): let plugin tools execute ABAP classes/reports (`ctx.run.classRun` / `ctx.run.programRun`). ALSO needs `SAP_ALLOW_WRITES` + a `write`-scoped tool |
+| `SAP_ALLOW_PLUGIN_RAW_WRITES` | Opt-in (default false): let plugin tools `ctx.http.post`/`put`/`delete` to **non-ADT** (OData/ICF) paths. ALSO needs `SAP_ALLOW_WRITES` + a `write`-scoped tool; `/sap/bc/adt/…` writes always refused |
+| `SAP_ABAPLINT_CONFIG` / `SAP_LINT_BEFORE_WRITE` | Custom abaplint config / pre-write lint (default true) |
+| `SAP_CHECK_BEFORE_WRITE` | SAP-side pre-write syntax check, non-blocking (default false) |
+| `ARC1_CACHE[_FILE]` | Request-driven cache mode (auto/memory/sqlite/none) / SQLite file path |
+| `ARC1_MAX_CONCURRENT` | Server-wide SAP request cap (default 10); size vs `rdisp/wp_no_dia` |
+| `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` / `ARC1_MAX_CONCURRENT_DATA_RESULTS` | Cumulative successful data-preview body cap per tool call (default 2 MiB, after decompression/before string conversion) / process-wide data-result cap held through parse + serialization + audit (default 2); positive integers only, `0` does not disable; on BTP use the [RAM sizing table](../docs_page/btp-administration.md#data-preview-ram-sizing) before raising either value |
+| `ARC1_AUTH_RATE_LIMIT` / `ARC1_MCP_HTTP_RATE_LIMIT` / `ARC1_RATE_LIMIT` | Per-IP OAuth cap (20/min), optional shared MCP HTTP/IP override (unset derives `max(OAuth×30,600)`; 0 disables), and per-user MCP cap (default 0 = off; ADR-0004) |
+| `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` | BTP Destination names (PP = PrincipalPropagation type) |
+| `ARC1_MULTI_TARGET_ENDPOINTS` | Experimental/default-off BTP CF mode: marked subaccount destinations → pinned `/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp` plus mutation-free `/multi/mcp`; pinned PP writes require ADR-0011 gates; requires XSUAA, cache none, standard tools, UI/plugins off; PP targets are strict. |
+| `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH` | Default false. Permits shared BasicAuthentication targets in multi mode; never PP fallback, credentials stay request-local, and v1 requires exactly one CF instance. |
+| `SAP_PP_SAML_*` | Experimental single-target OIDC→SAP SAML bearer issuer; explicit trusted NameID claim, RSA key/cert, audience and issuer required. See docs_page/local-sso-experimental.md. |
+| `SAP_DISABLE_SAML` | Disable SAML redirect — never on BTP ABAP / S/4 Public Cloud |
+| `ARC1_MINIMAL_ERRORS` | Hide SAP diagnostic details from client-facing tool errors; keep request correlation for operators |
+| `ARC1_LOG_HTTP_DEBUG` | HTTP debug fields in audit; bodies are centrally redacted before sink writes |
+
+### Codebase structure — file level
+
+```
+src/
+├── index.ts                    # MCP server entry (bin: arc1)
+├── cli.ts, cli-args.ts         # CLI entry (bin: arc1-cli)
+├── extract-sap-cookies.ts      # Cookie helper (arc1-cli extract-cookies)
+├── server/
+│   ├── server.ts               # MCP server setup, tool registration
+│   ├── config.ts, types.ts     # Config parser + ServerConfig defaults
+│   ├── http.ts                 # HTTP auth + single-target, pinned, and aggregate routes
+│   ├── destination-discovery.ts, destination-registry.ts # Secret-safe snapshot + immutable targets
+│   ├── multi-target-destination-config.ts # Shared destination-property contract
+│   ├── multi-target-identity.ts # Public target IDs, route aliases, and shared HTTP matchers
+│   ├── multi-target-runtime.ts, multi-target-server.ts # Selected-identity runtime + request preparation
+│   ├── multi-target-tools.ts, multi-target-catalog.ts # Scoped schemas + SAPTargets result
+│   ├── multi-target-feature-state.ts # Per-target feature-probe flight coordination
+│   ├── multi-target-shared-auth-state.ts # Process-wide Basic generation/lockout guard
+│   ├── logger.ts               # Structured logger (stderr only, never stdout)
+│   ├── audit.ts, sinks/        # Audit events + stderr/file/btp-auditlog sinks
+│   ├── context.ts              # MCP context helpers
+│   ├── xsuaa.ts                # XSUAA JWT validation (BTP); OAuth DCR store + proxy live in the @arc-mcp/xsuaa-auth dep
+│   └── auth-rate-limit.ts, mcp-rate-limit.ts  # Rate-limit layers 1+2
+├── handlers/                   # one module per tool (split from the former intent.ts monolith)
+│   ├── dispatch.ts             # handleToolCall router + scope checks + LLM error formatting
+│   ├── read.ts                 # SAPRead handler
+│   ├── write.ts                # SAPWrite orchestrator → write/ package (create, update-delete, class-surgery, rap)
+│   ├── search.ts, query.ts, activate.ts, navigate.ts, diagnose.ts, git.ts, transport.ts, context.ts, lint.ts, manage.ts
+│   ├── object-types.ts         # type normalization, SLASH_TYPE_MAP/EVIDENCE, objectBasePath, LLM arg-stripping
+│   ├── write-helpers.ts        # buildCreateXml, pre-write gates, server-driven write engine, package enforcement
+│   ├── cds-hints.ts            # CDS dependency/impact hints + reserved-keyword guard
+│   ├── tool-registry.ts        # SINGLE SOURCE of per-tool type tables ({type,btp} rows → derived ONPREM/BTP arrays)
+│   ├── feature-cache.ts        # cached ADT discovery + features, keyed by target/destination (ALS fallback)
+│   ├── cache-security.ts       # per-user cache isolation under principal propagation
+│   ├── shared.ts               # ToolResult + textResult/errorResult
+│   ├── tools.ts                # Tool definitions (JSON Schema the LLM sees)
+│   ├── schemas.ts              # Zod v4 input schemas (runtime validation)
+│   ├── zod-errors.ts           # Zod error formatting for LLM clients
+│   └── hyperfocused.ts         # Hyperfocused mode (1 tool)
+├── adt/                        # ADT client layer
+│   ├── client.ts               # Facade (all read ops) | http.ts: transport, CSRF, cookies, sessions
+│   ├── discovery.ts, features.ts, release.ts  # Endpoint MIME map, feature probes, release parsing
+│   ├── errors.ts, safety.ts    # Typed errors + safety system (opt-ins, package gates, deny actions)
+│   ├── crud.ts, devtools.ts    # lock/create/update/delete + syntax check/activate/publish/unit tests
+│   ├── ddic-xml.ts, xml-parser.ts  # Create/update XML builders + response parsing (fast-xml-parser v5)
+│   ├── gcts.ts, abapgit.ts     # Git backends | transport.ts: CTS management
+│   ├── cds-impact.ts, rap-preflight.ts, rap-handlers.ts, rap-generate.ts  # CDS/RAP intelligence
+│   ├── class-structure.ts      # Class-section surgery splice + diff (#303)
+│   ├── server-driven.ts        # Server-driven objects (DESD/EVTB/DSFD/DTDC/… — AFF engine)
+│   ├── oauth.ts, cookies.ts    # BTP OAuth (browser/PKCE) + cookie parsing (Destination Service lives in server.ts + @arc-mcp/xsuaa-auth)
+│   ├── ui5-repository.ts, flp.ts    # UI5 ABAP Repository + FLP OData clients
+│   └── authorization-trace.ts, diagnostics.ts, codeintel.ts # auth/ST22 traces + code intelligence
+├── context/                    # deps.ts, cds-deps.ts, contract.ts, compressor.ts, method-surgery.ts, grep.ts
+├── cache/                      # cache.ts, memory.ts, sqlite.ts, caching-layer.ts (ETag), inactive-list-cache.ts
+├── aff/                        # validator.ts (Ajv 2020-12) + bundled AFF schemas/
+├── probe/                      # ADT type-availability probe (catalog, runner, fixtures)
+└── lint/                       # lint.ts (@abaplint/core), config-builder.ts, pre-write-hints.ts, presets/
+
+scripts/ci/                     # check-file-sizes (ratchet), coverage/reliability reporting
+tests/                          # helpers/ unit/ integration/ e2e/ fixtures/ (tool-definitions = LLM-surface snapshots)
+```
+
+### Engineering playbook (full)
+
+Hard-won practices from a 40-commit, behavior-preserving refactor (intent.ts 8.2K lines → per-tool
+modules; write.ts 2K → write/ package) — apply to any sizeable change:
+
+1. **Freeze the observable surface FIRST.** Snapshot what users/LLMs actually see — here the tool-definition JSON (`tests/fixtures/tool-definitions/`, locked by `tool-definitions-snapshot.test.ts`) — and require byte-identical fixtures through every commit. Changing them takes `vitest -u` + a reviewed fixture diff.
+2. **Move-only refactors.** Relocate code verbatim; park every improvement as a follow-up. Verify each step with the full gate (`npm test`, `typecheck`, `lint`, `validate:policy`, `build`, `check:sizes`) and commit small.
+3. **Make invariants true by construction.** Derive parallel lists from one annotated table (`tool-registry.ts` `*_TYPE_TABLE`); re-export shared constants instead of copying. A consolidation that leaves one copy alive recreates the drift it was meant to kill (schema-accepted-but-runtime-rejected).
+4. **Security values ride REQUIRED parameters.** `cacheSecurity` is required through the handler chain, so a forgotten call site is a compile error — never an optional param that silently fails open.
+5. **Guard the guards.** Ratchets must fail on their own staleness: `scripts/ci/check-file-sizes.mjs` fails CI on a dangling BUDGETS key (a rename would otherwise silently 18× a budget). Lower budgets in the same commit that shrinks a file.
+6. **Bound automated codemods.** A scripted cleaner may only edit the region it understands (e.g. the top-of-file import block). A whole-file `name,`-line stripper once corrupted call bodies that shared a name with an unused import — typecheck caught it; the rewrite refuses to touch code bodies.
+7. **Keep this file terse.** Task→files + ≤1 gotcha per row here; full detail goes to `docs/dev-guide.md` (read on demand, not loaded every session).
+
+### Code patterns
+
+```typescript
+// ADT client method — safety guard first, always
+async getProgram(name: string, opts: SourceReadOptions = {}): Promise<SourceReadResult> {
+  checkOperation(this.safety, OperationType.Read, 'GetProgram');
+  return this.fetchSource(`/sap/bc/adt/programs/programs/${encodeURIComponent(name)}/source/main`, opts);
+}
+
+// Handler case (per-tool module, e.g. read.ts)
+case 'PROG':
+  return textResult((await client.getProgram(name)).source);
+
+// CRUD: lock → modify → unlock inside a stateful session
+await http.withStatefulSession(async (session) => {
+  const lock = await lockObject(session, objectUrl);   // returns { lockHandle, corrNr }
+  try {
+    await updateSource(session, safety, sourceUrl, source, lock.lockHandle, transport ?? lock.corrNr || undefined);
+  } finally {
+    await unlockObject(session, objectUrl, lock.lockHandle);
+  }
+});
+```
+
+### History
+
+Migrated from Go to TypeScript on 2026-03-26. Handler monolith split into per-tool modules 2026-06
+(see `docs/plans/completed/2026-06-11-architecture-consolidation-progress.md`).
