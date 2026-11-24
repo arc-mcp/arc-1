@@ -157,4 +157,14 @@ if (offenders.length > 0) {
   process.exit(1);
 }
 
+// AGENTS.md is loaded into every agent session and Codex reads only its first 32 KiB (discussion #1206).
+// Move detail to docs/dev-guide.md instead of raising this; lower it in the commit that shrinks the file.
+// How a cut was checked for agent quality: docs/research/2026-11-24-agents-md-eval-process.md.
+const AGENTS_MD_MAX_BYTES = 26_000;
+const agentsBytes = readFileSync('AGENTS.md').length;
+if (agentsBytes > AGENTS_MD_MAX_BYTES) {
+  console.error(`✗ AGENTS.md is ${agentsBytes} bytes (budget ${AGENTS_MD_MAX_BYTES}); move detail to docs/dev-guide.md.`);
+  process.exit(1);
+}
+
 console.log(`✓ file-size ratchet: all ${files.length} tracked source/test files within budget.`);

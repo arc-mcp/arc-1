@@ -245,7 +245,7 @@ Full documentation is available at **[docs.arc-1-mcp.com](https://docs.arc-1-mcp
 npm ci && npm run build && npm test
 ```
 
-See [CLAUDE.md](CLAUDE.md) for codebase structure, testing commands, and contribution guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR, and [AGENTS.md](AGENTS.md) for codebase structure and testing commands.
 
 ## Credits
 
