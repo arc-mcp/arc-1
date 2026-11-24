@@ -85,6 +85,29 @@ Rubric items passed:
   release and function-group include tasks account for most of it), Opus more. With three answers per
   task and side this is not a reliable difference in either direction.
 
+## Check 3 — feature tasks again, with tool logs (Sonnet ×5, Opus ×3 per task and side)
+
+Check 2 left feature tasks unclear, so the six feature tasks were rerun with more samples (48 sessions
+per side), the badly posed transport task replaced ("create with an explicit target does nothing on NW
+7.50"), and `--output-format stream-json --verbose` instead of `json`, so every tool call is recorded and
+it is known whether a session opened `docs/dev-guide.md`.
+
+| Dev-guide feature reference | Sonnet | Opus | All | Context tokens per task |
+|---|---|---|---|---|
+| Merge base (detail in `AGENTS.md`) | 72/90 (80%) | 46/54 (85%) | 118/144 (82%) | 387k |
+| Cut, one table with 159 long rows | 69/90 (77%) | 38/54 (70%) | 107/144 (74%) | 322k |
+| Cut, one entry per feature, a sentence per line | 71/90 (79%) | 42/54 (78%) | 113/144 (78%) | 287k |
+
+- **The lookup was never skipped:** all 48 sessions on the cut opened the dev guide, in both formats.
+- **The format of the lookup target was the problem.** Each feature was one table row of up to 3 KB on a
+  single line. Searches such as `FUGR|include` or `atc` returned dozens of such lines, truncated by the
+  search tool, and sessions retried with narrower patterns or gave up on the row. After converting the
+  table to one `###` entry per feature with one sentence per line, the function-group include task went
+  from 13/24 to 20/24 items (merge base: 18/24) and tokens fell further.
+- **What remains:** 113 against 118 of 144 items, with fewer tokens (−26%). Most of the gap is one item,
+  "the ATC variant must bind at worklist creation" (4/8 against 8/8). The cut side of the last row was
+  run alone and compared with the merge-base scores of the row above (same tasks, models and judge).
+
 ## Limits and lessons
 
 - **Small samples.** Check 2 has three answers per task and side; single-task differences are noise.
@@ -100,3 +123,6 @@ Rubric items passed:
   list stopped inside the Key Files table (Codex reads 32 KiB by default); on the cut it reaches the end.
 - **Order of work that paid off:** run the cheap keyword check after every wording change, then the
   judged check once before review.
+- **Log the tool calls from the start.** Check 2 could not say whether a miss was a skipped lookup or a
+  lookup that did not help; check 3 answered it at once and pointed at the document format, not at the
+  instruction.
