@@ -14,7 +14,7 @@ body:
       options:
         - label: I searched existing issues (open and closed) and this isn't already requested.
           required: true
-        - label: I checked the [roadmap](https://github.com/arc-mcp/arc-1/blob/main/docs_page/roadmap.md) and the [design principles](https://github.com/arc-mcp/arc-1/blob/main/AGENTS.md#design-principles). Core does not install ABAP on the system, call RFC, execute ABAP, or act through a shared SAP identity; those belong in an extension.
+        - label: I checked the [roadmap](https://github.com/arc-mcp/arc-1/blob/main/docs_page/roadmap.md) and the [design principles](https://github.com/arc-mcp/arc-1/blob/main/AGENTS.md#design-principles). Generic report/class execution, direct RFC and ABAP helpers installed by ARC-1 belong in an extension, not in core (principle 8).
           required: true
         - label: This is one request. (Several ideas? Please file one issue each.)
           required: true
@@ -32,7 +32,7 @@ body:
     attributes:
       label: Proposed solution
       description: What should ARC-1 do? If it's a tool change, name the tool, the action, and the object type.
-      placeholder: "e.g. SAPWrite should support creating table types (TTYP) and writing function-group includes."
+      placeholder: "e.g. SAPRead should return the where-used list of a data element."
     validations:
       required: true
 
@@ -40,10 +40,10 @@ body:
     id: sap-api
     attributes:
       label: Which SAP API would serve this?
-      description: "The ADT endpoint or other existing SAP API (Eclipse ADT doing the same thing is a good sign), and the release where you saw it work. Requests without a usable SAP API are the ones most often declined. Write \"unknown\" if you don't know."
+      description: "Only if the request needs a new SAP operation: the ADT endpoint or other existing SAP API (Eclipse ADT doing the same thing is a good sign) and the release where you saw it work. Requests without a usable SAP API are the ones most often declined. Leave empty for documentation, setup or client topics; \"unknown\" is fine too."
       placeholder: "e.g. /sap/bc/adt/ddic/tabletypes, used by Eclipse ADT on 758 SP02 / unknown"
     validations:
-      required: true
+      required: false
 
   - type: input
     id: environment
@@ -58,12 +58,12 @@ body:
     id: pr-plan
     attributes:
       label: Do you plan to open a PR for this?
-      description: If yes, please wait for a maintainer reply on scope before writing code — a new tool action, object type, config option or auth path is agreed here first. See CONTRIBUTING.md.
+      description: Welcome. A new tool action, object type, config option or auth path needs its scope agreed here before code — please wait for a maintainer reply. See CONTRIBUTING.md.
       options:
         - "No"
         - "Yes, after the scope is agreed here"
     validations:
-      required: true
+      required: false
 
   - type: dropdown
     id: area

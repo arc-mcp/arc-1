@@ -1,10 +1,10 @@
 # AGENTS.md
 
 Guidance for AI coding agents (Claude Code, Codex, Cursor, Copilot, …) working in this repository.
-Single source of truth — `CLAUDE.md` imports this file. It is loaded into every session, and Codex
-reads only its first 32 KiB, so `npm run check:sizes` caps its size: rules every change must
-follow stay here, anything that matters for one area goes to [docs/dev-guide.md](docs/dev-guide.md)
-(not auto-loaded — grep it for the object type, tool action or file you are about to change).
+Single source of truth — `CLAUDE.md` imports this file. It is loaded into every session, and Codex by
+default reads only the first 32 KiB of combined project instructions, so `npm run check:sizes` caps its
+size. Keep it terse: rules every change must follow, and task→files + ≤1 gotcha per row. Anything that
+matters for one area goes to [docs/dev-guide.md](docs/dev-guide.md) (not auto-loaded).
 
 ## Project Overview
 
@@ -21,8 +21,12 @@ Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/arc-mcp/arc-1`).
 4. **BTP-native deployment** — Destination Service, Cloud Connector, XSUAA OAuth, BTP Audit Log; also Docker/npm/stdio.
 5. **Multi-client, vendor-neutral** — XSUAA OAuth + Entra ID OIDC + API key coexist; one instance serves Claude, Copilot Studio, VS Code, Gemini CLI, Cursor.
 6. **Safe defaults, opt-in power** — read-only by default; free SQL blocked; package allowlist defaults to `$TMP`; everything forbidden until the admin allows it.
-7. **Single target by default; explicit BTP exceptions** — default-off discovered targets per ADR-0006/0007/0011;
-   see the multi-system boundary under Security & Architectural Invariants.
+7. **Single target by default; explicit BTP exceptions** — ADR-0006 permits default-off discovered
+   pinned/aggregate targets; ADR-0007 keeps shared Basic mutation-free and one-instance. ADR-0010
+   permitted scoped CLAS/INTF writes on pinned strict-PP routes with destination restrictions and
+   exact verified write grants; ADR-0011 replaces its adapter with the shared handlers for
+   the listed `SAPWrite` actions and activation. Aggregate/Copilot remain mutation-free.
+   Broader writes or another discovery/auth model require a new ADR/security review.
 8. **ABAP execution and RFC belong in extensions** — no built-in report/class execution, direct RFC,
    or installed/temporary ABAP helpers. Core uses existing SAP APIs and TypeScript; user ABAP
    development and dedicated ATC/Unit workflows retain their gates. See [ADR-0009](docs/adr/0009-abap-execution-and-rfc-belong-in-extensions.md).
@@ -41,6 +45,7 @@ Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/arc-mcp/arc-1`).
   normative plans and R23 in `docs/security-model.md`; broader mutations or another discovery/auth
   model require a new ADR/security review. Separate instances remain the stronger isolation option.
 - **Per-user auth never inherits shared credentials** — `buildAdtConfig(..., { perUser: true })` strips username/password/cookies; any new Layer B field must respect the flag.
+- **Caches never bypass authorization** — parse/dependency memoization only AFTER authorized source retrieval; the principal-propagation cache bypass stays mandatory (`src/handlers/cache-security.ts`).
 - **All ADT endpoints have safety guards** — no unguarded `http.{get,post,put,delete}`.
 - **Cookie hot-reload**: `SAP_COOKIE_FILE` re-read during auth recovery and before CSRF bootstrap outside a live stateful context; changed cookies reset the old session, empty/unreadable files preserve known cookies, and `SAP_COOKIE_STRING` cannot hot-reload.
 - **Error types**: `AdtApiError` / `AdtSafetyError` / `AdtNetworkError` / `AdtResponseLimitError`; `dispatch.ts` formats them with LLM-friendly hints.
@@ -92,19 +97,12 @@ commits. Tests, full lint and build are not included; CI remains authoritative.
 
 ## Testing
 
-Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
+Every code change requires tests (commands: Build & Test). Skip taxonomy: `docs/testing-skip-policy.md`.
 
 For SAP-facing/runtime changes, test on a real authorized SAP test system when possible and record
 the tested build, release, deployment/auth route, observed result, and gaps in the
 [PR template](.github/pull_request_template.md). If unavailable, state why and the remaining scenario;
 never present mocks or skipped tests as live coverage. Documentation-only changes may use N/A.
-
-| Level | Command | Needs |
-|-------|---------|-------|
-| Unit | `npm test` | — |
-| Integration (+slow/crud) | `npm run test:integration[:slow|:crud]` | `TEST_SAP_URL` creds |
-| BTP (+smoke) | `npm run test:integration:btp[:smoke]` | service key (local only) |
-| E2E (+slow) | `npm run test:e2e[:slow]` | running MCP server |
 
 - Unit mocking: `vi.mock('undici', …)` + `mockResponse` from `tests/helpers/mock-fetch.ts`.
 - Skip policy: `requireOrSkip(ctx, value, reason)` + `SkipReason` constants — never `if (!x) return;` or empty catches.
@@ -120,43 +118,49 @@ never present mocks or skipped tests as live coverage. Documentation-only change
   rewrite history; verify the branch first, use `--force-with-lease` (never `--force`), and explain the rewrite.
 - **ESM-only**: local imports need `.js` extensions. **TypeScript strict** (noUnusedLocals/Parameters, Node16 resolution). **Biome**: 2-space, single quotes, 120 cols — auto-fixed on commit, never hand-format.
 - **Logging to stderr only** (`src/server/logger.ts`); `console.log` corrupts MCP JSON-RPC on stdout.
-- Stack: TypeScript 6.0, Node 22+, `@modelcontextprotocol/sdk`, `@abaplint/core`, `undici`, `fast-xml-parser` v5, `better-sqlite3`, `commander`, `ajv` (2020-12), `zod` v4, `vitest`, `biome`.
 - **Releasing** ([release-please](https://github.com/googleapis/release-please)): `feat:` → minor, `fix:` → patch, `feat!:`/`BREAKING CHANGE:` → major; `refactor:`/`test:`/`docs:`/`chore:`/`ci:` → **no release** (use these for behavior-preserving PRs). Version lives in `package.json` + `src/version.ts` `VERSION` (the `x-release-please-version` marker — never bump by hand). npm publishes via OIDC trusted publishing. Every released version also needs an annotated entry in `docs_page/release-notes.md` (run `/release-notes`) — CI fails while one is missing.
 
 ## Contributing a Change
 
-What review most often had to add or change on contributed PRs and issues, most frequent first. PRs that
-merged with little rework added about 170 lines; ones above 1,000 were usually rebuilt by a maintainer.
+What review most often had to add or change on contributed PRs and issues. PRs that merged with little
+rework added about 170 lines (median); heavily reworked ones about 1,000.
 
 **Before writing code**
 
-- **Issue first for features.** A new tool action, object type, config option or auth path needs an issue
-  and a maintainer go-ahead; check open PRs, `main` and the roadmap, since parallel implementations get
-  folded into one. A bug fix with a reproducer needs no prior agreement.
-- **One behavior per PR**, opened as a draft while you still push. No option, environment variable, gate,
-  retry or hint the issue did not ask for.
+- **Agree scope first for new public surface.** A new tool action, object type, config option or auth
+  path needs an issue and a maintainer go-ahead; check open PRs, `main` and the roadmap, since parallel
+  implementations get folded into one. A reproduced bug fix can go straight to a PR.
+- **One behavior per PR**, kept as a draft until it is ready for review. Leave speculative options,
+  environment variables, retries, hints and release workarounds out of scope.
 - **Reuse the existing path** (XML parser, AFF source write, `withLockedMutation`, shared handlers) and
-  extend the existing test file, never a parallel one.
+  prefer the area's existing test suite.
 
 **In the PR**
 
 - **Tests for every edge you touch:** namespaced `/NS/…` names, cache hits, error paths, batch items.
-- **Docs match observed behavior:** update `docs_page/tools.md` and related pages; no release claim you
-  did not verify. State the SAP releases you tested and do not gate on the others.
-- **Validate input before any SAP request and fail closed.** Bound downloads and output. A multi-step
+- **Evidence for a changed SAP contract:** link SAP documentation, discovery output or a redacted wire
+  capture. State the releases you tested and claim nothing about the others.
+- **Docs match observed behavior:** update `docs_page/tools.md` and related pages when it changes.
+- **Validate caller-controlled syntax and bounds before SAP I/O;** resolve capabilities and authorization
+  against SAP where required and refuse an unverified mutation. Bound downloads and output. A multi-step
   write reports what was created, what failed and what is unknown; never success SAP did not confirm.
 - **Run `npm run check:sizes` and the tool-definition snapshot test;** never reuse a roadmap ID.
 
-**Usually declined for core:** auth code CI cannot exercise, shared SAP identities, ABAP installed on the
-system, ABAP execution or RFC (principle 8), and features with no existing SAP API. Propose an extension.
+**Usually declined for core:** auth code CI cannot exercise, a new shared SAP identity, generic
+report/class execution, direct RFC or ARC-1-installed ABAP helpers (principle 8), and features with no
+existing SAP API. Propose an extension.
 
-**Filing an issue** (also when an agent files it through the API): follow the form's fields; one problem
-per issue; the verbatim tool-call JSON and the verbatim error with HTTP status; the exact ARC-1 version
-(never "latest", reproduced on the latest release) and SAP_BASIS with SP level; whether the same call
-works via `arc1-cli call`, another MCP client or Eclipse ADT. For a feature, name the SAP API and the
-release where you saw it work.
+**Filing an issue** (also when an agent files through the API): follow the form's fields; one problem per
+issue. Give the tool, action and argument structure of the failing call and the error with HTTP status,
+verbatim except that credentials, private URLs, customer source and business data become labeled
+placeholders. Give the running server's exact ARC-1 version (never "latest"; say whether the latest
+release was tested) and SAP_BASIS with SP level. Mention any existing comparison (another MCP client,
+Eclipse ADT, a read-only `arc1-cli call`); never repeat a write to cross-check. A feature that needs an
+SAP operation names the SAP API and the release where it was seen working. Suspected vulnerabilities go
+through [SECURITY.md](SECURITY.md).
 
-Maintainers may push commits to your branch; a superseding PR credits you as co-author.
+Maintainers may push commits to your branch; a superseding PR credits you as co-author when it reuses
+your work.
 
 ## Roadmap Discipline
 
@@ -212,12 +216,12 @@ File-level map: `docs/dev-guide.md` (Codebase structure — file level).
 
 ## Key Files for Common Tasks
 
-**Required first step for any task about one object type, tool action or subsystem: grep
-`docs/dev-guide.md` for it and read the matching rows** — e.g. `grep -n -i 'TTYP' docs/dev-guide.md`
-(likewise `edit_method`, `atc`, `ST05`, `abapGit`, `traceparent`, `FUGR`, `transport`). Its "Key Files —
-full reference" table has one row per feature with the files and the live-verified gotchas, which
-are not repeated here and cannot be derived from the code. Do this even for a question or a plan.
-The rows below cover cross-cutting tasks only. For opt-in target authorization read
+**Before you answer, plan or edit anything that depends on how one feature behaves, search
+`docs/dev-guide.md` by the affected tool action, object type or filename and read the matching rows** —
+e.g. `grep -n -i 'TTYP' docs/dev-guide.md` (likewise `edit_method`, `ST05`, `abapGit`, `traceparent`).
+That table holds the per-feature files and live-verified gotchas; they are not repeated here and cannot
+be derived from the code. Skip this only for cross-cutting tasks and simple file lookups, which the
+table below covers. For opt-in target authorization read
 [ADR-0008](docs/adr/0008-opt-in-xsuaa-target-authorization.md) and
 [its contract](docs/plans/xsuaa-target-authorization.md); [ADR-0011](docs/adr/0011-broader-pinned-pp-mutations.md) defines pinned writes.
 
@@ -225,14 +229,13 @@ The rows below cover cross-cutting tasks only. For opt-in target authorization r
 |------|------|
 | BTP deployment/docs guidance | `docs_page/btp-overview.md` → one canonical runbook or task reference; per-user targets: `docs_page/multi-target-authorization.md`. Research/specs are not shipped settings (details: `docs/dev-guide.md#btp-documentation`). |
 | Multi-target ADR-0006/0007 work | Read ADR-0006/0007, then `docs/plans/destination-discovered-multi-target-v1.md`; code `src/server/{destination-*,multi-target-*,server,http}.ts`, `src/authz/policy.ts`, `src/handlers/{dispatch,feature-cache}.ts`; writes: ADR-0011 + `src/server/multi-target-write-surface.ts`. Aggregate/Basic stay mutation-free; Basic is never PP fallback. Full doc/test map: `docs/dev-guide.md` (multi-target developer map). |
-| Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` (+ `src/adt/xml-parser.ts`, `src/adt/types.ts` for structured) |
+| Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` (+ `src/adt/xml-parser.ts`, `src/adt/types.ts` for structured) — every client method starts with `checkOperation(this.safety, …)` |
 | Shared mutation lifecycle | `src/adt/crud.ts` (`withLockedMutation`), `src/adt/http.ts` (`pinnedWrite` barrier); pinned targets use the single-target handlers — never add a per-resource pinned adapter. See `docs/dev-guide.md#shared-mutation-lifecycle`. |
 | Add new tool type | `src/handlers/tools.ts`, `src/handlers/schemas.ts`, `src/handlers/dispatch.ts` |
 | Add/modify tool input schema | `src/handlers/schemas.ts` + `src/handlers/tools.ts` (three-file sync — see invariants) |
 | Harden against GPT/OpenAI arg pollution (#360) | `src/handlers/object-types.ts` (`stripLlmEmptyValues`), `src/handlers/schemas.ts` — `looseOptionalBoolean` for EVERY optional boolean, never `z.coerce.boolean()` (maps "false"→true) |
 | ADT discovery / MIME types | `src/adt/discovery.ts`, `src/adt/http.ts`, `src/adt/accept-fallback.ts`, `src/adt/legacy-content-handler.ts` — negotiated 406/415 headers apply to the exact normalized path; the #907 7.40 wildcard-400 retry stays uncached. |
 | SAP error classification + hints | `src/adt/errors.ts`, `src/handlers/dispatch.ts` — ground hints in verified SAP Notes; release-aware via `src/adt/release.ts` (#293) |
-| Unit test that starts an HTTP server | `tests/helpers/supertest-loopback.ts` (wired as `setupFiles`), `tests/unit/server/supertest-loopback.test.ts` — supertest binds `::` but addresses `127.0.0.1`; keep bind and request in one address family. |
 | Test skip reason | `tests/helpers/skip-policy.ts`, `tests/e2e/helpers.ts`, `docs/integration-test-skips.md`, `scripts/ci/summarize-skips.mjs` — keep all four in sync |
 | XML response parser / safety check | `src/adt/xml-parser.ts` (`parseXml` returns entity-DECODED values — never decode a parsed value again, always `escapeXmlAttr` it on write) / `src/adt/safety.ts` |
 | Audit logging / new audit event type | `src/server/audit.ts` (typed `*Event` union; emit via `logger.emitAudit`), `src/server/sinks/` |
@@ -257,9 +260,9 @@ If the task is "deploy/install ARC-1 for a team", you are an operator, not a con
 `src/`. Start at [docs_page/btp-overview.md](docs_page/btp-overview.md), then the runbook
 [docs_page/btp-cloud-foundry-deployment.md](docs_page/btp-cloud-foundry-deployment.md); Docker/npx/stdio:
 [docs_page/deployment.md](docs_page/deployment.md). On CF, config lives in `mta-overrides.mtaext`
-`properties:`, never `.env`, and an extension can override a property but not remove one. Cockpit
+`properties:` (or `cf set-env`), never `.env`, and an extension can override a property but not remove one. Cockpit
 destinations, role collections, Cloud Connector and SAP-side trust belong to other owners — hand off.
-More traps: `docs/dev-guide.md#deployment-traps`.
+More traps: [Deployment traps](docs/dev-guide.md#deployment-traps).
 
 ## Engineering Playbook
 
@@ -268,4 +271,5 @@ More traps: `docs/dev-guide.md#deployment-traps`.
 - **Security values ride REQUIRED parameters** (e.g. `cacheSecurity`), so a forgotten call site is a
   compile error, never an optional param that fails open.
 - **Derive parallel lists from one table** (`tool-registry.ts`), and lower a size budget in the commit
-  that shrinks the file. All seven practices: `docs/dev-guide.md` (Engineering playbook).
+  that shrinks the file. Before a sizeable refactor or codemod read all seven:
+  [Engineering playbook](docs/dev-guide.md#engineering-playbook-full).
