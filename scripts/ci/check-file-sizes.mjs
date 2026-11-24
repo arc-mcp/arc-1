@@ -157,4 +157,14 @@ if (offenders.length > 0) {
   process.exit(1);
 }
 
+// AGENTS.md is loaded into every agent session (discussion #1206). Move detail to docs/dev-guide.md
+// instead of raising this; lower it in the commit that shrinks the file. Check a trim with
+// `node scripts/eval-agents-md.mjs`.
+const AGENTS_MD_MAX_BYTES = 57_500;
+const agentsBytes = readFileSync('AGENTS.md').length;
+if (agentsBytes > AGENTS_MD_MAX_BYTES) {
+  console.error(`✗ AGENTS.md is ${agentsBytes} bytes (budget ${AGENTS_MD_MAX_BYTES}); move detail to docs/dev-guide.md.`);
+  process.exit(1);
+}
+
 console.log(`✓ file-size ratchet: all ${files.length} tracked source/test files within budget.`);

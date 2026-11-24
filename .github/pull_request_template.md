@@ -5,7 +5,8 @@ tokens, cookies, private keys, and customer data from all examples and test evid
 ## Change
 
 - Problem and resulting behavior:
-- Related issue(s), dependent PRs, or required package versions:
+- Related issue(s), dependent PRs, or required package versions: <!-- A feature (new tool action, object
+  type, config option, auth path) needs an issue where the scope was agreed first: see CONTRIBUTING.md. -->
 - Reproducer or example (before → after):
 
 <!-- For SAP API changes, link the contract evidence: SAP documentation, discovery results,

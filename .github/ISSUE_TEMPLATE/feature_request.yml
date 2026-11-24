@@ -33,6 +33,17 @@ body:
       required: true
 
   - type: dropdown
+    id: pr-plan
+    attributes:
+      label: Do you plan to open a PR for this?
+      description: If yes, please wait for a maintainer reply on scope before writing code — a new tool action, object type, config option or auth path is agreed here first. See CONTRIBUTING.md.
+      options:
+        - "No"
+        - "Yes, after the scope is agreed here"
+    validations:
+      required: true
+
+  - type: dropdown
     id: area
     attributes:
       label: Area
