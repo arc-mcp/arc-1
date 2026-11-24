@@ -99,6 +99,30 @@ object reference, each file's `filename`/`path`/`localState`, and the comment â€
 decoration. That is why ARC-1's push stages first and echoes the selection back: the caller only supplies
 a `message` (and optionally which objects), never an identity.
 
+## S/4HANA Cloud Public Edition: the repository list carries a root `atom:link` (2026-11-24)
+
+Observed on SAP S/4HANA Cloud Public Edition (SAP_BASIS 920 SP 0006), `GET /sap/bc/adt/abapgit/repos`
+with `Accept: application/abapgit.adt.repos.v2+xml`, HTTP 200:
+
+- The first child of the root `abapgitrepo:repositories` is not a repository:
+  `<atom:link rel="http://www.sap.com/adt/abapgit/relations/folderlogic" xmlns:atom="http://www.w3.org/2005/Atom"/>`.
+  The `repository` rows follow it, and the root has no other child.
+- `ZABAPGIT_ST_REPOS` does not emit that link. The bridge on that system is SAP-delivered and not public,
+  so the open-source transformations are not the whole contract there. The Eclipse client models the root
+  with `repository` and `atom:link` children (`abapgitrepositories.ecore`) and reads the `folderlogic`
+  relation from it (`AbapGitService.isFolderLogicSupportedWhileLink`).
+- A repository advertises seven links: `pull`, `pull/modifiedobjects`, `stage`, `push`, `check`, `status`
+  and `log`. A repository with status `S` (Linked) and no deserialization data had only the first five.
+- The rows also carry `folderLogic`, `createdEmail`, `deserializedEmail`, `status` and `statusText`.
+
+`parseAbapGitRepos` accepts a root `link` only as an attribute-only element; any other root child is
+still rejected. Fixture: `tests/fixtures/xml/abapgit-repos-v2-cloud.xml`.
+
+Also seen on that system: `stage` returned no unknown root child, and `push` is accepted first and
+committed by a background job (a `stage` during the job answers 409).
+
+Not verified on that system: `pull`, `check`, clone. Not tested at all: SAP BTP ABAP Environment.
+
 ## What this means for ARC-1
 
 - Fixtures for a bridge we cannot exercise live must be derived from ADT_Backend's transformations, never
