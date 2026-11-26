@@ -1,11 +1,17 @@
 import type { AdtClient } from '../adt/client.js';
 import { syntaxCheck } from '../adt/devtools.js';
-import { AdtApiError } from '../adt/errors.js';
+import { AdtApiError, AdtError } from '../adt/errors.js';
 import { syntaxCheckBatch } from '../adt/syntax-batch.js';
 import { searchTablSubtype } from '../adt/tabl-subtype.js';
 import type { SyntaxCheckResult } from '../adt/types.js';
 import { isTablesEndpointAvailable } from './feature-cache.js';
-import { functionModuleObjectUrl, normalizeObjectType, objectUrlForType } from './object-types.js';
+import { resolveIncludeGroupForMutation } from './include-group.js';
+import {
+  functionGroupIncludeObjectUrl,
+  functionModuleObjectUrl,
+  normalizeObjectType,
+  objectUrlForType,
+} from './object-types.js';
 import { type ToolResult, textResult, toolJson } from './shared.js';
 
 /** Shared wire and result contract for both syntax-check entry points. */
@@ -49,6 +55,21 @@ export async function handleSyntaxCheck(client: AdtClient, args: Record<string, 
       );
     }
     objectUrl = functionModuleObjectUrl(group, name);
+  } else if (type === 'INCL') {
+    // SAP 7.50 and 7.58 refuse a function-group include at /programs/includes/ ("Select a master
+    // program"). Its structural URI names the group, which supplies the context — as in SAPActivate.
+    let group: string | undefined;
+    try {
+      group = await resolveIncludeGroupForMutation(client, name, undefined);
+    } catch (err) {
+      if (err instanceof AdtError) throw err;
+      return notChecked(
+        { hasErrors: false, messages: [], checked: false },
+        `The owning function group of include ${name} could not be verified by repository search`,
+        'Check the function group with objectType="FUGR".',
+      );
+    }
+    objectUrl = group ? functionGroupIncludeObjectUrl(group, name) : objectUrlForType(type, name);
   } else {
     objectUrl = objectUrlForType(type, name);
   }
