@@ -263,6 +263,12 @@ errors in another module of the same group; use each message's URI to locate the
 signature returned by `SAPRead`; `*"` comment lines from SAP GUI are refused because SAP can
 silently check stored code instead of the supplied text.
 
+`INCL` checks of a function-group include (`L…`, `/NS/L…`) resolve the owning group through search
+and check the include at its group URI, as `SAPActivate` does: at `/programs/includes/` SAP_BASIS 7.50
+and 7.58 refuse the check with "Select a master program". If search finds more than one owner, the
+result is `checked:false`. A program include has no group to supply that context, so SAP still
+refuses it (`checked:false`); check its main program instead.
+
 The standard `SAPRead` tool advertises `readOnlyHint:true`; clients decide whether that affects
 approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated. Existing `SAP_DENY_ACTIONS` rules for `SAPDiagnose` or
 `SAPDiagnose.syntax`, including hyperfocused `SAP.diagnose`, also block this alias. `SAPRead.SYNTAX` can block the alias alone.
